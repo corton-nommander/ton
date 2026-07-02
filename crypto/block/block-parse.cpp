@@ -1506,6 +1506,11 @@ bool TransactionDescr::skip(vm::CellSlice& cs) const {
              && Maybe<TrComputePhase>{}.skip(cs)        // compute_ph:TrComputePhase
              && Maybe<RefTo<TrActionPhase>>{}.skip(cs)  // action:(Maybe ^TrActionPhase)
              && cs.advance(2);                          // aborted:Bool destroyed:Bool
+    case trans_native_transfer_debit:
+      return cs.advance(4 + 256 + 64 + 64 + 64 + 32)  // trans_native_transfer_debit$1000 ...
+             && t_RefCell.skip(cs);                   // signature:^NativeTransferSignature
+    case trans_native_transfer_credit:
+      return cs.advance(4 + 256 + 64 + 64);  // trans_native_transfer_credit$1001 ...
   }
   return false;
 }
@@ -1556,13 +1561,18 @@ bool TransactionDescr::validate_skip(int* ops, vm::CellSlice& cs, bool weak) con
              && Maybe<TrComputePhase>{}.validate_skip(ops, cs, weak)        // compute_ph:TrComputePhase
              && Maybe<RefTo<TrActionPhase>>{}.validate_skip(ops, cs, weak)  // action:(Maybe ^TrActionPhase)
              && cs.advance(2);                                              // aborted:Bool destroyed:Bool
+    case trans_native_transfer_debit:
+      return cs.advance(4 + 256 + 64 + 64 + 64 + 32)  // trans_native_transfer_debit$1000 ...
+             && t_RefCell.validate_skip(ops, cs, weak);  // signature:^NativeTransferSignature
+    case trans_native_transfer_credit:
+      return cs.advance(4 + 256 + 64 + 64);  // trans_native_transfer_credit$1001 ...
   }
   return false;
 }
 
 int TransactionDescr::get_tag(const vm::CellSlice& cs) const {
   int t = (int)cs.prefetch_ulong(4);
-  return (t >= 0 && t <= 7) ? (t == 3 ? 2 : t) : -1;
+  return (t >= 0 && t <= 9) ? (t == 3 ? 2 : t) : -1;
 }
 
 bool TransactionDescr::skip_to_storage_phase(vm::CellSlice& cs, bool& found) const {
@@ -1592,6 +1602,9 @@ bool TransactionDescr::skip_to_storage_phase(vm::CellSlice& cs, bool& found) con
              && t_SplitMergeInfo.skip(cs)   // split_info:SplitMergeInfo
              && t_Ref_Transaction.skip(cs)  // prepare_transaction:^Transaction
              && cs.fetch_bool_to(found);    // storage_ph:(Maybe TrStoragePhase)
+    case trans_native_transfer_debit:
+    case trans_native_transfer_credit:
+      return true;
   }
   return false;
 }

@@ -360,6 +360,7 @@ class Collator final : public td::actor::Actor {
   td::actor::Task<> process_external_and_new_messages();
   td::actor::Task<bool> process_inbound_external_messages();
   int process_external_message(Ref<vm::Cell> msg);
+  int process_native_transfer(const block::NativeTransfer& transfer);
   bool process_dispatch_queue();
   bool process_deferred_message(Ref<vm::CellSlice> enq_msg, StdSmcAddress src_addr, LogicalTime lt,
                                 td::optional<block::MsgMetadata>& msg_metadata);

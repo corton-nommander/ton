@@ -291,6 +291,11 @@ depth_balance$_ split_depth:(#<= 30) balance:CurrencyCollection = DepthBalanceIn
 
 _ (HashmapAugE 256 ShardAccount DepthBalanceInfo) = ShardAccounts;
 
+native_transfer_sig$_ signature:bits512 = NativeTransferSignature;
+native_transfer#4e545846 src:bits256 dst:bits256 amount:uint64
+  fee:uint64 nonce:uint64 valid_until:uint32
+  signature:^NativeTransferSignature = NativeTransfer;
+
 transaction$0111 account_addr:bits256 lt:uint64
   prev_trans_hash:bits256 prev_trans_lt:uint64 now:uint32
   outmsg_cnt:uint15
@@ -390,6 +395,13 @@ trans_merge_install$0111 split_info:SplitMergeInfo
   compute_ph:TrComputePhase action:(Maybe ^TrActionPhase)
   aborted:Bool destroyed:Bool
   = TransactionDescr;
+
+trans_native_transfer_debit$1000 dst:bits256 amount:uint64
+  fee:uint64 nonce:uint64 valid_until:uint32
+  signature:^NativeTransferSignature = TransactionDescr;
+
+trans_native_transfer_credit$1001 src:bits256 debit_lt:uint64
+  amount:uint64 = TransactionDescr;
 
 smc_info#076ef1ea actions:uint16 msgs_sent:uint16
   unixtime:uint32 block_lt:uint64 trans_lt:uint64

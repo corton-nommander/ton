@@ -19,9 +19,11 @@
 
 #include "block/block-auto.h"
 #include "block/block-parse.h"
+#include "block/transaction.h"
 #include "crypto/openssl/rand.hpp"
 #include "td/actor/actor.h"
 #include "td/utils/Random.h"
+#include "ton/ton-shard.h"
 #include "vm/boc.h"
 
 #include "collator-impl.h"
@@ -99,11 +101,19 @@ td::Result<Ref<ExtMessageQ>> ExtMessageQ::create_ext_message(td::BufferSlice dat
   if (ext_msg->get_depth() >= limits.max_depth) {
     return td::Status::Error("external message is too deep");
   }
+  ton::Bits256 hash{ext_msg->get_hash().bits()};
+  vm::CellSlice native_cs{vm::NoVmOrd{}, ext_msg};
+  if (native_cs.prefetch_ulong(32) == block::NativeTransfer::magic) {
+    TRY_RESULT(transfer, block::NativeTransfer::unpack_external(ext_msg));
+    TRY_STATUS(transfer.verify_signature());
+    auto wc = ton::basechainId;
+    auto src_prefix = ton::extract_addr_prefix(wc, transfer.src);
+    return Ref<ExtMessageQ>{true, std::move(data), std::move(ext_msg), src_prefix, wc, transfer.src, hash, hash};
+  }
   vm::CellSlice cs{vm::NoVmOrd{}, ext_msg};
   if (cs.prefetch_ulong(2) != 2) {  // ext_in_msg_info$10
     return td::Status::Error("external message must begin with ext_in_msg_info$10");
   }
-  ton::Bits256 hash{ext_msg->get_hash().bits()};
   if (!block::gen::t_Message_Any.validate_ref(128, ext_msg)) {
     return td::Status::Error("external message is not a (Message Any) according to automated checks");
   }

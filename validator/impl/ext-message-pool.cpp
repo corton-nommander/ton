@@ -280,6 +280,37 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
   auto [wait_allow_broadcast, allow_broadcast_promise] = td::actor::StartedTask<>::make_bridge();
   CheckResult check_result{.message = message, .wait_allow_broadcast = std::move(wait_allow_broadcast)};
 
+  auto native_transfer_res = block::NativeTransfer::unpack_external(message->root_cell());
+  if (native_transfer_res.is_ok()) {
+    auto transfer = native_transfer_res.move_as_ok();
+    if (wc != basechainId || transfer.src != addr) {
+      co_return td::Status::Error("native transfer is routed to the wrong source account");
+    }
+    if (transfer.valid_until <= (UnixTime)td::Clocks::system()) {
+      co_return td::Status::Error("native transfer valid_until is in the past");
+    }
+    if (transfer.nonce != acc.last_trans_lt_) {
+      co_return td::Status::Error(PSTRING() << "native transfer nonce mismatch: expected " << acc.last_trans_lt_
+                                            << ", got " << transfer.nonce);
+    }
+    if (acc.status != block::Account::acc_uninit) {
+      co_return td::Status::Error("native transfer source account must be balance-only");
+    }
+    if (transfer.amount + transfer.fee < transfer.amount) {
+      co_return td::Status::Error("native transfer amount and fee overflow");
+    }
+    block::CurrencyCollection required{td::make_refint(transfer.amount + transfer.fee)};
+    if (!(acc.balance >= required)) {
+      co_return td::Status::Error("native transfer has insufficient source balance");
+    }
+    auto signature_status = transfer.verify_signature();
+    if (signature_status.is_error()) {
+      co_return signature_status.move_as_error();
+    }
+    allow_broadcast_promise.set_value(td::Unit{});
+    co_return check_result;
+  }
+
   const WalletMessageProcessor *wallet =
       acc.code.not_null() ? WalletMessageProcessor::get(acc.code->get_hash().bits()) : nullptr;
   if (wallet != nullptr) {

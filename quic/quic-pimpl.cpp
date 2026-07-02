@@ -196,7 +196,9 @@ bool ServerIdentities::add_identity(ServerIdentity identity) {
 ServerIdentities* ServerIdentities::make_copy() const {
   auto* copy = new ServerIdentities;
   for (const auto& [sni, identity] : by_sni) {
-    copy->by_sni.emplace(sni, ServerIdentity{.local_id = identity.local_id, .key{identity.key.as_octet_string()}});
+    copy->by_sni.emplace(
+        sni, ServerIdentity{.local_id = identity.local_id,
+                            .key = td::Ed25519::PrivateKey(identity.key.as_octet_string())});
   }
   copy->default_sni = default_sni;
   return copy;

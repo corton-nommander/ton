@@ -84,6 +84,36 @@ struct NewOutMsg {
   }
 };
 
+struct NativeTransfer {
+  static constexpr td::uint32 magic = 0x4e545846;  // "NTXF"
+  static constexpr td::uint32 debit_tag = 0b1000;
+  static constexpr td::uint32 credit_tag = 0b1001;
+  ton::StdSmcAddress src;
+  ton::StdSmcAddress dst;
+  td::uint64 amount{0};
+  td::uint64 fee{0};
+  td::uint64 nonce{0};
+  ton::UnixTime valid_until{0};
+  std::string signature;
+
+  bool is_valid() const;
+  std::string signing_payload() const;
+  td::Status verify_signature() const;
+  bool store_external(vm::CellBuilder& cb) const;
+  bool store_debit_description(vm::CellBuilder& cb) const;
+  static td::Result<NativeTransfer> unpack_external(Ref<vm::Cell> cell);
+  static td::Result<NativeTransfer> unpack_debit_description(ton::StdSmcAddress src, Ref<vm::Cell> cell);
+};
+
+struct NativeTransferCredit {
+  ton::StdSmcAddress src;
+  ton::LogicalTime debit_lt{0};
+  td::uint64 amount{0};
+
+  bool store_description(vm::CellBuilder& cb) const;
+  static td::Result<NativeTransferCredit> unpack_description(Ref<vm::Cell> cell);
+};
+
 struct StoragePhaseConfig {
   const std::vector<block::StoragePrices>* pricing{nullptr};
   td::RefInt256 freeze_due_limit;
@@ -355,7 +385,9 @@ struct Transaction {
     tr_split_prepare,
     tr_split_install,
     tr_merge_prepare,
-    tr_merge_install
+    tr_merge_install,
+    tr_native_transfer_debit,
+    tr_native_transfer_credit
   };
   int trans_type{tr_none};
   bool was_deleted{false};
@@ -401,6 +433,8 @@ struct Transaction {
   td::BitArray<256> frozen_hash;
   td::BitArray<32> orig_addr_rewrite;
   std::vector<Ref<vm::Cell>> out_msgs;
+  NativeTransfer native_transfer;
+  NativeTransferCredit native_credit;
   std::unique_ptr<StoragePhase> storage_phase;
   std::unique_ptr<CreditPhase> credit_phase;
   std::unique_ptr<ComputePhase> compute_phase;
@@ -427,6 +461,8 @@ struct Transaction {
   bool prepare_action_phase(const ActionPhaseConfig& cfg);
   td::Status check_state_limits(const SizeLimitsConfig& size_limits, int global_version, bool is_account_stat = true);
   bool prepare_bounce_phase(const ActionPhaseConfig& cfg);
+  bool prepare_native_transfer_debit(const NativeTransfer& transfer);
+  bool prepare_native_transfer_credit(const NativeTransferCredit& credit);
   bool compute_state(const SerializeConfig& cfg);
   bool serialize(const SerializeConfig& cfg);
   td::uint64 gas_used() const {

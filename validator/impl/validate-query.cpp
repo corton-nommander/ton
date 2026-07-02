@@ -5595,6 +5595,8 @@ bool ValidateQuery::CheckAccountTxs::check_one_transaction(block::Account& accou
   int tag = block::gen::t_TransactionDescr.get_tag(td_cs);
   REJECT_UNLESS(tag >= 0);  // we have already validated the serialization of all Transactions
   td::optional<block::MsgMetadata> in_msg_metadata;
+  td::optional<block::NativeTransfer> native_transfer;
+  td::optional<block::NativeTransferCredit> native_credit;
   if (in_msg_root.not_null()) {
     auto in_descr_cs = vq_.in_msg_dict_->lookup(in_msg_root->get_hash().as_bitslice());
     if (in_descr_cs.is_null()) {
@@ -5967,6 +5969,51 @@ bool ValidateQuery::CheckAccountTxs::check_one_transaction(block::Account& accou
                                     << addr.to_hex());
       break;
     }
+    case block::tlb::TransactionDescr::trans_native_transfer_debit: {
+      trans_type = block::transaction::Transaction::tr_native_transfer_debit;
+      if (in_msg_root.not_null()) {
+        return reject_query(PSTRING() << "native transfer debit transaction " << lt << " of account " << addr.to_hex()
+                                      << " has an inbound message");
+      }
+      if (trans.outmsg_cnt != 0) {
+        return reject_query(PSTRING() << "native transfer debit transaction " << lt << " of account " << addr.to_hex()
+                                      << " has outbound messages");
+      }
+      auto transfer_res = block::NativeTransfer::unpack_debit_description(addr, trans.description);
+      if (transfer_res.is_error()) {
+        return reject_query(PSTRING() << "cannot unpack native transfer debit transaction " << lt << " of account "
+                                      << addr.to_hex(),
+                            transfer_res.move_as_error());
+      }
+      native_transfer = transfer_res.move_as_ok();
+      money_exported += block::CurrencyCollection{td::make_refint(native_transfer.value().amount)};
+      REJECT_UNLESS(money_exported.is_valid());
+      ctx_.native_transfer_debits.emplace_back(addr, native_transfer.value().dst, lt, native_transfer.value().amount);
+      break;
+    }
+    case block::tlb::TransactionDescr::trans_native_transfer_credit: {
+      trans_type = block::transaction::Transaction::tr_native_transfer_credit;
+      if (in_msg_root.not_null()) {
+        return reject_query(PSTRING() << "native transfer credit transaction " << lt << " of account " << addr.to_hex()
+                                      << " has an inbound message");
+      }
+      if (trans.outmsg_cnt != 0) {
+        return reject_query(PSTRING() << "native transfer credit transaction " << lt << " of account " << addr.to_hex()
+                                      << " has outbound messages");
+      }
+      auto credit_res = block::NativeTransferCredit::unpack_description(trans.description);
+      if (credit_res.is_error()) {
+        return reject_query(PSTRING() << "cannot unpack native transfer credit transaction " << lt << " of account "
+                                      << addr.to_hex(),
+                            credit_res.move_as_error());
+      }
+      native_credit = credit_res.move_as_ok();
+      money_imported += block::CurrencyCollection{td::make_refint(native_credit.value().amount)};
+      REJECT_UNLESS(money_imported.is_valid());
+      ctx_.native_transfer_credits.emplace_back(native_credit.value().src, addr, native_credit.value().debit_lt,
+                                                native_credit.value().amount);
+      break;
+    }
   }
   // ....
   // check transaction computation by re-doing it
@@ -5982,56 +6029,70 @@ bool ValidateQuery::CheckAccountTxs::check_one_transaction(block::Account& accou
     ctx_.work_time.trx_other += elapsed - trs->time_tvm - trs->time_storage_stat;
     ctx_.work_time.check_transactions_other -= elapsed;
   };
-  if (in_msg_root.not_null()) {
-    if (!trs->unpack_input_msg(ihr_delivered, &vq_.action_phase_cfg_)) {
-      // inbound external message was not accepted
-      return reject_query(PSTRING() << "could not unpack inbound " << (external ? "external" : "internal")
-                                    << " message processed by ordinary transaction " << lt << " of account "
-                                    << addr.to_hex());
+  if (trans_type == block::transaction::Transaction::tr_native_transfer_debit) {
+    REJECT_UNLESS(native_transfer);
+    if (!trs->prepare_native_transfer_debit(native_transfer.value())) {
+      return reject_query(PSTRING() << "cannot re-create native transfer debit transaction " << lt
+                                    << " for account " << addr.to_hex());
     }
-  }
-  if (trs->bounce_enabled) {
-    if (!trs->prepare_storage_phase(vq_.storage_phase_cfg_, true)) {
-      return reject_query(PSTRING() << "cannot re-create storage phase of transaction " << lt << " for smart contract "
-                                    << addr.to_hex());
-    }
-    if (need_credit_phase && !trs->prepare_credit_phase()) {
-      return reject_query(PSTRING() << "cannot create re-credit phase of transaction " << lt << " for smart contract "
-                                    << addr.to_hex());
+  } else if (trans_type == block::transaction::Transaction::tr_native_transfer_credit) {
+    REJECT_UNLESS(native_credit);
+    if (!trs->prepare_native_transfer_credit(native_credit.value())) {
+      return reject_query(PSTRING() << "cannot re-create native transfer credit transaction " << lt
+                                    << " for account " << addr.to_hex());
     }
   } else {
-    if (need_credit_phase && !trs->prepare_credit_phase()) {
-      return reject_query(PSTRING() << "cannot re-create credit phase of transaction " << lt << " for smart contract "
+    if (in_msg_root.not_null()) {
+      if (!trs->unpack_input_msg(ihr_delivered, &vq_.action_phase_cfg_)) {
+        // inbound external message was not accepted
+        return reject_query(PSTRING() << "could not unpack inbound " << (external ? "external" : "internal")
+                                      << " message processed by ordinary transaction " << lt << " of account "
+                                      << addr.to_hex());
+      }
+    }
+    if (trs->bounce_enabled) {
+      if (!trs->prepare_storage_phase(vq_.storage_phase_cfg_, true)) {
+        return reject_query(PSTRING() << "cannot re-create storage phase of transaction " << lt
+                                      << " for smart contract " << addr.to_hex());
+      }
+      if (need_credit_phase && !trs->prepare_credit_phase()) {
+        return reject_query(PSTRING() << "cannot create re-credit phase of transaction " << lt
+                                      << " for smart contract " << addr.to_hex());
+      }
+    } else {
+      if (need_credit_phase && !trs->prepare_credit_phase()) {
+        return reject_query(PSTRING() << "cannot re-create credit phase of transaction " << lt
+                                      << " for smart contract " << addr.to_hex());
+      }
+      if (!trs->prepare_storage_phase(vq_.storage_phase_cfg_, true, need_credit_phase)) {
+        return reject_query(PSTRING() << "cannot re-create storage phase of transaction " << lt
+                                      << " for smart contract " << addr.to_hex());
+      }
+    }
+    if (!trs->prepare_compute_phase(vq_.compute_phase_cfg_)) {
+      return reject_query(PSTRING() << "cannot re-create compute phase of transaction " << lt << " for smart contract "
                                     << addr.to_hex());
     }
-    if (!trs->prepare_storage_phase(vq_.storage_phase_cfg_, true, need_credit_phase)) {
-      return reject_query(PSTRING() << "cannot re-create storage phase of transaction " << lt << " for smart contract "
+    if (!trs->compute_phase->accepted) {
+      if (external) {
+        return reject_query(PSTRING() << "inbound external message claimed to be processed by ordinary transaction "
+                                      << lt << " of account " << addr.to_hex()
+                                      << " was in fact rejected (such transaction cannot appear in valid blocks)");
+      } else if (trs->compute_phase->skip_reason == block::ComputePhase::sk_none) {
+        return reject_query(PSTRING() << "inbound internal message processed by ordinary transaction " << lt
+                                      << " of account " << addr.to_hex() << " was not processed without any reason");
+      }
+    }
+    if (trs->compute_phase->success && !trs->prepare_action_phase(vq_.action_phase_cfg_)) {
+      return reject_query(PSTRING() << "cannot re-create action phase of transaction " << lt << " for smart contract "
                                     << addr.to_hex());
     }
-  }
-  if (!trs->prepare_compute_phase(vq_.compute_phase_cfg_)) {
-    return reject_query(PSTRING() << "cannot re-create compute phase of transaction " << lt << " for smart contract "
-                                  << addr.to_hex());
-  }
-  if (!trs->compute_phase->accepted) {
-    if (external) {
-      return reject_query(PSTRING() << "inbound external message claimed to be processed by ordinary transaction " << lt
-                                    << " of account " << addr.to_hex()
-                                    << " was in fact rejected (such transaction cannot appear in valid blocks)");
-    } else if (trs->compute_phase->skip_reason == block::ComputePhase::sk_none) {
-      return reject_query(PSTRING() << "inbound internal message processed by ordinary transaction " << lt
-                                    << " of account " << addr.to_hex() << " was not processed without any reason");
+    if (trs->bounce_enabled &&
+        (!trs->compute_phase->success || trs->action_phase->state_exceeds_limits || trs->action_phase->bounce) &&
+        !trs->prepare_bounce_phase(vq_.action_phase_cfg_)) {
+      return reject_query(PSTRING() << "cannot re-create bounce phase of  transaction " << lt << " for smart contract "
+                                    << addr.to_hex());
     }
-  }
-  if (trs->compute_phase->success && !trs->prepare_action_phase(vq_.action_phase_cfg_)) {
-    return reject_query(PSTRING() << "cannot re-create action phase of transaction " << lt << " for smart contract "
-                                  << addr.to_hex());
-  }
-  if (trs->bounce_enabled &&
-      (!trs->compute_phase->success || trs->action_phase->state_exceeds_limits || trs->action_phase->bounce) &&
-      !trs->prepare_bounce_phase(vq_.action_phase_cfg_)) {
-    return reject_query(PSTRING() << "cannot re-create bounce phase of  transaction " << lt << " for smart contract "
-                                  << addr.to_hex());
   }
   if (!trs->serialize(vq_.serialize_cfg_)) {
     return reject_query(PSTRING() << "cannot re-create the serialization of  transaction " << lt
@@ -6266,6 +6327,14 @@ void ValidateQuery::save_account_transactions_context(const StdSmcAddress& addre
     msg_proc_lt_.emplace_back(std::move(e));
   }
 
+  for (auto& e : ctx.native_transfer_debits) {
+    native_transfer_debits_.insert(std::move(e));
+  }
+
+  for (auto& e : ctx.native_transfer_credits) {
+    native_transfer_credits_.insert(std::move(e));
+  }
+
   for (auto& e : ctx.lib_publishers) {
     lib_publishers_.insert(e);
   }
@@ -6449,6 +6518,32 @@ bool ValidateQuery::check_message_processing_order() {
     }
   }
   return true;
+}
+
+bool ValidateQuery::check_native_transfer_pairs() {
+  if (native_transfer_debits_ == native_transfer_credits_) {
+    return true;
+  }
+  if (native_transfer_debits_.size() != native_transfer_credits_.size()) {
+    return reject_query(PSTRING() << "native transfer debit/credit count mismatch: debits="
+                                  << native_transfer_debits_.size()
+                                  << ", credits=" << native_transfer_credits_.size());
+  }
+  for (const auto& debit : native_transfer_debits_) {
+    if (!native_transfer_credits_.contains(debit)) {
+      return reject_query(PSTRING() << "native transfer debit without matching credit: src="
+                                    << std::get<0>(debit).to_hex() << ", dst=" << std::get<1>(debit).to_hex()
+                                    << ", lt=" << std::get<2>(debit) << ", amount=" << std::get<3>(debit));
+    }
+  }
+  for (const auto& credit : native_transfer_credits_) {
+    if (!native_transfer_debits_.contains(credit)) {
+      return reject_query(PSTRING() << "native transfer credit without matching debit: src="
+                                    << std::get<0>(credit).to_hex() << ", dst=" << std::get<1>(credit).to_hex()
+                                    << ", lt=" << std::get<2>(credit) << ", amount=" << std::get<3>(credit));
+    }
+  }
+  return reject_query("native transfer debit/credit pairing mismatch");
 }
 
 /**
@@ -7573,6 +7668,9 @@ bool ValidateQuery::try_validate() {
       }
       if (!check_message_processing_order()) {
         return reject_query("some messages have been processed by transactions in incorrect order");
+      }
+      if (!check_native_transfer_pairs()) {
+        return reject_query("native transfer debit/credit pairs are invalid");
       }
       if (!check_special_messages()) {
         return reject_query("special messages are invalid");

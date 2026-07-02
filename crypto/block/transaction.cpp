@@ -20,6 +20,7 @@
 #include "block/block-parse.h"
 #include "block/block.h"
 #include "block/transaction.h"
+#include "crypto/Ed25519.h"
 #include "crypto/openssl/rand.hpp"
 #include "td/utils/Timer.h"
 #include "td/utils/bits.h"
@@ -824,6 +825,183 @@ td::RefInt256 StoragePrices::compute_storage_fees(ton::UnixTime now, const std::
  */
 td::RefInt256 Account::compute_storage_fees(ton::UnixTime now, const std::vector<block::StoragePrices>& pricing) const {
   return StoragePrices::compute_storage_fees(now, pricing, storage_used, last_paid, is_special, is_masterchain());
+}
+
+namespace {
+constexpr std::size_t native_transfer_public_key_size = 32;
+constexpr std::size_t native_transfer_signature_size = 64;
+
+void append_u32_be(std::string& out, td::uint32 value) {
+  for (int i = 3; i >= 0; --i) {
+    out.push_back(static_cast<char>((value >> (i * 8)) & 0xff));
+  }
+}
+
+void append_u64_be(std::string& out, td::uint64 value) {
+  for (int i = 7; i >= 0; --i) {
+    out.push_back(static_cast<char>((value >> (i * 8)) & 0xff));
+  }
+}
+
+td::RefInt256 native_uint(td::uint64 value) {
+  return td::make_refint(value);
+}
+
+bool is_rejected_ed25519_key(td::Slice key) {
+  if (key.size() != native_transfer_public_key_size) {
+    return true;
+  }
+  bool reject = key[0] == 0 || key[0] == 1;
+  for (std::size_t i = 1; reject && i < native_transfer_public_key_size; ++i) {
+    reject = key[i] == 0;
+  }
+  return reject;
+}
+
+bool store_native_signature_ref(vm::CellBuilder& cb, td::Slice signature) {
+  if (signature.size() != native_transfer_signature_size) {
+    return false;
+  }
+  vm::CellBuilder sig_cb;
+  return sig_cb.store_bytes_bool(signature) && cb.store_ref_bool(sig_cb.finalize());
+}
+
+td::Result<std::string> fetch_native_signature_ref(vm::CellSlice& cs) {
+  Ref<vm::Cell> sig_cell;
+  if (!cs.fetch_ref_to(sig_cell)) {
+    return td::Status::Error("Native transfer signature reference is missing");
+  }
+  auto sig_cs = vm::load_cell_slice(sig_cell);
+  if (sig_cs.size() != native_transfer_signature_size * 8 || sig_cs.size_refs() != 0) {
+    return td::Status::Error("Native transfer signature must be exactly 512 bits");
+  }
+  std::string signature(native_transfer_signature_size, '\0');
+  if (!sig_cs.fetch_bytes(reinterpret_cast<unsigned char*>(&signature[0]), native_transfer_signature_size) ||
+      !sig_cs.empty_ext()) {
+    return td::Status::Error("Failed to unpack native transfer signature");
+  }
+  return signature;
+}
+}  // namespace
+
+bool NativeTransfer::is_valid() const {
+  return amount != 0 && signature.size() == native_transfer_signature_size && amount + fee >= amount &&
+         !is_rejected_ed25519_key(src.as_slice());
+}
+
+std::string NativeTransfer::signing_payload() const {
+  std::string payload;
+  payload.reserve(4 + 32 + 32 + 8 + 8 + 8 + 4);
+  append_u32_be(payload, magic);
+  payload.append(src.as_slice().data(), src.as_slice().size());
+  payload.append(dst.as_slice().data(), dst.as_slice().size());
+  append_u64_be(payload, amount);
+  append_u64_be(payload, fee);
+  append_u64_be(payload, nonce);
+  append_u32_be(payload, valid_until);
+  return payload;
+}
+
+td::Status NativeTransfer::verify_signature() const {
+  if (!is_valid()) {
+    return td::Status::Error("Invalid native transfer fields");
+  }
+#if TD_HAVE_OPENSSL
+  td::Ed25519::PublicKey pub_key{td::SecureString(src.as_slice())};
+  auto payload = signing_payload();
+  return pub_key.verify_signature(td::Slice(payload), td::Slice(signature));
+#else
+  return td::Status::Error("Ed25519 signature verification is not available");
+#endif
+}
+
+bool NativeTransfer::store_external(vm::CellBuilder& cb) const {
+  return is_valid() && cb.store_ulong_rchk_bool(magic, 32) && cb.store_bits_bool(src) && cb.store_bits_bool(dst) &&
+         cb.store_ulong_rchk_bool(amount, 64) && cb.store_ulong_rchk_bool(fee, 64) &&
+         cb.store_ulong_rchk_bool(nonce, 64) && cb.store_ulong_rchk_bool(valid_until, 32) &&
+         store_native_signature_ref(cb, td::Slice(signature));
+}
+
+bool NativeTransfer::store_debit_description(vm::CellBuilder& cb) const {
+  return is_valid() && cb.store_ulong_rchk_bool(debit_tag, 4) && cb.store_bits_bool(dst) &&
+         cb.store_ulong_rchk_bool(amount, 64) && cb.store_ulong_rchk_bool(fee, 64) &&
+         cb.store_ulong_rchk_bool(nonce, 64) && cb.store_ulong_rchk_bool(valid_until, 32) &&
+         store_native_signature_ref(cb, td::Slice(signature));
+}
+
+td::Result<NativeTransfer> NativeTransfer::unpack_external(Ref<vm::Cell> cell) {
+  if (cell.is_null()) {
+    return td::Status::Error("Native transfer cell is null");
+  }
+  NativeTransfer transfer;
+  auto cs = vm::load_cell_slice(cell);
+  if (cs.prefetch_ulong(32) != magic) {
+    return td::Status::Error("Not a native transfer");
+  }
+  if (!(cs.advance(32) && cs.fetch_bits_to(transfer.src) && cs.fetch_bits_to(transfer.dst) &&
+        cs.fetch_uint_to(64, transfer.amount) && cs.fetch_uint_to(64, transfer.fee) &&
+        cs.fetch_uint_to(64, transfer.nonce) && cs.fetch_uint_to(32, transfer.valid_until))) {
+    return td::Status::Error("Failed to unpack native transfer body");
+  }
+  TRY_RESULT(signature, fetch_native_signature_ref(cs));
+  transfer.signature = std::move(signature);
+  if (!cs.empty_ext()) {
+    return td::Status::Error("Native transfer has trailing data");
+  }
+  if (!transfer.is_valid()) {
+    return td::Status::Error("Invalid native transfer fields");
+  }
+  return transfer;
+}
+
+td::Result<NativeTransfer> NativeTransfer::unpack_debit_description(ton::StdSmcAddress src, Ref<vm::Cell> cell) {
+  if (cell.is_null()) {
+    return td::Status::Error("Native transfer debit description is null");
+  }
+  NativeTransfer transfer;
+  transfer.src = src;
+  auto cs = vm::load_cell_slice(cell);
+  if (cs.prefetch_ulong(4) != debit_tag) {
+    return td::Status::Error("Not a native transfer debit description");
+  }
+  if (!(cs.advance(4) && cs.fetch_bits_to(transfer.dst) && cs.fetch_uint_to(64, transfer.amount) &&
+        cs.fetch_uint_to(64, transfer.fee) && cs.fetch_uint_to(64, transfer.nonce) &&
+        cs.fetch_uint_to(32, transfer.valid_until))) {
+    return td::Status::Error("Failed to unpack native transfer debit description");
+  }
+  TRY_RESULT(signature, fetch_native_signature_ref(cs));
+  transfer.signature = std::move(signature);
+  if (!cs.empty_ext()) {
+    return td::Status::Error("Native transfer debit description has trailing data");
+  }
+  if (!transfer.is_valid()) {
+    return td::Status::Error("Invalid native transfer debit fields");
+  }
+  return transfer;
+}
+
+bool NativeTransferCredit::store_description(vm::CellBuilder& cb) const {
+  return amount != 0 && cb.store_ulong_rchk_bool(NativeTransfer::credit_tag, 4) && cb.store_bits_bool(src) &&
+         cb.store_ulong_rchk_bool(debit_lt, 64) && cb.store_ulong_rchk_bool(amount, 64);
+}
+
+td::Result<NativeTransferCredit> NativeTransferCredit::unpack_description(Ref<vm::Cell> cell) {
+  if (cell.is_null()) {
+    return td::Status::Error("Native transfer credit description is null");
+  }
+  NativeTransferCredit credit;
+  auto cs = vm::load_cell_slice(cell);
+  if (cs.prefetch_ulong(4) != NativeTransfer::credit_tag) {
+    return td::Status::Error("Not a native transfer credit description");
+  }
+  if (!(cs.advance(4) && cs.fetch_bits_to(credit.src) && cs.fetch_uint_to(64, credit.debit_lt) &&
+        cs.fetch_uint_to(64, credit.amount) && cs.empty_ext())) {
+    return td::Status::Error("Failed to unpack native transfer credit description");
+  }
+  if (!credit.amount) {
+    return td::Status::Error("Native transfer credit amount must be positive");
+  }
+  return credit;
 }
 
 namespace transaction {
@@ -3464,6 +3642,77 @@ bool Transaction::prepare_bounce_phase(const ActionPhaseConfig& cfg) {
   bp.ok = true;
   return true;
 }
+
+bool Transaction::prepare_native_transfer_debit(const NativeTransfer& transfer) {
+  if (trans_type != tr_native_transfer_debit) {
+    LOG(ERROR) << "native transfer debit prepared for non-native transaction";
+    return false;
+  }
+  if (transfer.src != account.addr) {
+    LOG(DEBUG) << "native transfer source does not match account";
+    return false;
+  }
+  if (transfer.nonce != account.last_trans_lt_) {
+    LOG(DEBUG) << "native transfer nonce mismatch: expected " << account.last_trans_lt_ << ", got " << transfer.nonce;
+    return false;
+  }
+  if (now >= transfer.valid_until) {
+    LOG(DEBUG) << "native transfer expired at " << transfer.valid_until << ", now=" << now;
+    return false;
+  }
+  auto sig_status = transfer.verify_signature();
+  if (sig_status.is_error()) {
+    LOG(DEBUG) << "native transfer signature check failed: " << sig_status.to_string();
+    return false;
+  }
+  if (acc_status != Account::acc_uninit) {
+    LOG(DEBUG) << "native transfer source account must be balance-only, status=" << acc_status;
+    return false;
+  }
+  if (out_msgs.size() || in_msg.not_null()) {
+    LOG(DEBUG) << "native transfer debit cannot have TON messages";
+    return false;
+  }
+  if (transfer.amount + transfer.fee < transfer.amount) {
+    LOG(DEBUG) << "native transfer amount and fee overflow";
+    return false;
+  }
+  CurrencyCollection total{native_uint(transfer.amount + transfer.fee)};
+  if (!(balance >= total)) {
+    LOG(DEBUG) << "native transfer has insufficient funds: balance=" << balance.to_str()
+               << ", required=" << total.to_str();
+    return false;
+  }
+
+  native_transfer = transfer;
+  balance -= total;
+  total_fees = CurrencyCollection{native_uint(transfer.fee)};
+  return balance.is_valid() && total_fees.is_valid();
+}
+
+bool Transaction::prepare_native_transfer_credit(const NativeTransferCredit& credit) {
+  if (trans_type != tr_native_transfer_credit) {
+    LOG(ERROR) << "native transfer credit prepared for non-native transaction";
+    return false;
+  }
+  if (!credit.amount) {
+    LOG(DEBUG) << "native transfer credit amount must be positive";
+    return false;
+  }
+  if (acc_status != Account::acc_uninit) {
+    LOG(DEBUG) << "native transfer destination account must be balance-only, status=" << acc_status;
+    return false;
+  }
+  if (out_msgs.size() || in_msg.not_null()) {
+    LOG(DEBUG) << "native transfer credit cannot have TON messages";
+    return false;
+  }
+
+  native_credit = credit;
+  balance += CurrencyCollection{native_uint(credit.amount)};
+  total_fees.set_zero();
+  return balance.is_valid() && total_fees.is_valid();
+}
 }  // namespace transaction
 
 /*
@@ -3777,6 +4026,15 @@ bool Transaction::serialize(const SerializeConfig& cfg) {
                   && (!have_bounce || serialize_bounce_phase(cb2))                                  //   TrBouncePhase
                   && cb2.store_bool_bool(was_deleted)                                               // destroyed:Bool
                   && cb.store_ref_bool(cb2.finalize()) && cb.finalize_to(root));
+      break;
+    }
+    case tr_native_transfer_debit: {
+      FAIL_UNLESS(native_transfer.store_debit_description(cb2) && cb.store_ref_bool(cb2.finalize()) &&
+                  cb.finalize_to(root));
+      break;
+    }
+    case tr_native_transfer_credit: {
+      FAIL_UNLESS(native_credit.store_description(cb2) && cb.store_ref_bool(cb2.finalize()) && cb.finalize_to(root));
       break;
     }
     default:

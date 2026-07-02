@@ -720,7 +720,9 @@ struct TransactionDescr final : TLB_Complex {
     trans_split_prepare = 4,
     trans_split_install = 5,
     trans_merge_prepare = 6,
-    trans_merge_install = 7
+    trans_merge_install = 7,
+    trans_native_transfer_debit = 8,
+    trans_native_transfer_credit = 9
   };
   bool skip(vm::CellSlice& cs) const override;
   bool validate_skip(int* ops, vm::CellSlice& cs, bool weak = false) const override;

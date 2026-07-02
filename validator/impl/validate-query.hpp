@@ -21,7 +21,9 @@
 #include <atomic>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "block/mc-config.h"
@@ -248,6 +250,8 @@ class ValidateQuery : public td::actor::Actor {
 
   std::vector<std::tuple<Bits256, LogicalTime, LogicalTime>> msg_proc_lt_;
   std::vector<std::tuple<Bits256, LogicalTime, LogicalTime>> msg_emitted_lt_;
+  using NativeTransferPair = std::tuple<Bits256, Bits256, LogicalTime, td::uint64>;
+  std::multiset<NativeTransferPair> native_transfer_debits_, native_transfer_credits_;
 
   std::set<std::tuple<Bits256, Bits256, bool>> lib_publishers_, lib_publishers2_;
 
@@ -407,6 +411,8 @@ class ValidateQuery : public td::actor::Actor {
    public:
     struct Context {
       std::vector<std::tuple<Bits256, LogicalTime, LogicalTime>> msg_proc_lt{};
+      std::vector<NativeTransferPair> native_transfer_debits{};
+      std::vector<NativeTransferPair> native_transfer_credits{};
       block::CurrencyCollection total_burned{0};
       std::vector<std::tuple<Bits256, Bits256, bool>> lib_publishers{};
       bool defer_all_messages = false;
@@ -454,6 +460,7 @@ class ValidateQuery : public td::actor::Actor {
   bool check_transactions();
   bool check_all_ticktock_processed();
   bool check_message_processing_order();
+  bool check_native_transfer_pairs();
   bool check_special_message(Ref<vm::Cell> in_msg_root, const block::CurrencyCollection& amount,
                              Ref<vm::Cell> addr_cell);
   bool check_special_messages();

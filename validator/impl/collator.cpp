@@ -4311,6 +4311,10 @@ td::actor::Task<bool> Collator::process_inbound_external_messages() {
  *           1 if the message was processed.
  */
 int Collator::process_external_message(Ref<vm::Cell> msg) {
+  auto native_transfer_res = block::NativeTransfer::unpack_external(msg);
+  if (native_transfer_res.is_ok()) {
+    return process_native_transfer(native_transfer_res.move_as_ok());
+  }
   auto cs = load_cell_slice(msg);
   td::RefInt256 fwd_fees;
   block::gen::CommonMsgInfo::Record_ext_in_msg_info info;
@@ -4343,6 +4347,112 @@ int Collator::process_external_message(Ref<vm::Cell> msg) {
   if (!insert_in_msg(std::move(in_msg))) {
     return -1;
   }
+  return 1;
+}
+
+int Collator::process_native_transfer(const block::NativeTransfer& transfer) {
+  if (workchain() != basechainId) {
+    return 0;
+  }
+  if (!is_our_address(transfer.src) || !is_our_address(transfer.dst)) {
+    LOG(DEBUG) << "native transfer " << transfer.src.to_hex() << " -> " << transfer.dst.to_hex()
+               << " is outside this shard";
+    return 0;
+  }
+
+  auto src_acc_res = make_account(transfer.src.cbits(), false);
+  if (src_acc_res.is_error()) {
+    fatal_error(src_acc_res.move_as_error());
+    return -1;
+  }
+  block::Account* src_acc = src_acc_res.move_as_ok();
+  if (!src_acc) {
+    LOG(DEBUG) << "native transfer source account does not exist: " << transfer.src.to_hex();
+    return 0;
+  }
+  auto dst_acc_res = make_account(transfer.dst.cbits(), true);
+  if (dst_acc_res.is_error()) {
+    fatal_error(dst_acc_res.move_as_error());
+    return -1;
+  }
+  block::Account* dst_acc = dst_acc_res.move_as_ok();
+  CHECK(dst_acc);
+  if (dst_acc->status != block::Account::acc_uninit && dst_acc->status != block::Account::acc_nonexist) {
+    LOG(DEBUG) << "native transfer destination account must be balance-only: " << transfer.dst.to_hex();
+    return 0;
+  }
+
+  LogicalTime debit_after_lt = std::max(start_lt, last_proc_int_msg_.first);
+  auto src_dispatch_it = last_dispatch_queue_emitted_lt_.find(src_acc->addr);
+  if (src_dispatch_it != last_dispatch_queue_emitted_lt_.end()) {
+    debit_after_lt = std::max(debit_after_lt, src_dispatch_it->second);
+  }
+
+  set_current_tx_storage_dict(*src_acc);
+  auto debit = std::make_unique<block::transaction::Transaction>(
+      *src_acc, block::transaction::Transaction::tr_native_transfer_debit, debit_after_lt + 1, now_);
+  if (!debit->prepare_native_transfer_debit(transfer)) {
+    LOG(DEBUG) << "native transfer debit rejected by source account " << transfer.src.to_hex();
+    return 0;
+  }
+  if (!debit->serialize(serialize_cfg_)) {
+    fatal_error("cannot serialize native transfer debit transaction");
+    return -1;
+  }
+  if (!debit->update_limits(*block_limit_status_, /* with_gas = */ false)) {
+    fatal_error("cannot update block limit status to include native transfer debit");
+    return -1;
+  }
+  const auto debit_lt = debit->start_lt;
+  const auto debit_end_lt = debit->end_lt;
+  auto debit_root = debit->commit(*src_acc);
+  if (debit_root.is_null()) {
+    fatal_error("cannot commit native transfer debit transaction");
+    return -1;
+  }
+  if (!update_account_dict_estimation(*debit)) {
+    fatal_error("cannot update account dict size estimation for native transfer debit");
+    return -1;
+  }
+  update_account_storage_dict_info(*debit);
+  update_max_lt(src_acc->last_trans_end_lt_);
+  value_flow_.burned += debit->blackhole_burned;
+  ++stats_.transactions;
+
+  block::NativeTransferCredit credit{transfer.src, debit_lt, transfer.amount};
+  LogicalTime credit_after_lt = debit_end_lt;
+  auto dst_dispatch_it = last_dispatch_queue_emitted_lt_.find(dst_acc->addr);
+  if (dst_dispatch_it != last_dispatch_queue_emitted_lt_.end()) {
+    credit_after_lt = std::max(credit_after_lt, dst_dispatch_it->second);
+  }
+  set_current_tx_storage_dict(*dst_acc);
+  auto credit_trans = std::make_unique<block::transaction::Transaction>(
+      *dst_acc, block::transaction::Transaction::tr_native_transfer_credit, credit_after_lt, now_);
+  if (!credit_trans->prepare_native_transfer_credit(credit)) {
+    fatal_error("native transfer credit rejected by destination account "s + transfer.dst.to_hex());
+    return -1;
+  }
+  if (!credit_trans->serialize(serialize_cfg_)) {
+    fatal_error("cannot serialize native transfer credit transaction");
+    return -1;
+  }
+  if (!credit_trans->update_limits(*block_limit_status_, /* with_gas = */ false)) {
+    fatal_error("cannot update block limit status to include native transfer credit");
+    return -1;
+  }
+  auto credit_root = credit_trans->commit(*dst_acc);
+  if (credit_root.is_null()) {
+    fatal_error("cannot commit native transfer credit transaction");
+    return -1;
+  }
+  if (!update_account_dict_estimation(*credit_trans)) {
+    fatal_error("cannot update account dict size estimation for native transfer credit");
+    return -1;
+  }
+  update_account_storage_dict_info(*credit_trans);
+  update_max_lt(dst_acc->last_trans_end_lt_);
+  value_flow_.burned += credit_trans->blackhole_burned;
+  ++stats_.transactions;
   return 1;
 }
 
@@ -6511,11 +6621,26 @@ td::Status Collator::register_external_message(Ref<ExtMessage> ext_msg, int prio
   if (ext_msg_cell->get_level() != 0) {
     return td::Status::Error("external message must have zero level");
   }
+  Bits256 hash{ext_msg_cell->get_hash().bits()};
   vm::CellSlice cs{vm::NoVmOrd{}, ext_msg_cell};
+  if (cs.prefetch_ulong(32) == block::NativeTransfer::magic) {
+    if (registered_ext_msgs_.contains(hash)) {
+      return td::Status::Error("external message has been registered before");
+    }
+    TRY_RESULT(transfer, block::NativeTransfer::unpack_external(ext_msg_cell));
+    TRY_STATUS(transfer.verify_signature());
+    if (!ton::shard_contains(shard_, ton::extract_addr_prefix(basechainId, transfer.src))) {
+      return td::Status::Error("native transfer source address is not in this shard");
+    }
+    if (!ton::shard_contains(shard_, ton::extract_addr_prefix(basechainId, transfer.dst))) {
+      return td::Status::Error("native transfer destination address is not in this shard");
+    }
+    registered_ext_msgs_.insert(hash);
+    return td::Status::OK();
+  }
   if (cs.prefetch_ulong(2) != 2) {  // ext_in_msg_info$10
     return td::Status::Error("external message must begin with ext_in_msg_info$10");
   }
-  Bits256 hash{ext_msg_cell->get_hash().bits()};
   if (registered_ext_msgs_.contains(hash)) {
     return td::Status::Error("external message has been registered before");
   }

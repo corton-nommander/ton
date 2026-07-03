@@ -1,0 +1,37 @@
+#!/usr/bin/fift -s
+"TonUtil.fif" include
+
+{ ."usage: " $0 type ." <workchain-id> [<filename-base>]" cr
+  ."Creates a native-transfer wallet key/address pair." cr
+  ."The account id is the Ed25519 public key; no StateInit or wallet contract is generated." cr
+  ."Private key is saved to or loaded from <filename-base>.pk ('new-native-wallet.pk' by default)." cr
+  1 halt
+} : usage
+
+$# 1 < $# 2 > or ' usage if
+
+2 :$1..n
+$1 parse-workchain-id =: wc
+$2 "new-native-wallet" replace-if-null =: file-base
+
+wc Basechain <> abort"native transfer wallets are currently supported only in basechain workchain 0"
+
+."Creating native-transfer wallet in workchain " wc . cr
+
+file-base +".pk" load-generate-keypair
+drop  // private key is saved/loaded by load-generate-keypair
+dup constant wallet_pubkey
+256 B>u@ constant wallet_addr
+
+."Native wallet public key = " wallet_addr pubkey>$ type cr
+."Native wallet account = " Basechain wallet_addr .addr cr
+
+."(Saving address to file " file-base +".addr" type .")" cr
+Basechain wallet_addr file-base +".addr" save-address
+
+."(Saving raw public key to file " file-base +".pub" type .")" cr
+wallet_pubkey file-base +".pub" B>file
+
+."Non-bounceable address: " Basechain wallet_addr 7 .Addr cr
+."Bounceable address: " Basechain wallet_addr 6 .Addr cr
+."Fund this exact address as a balance-only account before sending native transfers." cr

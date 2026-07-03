@@ -1,0 +1,108 @@
+#!/usr/bin/fift -s
+"TonUtil.fif" include
+"GetOpt.fif" include
+
+0 =: fee
+60 =: timeout
+0 =: valid_until
+false =: valid_until_set
+
+{ 32 u>B B+ } : +u32-bytes
+{ 64 u>B B+ } : +u64-bytes
+{ 256 u>B B+ } : +u256-bytes
+
+{ dup 0< abort"uint64 value must be non-negative"
+  dup 64 ufits not abort"uint64 value does not fit into 64 bits"
+} : check-u64
+
+{ dup 0< abort"uint32 value must be non-negative"
+  dup 32 ufits not abort"uint32 value does not fit into 32 bits"
+} : check-u32
+
+{ show-options-help 1 halt } : usage
+
+begin-options
+     " <filename-base> <dest-addr> <nonce> <amount> [-f <fee>] [-t <timeout>|-u <unix-time>] [<savefile>]" +cr +tab
+    +"Creates a signed native-transfer external message with private key loaded from <filename-base>.pk. "
+    +"The message is consumed by the native fast path and produces trans_native_transfer_debit plus "
+    +"trans_native_transfer_credit; no TVM wallet contract, action phase, bounce phase, or generated messages are used."
+    disable-digit-options generic-help-setopt
+  "f" "--fee" { $>GR =: fee } short-long-option-arg
+    "Sets protocol fee in grams/nanograms syntax (0 by default)" option-help
+  "t" "--timeout" { parse-int =: timeout } short-long-option-arg
+    "Sets expiration timeout in seconds (" timeout (.) $+ +" by default)" option-help
+  "u" "--valid-until" { parse-int =: valid_until true =: valid_until_set } short-long-option-arg
+    "Sets absolute Unix expiration time instead of timeout" option-help
+  "h" "--help" { usage } short-long-option
+    "Shows a help message" option-help
+parse-options
+
+$# dup 4 < swap 5 > or ' usage if
+5 :$1..n
+
+$1 =: file-base
+$2 false parse-load-address drop =: dst_addr =: dst_wc
+$3 parse-int =: nonce
+$4 $>GR =: amount
+$5 "native-transfer-query" replace-if-null =: savefile
+
+dst_wc Basechain <> abort"native transfer destination must be in basechain workchain 0"
+amount 0<= abort"amount must be positive"
+amount check-u64 drop
+fee check-u64 drop
+nonce check-u64 drop
+
+valid_until_set not { now timeout + =: valid_until } if
+valid_until now <= abort"valid_until must be in the future"
+valid_until check-u32 drop
+
+file-base +".pk" load-keypair
+constant wallet_pk
+dup constant wallet_pubkey
+256 B>u@ constant src_addr
+
+file-base +".addr" dup file-exists? {
+  load-address
+  over Basechain <> abort"stored source address must be in basechain workchain 0"
+  nip src_addr <> abort"stored source address does not match private key public key"
+} {
+  drop
+} cond
+
+B{} 0x4e545846 +u32-bytes
+    src_addr +u256-bytes
+    dst_addr +u256-bytes
+    amount +u64-bytes
+    fee +u64-bytes
+    nonce +u64-bytes
+    valid_until +u32-bytes
+dup Blen 96 <> abort"internal error: native transfer signing payload must be 96 bytes"
+constant signing_payload
+
+signing_payload wallet_pk ed25519_sign
+dup Blen 64 <> abort"internal error: native transfer signature must be 64 bytes"
+constant signature
+
+signing_payload signature wallet_pubkey ed25519_chksign not abort"native transfer signature self-check failed"
+
+<b signature B, b> constant signature_cell
+
+<b 0x4e545846 32 u,
+   src_addr 256 u,
+   dst_addr 256 u,
+   amount 64 u,
+   fee 64 u,
+   nonce 64 u,
+   valid_until 32 u,
+   signature_cell ref,
+b> constant transfer_cell
+
+."Source native account = " Basechain src_addr .addr cr
+."Destination native account = " Basechain dst_addr .addr cr
+."Amount = " amount .GR ."Fee = " fee .GR
+."Nonce = " nonce . ."valid_until = " valid_until . cr
+."Native transfer external message: " transfer_cell <s csr. cr
+
+transfer_cell 2 boc+>B dup Bx. cr
+savefile +".boc" tuck B>file
+."(Saved native transfer query to file " type .")" cr

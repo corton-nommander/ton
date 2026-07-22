@@ -90,22 +90,27 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
     }
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const StopRequested>) {
     stop();
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const NoncriticalParamsUpdated> event) {
     params_ = event->params;
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const FinalizationObserved> event) {
     state_->notify_finalized(event->id.slot);
   }
 
+  template <>
   void handle(BusHandle bus, std::shared_ptr<const NotarizationObserved> event) {
     process_notarization_observed(bus, event).start().detach();
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const LeaderWindowObserved> event) {
     auto& bus = *owning_bus();
     td::uint32 new_window = event->start_slot / slots_per_leader_window_;
@@ -149,6 +154,7 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
     timeout_slot_ = window_end;
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const CandidateReceived> event) {
     td::uint32 slot_idx = event->candidate->id.slot;
     td::uint32 first_too_new_slot = (current_window_ + params_.max_leader_window_desync + 1) * slots_per_leader_window_;

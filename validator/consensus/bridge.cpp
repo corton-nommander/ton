@@ -152,14 +152,17 @@ class BlockSyncObserver : public td::actor::SpawnsWith<Bus>, public td::actor::C
  public:
   TON_RUNTIME_DEFINE_EVENT_HANDLER();
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const StopRequested>) {
     stop();
   }
 
+  template <>
   td::actor::Task<> process(BusHandle, std::shared_ptr<PrecheckCandidateBroadcast>) {
     co_return {};
   }
 
+  template <>
   void handle(BusHandle bus, std::shared_ptr<const CandidateReceived> event) {
     if (event->candidate->is_empty()) {
       return;

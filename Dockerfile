@@ -1,5 +1,6 @@
 FROM ubuntu:22.04 AS builder
 ARG DEBIAN_FRONTEND=noninteractive
+ARG NINJA_JOBS=2
 RUN apt-get update && \
         rm /var/lib/dpkg/info/libc-bin.* && \
         apt-get clean && \
@@ -27,7 +28,7 @@ COPY ./ ./
 RUN mkdir build && \
         cd build && \
         cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DPORTABLE=1 -DTON_ARCH= -DTON_USE_JEMALLOC=ON .. && \
-        ninja storage-daemon storage-daemon-cli tonlibjson fift func validator-engine validator-engine-console \
+        ninja -j "${NINJA_JOBS}" storage-daemon storage-daemon-cli tonlibjson fift func validator-engine validator-engine-console \
     generate-random-id dht-server lite-client tolk rldp-http-proxy dht-server proxy-liteserver create-state \
     blockchain-explorer emulator tonlibjson http-proxy dht-ping-servers dht-resolve
 

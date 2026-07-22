@@ -364,14 +364,17 @@ class PoolImpl : public td::actor::SpawnsWith<Bus>, public td::actor::ConnectsTo
     standstill_resolution_notification_.set_error(td::Status::Error(ErrorCode::cancelled, "cancelled"));
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const StopRequested>) {
     stop();
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const NoncriticalParamsUpdated> event) {
     params_ = event->params;
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const Start>) {
     auto &bus = *owning_bus();
     owning_bus().publish<TraceEvent>(
@@ -383,6 +386,7 @@ class PoolImpl : public td::actor::SpawnsWith<Bus>, public td::actor::ConnectsTo
     advance_present();
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const IncomingProtocolMessage> message) {
     if (is_banned(message->source)) {
       LOG(WARNING) << "Dropping message from temporarily banned misbehaving " << message->source;
@@ -465,10 +469,12 @@ class PoolImpl : public td::actor::SpawnsWith<Bus>, public td::actor::ConnectsTo
     }
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const BroadcastVote> event) {
     handle_our_vote(event->vote).start().detach();
   }
 
+  template <>
   td::actor::Task<std::optional<MisbehaviorRef>> process(BusHandle, std::shared_ptr<WaitForParent> request) {
     const auto &candidate = request->candidate;
     CHECK(!candidate->parent_id.has_value() || candidate->parent_id->slot < candidate->id.slot);
@@ -534,6 +540,7 @@ class PoolImpl : public td::actor::SpawnsWith<Bus>, public td::actor::ConnectsTo
   }
 
   // FIXME: This should probably live in another actor.
+  template <>
   td::actor::Task<> process(BusHandle, std::shared_ptr<PrecheckCandidateBroadcast> query) {
     if (query->slot < first_nonfinalized_slot_) {
       co_return td::Status::Error("Slot is already finalized");

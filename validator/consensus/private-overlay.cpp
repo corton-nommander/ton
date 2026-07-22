@@ -73,11 +73,13 @@ class PrivateOverlayImpl : public td::actor::SpawnsWith<Bus>, public td::actor::
                             std::move(options));
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const StopRequested>) {
     td::actor::send_closure(overlays_, &overlay::Overlays::delete_overlay, local_id_.adnl_id, overlay_id_);
     stop();
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const OutgoingProtocolMessage> message) {
     auto send_to_peer = [&](const adnl::AdnlNodeIdShort& adnl_id) {
       if (adnl_id == local_id_.adnl_id) {
@@ -97,6 +99,7 @@ class PrivateOverlayImpl : public td::actor::SpawnsWith<Bus>, public td::actor::
     }
   }
 
+  template <>
   td::actor::Task<ProtocolMessage> process(BusHandle, std::shared_ptr<OutgoingOverlayRequest> message) {
     auto [awaiter, promise] = td::actor::StartedTask<td::BufferSlice>::make_bridge();
     auto dst = message->destination.get_using(*owning_bus()).adnl_id;
@@ -112,6 +115,7 @@ class PrivateOverlayImpl : public td::actor::SpawnsWith<Bus>, public td::actor::
     co_return ProtocolMessage{std::move(response)};
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const CandidateGenerated> event) {
     if (owning_bus()->config.enable_observers) {
       return;

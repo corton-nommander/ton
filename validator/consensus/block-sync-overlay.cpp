@@ -65,11 +65,13 @@ class BlockSyncOverlayImpl : public td::actor::SpawnsWith<Bus>, public td::actor
                             std::move(options));
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const StopRequested>) {
     td::actor::send_closure(overlays_, &overlay::Overlays::delete_overlay, local_adnl_id_, overlay_id_);
     stop();
   }
 
+  template <>
   void handle(BusHandle, std::shared_ptr<const CandidateGenerated> event) {
     td::BufferSlice extra = create_serialize_tl_object<tl::broadcastExtra>(event->candidate->id.slot);
     td::actor::send_closure(overlays_, &overlay::Overlays::send_broadcast_fec_with_extra, local_adnl_id_, overlay_id_,

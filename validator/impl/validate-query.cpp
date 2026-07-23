@@ -5969,7 +5969,7 @@ bool ValidateQuery::CheckAccountTxs::check_one_transaction(block::Account& accou
                                     << addr.to_hex());
       break;
     }
-    case block::tlb::TransactionDescr::trans_native_transfer_debit: {
+    case block::gen::TransactionDescr::trans_native_transfer_debit: {
       trans_type = block::transaction::Transaction::tr_native_transfer_debit;
       if (in_msg_root.not_null()) {
         return reject_query(PSTRING() << "native transfer debit transaction " << lt << " of account " << addr.to_hex()
@@ -5991,7 +5991,7 @@ bool ValidateQuery::CheckAccountTxs::check_one_transaction(block::Account& accou
       ctx_.native_transfer_debits.emplace_back(addr, native_transfer.value().dst, lt, native_transfer.value().amount);
       break;
     }
-    case block::tlb::TransactionDescr::trans_native_transfer_credit: {
+    case block::gen::TransactionDescr::trans_native_transfer_credit: {
       trans_type = block::transaction::Transaction::tr_native_transfer_credit;
       if (in_msg_root.not_null()) {
         return reject_query(PSTRING() << "native transfer credit transaction " << lt << " of account " << addr.to_hex()

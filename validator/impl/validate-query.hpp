@@ -311,6 +311,9 @@ class ValidateQuery : public td::actor::Actor {
   bool is_masterchain() const {
     return shard_.is_masterchain();
   }
+  bool use_native_fast_path() const {
+    return workchain() == basechainId && global_version_ >= 14;
+  }
   int prev_block_idx(const BlockIdExt& id) const {
     for (size_t i = 0; i < prev_blocks.size(); ++i) {
       if (prev_blocks[i] == id) {

@@ -952,6 +952,30 @@ bool Collator::request_neighbor_msg_queues() {
     }
     neighbors_.emplace_back(*shard_ptr);
   }
+  if (use_native_fast_path()) {
+    LOG(INFO) << "native fast path: skipping neighbor OutMsgQueue proof requests";
+    stats_.neighbors.resize(neighbors_.size());
+    for (std::size_t i = 0; i < neighbors_.size(); ++i) {
+      auto& descr = neighbors_[i];
+      auto& neighbor_stats = stats_.neighbors[i];
+      neighbor_stats.shard = descr.shard();
+      neighbor_stats.is_trivial = shard_intersects(descr.shard(), shard_);
+      neighbor_stats.is_local = true;
+      neighbor_stats.msg_limit = -1;
+      if (prev_block_idx(descr.blk_) >= 0) {
+        descr.set_queue_root(out_msg_queue_->get_root_cell());
+        descr.processed_upto = processed_upto_;
+        continue;
+      }
+      if (!descr.blk_.seqno() && descr.shard() == shard_) {
+        descr.set_queue_root(out_msg_queue_->get_root_cell());
+        descr.processed_upto = processed_upto_;
+        continue;
+      }
+      return fatal_error("native fast path does not support non-local neighbor message queues");
+    }
+    return true;
+  }
   std::vector<BlockIdExt> top_blocks;
   unsigned i = 0;
   for (block::McShardDescr& descr : neighbors_) {
@@ -979,6 +1003,14 @@ bool Collator::request_neighbor_msg_queues() {
 * @returns True if the request was successful, false otherwise.
  */
 bool Collator::request_out_msg_queue_size() {
+  if (use_native_fast_path()) {
+    if (!out_msg_queue_->is_empty()) {
+      return fatal_error("native fast path requires an empty outbound message queue");
+    }
+    out_msg_queue_size_ = 0;
+    have_out_msg_queue_size_in_state_ = true;
+    return true;
+  }
   if (have_out_msg_queue_size_in_state_) {
     // if after_split then have_out_msg_queue_size_in_state_ is always true, since the size is calculated during split
     return true;
@@ -2268,6 +2300,9 @@ bool Collator::compute_minted_amount(block::CurrencyCollection& to_mint) {
 }
 
 bool Collator::create_output_queue_merger() {
+  if (use_native_fast_path()) {
+    return true;
+  }
   std::vector<block::OutputQueueMerger::Neighbor> neighbor_queues;
   for (const auto& descr : neighbors_) {
     auto it = neighbor_msg_queues_limits_.find(descr.shard());
@@ -2512,6 +2547,13 @@ bool Collator::out_msg_queue_cleanup() {
   SCOPE_EXIT {
     stats_.load_fraction_queue_cleanup = block_limit_status_->load_fraction(block::ParamLimits::cl_normal);
   };
+  if (use_native_fast_path()) {
+    if (!out_msg_queue_->is_empty()) {
+      return fatal_error("native fast path requires an empty outbound message queue");
+    }
+    stats_.msg_queue_cleaned = 0;
+    return true;
+  }
   LOG(INFO) << "cleaning outbound queue from messages already imported by neighbors";
   if (verbosity >= 2) {
     FLOG(INFO) {
@@ -3748,6 +3790,9 @@ bool Collator::enqueue_transit_message(Ref<vm::Cell> msg, Ref<vm::Cell> old_msg_
                                        ton::AccountIdPrefixFull dest_prefix, td::RefInt256 fwd_fee_remaining,
                                        td::optional<block::MsgMetadata> msg_metadata,
                                        td::optional<LogicalTime> emitted_lt, bool from_dispatch_queue) {
+  if (use_native_fast_path()) {
+    return fatal_error("native fast path forbids transit messages");
+  }
   if (from_dispatch_queue) {
     CHECK(emitted_lt);
     LOG(DEBUG) << "enqueueing message from dispatch queue " << msg->get_hash().bits().to_hex(256)
@@ -4097,6 +4142,10 @@ bool Collator::process_inbound_internal_messages() {
   SCOPE_EXIT {
     stats_.load_fraction_internals = block_limit_status_->load_fraction(block::ParamLimits::cl_normal);
   };
+  if (use_native_fast_path()) {
+    inbound_queues_empty_ = true;
+    return true;
+  }
   while (!nb_out_msgs_->is_eof()) {
     block_full_ = !block_limit_status_->fits(block::ParamLimits::cl_normal);
     auto kv = nb_out_msgs_->extract_cur();
@@ -4315,6 +4364,10 @@ int Collator::process_external_message(Ref<vm::Cell> msg) {
   if (native_transfer_res.is_ok()) {
     return process_native_transfer(native_transfer_res.move_as_ok());
   }
+  if (use_native_fast_path()) {
+    LOG(DEBUG) << "native fast path rejected non-native external message";
+    return 0;
+  }
   auto cs = load_cell_slice(msg);
   td::RefInt256 fwd_fees;
   block::gen::CommonMsgInfo::Record_ext_in_msg_info info;
@@ -4470,6 +4523,13 @@ bool Collator::process_dispatch_queue() {
   SCOPE_EXIT {
     stats_.load_fraction_dispatch = block_limit_status_->load_fraction(block::ParamLimits::cl_normal);
   };
+  if (use_native_fast_path()) {
+    if (!dispatch_queue_->is_empty()) {
+      return fatal_error("native fast path requires an empty dispatch queue");
+    }
+    have_unprocessed_account_dispatch_queue_ = false;
+    return true;
+  }
   if (out_msg_queue_size_ > defer_out_queue_size_limit_ && old_out_msg_queue_size_ > hard_defer_out_queue_size_limit_) {
     return true;
   }
@@ -4828,6 +4888,9 @@ bool Collator::insert_out_msg(Ref<vm::Cell> out_msg, td::ConstBitPtr msg_hash) {
  */
 bool Collator::enqueue_message(block::NewOutMsg msg, td::RefInt256 fwd_fees_remaining, StdSmcAddress src_addr,
                                bool defer) {
+  if (use_native_fast_path()) {
+    return fatal_error("native fast path forbids generated outbound messages");
+  }
   LogicalTime enqueued_lt = msg.lt;
   CHECK(msg.msg_env_from_dispatch_queue.is_null());
   // 0. unpack src_addr and dest_addr
@@ -4932,6 +4995,9 @@ bool Collator::process_new_messages(bool& enqueue_only) {
   SCOPE_EXIT {
     stats_.load_fraction_new_msgs = block_limit_status_->load_fraction(block::ParamLimits::cl_normal);
   };
+  if (use_native_fast_path()) {
+    return new_msgs.empty() || fatal_error("native fast path forbids newly-generated messages");
+  }
   while (!new_msgs.empty()) {
     block::NewOutMsg msg = new_msgs.top();
     new_msgs.pop();
@@ -5771,6 +5837,9 @@ bool Collator::update_min_mc_seqno(ton::BlockSeqno some_mc_seqno) {
  * @returns True if the operation was successfully registered, false otherwise.
  */
 bool Collator::register_out_msg_queue_op(bool force) {
+  if (use_native_fast_path()) {
+    return true;
+  }
   ++out_msg_queue_ops_;
   if (force || !(out_msg_queue_ops_ & 63)) {
     return block_limit_status_->add_proof(out_msg_queue_->get_root_cell());
@@ -5788,6 +5857,9 @@ bool Collator::register_out_msg_queue_op(bool force) {
  * @returns True if the operation was successfully registered, false otherwise.
  */
 bool Collator::register_dispatch_queue_op(bool force) {
+  if (use_native_fast_path()) {
+    return true;
+  }
   ++dispatch_queue_ops_;
   if (force || !(dispatch_queue_ops_ & 63)) {
     return block_limit_status_->add_proof(dispatch_queue_->get_root_cell());
@@ -5930,6 +6002,9 @@ bool Collator::store_master_ref(vm::CellBuilder& cb) {
 bool Collator::update_processed_upto() {
   auto ref_mc_seqno = is_masterchain() ? new_block_seqno : prev_mc_block_seqno;
   update_min_mc_seqno(ref_mc_seqno);
+  if (use_native_fast_path()) {
+    return processed_upto_->compactify();
+  }
   if (last_proc_int_msg_.first) {
     if (!processed_upto_->insert(ref_mc_seqno, last_proc_int_msg_.first, last_proc_int_msg_.second.cbits())) {
       return fatal_error("cannot update our ProcessedUpto to reflect processed inbound message");
@@ -5949,6 +6024,14 @@ bool Collator::update_processed_upto() {
  * @returns True if the computation is successful, False otherwise.
  */
 bool Collator::compute_out_msg_queue_info(Ref<vm::Cell>& out_msg_queue_info) {
+  if (use_native_fast_path()) {
+    if (!out_msg_queue_->is_empty()) {
+      return fatal_error("native fast path requires an empty outbound message queue");
+    }
+    if (!dispatch_queue_->is_empty()) {
+      return fatal_error("native fast path requires an empty dispatch queue");
+    }
+  }
   if (verbosity >= 2) {
     FLOG(INFO) {
       auto rt = out_msg_queue_->get_root();

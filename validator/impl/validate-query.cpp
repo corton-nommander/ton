@@ -1663,6 +1663,27 @@ bool ValidateQuery::request_neighbor_queues() {
     }
     neighbors_.emplace_back(*shard_ptr);
   }
+  if (use_native_fast_path()) {
+    LOG(INFO) << "native fast path: skipping neighbor OutMsgQueue proof requests during validation";
+    for (block::McShardDescr& descr : neighbors_) {
+      if (prev_block_idx(descr.blk_) >= 0) {
+        REJECT_UNLESS(ps_.out_msg_queue_);
+        REJECT_UNLESS(ps_.processed_upto_);
+        descr.set_queue_root(ps_.out_msg_queue_->get_root_cell());
+        descr.processed_upto = ps_.processed_upto_;
+        continue;
+      }
+      if (!descr.blk_.seqno() && descr.shard() == shard_) {
+        REJECT_UNLESS(ps_.out_msg_queue_);
+        REJECT_UNLESS(ps_.processed_upto_);
+        descr.set_queue_root(ps_.out_msg_queue_->get_root_cell());
+        descr.processed_upto = ps_.processed_upto_;
+        continue;
+      }
+      return reject_query("native fast path does not support non-local neighbor message queues");
+    }
+    return true;
+  }
   int i = 0;
   if (full_collated_data_) {
     for (block::McShardDescr& descr : neighbors_) {
@@ -2444,6 +2465,16 @@ bool ValidateQuery::check_utime_lt() {
  * @returns True if the request was successful, false otherwise.
  */
 bool ValidateQuery::prepare_out_msg_queue_size() {
+  if (use_native_fast_path()) {
+    REJECT_UNLESS(ps_.out_msg_queue_);
+    if (!ps_.out_msg_queue_->is_empty()) {
+      return reject_query("native fast path requires an empty previous outbound message queue");
+    }
+    old_out_msg_queue_size_ = 0;
+    out_msg_queue_size_known_ = true;
+    have_out_msg_queue_size_in_state_ = true;
+    return true;
+  }
   if (ps_.out_msg_queue_size_) {
     // if after_split then out_msg_queue_size is always present, since it is calculated during split
     old_out_msg_queue_size_ = ps_.out_msg_queue_size_.value();
@@ -3526,6 +3557,22 @@ bool ValidateQuery::precheck_one_message_queue_update(td::ConstBitPtr out_msg_id
  */
 bool ValidateQuery::precheck_message_queue_update() {
   LOG(INFO) << "pre-checking the difference between the old and the new outbound message queues";
+  if (use_native_fast_path()) {
+    REJECT_UNLESS(ps_.out_msg_queue_);
+    REJECT_UNLESS(ns_.out_msg_queue_);
+    if (!ps_.out_msg_queue_->is_empty() || !ns_.out_msg_queue_->is_empty()) {
+      return reject_query("native fast path requires empty outbound message queues");
+    }
+    new_out_msg_queue_size_ = 0;
+    if (store_out_msg_queue_size_) {
+      if (!ns_.out_msg_queue_size_ || ns_.out_msg_queue_size_.value() != 0) {
+        return reject_query("native fast path requires outbound message queue size 0 in the new state");
+      }
+    } else if (ns_.out_msg_queue_size_) {
+      return reject_query("outbound message queue size in the new state is present, but shouldn't");
+    }
+    return true;
+  }
   try {
     REJECT_UNLESS(ps_.out_msg_queue_);
     REJECT_UNLESS(ns_.out_msg_queue_);
@@ -3708,6 +3755,15 @@ bool ValidateQuery::check_account_dispatch_queue_update(td::Bits256 addr, Ref<vm
  */
 bool ValidateQuery::unpack_dispatch_queue_update() {
   LOG(INFO) << "checking the difference between the old and the new dispatch queues";
+  if (use_native_fast_path()) {
+    REJECT_UNLESS(ps_.dispatch_queue_);
+    REJECT_UNLESS(ns_.dispatch_queue_);
+    if (!ps_.dispatch_queue_->is_empty() || !ns_.dispatch_queue_->is_empty()) {
+      return reject_query("native fast path requires empty dispatch queues");
+    }
+    have_unprocessed_account_dispatch_queue_ = false;
+    return true;
+  }
   try {
     REJECT_UNLESS(ps_.dispatch_queue_);
     REJECT_UNLESS(ns_.dispatch_queue_);
@@ -4411,6 +4467,13 @@ bool ValidateQuery::check_in_msg(td::ConstBitPtr key, Ref<vm::CellSlice> in_msg)
  */
 bool ValidateQuery::check_in_msg_descr() {
   LOG(INFO) << "checking inbound messages listed in InMsgDescr";
+  if (use_native_fast_path()) {
+    REJECT_UNLESS(in_msg_dict_);
+    if (!in_msg_dict_->is_empty()) {
+      return reject_query("native fast path forbids InMsgDescr records");
+    }
+    return true;
+  }
   try {
     REJECT_UNLESS(in_msg_dict_);
     if (!in_msg_dict_->validate_check_extra(
@@ -5073,6 +5136,13 @@ bool ValidateQuery::check_out_msg(td::ConstBitPtr key, Ref<vm::CellSlice> out_ms
  */
 bool ValidateQuery::check_out_msg_descr() {
   LOG(INFO) << "checking outbound messages listed in OutMsgDescr";
+  if (use_native_fast_path()) {
+    REJECT_UNLESS(out_msg_dict_);
+    if (!out_msg_dict_->is_empty()) {
+      return reject_query("native fast path forbids OutMsgDescr records");
+    }
+    return true;
+  }
   try {
     REJECT_UNLESS(out_msg_dict_);
     if (!out_msg_dict_->validate_check_extra(
@@ -5099,6 +5169,20 @@ bool ValidateQuery::check_processed_upto() {
   LOG(INFO) << "checking ProcessedInfo";
   REJECT_UNLESS(ps_.processed_upto_);
   REJECT_UNLESS(ns_.processed_upto_);
+  if (use_native_fast_path()) {
+    if (!ns_.processed_upto_->is_reduced()) {
+      return reject_query("new ProcessedInfo is not reduced (some entries completely cover other entries)");
+    }
+    bool ok = false;
+    auto upd = ns_.processed_upto_->is_simple_update_of(*ps_.processed_upto_, ok);
+    if (!ok || upd != nullptr) {
+      return reject_query("native fast path requires ProcessedInfo to remain unchanged");
+    }
+    processed_upto_updated_ = false;
+    claimed_proc_lt_ = 0;
+    claimed_proc_hash_.set_zero();
+    return true;
+  }
   if (!ns_.processed_upto_->is_reduced()) {
     return reject_query("new ProcessedInfo is not reduced (some entries completely cover other entries)");
   }
@@ -5327,6 +5411,9 @@ bool ValidateQuery::check_neighbor_outbound_message(Ref<vm::CellSlice> enq_msg, 
  * @returns True if the messages are valid, false otherwise.
  */
 bool ValidateQuery::check_in_queue() {
+  if (use_native_fast_path()) {
+    return true;
+  }
   int imported_messages_count = 0;
   in_msg_dict_->check_for_each_extra([&](Ref<vm::CellSlice> value, Ref<vm::CellSlice>, td::ConstBitPtr, int) {
     int tag = block::gen::t_InMsg.get_tag(*value);
@@ -5406,6 +5493,9 @@ bool ValidateQuery::check_in_queue() {
  * @returns True if the delivery status of all messages has been checked successfully, false otherwise.
  */
 bool ValidateQuery::check_delivered_dequeued() {
+  if (use_native_fast_path()) {
+    return true;
+  }
   LOG(INFO) << "scanning new outbound queue and checking delivery status of all messages";
   for (const auto& nb : neighbors_) {
     if (!nb.is_disabled() && (!nb.processed_upto || !nb.processed_upto->can_check_processed())) {

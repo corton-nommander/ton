@@ -18,6 +18,7 @@
 */
 #include "keys/encryptor.h"
 #include "td/utils/Random.h"
+#include "td/utils/misc.h"
 
 #include "adnl-local-id.h"
 #include "utils.hpp"
@@ -147,7 +148,10 @@ void AdnlLocalId::unsubscribe(std::string prefix) {
       it++;
     }
   }
-  LOG_CHECK(deleted) << this << ": cannot unsubscribe: prefix not found";
+  if (!deleted) {
+    VLOG(ADNL_WARNING) << this << ": unsubscribe skipped: prefix not found, prefix="
+                       << td::buffer_to_hex(td::Slice(prefix));
+  }
 }
 
 void AdnlLocalId::update_address_list(AdnlAddressList addr_list) {

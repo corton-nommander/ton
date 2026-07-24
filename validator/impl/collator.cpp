@@ -972,6 +972,34 @@ bool Collator::request_neighbor_msg_queues() {
         descr.processed_upto = processed_upto_;
         continue;
       }
+      if (descr.blk_.is_masterchain()) {
+        if (mc_state_.is_null()) {
+          return fatal_error("native fast path cannot initialize masterchain neighbor without masterchain state");
+        }
+        if (descr.blk_ != mc_state_->get_block_id()) {
+          return fatal_error("native fast path masterchain neighbor is not the current masterchain block");
+        }
+        auto outq_descr_res = mc_state_->message_queue();
+        if (outq_descr_res.is_error()) {
+          return fatal_error(outq_descr_res.move_as_error_prefix(
+              "native fast path cannot read masterchain neighbor message queue: "));
+        }
+        Ref<MessageQueue> outq_descr = outq_descr_res.move_as_ok();
+        if (outq_descr->get_block_id() != descr.blk_) {
+          return fatal_error(
+              -667, "native fast path masterchain neighbor message queue has mismatched block id");
+        }
+        block::gen::OutMsgQueueInfo::Record qinfo;
+        if (outq_descr->root_cell().is_null() || !tlb::unpack_cell(outq_descr->root_cell(), qinfo)) {
+          return fatal_error("native fast path cannot unpack masterchain neighbor output queue info");
+        }
+        descr.set_queue_root(qinfo.out_queue->prefetch_ref(0));
+        descr.processed_upto = block::MsgProcessedUptoCollection::unpack(descr.shard(), qinfo.proc_info);
+        if (!descr.processed_upto) {
+          return fatal_error("native fast path cannot unpack masterchain neighbor ProcessedUpto");
+        }
+        continue;
+      }
       return fatal_error("native fast path does not support non-local neighbor message queues");
     }
     return true;

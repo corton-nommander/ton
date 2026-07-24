@@ -1043,10 +1043,23 @@ bool AccountStorage::validate_skip(int* ops, vm::CellSlice& cs, bool weak) const
 
 const AccountStorage t_AccountStorage;
 
+static bool skip_account_none_tag(vm::CellSlice& cs) {
+  if (!cs.have(2)) {
+    return cs.advance(1);
+  }
+  return cs.prefetch_ulong(2) == 0 && cs.advance(2);
+}
+
+static bool store_native_account_balance(vm::CellBuilder& cb, td::uint64 balance) {
+  return block::CurrencyCollection{td::make_refint(balance)}.store(cb);
+}
+
 bool Account::skip(vm::CellSlice& cs) const {
   switch (get_tag(cs)) {
     case account_none:
-      return cs.advance(1);
+      return skip_account_none_tag(cs);
+    case account_native:
+      return cs.advance(2 + 64 + 64 + 8);   // account_native$01 balance:uint64 nonce:uint64 flags:uint8
     case account:
       return cs.advance(1)                  // account$1
              && t_MsgAddressInt.skip(cs)    // addr:MsgAddressInt
@@ -1059,7 +1072,9 @@ bool Account::skip(vm::CellSlice& cs) const {
 bool Account::validate_skip(int* ops, vm::CellSlice& cs, bool weak) const {
   switch (get_tag(cs)) {
     case account_none:
-      return allow_empty && cs.advance(1);
+      return allow_empty && skip_account_none_tag(cs);
+    case account_native:
+      return cs.advance(2 + 64 + 64 + 8);                   // account_native$01 ...
     case account:
       return cs.advance(1)                                      // account$1
              && t_MsgAddressInt.validate_skip(ops, cs, weak)    // addr:MsgAddressInt
@@ -1072,7 +1087,12 @@ bool Account::validate_skip(int* ops, vm::CellSlice& cs, bool weak) const {
 bool Account::skip_copy_balance(vm::CellBuilder& cb, vm::CellSlice& cs) const {
   switch (get_tag(cs)) {
     case account_none:
-      return allow_empty && cs.advance(1) && t_CurrencyCollection.null_value(cb);
+      return allow_empty && skip_account_none_tag(cs) && t_CurrencyCollection.null_value(cb);
+    case account_native: {
+      td::uint64 balance;
+      return cs.advance(2) && cs.fetch_uint_to(64, balance) && cs.advance(64 + 8) &&
+             store_native_account_balance(cb, balance);
+    }
     case account:
       return cs.advance(1)                                   // account$1
              && t_MsgAddressInt.skip(cs)                     // addr:MsgAddressInt
@@ -1086,7 +1106,12 @@ bool Account::skip_copy_depth_balance(vm::CellBuilder& cb, vm::CellSlice& cs) co
   int depth;
   switch (get_tag(cs)) {
     case account_none:
-      return allow_empty && cs.advance(1) && t_DepthBalanceInfo.null_value(cb);
+      return allow_empty && skip_account_none_tag(cs) && t_DepthBalanceInfo.null_value(cb);
+    case account_native: {
+      td::uint64 balance;
+      return cs.advance(2) && cs.fetch_uint_to(64, balance) && cs.advance(64 + 8) &&
+             cb.store_uint_leq(30, 0) && store_native_account_balance(cb, balance);
+    }
     case account:
       return cs.advance(1)                                   // account$1
              && t_MsgAddressInt.skip_get_depth(cs, depth)    // addr:MsgAddressInt
@@ -1114,7 +1139,7 @@ bool ShardAccount::Record::reset() {
   last_trans_lt = 0;
   is_zero = valid = true;
   vm::CellBuilder cb;
-  return (cb.store_bool_bool(false) && cb.finalize_to(account)) || invalidate();
+  return (cb.store_long_bool(0, 2) && cb.finalize_to(account)) || invalidate();
 }
 
 bool ShardAccount::Record::unpack(vm::CellSlice& cs) {

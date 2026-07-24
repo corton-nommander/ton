@@ -527,7 +527,7 @@ struct AccountStorage final : TLB_Complex {
 extern const AccountStorage t_AccountStorage;
 
 struct Account final : TLB_Complex {
-  enum { account_none = 0, account = 1 };
+  enum { account_none = 0, account_native = 1, account = 2 };
   bool allow_empty;
   Account(bool _allow_empty = false) : allow_empty(_allow_empty) {
   }
@@ -537,7 +537,17 @@ struct Account final : TLB_Complex {
   bool skip_copy_balance(vm::CellBuilder& cb, vm::CellSlice& cs) const;
   bool skip_copy_depth_balance(vm::CellBuilder& cb, vm::CellSlice& cs) const;
   int get_tag(const vm::CellSlice& cs) const override {
-    return (int)cs.prefetch_ulong(1);
+    auto tag = cs.prefetch_ulong(1);
+    if (tag < 0) {
+      return -1;
+    }
+    if (tag == 1) {
+      return account;
+    }
+    if (!cs.have(2)) {
+      return account_none;
+    }
+    return cs.prefetch_ulong(2) == 1 ? account_native : account_none;
   }
 };
 

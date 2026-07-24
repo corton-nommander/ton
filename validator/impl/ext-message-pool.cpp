@@ -289,12 +289,15 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     if (transfer.valid_until <= (UnixTime)td::Clocks::system()) {
       co_return td::Status::Error("native transfer valid_until is in the past");
     }
-    if (transfer.nonce != acc.last_trans_lt_) {
-      co_return td::Status::Error(PSTRING() << "native transfer nonce mismatch: expected " << acc.last_trans_lt_
+    if (transfer.nonce != acc.native_nonce) {
+      co_return td::Status::Error(PSTRING() << "native transfer nonce mismatch: expected " << acc.native_nonce
                                             << ", got " << transfer.nonce);
     }
     if (acc.status != block::Account::acc_uninit) {
       co_return td::Status::Error("native transfer source account must be balance-only");
+    }
+    if (acc.balance.extra.not_null() || acc.balance.grams.is_null() || !acc.balance.grams->unsigned_fits_bits(64)) {
+      co_return td::Status::Error("native transfer source balance must be uint64 grams without extra currencies");
     }
     if (transfer.amount + transfer.fee < transfer.amount) {
       co_return td::Status::Error("native transfer amount and fee overflow");

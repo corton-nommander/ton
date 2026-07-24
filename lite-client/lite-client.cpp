@@ -2213,16 +2213,38 @@ void TestNode::got_account_state(ton::BlockIdExt ref_blk, ton::BlockIdExt blk, t
       vm::load_cell_slice(info.root).print_rec(print_limit_, outp);
       out << outp.str();
       out << "last transaction lt = " << info.last_trans_lt << " hash = " << info.last_trans_hash.to_hex() << std::endl;
-      block::gen::Account::Record_account acc;
-      block::gen::AccountStorage::Record store;
-      block::CurrencyCollection balance;
-      if (tlb::unpack_cell(info.root, acc) && tlb::csr_unpack(acc.storage, store) && balance.unpack(store.balance)) {
-        out << "account balance is " << balance.to_str() << std::endl;
+      auto account_cs = vm::load_cell_slice(info.root);
+      auto account_tag = block::gen::t_Account.get_tag(account_cs);
+      if (account_tag == block::gen::Account::account_native) {
+        block::gen::Account::Record_account_native native;
+        if (tlb::unpack_cell(info.root, native)) {
+          block::CurrencyCollection balance{td::make_refint(native.balance)};
+          out << "native account balance is " << balance.to_str() << " nonce = " << native.nonce
+              << " flags = " << native.flags << std::endl;
+        }
+      } else {
+        block::gen::Account::Record_account acc;
+        block::gen::AccountStorage::Record store;
+        block::CurrencyCollection balance;
+        if (tlb::unpack_cell(info.root, acc) && tlb::csr_unpack(acc.storage, store) && balance.unpack(store.balance)) {
+          out << "account balance is " << balance.to_str() << std::endl;
+        }
       }
     } else {
       out << "account state is empty" << std::endl;
     }
   } else if (info.root.not_null()) {
+    auto account_cs = vm::load_cell_slice(info.root);
+    if (block::gen::t_Account.get_tag(account_cs) == block::gen::Account::account_native) {
+      block::gen::Account::Record_account_native native;
+      if (tlb::unpack_cell(info.root, native)) {
+        block::CurrencyCollection balance{td::make_refint(native.balance)};
+        out << "native account balance is " << balance.to_str() << " nonce = " << native.nonce
+            << " flags = " << native.flags << std::endl;
+      }
+      out << "native balance-only account (no StateInit to save into file)" << std::endl;
+      return;
+    }
     block::gen::Account::Record_account acc;
     block::gen::AccountStorage::Record store;
     block::CurrencyCollection balance;

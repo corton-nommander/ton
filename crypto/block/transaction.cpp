@@ -478,14 +478,67 @@ bool Account::unpack(Ref<vm::CellSlice> shard_account, ton::UnixTime now, bool s
   }
   last_trans_lt_ = acc_info.last_trans_lt;
   last_trans_hash_ = acc_info.last_trans_hash;
+  native_nonce = last_trans_lt_;
+  native_flags = 0;
   now_ = now;
   auto account = std::move(acc_info.account);
   total_state = orig_total_state = account;
   auto acc_cs = load_cell_slice(std::move(account));
   if (block::gen::t_Account.get_tag(acc_cs) == block::gen::Account::account_none) {
     is_special = special;
-    return acc_cs.size_ext() == 1 && init_new(now);
+    return block::gen::t_Account.unpack_account_none(acc_cs) && acc_cs.empty_ext() && init_new(now);
   }
+  if (block::gen::t_Account.get_tag(acc_cs) == block::gen::Account::account_native) {
+    block::gen::Account::Record_account_native native;
+    if (!tlb::unpack_exact(acc_cs, native) || native.nonce != acc_info.last_trans_lt) {
+      return false;
+    }
+    addr_orig = addr;
+    addr_rewrite = addr.cbits();
+    if (my_addr_exact.is_null()) {
+      vm::CellBuilder cb;
+      if (workchain >= -128 && workchain < 128) {
+        FAIL_UNLESS(cb.store_long_bool(4, 3)                  // addr_std$10 anycast:(Maybe Anycast)
+                    && cb.store_long_rchk_bool(workchain, 8)  // workchain:int8
+                    && cb.store_bits_bool(addr));             // address:bits256
+      } else {
+        FAIL_UNLESS(cb.store_long_bool(0xd00, 12)              // addr_var$11 anycast:(Maybe Anycast) addr_len:(## 9)
+                    && cb.store_long_rchk_bool(workchain, 32)  // workchain:int32
+                    && cb.store_bits_bool(addr));              // address:(bits addr_len)
+      }
+      my_addr_exact = load_cell_slice_ref(cb.finalize());
+    }
+    my_addr = my_addr_exact;
+    is_special = special;
+    is_native = true;
+    native_nonce = native.nonce;
+    native_flags = static_cast<td::uint8>(native.flags);
+    if (native_nonce && native_nonce + 1 <= native_nonce) {
+      return false;
+    }
+    last_trans_end_lt_ = native_nonce ? native_nonce + 1 : 0;
+    last_paid = 0;
+    storage_used = {};
+    orig_storage_dict_hash = storage_dict_hash = {};
+    account_storage_stat = {};
+    balance = block::CurrencyCollection{td::make_refint(native.balance)};
+    due_payment = td::zero_refint();
+    storage.clear();
+    inner_state.clear();
+    state_hash = addr;
+    status = orig_status = acc_uninit;
+    addr_rewrite_length_set = false;
+    code.clear();
+    data.clear();
+    library.clear();
+    orig_code.clear();
+    orig_data.clear();
+    orig_library.clear();
+    LOG(DEBUG) << "end of Account.unpack() for native account " << workchain << ":" << addr.to_hex()
+               << " (balance = " << balance.to_str() << " ; nonce = " << native_nonce << ")";
+    return true;
+  }
+  is_native = false;
   block::gen::Account::Record_account acc;
   block::gen::AccountStorage::Record storage;
   if (!(tlb::unpack_exact(acc_cs, acc) && (my_addr = acc.addr).not_null() && unpack_address(acc.addr.write()) &&
@@ -545,6 +598,9 @@ bool Account::init_new(ton::UnixTime now) {
   addr_rewrite = addr.cbits();
   last_trans_lt_ = last_trans_end_lt_ = 0;
   last_trans_hash_.set_zero();
+  is_native = false;
+  native_nonce = 0;
+  native_flags = 0;
   now_ = now;
   last_paid = 0;
   storage_used = {};
@@ -569,7 +625,7 @@ bool Account::init_new(ton::UnixTime now) {
   }
   if (total_state.is_null()) {
     vm::CellBuilder cb;
-    FAIL_UNLESS(cb.store_long_bool(0, 1)  // account_none$0 = Account
+    FAIL_UNLESS(cb.store_long_bool(0, 2)  // account_none$00 = Account
                 && cb.finalize_to(total_state));
     orig_total_state = total_state;
   }
@@ -845,6 +901,21 @@ void append_u64_be(std::string& out, td::uint64 value) {
 
 td::RefInt256 native_uint(td::uint64 value) {
   return td::make_refint(value);
+}
+
+td::optional<td::uint64> native_balance_to_uint64(const block::CurrencyCollection& balance) {
+  if (balance.extra.not_null() || balance.grams.is_null() || !balance.grams->unsigned_fits_bits(64)) {
+    return {};
+  }
+  unsigned char bytes[sizeof(td::uint64)]{};
+  if (!balance.grams->export_bytes_lsb(bytes, sizeof(bytes), false)) {
+    return {};
+  }
+  td::uint64 value = 0;
+  for (std::size_t i = 0; i < sizeof(bytes); ++i) {
+    value |= static_cast<td::uint64>(bytes[i]) << (8 * i);
+  }
+  return value;
 }
 
 bool is_rejected_ed25519_key(td::Slice key) {
@@ -3652,8 +3723,8 @@ bool Transaction::prepare_native_transfer_debit(const NativeTransfer& transfer) 
     LOG(DEBUG) << "native transfer source does not match account";
     return false;
   }
-  if (transfer.nonce != account.last_trans_lt_) {
-    LOG(DEBUG) << "native transfer nonce mismatch: expected " << account.last_trans_lt_ << ", got " << transfer.nonce;
+  if (transfer.nonce != account.native_nonce) {
+    LOG(DEBUG) << "native transfer nonce mismatch: expected " << account.native_nonce << ", got " << transfer.nonce;
     return false;
   }
   if (now >= transfer.valid_until) {
@@ -3677,8 +3748,13 @@ bool Transaction::prepare_native_transfer_debit(const NativeTransfer& transfer) 
     LOG(DEBUG) << "native transfer amount and fee overflow";
     return false;
   }
+  auto native_balance = native_balance_to_uint64(balance);
+  if (!native_balance) {
+    LOG(DEBUG) << "native transfer source balance must be uint64 grams without extra currencies";
+    return false;
+  }
   CurrencyCollection total{native_uint(transfer.amount + transfer.fee)};
-  if (!(balance >= total)) {
+  if (native_balance.value() < transfer.amount + transfer.fee) {
     LOG(DEBUG) << "native transfer has insufficient funds: balance=" << balance.to_str()
                << ", required=" << total.to_str();
     return false;
@@ -3705,6 +3781,15 @@ bool Transaction::prepare_native_transfer_credit(const NativeTransferCredit& cre
   }
   if (out_msgs.size() || in_msg.not_null()) {
     LOG(DEBUG) << "native transfer credit cannot have TON messages";
+    return false;
+  }
+  auto native_balance = native_balance_to_uint64(balance);
+  if (!native_balance) {
+    LOG(DEBUG) << "native transfer destination balance must be uint64 grams without extra currencies";
+    return false;
+  }
+  if (native_balance.value() + credit.amount < native_balance.value()) {
+    LOG(DEBUG) << "native transfer credit overflows uint64 destination balance";
     return false;
   }
 
@@ -3774,9 +3859,49 @@ bool Transaction::compute_state(const SerializeConfig& cfg) {
   if (acc_status == Account::acc_nonexist || acc_status == Account::acc_deleted) {
     FAIL_UNLESS(balance.is_zero());
     vm::CellBuilder cb;
-    FAIL_UNLESS(cb.store_long_bool(0, 1)  // account_none$0
+    FAIL_UNLESS(cb.store_long_bool(0, 2)  // account_none$00
                 && cb.finalize_to(new_total_state));
     return true;
+  }
+  bool is_native_transfer_tx = trans_type == tr_native_transfer_debit || trans_type == tr_native_transfer_credit;
+  bool can_store_native_account =
+      cfg.global_version >= 14 && account.workchain == ton::basechainId && acc_status == Account::acc_uninit &&
+      new_code.is_null() && new_data.is_null() && new_library.is_null() && !new_tick && !new_tock &&
+      new_fixed_prefix_length == 0 && (due_payment.is_null() || td::sgn(due_payment) == 0);
+  if (is_native_transfer_tx || can_store_native_account) {
+    FAIL_UNLESS(acc_status == Account::acc_uninit);
+    auto native_balance = native_balance_to_uint64(balance);
+    if (!native_balance) {
+      LOG(DEBUG) << "native account balance must fit uint64 and cannot contain extra currencies";
+      if (is_native_transfer_tx) {
+        return false;
+      }
+    } else {
+      vm::CellBuilder cb;
+      FAIL_UNLESS(cb.store_long_bool(1, 2)  // account_native$01
+                  && cb.store_ulong_rchk_bool(native_balance.value(), 64)
+                  && cb.store_ulong_rchk_bool(start_lt, 64)  // nonce:uint64
+                  && cb.store_ulong_rchk_bool(account.is_native ? account.native_flags : 0, 8)
+                  && cb.finalize_to(new_total_state));
+      new_storage.clear();
+      new_inner_state.clear();
+      new_code.clear();
+      new_data.clear();
+      new_library.clear();
+      new_storage_used = {};
+      new_account_storage_stat = {};
+      new_storage_dict_hash = {};
+      storage_stat_updates.clear();
+      if (verbosity > 2) {
+        FLOG(INFO) {
+          sb << "new native account state: ";
+          block::gen::t_Account.print_ref(sb, new_total_state);
+        };
+      }
+      FAIL_UNLESS(block::gen::t_Account.validate_ref(new_total_state));
+      FAIL_UNLESS(block::tlb::t_Account.validate_ref(new_total_state));
+      return true;
+    }
   }
   vm::CellBuilder cb;
   FAIL_UNLESS(cb.store_long_bool(end_lt, 64)  // account_storage$_ last_trans_lt:uint64
@@ -4319,7 +4444,18 @@ Ref<vm::Cell> Transaction::commit(Account& acc) {
   acc.storage = new_storage;
   acc.balance = std::move(balance);
   acc.due_payment = std::move(due_payment);
+  bool new_is_native = false;
+  if (new_total_state.not_null()) {
+    auto account_cs = vm::load_cell_slice(new_total_state);
+    new_is_native = block::gen::t_Account.get_tag(account_cs) == block::gen::Account::account_native;
+  }
   acc.total_state = std::move(new_total_state);
+  acc.is_native = new_is_native && acc.status == Account::acc_uninit;
+  acc.native_nonce = acc.is_native ? start_lt : acc.last_trans_lt_;
+  acc.native_flags = acc.is_native ? (account.is_native ? account.native_flags : 0) : 0;
+  if (acc.is_native) {
+    acc.account_storage_stat = {};
+  }
   acc.inner_state = std::move(new_inner_state);
   if (was_frozen) {
     acc.state_hash = frozen_hash;

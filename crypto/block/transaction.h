@@ -293,6 +293,7 @@ struct Account {
   enum { acc_nonexist = 0, acc_uninit = 1, acc_frozen = 2, acc_active = 3, acc_deleted = 4 };
   int status{acc_nonexist}, orig_status{acc_nonexist};
   bool is_special{false};
+  bool is_native{false};
   bool tick{false};
   bool tock{false};
   int fixed_prefix_length{0};
@@ -312,6 +313,8 @@ struct Account {
   ton::LogicalTime last_trans_end_lt_;
   ton::LogicalTime last_trans_lt_;
   ton::Bits256 last_trans_hash_;
+  ton::LogicalTime native_nonce{0};
+  td::uint8 native_flags{0};
   ton::LogicalTime block_lt;
 
   ton::UnixTime last_paid;

@@ -1893,7 +1893,8 @@ int ConfigInfo::get_smc_tick_tock(td::ConstBitPtr smc_addr) const {
     return -1;
   }
   auto acc_cs = vm::load_cell_slice(std::move(acc_cell));
-  if (block::gen::t_Account.get_tag(acc_cs) == block::gen::Account::account_none) {
+  auto acc_tag = block::gen::t_Account.get_tag(acc_cs);
+  if (acc_tag == block::gen::Account::account_none || acc_tag == block::gen::Account::account_native) {
     return 0;
   }
   block::gen::Account::Record_account acc;

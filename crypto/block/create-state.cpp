@@ -26,6 +26,7 @@
     Copyright 2017-2020 Telegram Systems LLP
 */
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdlib>
@@ -98,10 +99,11 @@ struct SmcDescr {
   hash_t addr;
   int fixed_prefix_length;
   bool preinit_only;
+  bool is_native;
   td::RefInt256 gram_balance;
   Ref<vm::DataCell> state_init;  // StateInit
   Ref<vm::DataCell> account;     // Account
-  SmcDescr(const hash_t& _addr) : addr(_addr), fixed_prefix_length(0), preinit_only(false) {
+  SmcDescr(const hash_t& _addr) : addr(_addr), fixed_prefix_length(0), preinit_only(false), is_native(false) {
   }
 };
 
@@ -124,8 +126,34 @@ vm::Dictionary config_dict{32};
 
 ton::UnixTime now;
 
+td::uint64 refint_to_uint64(const td::RefInt256& value, const char* name) {
+  if (value.is_null() || !value->unsigned_fits_bits(64)) {
+    throw fift::IntError{std::string{name} + " must be a non-negative uint64"};
+  }
+  std::array<unsigned char, sizeof(td::uint64)> bytes{};
+  if (!value->export_bytes_lsb(bytes.data(), bytes.size(), false)) {
+    throw fift::IntError{std::string{"cannot convert "} + name + " to uint64"};
+  }
+  td::uint64 result = 0;
+  for (std::size_t i = 0; i < bytes.size(); ++i) {
+    result |= static_cast<td::uint64>(bytes[i]) << (8 * i);
+  }
+  return result;
+}
+
+hash_t refint_to_account_id(const td::RefInt256& value, const char* name) {
+  if (value.is_null() || !value->unsigned_fits_bits(256)) {
+    throw fift::IntError{std::string{name} + " must be a non-negative uint256 account id"};
+  }
+  hash_t addr;
+  if (!value->export_bits(addr.data(), 0, 256, false)) {
+    throw fift::IntError{std::string{"cannot serialize "} + name};
+  }
+  return addr;
+}
+
 bool set_config_smc(const SmcDescr& smc) {
-  if (config_addr_set || smc.preinit_only || workchain_id != wc_master || smc.fixed_prefix_length) {
+  if (config_addr_set || smc.preinit_only || smc.is_native || workchain_id != wc_master || smc.fixed_prefix_length) {
     return false;
   }
   vm::CellSlice cs = load_cell_slice(smc.state_init);
@@ -369,6 +397,52 @@ td::RefInt256 create_smartcontract(td::RefInt256 smc_addr, Ref<vm::Cell> code, R
   return smc_addr;
 }
 
+td::RefInt256 create_native_account(td::RefInt256 int_addr, td::RefInt256 balance, td::uint64 nonce,
+                                    td::uint8 flags) {
+  if (workchain_id != wc_base) {
+    throw fift::IntError{"native balance-only accounts can be created only in basechain workchain 0"};
+  }
+  if (sgn(balance) < 0) {
+    throw fift::IntError{"initial balance of a native account cannot be negative"};
+  }
+  td::uint64 native_balance = refint_to_uint64(balance, "native account balance");
+  hash_t addr = refint_to_account_id(int_addr, "native account address");
+  if (smart_contracts.find(addr) != smart_contracts.end()) {
+    std::cerr << "account " << addr << " already defined\n";
+    throw fift::IntError{"account already exists"};
+  }
+
+  auto ins = smart_contracts.emplace(addr, addr);
+  assert(ins.second);
+  SmcDescr& smc = ins.first->second;
+  smc.is_native = true;
+  smc.gram_balance = balance;
+  total_smc_balance += balance;
+  if (max_total_smc_balance.not_null() && total_smc_balance > max_total_smc_balance) {
+    throw fift::IntError{"total account balance exceeds limit"};
+  }
+
+  vm::CellBuilder cb;
+  bool ok = cb.store_long_bool(1, 2)  // account_native$01
+            && cb.store_ulong_rchk_bool(native_balance, 64)
+            && cb.store_ulong_rchk_bool(nonce, 64)
+            && cb.store_ulong_rchk_bool(flags, 8);
+  THRERR("cannot create native account");
+  smc.account = cb.finalize();
+  if (verbosity > 2) {
+    std::cerr << "native account is:\n";
+    vm::load_cell_slice(smc.account).print_rec(std::cerr);
+    std::cerr << "block::gen::Account.validate_ref() = " << block::gen::t_Account.validate_ref(smc.account)
+              << std::endl;
+    std::cerr << "block::tlb::Account.validate_ref() = " << block::tlb::t_Account.validate_ref(smc.account)
+              << std::endl;
+  }
+  PDO(block::gen::t_Account.validate_ref(smc.account));
+  PDO(block::tlb::t_Account.validate_ref(smc.account));
+  THRERR("native account is invalid (?)");
+  return int_addr;
+}
+
 // stores accounts:ShardAccounts
 bool store_accounts(vm::CellBuilder& cb) {
   vm::AugmentedDictionary dict{256, block::tlb::aug_ShardAccounts};
@@ -558,6 +632,27 @@ void interpret_register_smartcontract(vm::Stack& stack) {
   stack.push(std::move(addr));
 }
 
+// balance (int)
+// nonce (uint64)
+// flags (uint8)
+// address (uint256)
+// --> 256-bit address
+void interpret_register_native_account(vm::Stack& stack) {
+  if (workchain_id == wc_undef) {
+    throw fift::IntError{"cannot register a native account unless the workchain is specified first"};
+  }
+  td::RefInt256 int_addr = stack.pop_int_finite();
+  int flags = stack.pop_smallint_range(255);
+  td::uint64 nonce = refint_to_uint64(stack.pop_int_finite(), "native account nonce");
+  td::RefInt256 balance = stack.pop_int_finite();
+  td::RefInt256 addr =
+      create_native_account(std::move(int_addr), std::move(balance), nonce, static_cast<td::uint8>(flags));
+  if (addr.is_null()) {
+    throw fift::IntError{"internal error while creating native account"};
+  }
+  stack.push(std::move(addr));
+}
+
 void interpret_create_state(vm::Stack& stack) {
   if (!global_id) {
     throw fift::IntError{
@@ -706,6 +801,7 @@ void init_words_custom(fift::Dictionary& d) {
   d.def_stack_word("config-valid? ", interpret_check_config_param);
   d.def_stack_word("(configdict) ", interpret_get_config_dict);
   d.def_stack_word("register_smc ", interpret_register_smartcontract);
+  d.def_stack_word("register_native_account ", interpret_register_native_account);
   d.def_stack_word("set_config_smc ", interpret_set_config_smartcontract);
   d.def_stack_word("create_state ", interpret_create_state);
   d.def_stack_word("isShardState? ", interpret_is_shard_state);

@@ -372,6 +372,12 @@ variable w3-addr
   Masterchain swap 6 .Addr cr
 } : create-wallet0a
 
+// pubkey amount --
+{ over ."Native Key " pubkey>$ type space dup .GR ." -> "
+  swap 0 0 rot register_native_account
+  Basechain swap 6 .Addr cr
+} : create-native-wallet
+
 { dup tlb-type-lookup { nip } { "unknown TLB type " swap $+ abort } cond } : $>tlb
 { bl word $>tlb 1 'nop } ::_ tlb:
 { <b swap vmcont, b> <s tlb:VmCont tlb-dump-as } : vmcont.

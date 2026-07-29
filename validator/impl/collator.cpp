@@ -962,16 +962,6 @@ bool Collator::request_neighbor_msg_queues() {
       neighbor_stats.is_trivial = shard_intersects(descr.shard(), shard_);
       neighbor_stats.is_local = true;
       neighbor_stats.msg_limit = -1;
-      if (prev_block_idx(descr.blk_) >= 0) {
-        descr.set_queue_root(out_msg_queue_->get_root_cell());
-        descr.processed_upto = processed_upto_;
-        continue;
-      }
-      if (!descr.blk_.seqno() && descr.shard() == shard_) {
-        descr.set_queue_root(out_msg_queue_->get_root_cell());
-        descr.processed_upto = processed_upto_;
-        continue;
-      }
       if (descr.blk_.is_masterchain()) {
         if (mc_state_.is_null()) {
           return fatal_error("native fast path cannot initialize masterchain neighbor without masterchain state");
@@ -1000,7 +990,14 @@ bool Collator::request_neighbor_msg_queues() {
         }
         continue;
       }
-      return fatal_error("native fast path does not support non-local neighbor message queues");
+      if (shard_intersects(descr.shard(), shard_)) {
+        descr.set_queue_root(out_msg_queue_->get_root_cell());
+        descr.processed_upto = processed_upto_;
+        continue;
+      }
+      return fatal_error(PSTRING() << "native fast path does not support non-local neighbor message queues: neighbor="
+                                   << descr.blk_ << " neighbor_shard=" << descr.shard()
+                                   << " collating_shard=" << shard_);
     }
     return true;
   }

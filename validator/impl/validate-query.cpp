@@ -1666,20 +1666,6 @@ bool ValidateQuery::request_neighbor_queues() {
   if (use_native_fast_path()) {
     LOG(INFO) << "native fast path: skipping neighbor OutMsgQueue proof requests during validation";
     for (block::McShardDescr& descr : neighbors_) {
-      if (prev_block_idx(descr.blk_) >= 0) {
-        REJECT_UNLESS(ps_.out_msg_queue_);
-        REJECT_UNLESS(ps_.processed_upto_);
-        descr.set_queue_root(ps_.out_msg_queue_->get_root_cell());
-        descr.processed_upto = ps_.processed_upto_;
-        continue;
-      }
-      if (!descr.blk_.seqno() && descr.shard() == shard_) {
-        REJECT_UNLESS(ps_.out_msg_queue_);
-        REJECT_UNLESS(ps_.processed_upto_);
-        descr.set_queue_root(ps_.out_msg_queue_->get_root_cell());
-        descr.processed_upto = ps_.processed_upto_;
-        continue;
-      }
       if (descr.blk_.is_masterchain()) {
         REJECT_UNLESS(mc_state_.not_null());
         if (descr.blk_ != mc_state_->get_block_id()) {
@@ -1705,7 +1691,16 @@ bool ValidateQuery::request_neighbor_queues() {
         }
         continue;
       }
-      return reject_query("native fast path does not support non-local neighbor message queues");
+      if (shard_intersects(descr.shard(), shard_)) {
+        REJECT_UNLESS(ps_.out_msg_queue_);
+        REJECT_UNLESS(ps_.processed_upto_);
+        descr.set_queue_root(ps_.out_msg_queue_->get_root_cell());
+        descr.processed_upto = ps_.processed_upto_;
+        continue;
+      }
+      return reject_query(PSTRING()
+                          << "native fast path does not support non-local neighbor message queues: neighbor="
+                          << descr.blk_ << " neighbor_shard=" << descr.shard() << " validating_shard=" << shard_);
     }
     return true;
   }

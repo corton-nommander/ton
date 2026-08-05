@@ -126,6 +126,18 @@ vm::Dictionary config_dict{32};
 
 ton::UnixTime now;
 
+// Genesis can legitimately contain thousands of pre-funded native accounts; the
+// default TL-B validation budget is sized for ordinary object checks.
+int genesis_state_validate_budget() {
+  constexpr int min_budget = 1 << 20;
+  constexpr std::size_t per_account_budget = 64;
+  auto by_accounts = smart_contracts.size() * per_account_budget + 4096;
+  if (by_accounts > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    return std::numeric_limits<int>::max();
+  }
+  return std::max(min_budget, static_cast<int>(by_accounts));
+}
+
 td::uint64 refint_to_uint64(const td::RefInt256& value, const char* name) {
   if (value.is_null() || !value->unsigned_fits_bits(64)) {
     throw fift::IntError{std::string{name} + " must be a non-negative uint64"};
@@ -570,8 +582,11 @@ Ref<vm::Cell> create_state() {
     std::cerr << "pretty-printed shard_state is:\n";
     block::gen::t_ShardState.print_ref(std::cerr, cell);
     std::cerr << "\n";
-    std::cerr << "block::gen::ShardState.validate_ref() = " << block::gen::t_ShardState.validate_ref(cell) << std::endl;
-    std::cerr << "block::tlb::ShardState.validate_ref() = " << block::tlb::t_ShardState.validate_ref(cell) << std::endl;
+    int validate_budget = genesis_state_validate_budget();
+    std::cerr << "block::gen::ShardState.validate_ref(" << validate_budget
+              << ") = " << block::gen::t_ShardState.validate_ref(validate_budget, cell) << std::endl;
+    std::cerr << "block::tlb::ShardState.validate_ref(" << validate_budget
+              << ") = " << block::tlb::t_ShardState.validate_ref(validate_budget, cell) << std::endl;
     block::gen::ShardStateUnsplit::Record data;
     bool ok1 = tlb::unpack_cell(cell, data);
     std::cerr << "block::gen::ShardState.unpack_cell() = " << ok1 << std::endl;
@@ -581,8 +596,9 @@ Ref<vm::Cell> create_state() {
                 << "; total_balance = " << data.r1.total_balance << std::endl;
     }
   }
-  PDO(block::gen::t_ShardState.validate_ref(cell));
-  PDO(block::tlb::t_ShardState.validate_ref(cell));
+  int validate_budget = genesis_state_validate_budget();
+  PDO(block::gen::t_ShardState.validate_ref(validate_budget, cell));
+  PDO(block::tlb::t_ShardState.validate_ref(validate_budget, cell));
   THRERR("created an invalid ShardState record");
   return cell;
 }

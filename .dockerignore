@@ -1,0 +1,12 @@
+.github
+.idea
+.vscode
+.cache
+.venv
+build
+build-*
+cmake-build-*
+out
+tmp
+compile_commands.json
+*.log

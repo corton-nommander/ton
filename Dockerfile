@@ -1,14 +1,12 @@
 FROM ubuntu:22.04 AS builder
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NINJA_JOBS=2
+ARG TON_BUILD_TARGETS="storage-daemon storage-daemon-cli tonlibjson fift func validator-engine validator-engine-console generate-random-id dht-server lite-client tolk rldp-http-proxy dht-server proxy-liteserver create-state blockchain-explorer emulator tonlibjson http-proxy dht-ping-servers dht-resolve"
 RUN apt-get update && \
-        rm /var/lib/dpkg/info/libc-bin.* && \
-        apt-get clean && \
-        apt-get update && \
-        apt install libc-bin && \
-        apt-get install -y build-essential cmake clang gperf wget git \
+        apt-get install -y --no-install-recommends build-essential cmake clang gperf wget git \
         ninja-build pkg-config autoconf automake libtool \
-        libjemalloc-dev lsb-release software-properties-common gnupg
+        libjemalloc-dev lsb-release software-properties-common gnupg && \
+        rm -rf /var/lib/apt/lists/*
 
 RUN wget https://apt.llvm.org/llvm.sh && \
     chmod +x llvm.sh && \
@@ -28,9 +26,7 @@ COPY ./ ./
 RUN mkdir build && \
         cd build && \
         cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DPORTABLE=1 -DTON_ARCH= -DTON_USE_JEMALLOC=ON .. && \
-        ninja -j "${NINJA_JOBS}" storage-daemon storage-daemon-cli tonlibjson fift func validator-engine validator-engine-console \
-    generate-random-id dht-server lite-client tolk rldp-http-proxy dht-server proxy-liteserver create-state \
-    blockchain-explorer emulator tonlibjson http-proxy dht-ping-servers dht-resolve
+        ninja -j "${NINJA_JOBS}" ${TON_BUILD_TARGETS}
 
 FROM ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive

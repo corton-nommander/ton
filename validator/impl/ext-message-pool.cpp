@@ -14,13 +14,15 @@
     You should have received a copy of the GNU Lesser General Public License
     along with TON Blockchain Library.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include "td/utils/Random.h"
 #include "ton/ton-io.hpp"
 
 #include "ext-message-pool.hpp"
 #include "external-message.hpp"
 #include "fabric.h"
 #include "transaction.h"
+
+#include <algorithm>
+#include <limits>
 
 namespace ton::validator {
 td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_external_message(td::BufferSlice data,
@@ -69,33 +71,69 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
     }
   }
 
-  // Spawn a coroutine that drains the shard slices randomly into the queue
+  // Spawn a coroutine that drains native messages by source nonce and leaves other messages in stable key order.
   auto push_existing = [](ExtMsgQueue queue, td::CancellationToken token, ShardIdFull shard, Snapshot snapshot,
                           bool sync_only) -> td::actor::Task<> {
+    struct QueueItem {
+      int priority;
+      MessageId key;
+      std::shared_ptr<MempoolMsg> msg;
+    };
+    auto comes_before = [](const QueueItem &a, const QueueItem &b) {
+      if (a.priority != b.priority) {
+        return a.priority > b.priority;
+      }
+      bool a_native = a.msg->native_nonce.has_value();
+      bool b_native = b.msg->native_nonce.has_value();
+      if (a_native != b_native) {
+        return a_native;
+      }
+      if (a_native && b_native) {
+        auto a_address = a.msg->address();
+        auto b_address = b.msg->address();
+        if (a_address < b_address) {
+          return true;
+        }
+        if (b_address < a_address) {
+          return false;
+        }
+        if (a.msg->native_nonce.value() != b.msg->native_nonce.value()) {
+          return a.msg->native_nonce.value() < b.msg->native_nonce.value();
+        }
+      }
+      return a.key < b.key;
+    };
     SCOPE_EXIT {
       if (sync_only) {
         queue.close();
       }
     };
     td::Timer t;
-    size_t pushed = 0;
+    std::vector<QueueItem> items;
     for (auto &[priority, treap] : snapshot) {
       while (!treap.empty()) {
         if (token.check().is_error()) {
           co_return {};
         }
-        size_t idx = td::Random::fast_uint32() % treap.size();
-        auto [key, msg] = treap.at(idx);
-        treap = treap.erase_at(idx);  // local snapshot only
+        auto [key, msg] = treap.at(0);
+        treap = treap.erase_at(0);  // local snapshot only
         if (msg->expired() || !msg->is_active()) {
           continue;
         }
-        bool ok = co_await queue.push(std::make_pair(msg->message, priority));
-        if (!ok) {
-          co_return {};
-        }
-        ++pushed;
+        items.push_back(QueueItem{.priority = priority, .key = key, .msg = std::move(msg)});
       }
+    }
+    std::sort(items.begin(), items.end(), comes_before);
+    size_t pushed = 0;
+    for (auto &item : items) {
+      if (token.check().is_error()) {
+        co_return {};
+      }
+      bool ok = co_await queue.push(std::make_pair(item.msg->message, item.priority));
+      if (!ok) {
+        co_return {};
+      }
+      ++pushed;
     }
     LOG(WARNING) << "install_collator_queue: pushed " << pushed << " existing messages to shard " << shard << " in "
                  << t.elapsed() << "s";
@@ -179,6 +217,16 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id) {
 
   auto address = msg_opt.value()->address();
   auto hash_norm = msg_opt.value()->hash_norm;
+  auto native_nonce = msg_opt.value()->native_nonce;
+  if (native_nonce) {
+    auto native_it = native_accounts_.find(address);
+    if (native_it != native_accounts_.end()) {
+      native_it->second.messages.erase(native_nonce.value());
+      if (native_it->second.messages.empty()) {
+        native_accounts_.erase(native_it);
+      }
+    }
+  }
   msgs.ext_addr_messages_[address].erase(id.hash);
   msgs.ext_messages_ = msgs.ext_messages_.erase(id);
   ext_messages_hashes_.erase(id.hash);
@@ -230,6 +278,10 @@ void ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, int pri
   }
   auto msg = std::make_shared<MempoolMsg>(message);
   msg->msg_seqno = msg_seqno;
+  auto native_transfer_res = block::NativeTransfer::unpack_external(message->root_cell());
+  if (native_transfer_res.is_ok()) {
+    msg->native_nonce = native_transfer_res.move_as_ok().nonce;
+  }
   MessageId id{message->shard(), message->hash()};
   auto address = msg->address();
   auto it = msgs.ext_addr_messages_.find(address);
@@ -289,9 +341,13 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     if (transfer.valid_until <= (UnixTime)td::Clocks::system()) {
       co_return td::Status::Error("native transfer valid_until is in the past");
     }
-    if (transfer.nonce != acc.native_nonce) {
-      co_return td::Status::Error(PSTRING() << "native transfer nonce mismatch: expected " << acc.native_nonce
-                                            << ", got " << transfer.nonce);
+    if (transfer.nonce < acc.native_nonce) {
+      co_return td::Status::Error(PSTRING() << "Too old native nonce: msg_nonce=" << transfer.nonce
+                                            << ", account_nonce=" << acc.native_nonce);
+    }
+    if (transfer.nonce - acc.native_nonce > MAX_NATIVE_NONCE_DIFF) {
+      co_return td::Status::Error(PSTRING() << "Too new native nonce: msg_nonce=" << transfer.nonce
+                                            << ", account_nonce=" << acc.native_nonce);
     }
     if (acc.status != block::Account::acc_uninit) {
       co_return td::Status::Error("native transfer source account must be balance-only");
@@ -302,7 +358,22 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     if (transfer.amount + transfer.fee < transfer.amount) {
       co_return td::Status::Error("native transfer amount and fee overflow");
     }
-    block::CurrencyCollection required{td::make_refint(transfer.amount + transfer.fee)};
+    auto &native_info = native_accounts_[{wc, addr}];
+    SCOPE_EXIT {
+      if (native_info.messages.empty()) {
+        native_accounts_.erase({wc, addr});
+      }
+    };
+    native_info.process_messages(acc.native_nonce, utime);
+    if (native_info.messages.contains(transfer.nonce)) {
+      co_return td::Status::Error(PSTRING() << "Duplicate native nonce " << transfer.nonce);
+    }
+    td::uint64 required_amount = transfer.amount + transfer.fee;
+    td::uint64 reserved_amount = native_info.reserved_amount(acc.native_nonce);
+    if (reserved_amount + required_amount < reserved_amount) {
+      co_return td::Status::Error("native transfer pending amount overflow");
+    }
+    block::CurrencyCollection required{td::make_refint(reserved_amount + required_amount)};
     if (!(acc.balance >= required)) {
       co_return td::Status::Error("native transfer has insufficient source balance");
     }
@@ -310,7 +381,13 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     if (signature_status.is_error()) {
       co_return signature_status.move_as_error();
     }
-    allow_broadcast_promise.set_value(td::Unit{});
+    native_info.messages.emplace(
+        transfer.nonce,
+        NativeMessageInfo{.amount = transfer.amount,
+                          .fee = transfer.fee,
+                          .valid_until = transfer.valid_until,
+                          .allow_broadcast_promise = std::move(allow_broadcast_promise)});
+    native_info.process_messages(acc.native_nonce, utime);
     co_return check_result;
   }
 
@@ -400,6 +477,56 @@ void ExtMessagePool::WalletInfo::process_messages(td::uint32 wallet_seqno, UnixT
       it->second.allow_broadcast_promise.set_value(td::Unit{});
     }
   }
+}
+
+void ExtMessagePool::NativeInfo::process_messages(td::uint64 native_nonce, UnixTime utime) {
+  for (auto it = messages.begin(); it != messages.end();) {
+    auto &[nonce, message] = *it;
+    if (nonce < native_nonce) {
+      if (message.allow_broadcast_promise) {
+        message.allow_broadcast_promise.set_error(
+            td::Status::Error(PSTRING() << "Too old native nonce: msg_nonce=" << nonce
+                                        << ", account_nonce=" << native_nonce));
+      }
+      it = messages.erase(it);
+      continue;
+    }
+    if (message.valid_until <= utime) {
+      if (message.allow_broadcast_promise) {
+        message.allow_broadcast_promise.set_error(td::Status::Error("native transfer valid_until is in the past"));
+      }
+      it = messages.erase(it);
+      continue;
+    }
+    ++it;
+  }
+  for (td::uint64 nonce = native_nonce;; ++nonce) {
+    auto it = messages.find(nonce);
+    if (it == messages.end()) {
+      break;
+    }
+    if (it->second.allow_broadcast_promise) {
+      it->second.allow_broadcast_promise.set_value(td::Unit{});
+    }
+    if (nonce == std::numeric_limits<td::uint64>::max()) {
+      break;
+    }
+  }
+}
+
+td::uint64 ExtMessagePool::NativeInfo::reserved_amount(td::uint64 native_nonce) const {
+  td::uint64 reserved = 0;
+  for (const auto &[nonce, message] : messages) {
+    if (nonce < native_nonce) {
+      continue;
+    }
+    td::uint64 amount = message.amount + message.fee;
+    if (amount < message.amount || reserved + amount < reserved) {
+      return std::numeric_limits<td::uint64>::max();
+    }
+    reserved += amount;
+  }
+  return reserved;
 }
 
 size_t ExtMessagePool::CheckedExtMsgCounter::get_msg_count(WorkchainId wc, StdSmcAddress addr) {

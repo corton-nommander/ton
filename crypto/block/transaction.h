@@ -466,6 +466,7 @@ struct Transaction {
   bool prepare_bounce_phase(const ActionPhaseConfig& cfg);
   bool prepare_native_transfer_debit(const NativeTransfer& transfer);
   bool prepare_native_transfer_credit(const NativeTransferCredit& credit);
+  td::uint64 next_native_nonce() const;
   bool compute_state(const SerializeConfig& cfg);
   bool serialize(const SerializeConfig& cfg);
   td::uint64 gas_used() const {

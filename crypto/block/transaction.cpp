@@ -28,6 +28,8 @@
 #include "ton/ton-shard.h"
 #include "vm/vm.h"
 
+#include <limits>
+
 #define FAIL_UNLESS_MSG(condition, msg) \
   if (!(condition)) {                   \
     LOG(ERROR) << (msg);                \
@@ -490,7 +492,7 @@ bool Account::unpack(Ref<vm::CellSlice> shard_account, ton::UnixTime now, bool s
   }
   if (block::gen::t_Account.get_tag(acc_cs) == block::gen::Account::account_native) {
     block::gen::Account::Record_account_native native;
-    if (!tlb::unpack_exact(acc_cs, native) || native.nonce != acc_info.last_trans_lt) {
+    if (!tlb::unpack_exact(acc_cs, native)) {
       return false;
     }
     addr_orig = addr;
@@ -513,10 +515,10 @@ bool Account::unpack(Ref<vm::CellSlice> shard_account, ton::UnixTime now, bool s
     is_native = true;
     native_nonce = native.nonce;
     native_flags = static_cast<td::uint8>(native.flags);
-    if (native_nonce && native_nonce + 1 <= native_nonce) {
+    if (last_trans_lt_ && last_trans_lt_ + 1 <= last_trans_lt_) {
       return false;
     }
-    last_trans_end_lt_ = native_nonce ? native_nonce + 1 : 0;
+    last_trans_end_lt_ = last_trans_lt_ ? last_trans_lt_ + 1 : 0;
     last_paid = 0;
     storage_used = {};
     orig_storage_dict_hash = storage_dict_hash = {};
@@ -3731,6 +3733,10 @@ bool Transaction::prepare_native_transfer_debit(const NativeTransfer& transfer) 
     LOG(DEBUG) << "native transfer expired at " << transfer.valid_until << ", now=" << now;
     return false;
   }
+  if (transfer.nonce == std::numeric_limits<td::uint64>::max()) {
+    LOG(DEBUG) << "native transfer nonce overflow";
+    return false;
+  }
   auto sig_status = transfer.verify_signature();
   if (sig_status.is_error()) {
     LOG(DEBUG) << "native transfer signature check failed: " << sig_status.to_string();
@@ -3797,6 +3803,16 @@ bool Transaction::prepare_native_transfer_credit(const NativeTransferCredit& cre
   balance += CurrencyCollection{native_uint(credit.amount)};
   total_fees.set_zero();
   return balance.is_valid() && total_fees.is_valid();
+}
+
+td::uint64 Transaction::next_native_nonce() const {
+  if (trans_type == tr_native_transfer_debit) {
+    return native_transfer.nonce + 1;
+  }
+  if (trans_type == tr_native_transfer_credit) {
+    return account.is_native ? account.native_nonce : 0;
+  }
+  return account.is_native ? account.native_nonce : 0;
 }
 }  // namespace transaction
 
@@ -3880,7 +3896,7 @@ bool Transaction::compute_state(const SerializeConfig& cfg) {
       vm::CellBuilder cb;
       FAIL_UNLESS(cb.store_long_bool(1, 2)  // account_native$01
                   && cb.store_ulong_rchk_bool(native_balance.value(), 64)
-                  && cb.store_ulong_rchk_bool(start_lt, 64)  // nonce:uint64
+                  && cb.store_ulong_rchk_bool(next_native_nonce(), 64)  // nonce:uint64
                   && cb.store_ulong_rchk_bool(account.is_native ? account.native_flags : 0, 8)
                   && cb.finalize_to(new_total_state));
       new_storage.clear();
@@ -4451,7 +4467,7 @@ Ref<vm::Cell> Transaction::commit(Account& acc) {
   }
   acc.total_state = std::move(new_total_state);
   acc.is_native = new_is_native && acc.status == Account::acc_uninit;
-  acc.native_nonce = acc.is_native ? start_lt : acc.last_trans_lt_;
+  acc.native_nonce = acc.is_native ? next_native_nonce() : 0;
   acc.native_flags = acc.is_native ? (account.is_native ? account.native_flags : 0) : 0;
   if (acc.is_native) {
     acc.account_storage_stat = {};

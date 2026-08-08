@@ -54,7 +54,13 @@ jobs:
           platforms: linux/arm64
           push: true
           context: ./
-          tags:  ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}-arm64
+          build-args: |
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ github.run_id }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}-arm64
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}-arm64
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:master-arm64
 
   build-amd64:
     runs-on: ubuntu-22.04
@@ -96,7 +102,13 @@ jobs:
           platforms: linux/amd64
           push: true
           context: ./
-          tags:  ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}-amd64
+          build-args: |
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ github.run_id }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}-amd64
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}-amd64
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:master-amd64
 
   merge:
     runs-on: ubuntu-22.04
@@ -134,6 +146,8 @@ jobs:
         run: |
           docker buildx imagetools create \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:master \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}-arm64 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}-amd64
 

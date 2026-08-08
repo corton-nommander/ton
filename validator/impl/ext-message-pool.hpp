@@ -16,6 +16,7 @@
 */
 #pragma once
 
+#include <map>
 #include <set>
 
 #include "interfaces/validator-manager.h"
@@ -78,6 +79,7 @@ class ExtMessagePool : public td::actor::Actor {
     td::Timestamp reactivate_at;
     td::Timestamp delete_at;
     td::optional<td::uint32> msg_seqno;
+    td::optional<td::uint64> native_nonce;
 
     auto address() const {
       return std::make_pair(message->wc(), message->addr());
@@ -165,6 +167,26 @@ class ExtMessagePool : public td::actor::Actor {
   };
   std::map<std::pair<WorkchainId, StdSmcAddress>, WalletInfo> wallets_;
 
+  struct NativeMessageInfo {
+    td::uint64 amount;
+    td::uint64 fee;
+    td::uint32 valid_until;
+    td::Promise<td::Unit> allow_broadcast_promise;
+  };
+  struct NativeInfo {
+    std::map<td::uint64, NativeMessageInfo> messages;
+    ~NativeInfo() {
+      for (auto &[_, message] : messages) {
+        if (message.allow_broadcast_promise) {
+          message.allow_broadcast_promise.set_error(td::Status::Error("native account is no longer valid"));
+        }
+      }
+    }
+    void process_messages(td::uint64 native_nonce, UnixTime utime);
+    td::uint64 reserved_amount(td::uint64 native_nonce) const;
+  };
+  std::map<std::pair<WorkchainId, StdSmcAddress>, NativeInfo> native_accounts_;
+
   td::actor::Task<CheckResult> check_message(td::Ref<ExtMessage> message, td::optional<td::uint32> &msg_seqno);
   td::Result<td::uint32> check_message_to_wallet(td::Ref<ExtMessage> message, const WalletMessageProcessor *wallet,
                                                  block::Account acc, UnixTime utime, LogicalTime lt,
@@ -174,10 +196,11 @@ class ExtMessagePool : public td::actor::Actor {
   std::vector<std::unique_ptr<ExtMsgCallback>> callbacks_;
 
   static constexpr double MAX_EXT_MSG_PER_ADDR_TIME_WINDOW = 10.0;
-  static constexpr size_t MAX_EXT_MSG_PER_ADDR = 3 * 10;
-  static constexpr size_t PER_ADDRESS_LIMIT = 256;
-  static constexpr size_t SOFT_MEMPOOL_LIMIT = 1024;
+  static constexpr size_t MAX_EXT_MSG_PER_ADDR = 4096;
+  static constexpr size_t PER_ADDRESS_LIMIT = 8192;
+  static constexpr size_t SOFT_MEMPOOL_LIMIT = 262144;
   static constexpr td::uint32 MAX_WALLET_SEQNO_DIFF = 16;
+  static constexpr td::uint64 MAX_NATIVE_NONCE_DIFF = 4096;
 };
 
 }  // namespace ton::validator

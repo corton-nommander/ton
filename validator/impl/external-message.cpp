@@ -105,7 +105,6 @@ td::Result<Ref<ExtMessageQ>> ExtMessageQ::create_ext_message(td::BufferSlice dat
   vm::CellSlice native_cs{vm::NoVmOrd{}, ext_msg};
   if (native_cs.prefetch_ulong(32) == block::NativeTransfer::magic) {
     TRY_RESULT(transfer, block::NativeTransfer::unpack_external(ext_msg));
-    TRY_STATUS(transfer.verify_signature());
     auto wc = ton::basechainId;
     auto src_prefix = ton::extract_addr_prefix(wc, transfer.src);
     return Ref<ExtMessageQ>{true, std::move(data), std::move(ext_msg), src_prefix, wc, transfer.src, hash, hash};

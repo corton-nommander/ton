@@ -6736,7 +6736,6 @@ td::Status Collator::register_external_message(Ref<ExtMessage> ext_msg, int prio
       return td::Status::Error("external message has been registered before");
     }
     TRY_RESULT(transfer, block::NativeTransfer::unpack_external(ext_msg_cell));
-    TRY_STATUS(transfer.verify_signature());
     if (!ton::shard_contains(shard_, ton::extract_addr_prefix(basechainId, transfer.src))) {
       return td::Status::Error("native transfer source address is not in this shard");
     }

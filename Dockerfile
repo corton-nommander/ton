@@ -2,6 +2,10 @@ FROM ubuntu:22.04 AS builder
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NINJA_JOBS=2
 ARG TON_BUILD_TARGETS="storage-daemon storage-daemon-cli tonlibjson fift func validator-engine validator-engine-console generate-random-id dht-server lite-client tolk rldp-http-proxy dht-server proxy-liteserver create-state blockchain-explorer emulator tonlibjson http-proxy dht-ping-servers dht-resolve"
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.revision=$VCS_REF \
+      org.opencontainers.image.created=$BUILD_DATE
 RUN apt-get update && \
         apt-get install -y --no-install-recommends build-essential cmake clang gperf wget git \
         ninja-build pkg-config autoconf automake libtool \
@@ -30,6 +34,10 @@ RUN mkdir build && \
 
 FROM ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.revision=$VCS_REF \
+      org.opencontainers.image.created=$BUILD_DATE
 RUN apt-get update && \
     apt-get install -y wget curl libatomic1 openssl libsodium-dev libmicrohttpd-dev liblz4-dev libjemalloc-dev htop \
     net-tools netcat iptraf-ng jq tcpdump pv plzip && \

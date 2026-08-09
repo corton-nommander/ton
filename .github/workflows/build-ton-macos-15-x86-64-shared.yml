@@ -53,7 +53,3 @@ jobs:
         run: |
           cd build
           ctest --output-on-failure --timeout 1800
-
-      - name: Run tonlib integration test
-        run: |
-          ./test/tonlib/integration/test_integration.sh

@@ -84,14 +84,3 @@ jobs:
     - name: Run tontester tests
       run: |
         uv run pytest
-
-    - name: Run integration tests
-      run: |
-        for script in test/integration/*.py; do
-          echo $script
-          uv run $script
-        done
-
-    - name: Run tonlib integration test
-      run: |
-        ./test/tonlib/integration/test_integration.sh

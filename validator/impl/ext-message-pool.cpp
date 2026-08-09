@@ -83,8 +83,8 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
       if (a.priority != b.priority) {
         return a.priority > b.priority;
       }
-      bool a_native = a.msg->native_nonce.has_value();
-      bool b_native = b.msg->native_nonce.has_value();
+      bool a_native = static_cast<bool>(a.msg->native_nonce);
+      bool b_native = static_cast<bool>(b.msg->native_nonce);
       if (a_native != b_native) {
         return a_native;
       }

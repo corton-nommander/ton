@@ -643,7 +643,18 @@ bool ValidateQuery::init_parse() {
     new_shard_conf_ = std::make_unique<block::ShardConfig>(shard_hashes_->prefetch_ref());
     // NB: new_shard_conf_->mc_shard_hash_ is unset at this point
   } else if (extra.custom->size_refs()) {
-    return reject_query("non-masterchain block cannot have McBlockExtra");
+    auto batch_res = block::NativeTransferBatch::unpack(extra.custom->prefetch_ref());
+    if (batch_res.is_error()) {
+      return reject_query("non-masterchain block cannot have McBlockExtra");
+    }
+    native_transfer_batch_ = batch_res.move_as_ok();
+    native_compact_accounts_.clear();
+    for (const auto& entry : native_transfer_batch_.value().entries) {
+      native_compact_accounts_.insert(entry.transfer.src);
+      native_compact_accounts_.insert(entry.transfer.dst);
+    }
+    LOG(DEBUG) << "native fast path compact batch: accounts=" << native_compact_accounts_.size()
+               << ", transfers=" << native_transfer_batch_.value().entries.size();
   }
   // ...
   return true;
@@ -2862,6 +2873,9 @@ bool ValidateQuery::unpack_block_data() {
   out_msg_dict_ = std::make_unique<vm::AugmentedDictionary>(std::move(outmsg_cs), 256, t_OutMsgDescr.aug);
   account_blocks_dict_ = std::make_unique<vm::AugmentedDictionary>(
       vm::load_cell_slice_ref(std::move(extra.account_blocks)), 256, block::tlb::aug_ShardAccountBlocks);
+  if (native_transfer_batch_ && !use_native_fast_path()) {
+    return reject_query("compact native transfer batch is only allowed in native fast path");
+  }
   LOG(DEBUG) << "validating InMsgDescr";
   if (!in_msg_dict_->validate_all()) {
     return reject_query("InMsgDescr dictionary is invalid");
@@ -3234,6 +3248,11 @@ bool ValidateQuery::precheck_one_transaction(td::ConstBitPtr acc_id, ton::Logica
   return true;
 }
 
+bool ValidateQuery::has_native_compact_account(td::ConstBitPtr acc_id) const {
+  StdSmcAddress addr = acc_id;
+  return native_compact_accounts_.contains(addr);
+}
+
 // NB: could be run in parallel for different accounts
 /**
  * Pre-validates an AccountBlock and all transactions in it.
@@ -3277,12 +3296,18 @@ bool ValidateQuery::precheck_one_account_block(td::ConstBitPtr acc_id, Ref<vm::C
   unsigned last_trans_lt_len = 1;
   ton::Bits256 acc_state_hash = hash_upd.old_hash;
   try {
-    vm::AugmentedDictionary trans_dict{vm::DictNonEmpty(), std::move(acc_blk.transactions), 64,
-                                       block::tlb::aug_AccountTransactions};
+    vm::AugmentedDictionary trans_dict{std::move(acc_blk.transactions), 64, block::tlb::aug_AccountTransactions};
     td::BitArray<64> min_trans, max_trans;
     if (trans_dict.get_minmax_key(min_trans).is_null() || trans_dict.get_minmax_key(max_trans, true).is_null()) {
+      if (has_native_compact_account(acc_id)) {
+        return true;
+      }
       return reject_query("cannot extract minimal and maximal keys from the transaction dictionary of account "s +
                           acc_id.to_hex(256));
+    }
+    if (has_native_compact_account(acc_id)) {
+      return reject_query("compact native AccountBlock for account "s + acc_id.to_hex(256) +
+                          " must not contain Transaction cells");
     }
     if (min_trans.to_ulong() <= start_lt_ || max_trans.to_ulong() >= end_lt_) {
       return reject_query(PSTRING() << "new block contains transactions " << min_trans.to_ulong() << " .. "
@@ -3354,8 +3379,7 @@ Ref<vm::Cell> ValidateQuery::lookup_transaction(const ton::StdSmcAddress& addr, 
   if (!account_blocks_dict_ || !tlb::csr_unpack_safe(account_blocks_dict_->lookup(addr), ab_rec)) {
     return {};
   }
-  vm::AugmentedDictionary trans_dict{vm::DictNonEmpty(), std::move(ab_rec.transactions), 64,
-                                     block::tlb::aug_AccountTransactions};
+  vm::AugmentedDictionary trans_dict{std::move(ab_rec.transactions), 64, block::tlb::aug_AccountTransactions};
   return trans_dict.lookup_ref(td::BitArray<64>{(long long)lt});
 }
 
@@ -6323,11 +6347,18 @@ bool ValidateQuery::CheckAccountTxs::try_check() {
     }
     auto& account = *account_p;
     REJECT_UNLESS(account.addr == address_);
-    vm::AugmentedDictionary trans_dict{vm::DictNonEmpty(), std::move(acc_blk.transactions), 64,
-                                       block::tlb::aug_AccountTransactions};
+    vm::AugmentedDictionary trans_dict{std::move(acc_blk.transactions), 64, block::tlb::aug_AccountTransactions};
     td::BitArray<64> min_trans, max_trans;
-    REJECT_UNLESS(trans_dict.get_minmax_key(min_trans).not_null());
-    REJECT_UNLESS(trans_dict.get_minmax_key(max_trans, true).not_null());
+    if (trans_dict.get_minmax_key(min_trans).is_null() || trans_dict.get_minmax_key(max_trans, true).is_null()) {
+      if (vq_.has_native_compact_account(address_.cbits())) {
+        return true;
+      }
+      return reject_query("empty transaction dictionary in AccountBlock of "s + address_.to_hex());
+    }
+    if (vq_.has_native_compact_account(address_.cbits())) {
+      return reject_query("compact native AccountBlock for account "s + address_.to_hex() +
+                          " must not contain Transaction cells");
+    }
     ton::LogicalTime min_trans_lt = min_trans.to_ulong(), max_trans_lt = max_trans.to_ulong();
     if (!trans_dict.check_for_each_extra(
             [this, &account, min_trans_lt, max_trans_lt](Ref<vm::CellSlice> value, Ref<vm::CellSlice> extra,
@@ -6625,6 +6656,134 @@ bool ValidateQuery::check_message_processing_order() {
                                     << std::get<0>(a).to_hex() << ": message with created_lt " << std::get<1>(a)
                                     << " has emitted_lt" << std::get<2>(a) << ", but message with created_lt "
                                     << std::get<1>(b) << " has emitted_lt" << std::get<2>(b));
+    }
+  }
+  return true;
+}
+
+bool ValidateQuery::check_native_transfer_batch() {
+  if (!native_transfer_batch_) {
+    return true;
+  }
+  if (!use_native_fast_path()) {
+    return reject_query("compact native transfer batch is only allowed in native fast path");
+  }
+  std::map<StdSmcAddress, std::unique_ptr<block::Account>> accounts;
+  auto get_account = [&](const StdSmcAddress& addr, bool allow_create) -> block::Account* {
+    auto it = accounts.find(addr);
+    if (it != accounts.end()) {
+      return it->second.get();
+    }
+    if (!addr.cbits().equals(shard_pfx_.bits(), shard_pfx_len_)) {
+      reject_query("native compact transfer touches account outside this shard: "s + addr.to_hex());
+      return nullptr;
+    }
+    auto dict_entry = ps_.account_dict_->lookup_extra(addr.cbits(), 256);
+    if (dict_entry.first.is_null() && !allow_create) {
+      reject_query("native compact transfer source account does not exist: "s + addr.to_hex());
+      return nullptr;
+    }
+    auto account = std::make_unique<block::Account>(workchain(), addr.cbits());
+    if (dict_entry.first.is_null()) {
+      if (!account->init_new(now_)) {
+        reject_query("cannot initialize native compact destination account "s + addr.to_hex());
+        return nullptr;
+      }
+    } else if (!account->unpack(std::move(dict_entry.first), now_,
+                                is_masterchain() && config_->is_special_smartcontract(addr.cbits()))) {
+      reject_query("cannot load native compact account "s + addr.to_hex() + " from previous shardchain state");
+      return nullptr;
+    }
+    if (!account->belongs_to_shard(shard_)) {
+      reject_query("native compact account "s + addr.to_hex() + " does not belong to current shard");
+      return nullptr;
+    }
+    account->block_lt = start_lt_;
+    auto* result = account.get();
+    accounts.emplace(addr, std::move(account));
+    return result;
+  };
+
+  for (const auto& entry : native_transfer_batch_.value().entries) {
+    auto* src_acc = get_account(entry.transfer.src, false);
+    if (!src_acc) {
+      return false;
+    }
+    auto* dst_acc = get_account(entry.transfer.dst, true);
+    if (!dst_acc) {
+      return false;
+    }
+    if (dst_acc->status != block::Account::acc_uninit && dst_acc->status != block::Account::acc_nonexist) {
+      return reject_query("native compact transfer destination account must be balance-only: "s +
+                          entry.transfer.dst.to_hex());
+    }
+
+    block::transaction::Transaction debit(*src_acc, block::transaction::Transaction::tr_native_transfer_debit,
+                                          entry.debit_lt, now_);
+    if (debit.start_lt != entry.debit_lt) {
+      return reject_query(PSTRING() << "native compact debit lt mismatch for " << entry.transfer.src.to_hex()
+                                    << ": expected " << debit.start_lt << ", block has " << entry.debit_lt);
+    }
+    if (!debit.prepare_native_transfer_debit(entry.transfer)) {
+      return reject_query("cannot replay native compact debit for account "s + entry.transfer.src.to_hex());
+    }
+    if (!debit.serialize(serialize_cfg_)) {
+      return reject_query("cannot serialize replayed native compact debit for account "s +
+                          entry.transfer.src.to_hex());
+    }
+    if (entry.credit_lt < debit.end_lt) {
+      return reject_query(PSTRING() << "native compact credit lt " << entry.credit_lt
+                                    << " precedes debit end lt " << debit.end_lt);
+    }
+    auto debit_root = debit.commit(*src_acc);
+    if (debit_root.is_null()) {
+      return fatal_error("cannot commit replayed native compact debit");
+    }
+    transaction_fees_ += debit.total_fees;
+    if (!transaction_fees_.is_valid()) {
+      return reject_query("invalid total native compact transaction fees");
+    }
+    total_burned_ += debit.blackhole_burned;
+    native_transfer_debits_.emplace(entry.transfer.src, entry.transfer.dst, entry.debit_lt, entry.transfer.amount);
+
+    block::NativeTransferCredit credit{entry.transfer.src, entry.debit_lt, entry.transfer.amount};
+    block::transaction::Transaction credit_trans(*dst_acc, block::transaction::Transaction::tr_native_transfer_credit,
+                                                 entry.credit_lt, now_);
+    if (credit_trans.start_lt != entry.credit_lt) {
+      return reject_query(PSTRING() << "native compact credit lt mismatch for " << entry.transfer.dst.to_hex()
+                                    << ": expected " << credit_trans.start_lt << ", block has " << entry.credit_lt);
+    }
+    if (!credit_trans.prepare_native_transfer_credit(credit)) {
+      return reject_query("cannot replay native compact credit for account "s + entry.transfer.dst.to_hex());
+    }
+    if (!credit_trans.serialize(serialize_cfg_)) {
+      return reject_query("cannot serialize replayed native compact credit for account "s +
+                          entry.transfer.dst.to_hex());
+    }
+    auto credit_root = credit_trans.commit(*dst_acc);
+    if (credit_root.is_null()) {
+      return fatal_error("cannot commit replayed native compact credit");
+    }
+    total_burned_ += credit_trans.blackhole_burned;
+    native_transfer_credits_.emplace(entry.transfer.src, entry.transfer.dst, entry.debit_lt, entry.transfer.amount);
+  }
+
+  for (const auto& [addr, account] : accounts) {
+    if (!account_blocks_dict_->key_exists(addr)) {
+      return reject_query("native compact account has no AccountBlock: "s + addr.to_hex());
+    }
+    block::tlb::ShardAccount::Record new_state;
+    if (!new_state.unpack(ns_.account_dict_->lookup(addr.cbits(), 256)) || new_state.is_zero) {
+      return reject_query("cannot unpack new native compact account state "s + addr.to_hex());
+    }
+    if (new_state.account->get_hash() != account->total_state->get_hash()) {
+      return reject_query("native compact account state hash mismatch for "s + addr.to_hex());
+    }
+    if (new_state.last_trans_lt != account->last_trans_lt_ || new_state.last_trans_hash != account->last_trans_hash_) {
+      return reject_query(PSTRING() << "native compact last transaction mismatch for " << addr.to_hex()
+                                    << ": replayed " << account->last_trans_lt_ << ":"
+                                    << account->last_trans_hash_.to_hex() << ", block has "
+                                    << new_state.last_trans_lt << ":" << new_state.last_trans_hash.to_hex());
     }
   }
   return true;
@@ -7778,6 +7937,9 @@ bool ValidateQuery::try_validate() {
       }
       if (!check_message_processing_order()) {
         return reject_query("some messages have been processed by transactions in incorrect order");
+      }
+      if (!check_native_transfer_batch()) {
+        return reject_query("compact native transfer batch is invalid");
       }
       if (!check_native_transfer_pairs()) {
         return reject_query("native transfer debit/credit pairs are invalid");

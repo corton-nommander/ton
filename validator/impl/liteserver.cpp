@@ -2514,8 +2514,7 @@ void LiteQuery::finish_listBlockTransactions(int mode, int req_count) {
         fatal_error("invalid AccountBlock for account "s + cur_addr.to_hex());
         return;
       }
-      vm::AugmentedDictionary trans_dict{vm::DictNonEmpty(), std::move(acc_blk.transactions), 64,
-                                         block::tlb::aug_AccountTransactions};
+      vm::AugmentedDictionary trans_dict{std::move(acc_blk.transactions), 64, block::tlb::aug_AccountTransactions};
       td::BitArray<64> cur_trans{(long long)trans_lt_};
       while (count < req_count && count < max_answer_transactions) {
         Ref<vm::Cell> tvalue;
@@ -2668,8 +2667,7 @@ void LiteQuery::finish_listBlockTransactionsExt(int mode, int req_count) {
         fatal_error("invalid AccountBlock for account "s + cur_addr.to_hex());
         return;
       }
-      vm::AugmentedDictionary trans_dict{vm::DictNonEmpty(), std::move(acc_blk.transactions), 64,
-                                         block::tlb::aug_AccountTransactions};
+      vm::AugmentedDictionary trans_dict{std::move(acc_blk.transactions), 64, block::tlb::aug_AccountTransactions};
       td::BitArray<64> cur_trans{(long long)trans_lt_};
       while (count < req_count && count < max_answer_transactions) {
         Ref<vm::Cell> tvalue;

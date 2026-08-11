@@ -367,8 +367,7 @@ td::Result<BlockTransactionList::Info> BlockTransactionList::validate(bool check
         if (!tlb::csr_unpack(std::move(value), acc_blk) || acc_blk.account_addr != cur_addr) {
           return td::Status::Error("Error unpacking proof account block");
         }
-        vm::AugmentedDictionary trans_dict{vm::DictNonEmpty(), std::move(acc_blk.transactions), 64,
-                                           block::tlb::aug_AccountTransactions};
+        vm::AugmentedDictionary trans_dict{std::move(acc_blk.transactions), 64, block::tlb::aug_AccountTransactions};
         td::BitArray<64> cur_trans{(long long)trans_lt};
         while (count < req_count && count < max_answer_transactions) {
           auto tvalue = trans_dict.extract_value_ref(

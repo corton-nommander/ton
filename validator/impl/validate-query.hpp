@@ -252,6 +252,8 @@ class ValidateQuery : public td::actor::Actor {
   std::vector<std::tuple<Bits256, LogicalTime, LogicalTime>> msg_emitted_lt_;
   using NativeTransferPair = std::tuple<Bits256, Bits256, LogicalTime, td::uint64>;
   std::multiset<NativeTransferPair> native_transfer_debits_, native_transfer_credits_;
+  td::optional<block::NativeTransferBatch> native_transfer_batch_;
+  std::set<StdSmcAddress> native_compact_accounts_;
 
   std::set<std::tuple<Bits256, Bits256, bool>> lib_publishers_, lib_publishers2_;
 
@@ -384,6 +386,7 @@ class ValidateQuery : public td::actor::Actor {
   bool precheck_one_transaction(td::ConstBitPtr acc_id, ton::LogicalTime trans_lt, Ref<vm::CellSlice> trans_csr,
                                 ton::Bits256& prev_trans_hash, ton::LogicalTime& prev_trans_lt,
                                 unsigned& prev_trans_lt_len, ton::Bits256& acc_state_hash);
+  bool has_native_compact_account(td::ConstBitPtr acc_id) const;
   bool precheck_one_account_block(td::ConstBitPtr acc_id, Ref<vm::CellSlice> acc_blk);
   bool precheck_account_transactions();
   Ref<vm::Cell> lookup_transaction(const ton::StdSmcAddress& addr, ton::LogicalTime lt) const;
@@ -463,6 +466,7 @@ class ValidateQuery : public td::actor::Actor {
   bool check_transactions();
   bool check_all_ticktock_processed();
   bool check_message_processing_order();
+  bool check_native_transfer_batch();
   bool check_native_transfer_pairs();
   bool check_special_message(Ref<vm::Cell> in_msg_root, const block::CurrencyCollection& amount,
                              Ref<vm::Cell> addr_cell);

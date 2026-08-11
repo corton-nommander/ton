@@ -33,6 +33,7 @@
 #include "block/block.h"
 #include "block/check-proof.h"
 #include "block/mc-config.h"
+#include "block/transaction.h"
 #include "common/checksum.h"
 #include "crypto/common/util.h"
 #include "crypto/vm/utils.h"
@@ -67,6 +68,23 @@ using namespace std::literals::string_literals;
 using td::Ref;
 
 int verbosity;
+
+void print_native_transfer_batch_summary(std::ostream& os, Ref<vm::Cell> root) {
+  block::gen::Block::Record blk;
+  block::gen::BlockInfo::Record info;
+  block::gen::BlockExtra::Record extra;
+  if (!tlb::unpack_cell(root, blk) || !tlb::unpack_cell(blk.info, info) || !info.not_master ||
+      !tlb::unpack_cell(blk.extra, extra) || !extra.custom->have_refs()) {
+    return;
+  }
+  auto batch_res = block::NativeTransferBatch::unpack(extra.custom->prefetch_ref());
+  if (batch_res.is_error()) {
+    return;
+  }
+  auto batch = batch_res.move_as_ok();
+  os << "native_transfer_batch accounts=" << batch.accounts.size() << " transfers=" << batch.entries.size()
+     << std::endl;
+}
 
 void TestNode::run() {
   class Cb : public td::TerminalIO::Callback {
@@ -3202,6 +3220,7 @@ void TestNode::got_block(ton::BlockIdExt blkid, td::BufferSlice data, bool dump)
     out << "block contents is ";
     std::ostringstream outp;
     block::gen::t_Block.print_ref(print_limit_, outp, root);
+    print_native_transfer_batch_summary(outp, root);
     vm::load_cell_slice(root).print_rec(print_limit_, outp);
     out << outp.str();
     show_block_header(blkid, std::move(root), 0xffff);

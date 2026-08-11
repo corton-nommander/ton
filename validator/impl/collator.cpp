@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cassert>
 #include <ctime>
+#include <set>
 
 #include "adnl/utils.hpp"
 #include "block/block-auto.h"
@@ -54,6 +55,7 @@ static constexpr td::uint32 SPLIT_MAX_QUEUE_SIZE = 100000;
 static constexpr td::uint32 MERGE_MAX_QUEUE_SIZE = 2047;
 static constexpr td::uint32 SKIP_EXTERNALS_QUEUE_SIZE = 8000;
 static constexpr int HIGH_PRIORITY_EXTERNAL = 10;  // don't skip high priority externals when queue is big
+static constexpr std::size_t NATIVE_FAST_PATH_EXTERNAL_BATCH = 4096;
 
 static constexpr int MAX_ATTEMPTS = 5;
 
@@ -845,6 +847,9 @@ bool Collator::unpack_last_mc_state() {
   deferring_messages_enabled_ = config_->has_capability(ton::capDeferMessages);
   allow_same_timestamp_ = global_version_ >= 13;
   full_collated_data_ = config_->has_capability(capFullCollatedData) || params_.collator_opts->force_full_collated_data;
+  if (use_native_fast_path()) {
+    full_collated_data_ = false;
+  }
   LOG(DEBUG) << "full_collated_data is " << full_collated_data_;
   shard_conf_ = std::make_unique<block::ShardConfig>(*config_);
   prev_key_block_exists_ = config_->get_last_key_block(prev_key_block_, prev_key_block_lt_);
@@ -3076,13 +3081,16 @@ bool Collator::process_account_storage_dict(block::Account& account) {
  */
 bool Collator::combine_account_transactions() {
   vm::AugmentedDictionary dict{256, block::tlb::aug_ShardAccountBlocks};
+  bool compact_native_transactions = use_native_fast_path() && !native_transfer_batch_entries_.empty();
   for (auto& z : accounts) {
     block::Account& acc = *(z.second);
     CHECK(acc.addr == z.first);
-    if (!acc.transactions.empty()) {
-      // have transactions for this account
+    bool account_changed = acc.total_state->get_hash() != acc.orig_total_state->get_hash();
+    bool include_account_block = compact_native_transactions ? account_changed : !acc.transactions.empty();
+    if (include_account_block) {
+      // have transactions or a compact native state update for this account
       vm::CellBuilder cb;
-      if (!acc.create_account_block(cb)) {
+      if (!acc.create_account_block(cb, !compact_native_transactions)) {
         return fatal_error("cannot create AccountBlock for account "s + z.first.to_hex());
       }
       auto cell = cb.finalize();
@@ -3099,7 +3107,7 @@ bool Collator::combine_account_transactions() {
                            " could not be added to ShardAccountBlocks");
       }
       // update account_dict
-      if (acc.total_state->get_hash() != acc.orig_total_state->get_hash()) {
+      if (account_changed) {
         // account changed
         if (acc.orig_status == block::Account::acc_nonexist) {
           // account created
@@ -3144,7 +3152,7 @@ bool Collator::combine_account_transactions() {
         return false;
       }
     } else {
-      if (acc.total_state->get_hash() != acc.orig_total_state->get_hash()) {
+      if (account_changed) {
         return fatal_error(std::string{"total state of account "} + z.first.to_hex() +
                            " miraculously changed without transactions");
       }
@@ -4305,6 +4313,9 @@ td::actor::Task<bool> Collator::process_inbound_external_messages() {
     LOG(INFO) << "Attempt #" << params_.attempt_idx << ": skip external messages (attempt >= 2)";
     co_return true;
   }
+  if (use_native_fast_path()) {
+    co_return co_await process_native_fast_path_external_messages();
+  }
   bool full = !block_limit_status_->fits(block::ParamLimits::cl_soft);
   while (true) {
     if (full) {
@@ -4369,6 +4380,139 @@ td::actor::Task<bool> Collator::process_inbound_external_messages() {
     if (r > 0) {
       full = !block_limit_status_->fits(block::ParamLimits::cl_soft);
       block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+    }
+  }
+  co_return true;
+}
+
+td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
+  struct NativeExternal {
+    td::Ref<ExtMessage> ext_msg;
+    block::NativeTransfer transfer;
+  };
+
+  bool full = !block_limit_status_->fits(block::ParamLimits::cl_soft);
+  while (true) {
+    if (full) {
+      LOG(INFO) << "BLOCK FULL, stop processing native fast-path external messages";
+      stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: "
+                                     << block_full_comment(*block_limit_status_, block::ParamLimits::cl_soft) << "\n";
+      break;
+    }
+    if (external_msg_timeout_.is_in_past(td::Timestamp::now())) {
+      LOG(WARNING) << "medium timeout reached, stop processing native fast-path external messages";
+      stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: timeout\n";
+      break;
+    }
+    if (!check_cancelled()) {
+      co_return false;
+    }
+
+    std::vector<NativeExternal> batch;
+    batch.reserve(NATIVE_FAST_PATH_EXTERNAL_BATCH);
+    bool queue_exhausted = false;
+    bool saw_item = false;
+    while (batch.size() < NATIVE_FAST_PATH_EXTERNAL_BATCH) {
+      std::pair<td::Ref<ExtMessage>, int> item;
+      if (pending_ext_msg_) {
+        item = std::move(*pending_ext_msg_);
+        pending_ext_msg_.reset();
+      } else {
+        td::Result<std::pair<td::Ref<ExtMessage>, int>> maybe;
+        td::Timer wait_timer;
+        if (params_.wait_externals_until || saw_item) {
+          maybe = co_await ext_msg_queue_.try_pop().wrap();
+        } else {
+          maybe = co_await ext_msg_queue_.pop().wrap();
+        }
+        wait_externals_total_time_ += wait_timer.elapsed();
+        if (maybe.is_error()) {
+          queue_exhausted = true;
+          break;
+        }
+        item = maybe.move_as_ok();
+      }
+      saw_item = true;
+
+      td::ScopedRealCpuTimer timer_total{stats_.work_time.total};
+      auto [ext_msg_ref, priority] = std::move(item);
+      ++stats_.ext_msgs_total;
+      if (register_external_message(ext_msg_ref, priority).is_error()) {
+        ++stats_.ext_msgs_filtered;
+        bad_ext_msgs_.emplace_back(ext_msg_ref->hash());
+        continue;
+      }
+      if (out_msg_queue_size_ > SKIP_EXTERNALS_QUEUE_SIZE && priority < HIGH_PRIORITY_EXTERNAL) {
+        continue;
+      }
+
+      auto ext_msg = ext_msg_ref->root_cell();
+      auto native_transfer_res = block::NativeTransfer::unpack_external(ext_msg);
+      if (native_transfer_res.is_error()) {
+        LOG(DEBUG) << "native fast path rejected non-native external message";
+        ++stats_.ext_msgs_rejected;
+        delay_ext_msgs_.emplace_back(ext_msg_ref->hash());
+        continue;
+      }
+      batch.push_back(NativeExternal{std::move(ext_msg_ref), native_transfer_res.move_as_ok()});
+    }
+
+    if (batch.empty()) {
+      if (queue_exhausted) {
+        break;
+      }
+      continue;
+    }
+
+    std::vector<NativeExternal> pending = std::move(batch);
+    std::vector<NativeExternal> next_round;
+    next_round.reserve(pending.size());
+    while (!pending.empty()) {
+      if (!check_cancelled()) {
+        co_return false;
+      }
+      if (external_msg_timeout_.is_in_past(td::Timestamp::now())) {
+        for (auto& item : pending) {
+          delay_ext_msgs_.emplace_back(item.ext_msg->hash());
+        }
+        LOG(WARNING) << "medium timeout reached with " << pending.size()
+                     << " native fast-path external messages left in the batch";
+        stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: timeout\n";
+        co_return true;
+      }
+
+      std::set<StdSmcAddress> touched_accounts;
+      next_round.clear();
+      for (auto& item : pending) {
+        if (full) {
+          delay_ext_msgs_.emplace_back(item.ext_msg->hash());
+          continue;
+        }
+        if (touched_accounts.contains(item.transfer.src) || touched_accounts.contains(item.transfer.dst)) {
+          next_round.push_back(std::move(item));
+          continue;
+        }
+        touched_accounts.insert(item.transfer.src);
+        touched_accounts.insert(item.transfer.dst);
+
+        int r = process_native_transfer(item.transfer);
+        if (r > 0) {
+          ++stats_.ext_msgs_accepted;
+        } else {
+          ++stats_.ext_msgs_rejected;
+        }
+        if (r < 0) {
+          bad_ext_msgs_.emplace_back(item.ext_msg->hash());
+          co_return false;
+        }
+        if (r == 0) {
+          delay_ext_msgs_.emplace_back(item.ext_msg->hash());
+        } else {
+          full = !block_limit_status_->fits(block::ParamLimits::cl_soft);
+          block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+        }
+      }
+      pending.swap(next_round);
     }
   }
   co_return true;
@@ -4495,6 +4639,9 @@ int Collator::process_native_transfer(const block::NativeTransfer& transfer) {
   update_account_storage_dict_info(*debit);
   update_max_lt(src_acc->last_trans_end_lt_);
   value_flow_.burned += debit->blackhole_burned;
+  if (use_native_fast_path()) {
+    native_compact_transaction_fees_ += debit->total_fees;
+  }
   ++stats_.transactions;
 
   block::NativeTransferCredit credit{transfer.src, debit_lt, transfer.amount};
@@ -4518,6 +4665,7 @@ int Collator::process_native_transfer(const block::NativeTransfer& transfer) {
     fatal_error("cannot update block limit status to include native transfer credit");
     return -1;
   }
+  const auto credit_lt = credit_trans->start_lt;
   auto credit_root = credit_trans->commit(*dst_acc);
   if (credit_root.is_null()) {
     fatal_error("cannot commit native transfer credit transaction");
@@ -4530,6 +4678,9 @@ int Collator::process_native_transfer(const block::NativeTransfer& transfer) {
   update_account_storage_dict_info(*credit_trans);
   update_max_lt(dst_acc->last_trans_end_lt_);
   value_flow_.burned += credit_trans->blackhole_burned;
+  if (use_native_fast_path()) {
+    native_transfer_batch_entries_.push_back(block::NativeTransferBatchEntry{transfer, debit_lt, credit_lt});
+  }
   ++stats_.transactions;
   return 1;
 }
@@ -6111,6 +6262,12 @@ bool Collator::compute_total_balance() {
   if (!new_transaction_fees.validate_unpack(acc_blocks_dict.get_root_extra())) {
     return fatal_error("cannot extract new_transaction_fees from the root of ShardAccountBlocks");
   }
+  if (use_native_fast_path() && !native_transfer_batch_entries_.empty()) {
+    new_transaction_fees += native_compact_transaction_fees_;
+    if (!new_transaction_fees.is_valid()) {
+      return fatal_error("invalid native compact transaction fees");
+    }
+  }
   vm::CellSlice cs{*(in_msg_dict->get_root_extra())};
   if (verbosity > 2) {
     FLOG(INFO) {
@@ -6270,7 +6427,16 @@ bool Collator::check_value_flow() {
  */
 bool Collator::create_block_extra(Ref<vm::Cell>& block_extra) {
   bool mc = is_masterchain();
-  Ref<vm::Cell> mc_block_extra;
+  Ref<vm::Cell> custom_extra;
+  bool native_compact = use_native_fast_path() && !native_transfer_batch_entries_.empty();
+  if (native_compact) {
+    block::NativeTransferBatch batch;
+    batch.entries = native_transfer_batch_entries_;
+    vm::CellBuilder native_cb;
+    if (!(batch.store(native_cb) && native_cb.finalize_to(custom_extra))) {
+      return fatal_error("cannot serialize compact native transfer batch");
+    }
+  }
   vm::CellBuilder cb, cb2;
   return cb.store_long_bool(0x4a33f6fdU, 32)                                             // block_extra
          && in_msg_dict->append_dict_to_bool(cb2) && cb.store_ref_bool(cb2.finalize())   // in_msg_descr:^InMsgDescr
@@ -6278,8 +6444,9 @@ bool Collator::create_block_extra(Ref<vm::Cell>& block_extra) {
          && cb.store_ref_bool(shard_account_blocks_)          // account_blocks:^ShardAccountBlocks
          && cb.store_bits_bool(rand_seed_)                    // rand_seed:bits256
          && cb.store_bits_bool(params_.creator.as_bits256())  // created_by:bits256
-         && cb.store_bool_bool(mc)                            // custom:(Maybe
-         && (!mc || (create_mc_block_extra(mc_block_extra) && cb.store_ref_bool(mc_block_extra)))  // .. ^McBlockExtra)
+         && cb.store_bool_bool(mc || native_compact)          // custom:(Maybe
+         && ((!mc && !native_compact) ||
+             ((mc ? create_mc_block_extra(custom_extra) : true) && cb.store_ref_bool(custom_extra)))  // .. ^Cell)
          && cb.finalize_to(block_extra);                                                           // = BlockExtra;
 }
 
@@ -6471,6 +6638,11 @@ bool Collator::prepare_proofs() {
  * @returns True if the collated data was successfully created, false otherwise.
  */
 bool Collator::create_collated_data() {
+  if (use_native_fast_path()) {
+    collated_roots_.clear();
+    block_limit_status_->collated_data_size_estimate = 0;
+    return true;
+  }
   // 1.1 store the set of used shard block descriptions
   if (!used_shard_block_descr_.empty()) {
     auto cell = collate_shard_block_descr_set();

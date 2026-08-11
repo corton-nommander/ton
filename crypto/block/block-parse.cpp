@@ -1731,7 +1731,7 @@ bool Transaction::get_total_fees(vm::CellSlice&& cs, block::CurrencyCollection& 
 const Transaction t_Transaction;
 const RefTo<Transaction> t_Ref_Transaction;
 
-// leaf evaluation for (HashmapAug 64 ^Transaction CurrencyCollection)
+// leaf evaluation for (HashmapAugE 64 ^Transaction CurrencyCollection)
 bool Aug_AccountTransactions::eval_leaf(vm::CellBuilder& cb, vm::CellSlice& cs) const {
   auto cell_ref = cs.prefetch_ref();
   block::CurrencyCollection total_fees;
@@ -1740,14 +1740,14 @@ bool Aug_AccountTransactions::eval_leaf(vm::CellBuilder& cb, vm::CellSlice& cs) 
 }
 
 const Aug_AccountTransactions aug_AccountTransactions;
-const HashmapAug t_AccountTransactions{64, aug_AccountTransactions};
+const HashmapAugE t_AccountTransactions{64, aug_AccountTransactions};
 
 const HashUpdate t_HashUpdate;
 const RefTo<HashUpdate> t_Ref_HashUpdate;
 
 bool AccountBlock::skip(vm::CellSlice& cs) const {
   return cs.advance(4 + 256)                // acc_trans#5 account_addr:bits256
-         && t_AccountTransactions.skip(cs)  // transactions:(HashmapAug 64 ^Transaction CurrencyCollection)
+         && t_AccountTransactions.skip(cs)  // transactions:(HashmapAugE 64 ^Transaction CurrencyCollection)
          && cs.advance_refs(1);             // state_update:^(HASH_UPDATE Account)
 }
 
@@ -1755,13 +1755,13 @@ bool AccountBlock::validate_skip(int* ops, vm::CellSlice& cs, bool weak) const {
   return cs.fetch_ulong(4) == 5  // acc_trans#5
          && cs.advance(256)      // account_addr:bits256
          && t_AccountTransactions.validate_skip(ops, cs,
-                                                weak)  // transactions:(HashmapAug 64 ^Transaction CurrencyCollection)
+                                                weak)  // transactions:(HashmapAugE 64 ^Transaction CurrencyCollection)
          && t_Ref_HashUpdate.validate_skip(ops, cs, weak);  // state_update:^(HASH_UPDATE Account)
 }
 
 bool AccountBlock::get_total_fees(vm::CellSlice&& cs, block::CurrencyCollection& total_fees) const {
   return cs.advance(4 + 256)                         // acc_trans#5 account_addr:bits256
-         && t_AccountTransactions.extract_extra(cs)  // transactions:(HashmapAug 64 ^Transaction Grams)
+         && t_AccountTransactions.extract_extra(cs)  // transactions:(HashmapAugE 64 ^Transaction Grams)
          && total_fees.fetch(cs);
 }
 

@@ -223,6 +223,8 @@ class Collator final : public td::actor::Actor {
   unsigned block_create_total_{0};
   std::vector<ExtMessage::Hash> bad_ext_msgs_, delay_ext_msgs_;
   Ref<vm::Cell> shard_account_blocks_;  // ShardAccountBlocks
+  std::vector<block::NativeTransferBatchEntry> native_transfer_batch_entries_;
+  block::CurrencyCollection native_compact_transaction_fees_{0};
 
   std::map<td::Bits256, Ref<vm::Cell>> block_state_proofs_;
   std::vector<std::pair<BlockIdExt, vm::MerkleProofBuilder>> neighbor_proof_builders_;
@@ -362,6 +364,7 @@ class Collator final : public td::actor::Actor {
   bool process_inbound_message(Ref<vm::CellSlice> msg, ton::LogicalTime lt, td::ConstBitPtr key, int src_nb_idx);
   td::actor::Task<> process_external_and_new_messages();
   td::actor::Task<bool> process_inbound_external_messages();
+  td::actor::Task<bool> process_native_fast_path_external_messages();
   int process_external_message(Ref<vm::Cell> msg);
   int process_native_transfer(const block::NativeTransfer& transfer);
   bool process_dispatch_queue();

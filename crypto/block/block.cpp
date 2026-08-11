@@ -2218,8 +2218,7 @@ td::Result<Ref<vm::Cell>> get_block_transaction(Ref<vm::Cell> block_root, ton::W
       if (!(tlb::csr_unpack(std::move(ab_csr), acc_block) && acc_block.account_addr == addr)) {
         return td::Status::Error("cannot unpack AccountBlock");
       }
-      vm::AugmentedDictionary trans_dict{vm::DictNonEmpty(), acc_block.transactions, 64,
-                                         block::tlb::aug_AccountTransactions};
+      vm::AugmentedDictionary trans_dict{acc_block.transactions, 64, block::tlb::aug_AccountTransactions};
       return trans_dict.lookup_ref(td::BitArray<64>{static_cast<long long>(lt)});
     }
   }

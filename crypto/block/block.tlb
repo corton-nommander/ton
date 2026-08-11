@@ -312,7 +312,7 @@ update_hashes#72 {X:Type} old_hash:bits256 new_hash:bits256
 !merkle_proof#03 {X:Type} virtual_hash:bits256 depth:uint16 virtual_root:^X = MERKLE_PROOF X;
 
 acc_trans#5 account_addr:bits256
-            transactions:(HashmapAug 64 ^Transaction CurrencyCollection)
+            transactions:(HashmapAugE 64 ^Transaction CurrencyCollection)
             state_update:^(HASH_UPDATE Account)
           = AccountBlock;
 

@@ -18,6 +18,7 @@
 */
 #pragma once
 #include <ostream>
+#include <vector>
 
 #include "block/block-auto.h"
 #include "block/block.h"
@@ -112,6 +113,24 @@ struct NativeTransferCredit {
 
   bool store_description(vm::CellBuilder& cb) const;
   static td::Result<NativeTransferCredit> unpack_description(Ref<vm::Cell> cell);
+};
+
+struct NativeTransferBatchEntry {
+  NativeTransfer transfer;
+  ton::LogicalTime debit_lt{0};
+  ton::LogicalTime credit_lt{0};
+};
+
+struct NativeTransferBatch {
+  static constexpr td::uint32 magic = 0x4e545842;           // "NTXB"
+  static constexpr td::uint32 accounts_chunk_magic = 0x4e414343;  // "NACC"
+  static constexpr td::uint32 transfers_chunk_magic = 0x4e545843; // "NTXC"
+
+  std::vector<ton::StdSmcAddress> accounts;
+  std::vector<NativeTransferBatchEntry> entries;
+
+  bool store(vm::CellBuilder& cb) const;
+  static td::Result<NativeTransferBatch> unpack(Ref<vm::Cell> cell);
 };
 
 struct StoragePhaseConfig {
@@ -358,7 +377,7 @@ struct Account {
   }
   void push_transaction(Ref<vm::Cell> trans_root, ton::LogicalTime trans_lt);
   bool libraries_changed() const;
-  bool create_account_block(vm::CellBuilder& cb);  // stores an AccountBlock with all transactions
+  bool create_account_block(vm::CellBuilder& cb, bool include_transactions = true);
 
  protected:
   friend struct transaction::Transaction;

@@ -769,7 +769,7 @@ struct Aug_AccountTransactions final : AugmentationCheckData {
 };
 
 extern const Aug_AccountTransactions aug_AccountTransactions;
-extern const HashmapAug t_AccountTransactions;  // (HashmapAug 64 ^Transaction CurrencyCollection)
+extern const HashmapAugE t_AccountTransactions;  // (HashmapAugE 64 ^Transaction CurrencyCollection)
 
 struct HashUpdate final : TLB_Complex {
   bool skip(vm::CellSlice& cs) const override {

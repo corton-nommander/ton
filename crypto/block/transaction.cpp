@@ -20,6 +20,7 @@
 #include "block/block-parse.h"
 #include "block/block.h"
 #include "block/transaction.h"
+#include "common/checksum.h"
 #include "crypto/Ed25519.h"
 #include "crypto/openssl/rand.hpp"
 #include "td/utils/Timer.h"
@@ -28,7 +29,11 @@
 #include "ton/ton-shard.h"
 #include "vm/vm.h"
 
+#include <deque>
 #include <limits>
+#include <map>
+#include <mutex>
+#include <set>
 
 #define FAIL_UNLESS_MSG(condition, msg) \
   if (!(condition)) {                   \
@@ -888,6 +893,7 @@ td::RefInt256 Account::compute_storage_fees(ton::UnixTime now, const std::vector
 namespace {
 constexpr std::size_t native_transfer_public_key_size = 32;
 constexpr std::size_t native_transfer_signature_size = 64;
+constexpr std::size_t native_transfer_signature_cache_capacity = 262144;
 
 void append_u32_be(std::string& out, td::uint32 value) {
   for (int i = 3; i >= 0; --i) {
@@ -903,6 +909,42 @@ void append_u64_be(std::string& out, td::uint64 value) {
 
 td::RefInt256 native_uint(td::uint64 value) {
   return td::make_refint(value);
+}
+
+class NativeTransferSignatureCache {
+ public:
+  bool contains(const td::Bits256& key) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return entries_.contains(key);
+  }
+
+  void insert(td::Bits256 key) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!entries_.insert(key).second) {
+      return;
+    }
+    order_.push_back(key);
+    while (entries_.size() > native_transfer_signature_cache_capacity) {
+      entries_.erase(order_.front());
+      order_.pop_front();
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  std::set<td::Bits256> entries_;
+  std::deque<td::Bits256> order_;
+};
+
+NativeTransferSignatureCache& native_transfer_signature_cache() {
+  static NativeTransferSignatureCache cache;
+  return cache;
+}
+
+td::Bits256 native_transfer_signature_cache_key(const NativeTransfer& transfer) {
+  auto payload = transfer.signing_payload();
+  payload.append(transfer.signature);
+  return td::sha256_bits256(td::Slice(payload));
 }
 
 td::optional<td::uint64> native_balance_to_uint64(const block::CurrencyCollection& balance) {
@@ -955,6 +997,18 @@ td::Result<std::string> fetch_native_signature_ref(vm::CellSlice& cs) {
   }
   return signature;
 }
+
+bool store_native_signature_inline(vm::CellBuilder& cb, td::Slice signature) {
+  return signature.size() == native_transfer_signature_size && cb.store_bytes_bool(signature);
+}
+
+td::Result<std::string> fetch_native_signature_inline(vm::CellSlice& cs) {
+  std::string signature(native_transfer_signature_size, '\0');
+  if (!cs.fetch_bytes(reinterpret_cast<unsigned char*>(&signature[0]), native_transfer_signature_size)) {
+    return td::Status::Error("Failed to unpack inline native transfer signature");
+  }
+  return signature;
+}
 }  // namespace
 
 bool NativeTransfer::is_valid() const {
@@ -979,10 +1033,18 @@ td::Status NativeTransfer::verify_signature() const {
   if (!is_valid()) {
     return td::Status::Error("Invalid native transfer fields");
   }
+  auto cache_key = native_transfer_signature_cache_key(*this);
+  if (native_transfer_signature_cache().contains(cache_key)) {
+    return td::Status::OK();
+  }
 #if TD_HAVE_OPENSSL
   td::Ed25519::PublicKey pub_key{td::SecureString(src.as_slice())};
   auto payload = signing_payload();
-  return pub_key.verify_signature(td::Slice(payload), td::Slice(signature));
+  auto status = pub_key.verify_signature(td::Slice(payload), td::Slice(signature));
+  if (status.is_ok()) {
+    native_transfer_signature_cache().insert(cache_key);
+  }
+  return status;
 #else
   return td::Status::Error("Ed25519 signature verification is not available");
 #endif
@@ -1075,6 +1137,157 @@ td::Result<NativeTransferCredit> NativeTransferCredit::unpack_description(Ref<vm
     return td::Status::Error("Native transfer credit amount must be positive");
   }
   return credit;
+}
+
+bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
+  if (entries.size() > std::numeric_limits<td::uint32>::max()) {
+    return false;
+  }
+  std::vector<ton::StdSmcAddress> account_table;
+  std::map<ton::StdSmcAddress, td::uint32> account_index;
+  auto add_account = [&](const ton::StdSmcAddress& addr) -> bool {
+    if (account_index.count(addr)) {
+      return true;
+    }
+    if (account_table.size() > std::numeric_limits<td::uint32>::max()) {
+      return false;
+    }
+    auto index = static_cast<td::uint32>(account_table.size());
+    account_table.push_back(addr);
+    account_index.emplace(addr, index);
+    return true;
+  };
+  for (const auto& entry : entries) {
+    if (!entry.transfer.is_valid() || !entry.debit_lt || !entry.credit_lt || !add_account(entry.transfer.src) ||
+        !add_account(entry.transfer.dst)) {
+      return false;
+    }
+  }
+
+  Ref<vm::Cell> account_root;
+  for (std::size_t end = account_table.size(); end > 0;) {
+    std::size_t start = end >= 3 ? end - 3 : 0;
+    vm::CellBuilder chunk;
+    if (!(chunk.store_ulong_rchk_bool(accounts_chunk_magic, 32) &&
+          chunk.store_ulong_rchk_bool(static_cast<td::uint32>(end - start), 8))) {
+      return false;
+    }
+    for (std::size_t i = start; i < end; ++i) {
+      if (!chunk.store_bits_bool(account_table[i])) {
+        return false;
+      }
+    }
+    if (!(chunk.store_maybe_ref(std::move(account_root)) && chunk.finalize_to(account_root))) {
+      return false;
+    }
+    end = start;
+  }
+
+  Ref<vm::Cell> transfer_root;
+  for (std::size_t i = entries.size(); i > 0; --i) {
+    const auto& entry = entries[i - 1];
+    auto src_it = account_index.find(entry.transfer.src);
+    auto dst_it = account_index.find(entry.transfer.dst);
+    if (src_it == account_index.end() || dst_it == account_index.end()) {
+      return false;
+    }
+    vm::CellBuilder chunk;
+    if (!(chunk.store_ulong_rchk_bool(transfers_chunk_magic, 32) &&
+          chunk.store_ulong_rchk_bool(src_it->second, 32) && chunk.store_ulong_rchk_bool(dst_it->second, 32) &&
+          chunk.store_ulong_rchk_bool(entry.transfer.amount, 64) &&
+          chunk.store_ulong_rchk_bool(entry.transfer.fee, 64) &&
+          chunk.store_ulong_rchk_bool(entry.transfer.nonce, 64) &&
+          chunk.store_ulong_rchk_bool(entry.transfer.valid_until, 32) &&
+          chunk.store_ulong_rchk_bool(entry.debit_lt, 64) && chunk.store_ulong_rchk_bool(entry.credit_lt, 64) &&
+          store_native_signature_inline(chunk, td::Slice(entry.transfer.signature)) &&
+          chunk.store_maybe_ref(std::move(transfer_root)) && chunk.finalize_to(transfer_root))) {
+      return false;
+    }
+  }
+
+  return cb.store_ulong_rchk_bool(magic, 32) && cb.store_ulong_rchk_bool(1, 8) &&
+         cb.store_ulong_rchk_bool(static_cast<td::uint32>(account_table.size()), 32) &&
+         cb.store_ulong_rchk_bool(static_cast<td::uint32>(entries.size()), 32) &&
+         cb.store_maybe_ref(std::move(account_root)) && cb.store_maybe_ref(std::move(transfer_root));
+}
+
+td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) {
+  if (cell.is_null()) {
+    return td::Status::Error("Native transfer batch cell is null");
+  }
+  NativeTransferBatch batch;
+  auto cs = vm::load_cell_slice(cell);
+  auto tag = cs.fetch_ulong(32);
+  auto version = cs.fetch_ulong(8);
+  auto accounts_count = cs.fetch_ulong(32);
+  auto entries_count = cs.fetch_ulong(32);
+  Ref<vm::Cell> account_root, transfer_root;
+  if (tag != magic || version != 1 || accounts_count < 0 || entries_count < 0 ||
+      !cs.fetch_maybe_ref(account_root) || !cs.fetch_maybe_ref(transfer_root) || !cs.empty_ext()) {
+    return td::Status::Error("Failed to unpack native transfer batch header");
+  }
+
+  batch.accounts.reserve(static_cast<std::size_t>(accounts_count));
+  while (account_root.not_null()) {
+    auto chunk = vm::load_cell_slice(account_root);
+    auto chunk_tag = chunk.fetch_ulong(32);
+    auto chunk_count = chunk.fetch_ulong(8);
+    if (chunk_tag != accounts_chunk_magic || chunk_count <= 0 || chunk_count > 3 ||
+        batch.accounts.size() + static_cast<std::size_t>(chunk_count) > static_cast<std::size_t>(accounts_count)) {
+      return td::Status::Error("Invalid native transfer account table chunk");
+    }
+    for (int i = 0; i < static_cast<int>(chunk_count); ++i) {
+      ton::StdSmcAddress addr;
+      if (!chunk.fetch_bits_to(addr)) {
+        return td::Status::Error("Failed to unpack native transfer account table address");
+      }
+      batch.accounts.push_back(addr);
+    }
+    if (!chunk.fetch_maybe_ref(account_root) || !chunk.empty_ext()) {
+      return td::Status::Error("Invalid trailing data in native transfer account table chunk");
+    }
+  }
+  if (batch.accounts.size() != static_cast<std::size_t>(accounts_count)) {
+    return td::Status::Error("Native transfer account table length mismatch");
+  }
+
+  batch.entries.reserve(static_cast<std::size_t>(entries_count));
+  while (transfer_root.not_null()) {
+    auto chunk = vm::load_cell_slice(transfer_root);
+    auto chunk_tag = chunk.fetch_ulong(32);
+    td::uint64 src_index = 0, dst_index = 0;
+    NativeTransferBatchEntry entry;
+    if (chunk_tag != transfers_chunk_magic || !chunk.fetch_uint_to(32, src_index) ||
+        !chunk.fetch_uint_to(32, dst_index) || src_index >= batch.accounts.size() ||
+        dst_index >= batch.accounts.size() || !chunk.fetch_uint_to(64, entry.transfer.amount) ||
+        !chunk.fetch_uint_to(64, entry.transfer.fee) || !chunk.fetch_uint_to(64, entry.transfer.nonce) ||
+        !chunk.fetch_uint_to(32, entry.transfer.valid_until) || !chunk.fetch_uint_to(64, entry.debit_lt) ||
+        !chunk.fetch_uint_to(64, entry.credit_lt)) {
+      return td::Status::Error("Failed to unpack native transfer vector entry");
+    }
+    auto signature = fetch_native_signature_inline(chunk);
+    if (signature.is_error()) {
+      return signature.move_as_error();
+    }
+    entry.transfer.src = batch.accounts[src_index];
+    entry.transfer.dst = batch.accounts[dst_index];
+    entry.transfer.signature = signature.move_as_ok();
+    if (!entry.transfer.is_valid() || !entry.debit_lt || !entry.credit_lt) {
+      return td::Status::Error("Invalid native transfer vector entry");
+    }
+    batch.entries.push_back(std::move(entry));
+    if (batch.entries.size() > static_cast<std::size_t>(entries_count) ||
+        !chunk.fetch_maybe_ref(transfer_root) || !chunk.empty_ext()) {
+      return td::Status::Error("Invalid trailing data in native transfer vector chunk");
+    }
+  }
+  if (batch.entries.size() != static_cast<std::size_t>(entries_count)) {
+    return td::Status::Error("Native transfer vector length mismatch");
+  }
+  if (batch.entries.empty() != batch.accounts.empty()) {
+    return td::Status::Error("Native transfer batch account table is inconsistent with transfer vector");
+  }
+  return batch;
 }
 
 namespace transaction {
@@ -4544,8 +4757,8 @@ void Account::push_transaction(Ref<vm::Cell> trans_root, ton::LogicalTime trans_
  *
  * @returns True if the account block was successfully created, false otherwise.
  */
-bool Account::create_account_block(vm::CellBuilder& cb) {
-  if (transactions.empty()) {
+bool Account::create_account_block(vm::CellBuilder& cb, bool include_transactions) {
+  if (include_transactions && transactions.empty()) {
     return false;
   }
   if (!(cb.store_long_bool(5, 4)         // acc_trans#5
@@ -4553,16 +4766,17 @@ bool Account::create_account_block(vm::CellBuilder& cb) {
     return false;
   }
   vm::AugmentedDictionary dict{64, block::tlb::aug_AccountTransactions};
-  for (auto& z : transactions) {
-    if (!dict.set_ref(td::BitArray<64>{(long long)z.first}, z.second, vm::Dictionary::SetMode::Add)) {
-      LOG(ERROR) << "error creating the list of transactions for account " << addr.to_hex()
-                 << " : cannot add transaction with lt=" << z.first;
-      return false;
+  if (include_transactions) {
+    for (auto& z : transactions) {
+      if (!dict.set_ref(td::BitArray<64>{(long long)z.first}, z.second, vm::Dictionary::SetMode::Add)) {
+        LOG(ERROR) << "error creating the list of transactions for account " << addr.to_hex()
+                   << " : cannot add transaction with lt=" << z.first;
+        return false;
+      }
     }
   }
-  Ref<vm::Cell> dict_root = std::move(dict).extract_root_cell();
-  // transactions:(HashmapAug 64 ^Transaction Grams)
-  if (dict_root.is_null() || !cb.append_cellslice_bool(vm::load_cell_slice(std::move(dict_root)))) {
+  // transactions:(HashmapAugE 64 ^Transaction CurrencyCollection)
+  if (!std::move(dict).append_dict_to_bool(cb)) {
     return false;
   }
   vm::CellBuilder cb2;

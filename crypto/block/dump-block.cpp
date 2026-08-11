@@ -38,11 +38,29 @@
 #include "block-parse.h"
 #include "git.h"
 #include "mc-config.h"
+#include "transaction.h"
 
 using td::Ref;
 using namespace std::literals::string_literals;
 
 int verbosity;
+
+void print_native_transfer_batch_summary(std::ostream& os, Ref<vm::Cell> root) {
+  block::gen::Block::Record blk;
+  block::gen::BlockInfo::Record info;
+  block::gen::BlockExtra::Record extra;
+  if (!tlb::unpack_cell(root, blk) || !tlb::unpack_cell(blk.info, info) || !info.not_master ||
+      !tlb::unpack_cell(blk.extra, extra) || !extra.custom->have_refs()) {
+    return;
+  }
+  auto batch_res = block::NativeTransferBatch::unpack(extra.custom->prefetch_ref());
+  if (batch_res.is_error()) {
+    return;
+  }
+  auto batch = batch_res.move_as_ok();
+  os << "native_transfer_batch accounts=" << batch.accounts.size() << " transfers=" << batch.entries.size()
+     << std::endl;
+}
 
 struct IntError {
   std::string err_msg;
@@ -191,8 +209,8 @@ void test1() {
   */
   std::cout << "Grams.add_values() = " << block::tlb::t_Grams.add_values(cb, cs.write(), cs2.write()) << std::endl;
   std::cout << cb << std::endl;
-  std::cout << "block::gen::t_HashmapAug_64_...print_type() = "
-            << block::gen::t_HashmapAug_64_Ref_Transaction_CurrencyCollection << std::endl;
+  std::cout << "block::gen::t_HashmapAugE_64_...print_type() = "
+            << block::gen::t_HashmapAugE_64_Ref_Transaction_CurrencyCollection << std::endl;
 }
 
 void test2(vm::CellSlice& cs) {
@@ -326,6 +344,9 @@ int main(int argc, char* const argv[]) {
         }
         if (dump & 2) {
           type->print_ref(std::cout, boc);
+          if (type == &block::gen::t_Block) {
+            print_native_transfer_batch_summary(std::cout, boc);
+          }
           std::cout << std::endl;
         }
         bool ok = type->validate_ref(1048576, boc);

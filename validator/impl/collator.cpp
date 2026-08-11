@@ -6638,13 +6638,9 @@ bool Collator::prepare_proofs() {
  * @returns True if the collated data was successfully created, false otherwise.
  */
 bool Collator::create_collated_data() {
-  if (use_native_fast_path()) {
-    collated_roots_.clear();
-    block_limit_status_->collated_data_size_estimate = 0;
-    return true;
-  }
+  collated_roots_.clear();
   // 1.1 store the set of used shard block descriptions
-  if (!used_shard_block_descr_.empty()) {
+  if (!use_native_fast_path() && !used_shard_block_descr_.empty()) {
     auto cell = collate_shard_block_descr_set();
     if (cell.not_null()) {
       collated_roots_.push_back(std::move(cell));
@@ -6655,6 +6651,15 @@ bool Collator::create_collated_data() {
     // consensus_extra_data#638eb292 flags:# gen_utime_ms:uint64 = ConsensusExtraData;
     auto cell = vm::CellBuilder{}.store_long(0x638eb292, 32).store_long(0, 32).store_long(now_ms_, 64).finalize_novm();
     collated_roots_.push_back(std::move(cell));
+  }
+  if (use_native_fast_path()) {
+    if (collated_roots_.empty()) {
+      block_limit_status_->collated_data_size_estimate = 0;
+    } else {
+      vm::CellSlice cs{vm::NoVm(), collated_roots_.front()};
+      block_limit_status_->collated_data_size_estimate = 12 + (cs.size() + 7) / 8 + cs.size_refs() * 3;
+    }
+    return true;
   }
   if (!full_collated_data_) {
     return true;

@@ -4391,6 +4391,24 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     block::NativeTransfer transfer;
   };
 
+  auto start_total = stats_.ext_msgs_total;
+  auto start_filtered = stats_.ext_msgs_filtered;
+  auto start_accepted = stats_.ext_msgs_accepted;
+  auto start_rejected = stats_.ext_msgs_rejected;
+  auto start_compact_entries = native_transfer_batch_entries_.size();
+  SCOPE_EXIT {
+    auto total = stats_.ext_msgs_total - start_total;
+    auto accepted = stats_.ext_msgs_accepted - start_accepted;
+    auto rejected = stats_.ext_msgs_rejected - start_rejected;
+    auto filtered = stats_.ext_msgs_filtered - start_filtered;
+    auto compact_entries = native_transfer_batch_entries_.size() - start_compact_entries;
+    if (total || accepted || rejected || filtered || compact_entries) {
+      LOG(INFO) << "native fast-path externals: total=" << total << " accepted=" << accepted
+                << " rejected=" << rejected << " filtered=" << filtered
+                << " compact_transfers=" << compact_entries;
+    }
+  };
+
   bool full = !block_limit_status_->fits(block::ParamLimits::cl_soft);
   while (true) {
     if (full) {

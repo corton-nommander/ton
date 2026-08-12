@@ -120,8 +120,10 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
         if (bus.shard.is_masterchain()) {
           params.soft_timeout = slot_start + target_rate_;
         } else {
-          params.soft_timeout = slot_start;
-          params.wait_externals_until = slot_start;
+          auto shard_external_wait = std::max(target_rate_ / 4, std::chrono::milliseconds(1));
+          auto shard_soft_timeout = std::max(target_rate_ / 2, shard_external_wait);
+          params.soft_timeout = slot_start + shard_soft_timeout;
+          params.wait_externals_until = slot_start + shard_external_wait;
         }
         block_generation = td::actor::ask(bus.manager, &ManagerFacade::collate_block, std::move(params),
                                           cancellation_source_.get_cancellation_token());

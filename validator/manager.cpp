@@ -457,9 +457,14 @@ td::actor::Task<> ValidatorManagerImpl::new_external_message_broadcast(td::Buffe
 }
 
 td::actor::Task<> ValidatorManagerImpl::new_external_message_query(td::BufferSlice data) {
+  // A direct liteserver sendMessage is a local injection, not just a gossip precheck.
+  // In simplex sidechain mode the manager may collate through the consensus bridge
+  // without temp/permanent validator keys registered here, so gating this on
+  // is_validator() can accept native externals without ever offering them to
+  // the local collator.
   auto [message, wait_allow_broadcast] =
       co_await td::actor::ask(ext_message_pool_, &ExtMessagePool::check_add_external_message, std::move(data), 0,
-                              /* add_to_mempool = */ is_validator() || !collator_nodes_.empty());
+                              /* add_to_mempool = */ true);
   new_external_message_query_cont(std::move(message), std::move(wait_allow_broadcast)).start().detach();
   co_return td::Unit{};
 }

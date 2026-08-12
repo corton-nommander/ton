@@ -247,6 +247,30 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                    PSTRING() << "ok:" << total_check_ext_messages_ok_ << " error:" << total_check_ext_messages_error_);
   vec.emplace_back("total.ext_msg_applied_cleanup", PSTRING() << "requested:" << applied_ext_msgs_delete_requests_
                                                               << " deleted:" << applied_ext_msgs_deleted_);
+  td::uint64 mempool_total = 0;
+  td::uint64 mempool_active = 0;
+  td::uint64 mempool_native = 0;
+  for (const auto &[_, msgs] : ext_msgs_) {
+    for (size_t i = 0; i < msgs.ext_messages_.size(); ++i) {
+      auto [__, msg] = msgs.ext_messages_.at(i);
+      ++mempool_total;
+      if (msg->active) {
+        ++mempool_active;
+      }
+      if (msg->native_nonce) {
+        ++mempool_native;
+      }
+    }
+  }
+  td::uint64 native_pending = 0;
+  for (const auto &[_, info] : native_accounts_) {
+    native_pending += info.messages.size();
+  }
+  vec.emplace_back("total.ext_msg_mempool", PSTRING() << "messages:" << mempool_total << " active:" << mempool_active
+                                                      << " native:" << mempool_native
+                                                      << " priorities:" << ext_msgs_.size());
+  vec.emplace_back("total.ext_msg_native_pending", PSTRING() << "accounts:" << native_accounts_.size()
+                                                             << " messages:" << native_pending);
   return vec;
 }
 

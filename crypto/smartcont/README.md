@@ -66,5 +66,4 @@ The command arguments are:
 native-wallet.fif <filename-base> <dest-addr> <nonce> <amount> [-f <fee>] [-t <timeout>|-u <unix-time>] [<savefile>]
 ```
 
-For a freshly funded balance-only native account, use nonce `0`. After a successful native transfer, use the source account's latest `last_trans_lt_` as the next nonce.
-
+For a freshly funded balance-only native account, use nonce `0`. After each successful native transfer, use the source account's printed `native_nonce` as the next nonce.

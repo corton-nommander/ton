@@ -19,6 +19,7 @@
 
 #include "block/block-auto.h"
 #include "block/block-parse.h"
+#include "block/transaction.h"
 #include "ton/ton-io.hpp"
 #include "vm/dict.h"
 
@@ -75,6 +76,21 @@ td::Result<std::vector<ExtMessage::Hash>> get_applied_external_messages_hashes(t
         return std::move(error);
       }
       return td::Status::Error("failed to iterate applied block InMsgDescr");
+    }
+
+    if (!block->block_id().is_masterchain() && extra.custom.not_null() && extra.custom->have_refs()) {
+      auto batch_res = block::NativeTransferBatch::unpack(extra.custom->prefetch_ref());
+      if (batch_res.is_ok()) {
+        auto batch = batch_res.move_as_ok();
+        for (const auto& entry : batch.entries) {
+          vm::CellBuilder cb;
+          Ref<vm::Cell> ext_msg;
+          if (!(entry.transfer.store_external(cb) && cb.finalize_to(ext_msg))) {
+            return td::Status::Error("cannot reconstruct compact native external message for cleanup");
+          }
+          hashes.push_back(ext_msg->get_hash().bits());
+        }
+      }
     }
 
     std::sort(hashes.begin(), hashes.end());

@@ -357,7 +357,15 @@ std::string show_shard(const ton::ShardIdFull blk_id) {
  */
 bool Collator::fatal_error(td::Status error) {
   error.ensure_error();
-  LOG(ERROR) << "cannot generate block candidate for " << show_shard(shard_) << " : " << error.to_string();
+  if (error_reported_) {
+    return false;
+  }
+  error_reported_ = true;
+  if (error.code() == ErrorCode::cancelled) {
+    LOG(INFO) << "cancelled block candidate generation for " << show_shard(shard_) << " : " << error.to_string();
+  } else {
+    LOG(ERROR) << "cannot generate block candidate for " << show_shard(shard_) << " : " << error.to_string();
+  }
   if (busy_) {
     if (allow_repeat_collation_ && error.code() != ErrorCode::cancelled && params_.attempt_idx + 1 < MAX_ATTEMPTS &&
         !params_.is_hardfork && !timeout_.is_in_past()) {
@@ -401,6 +409,10 @@ bool Collator::fatal_error(int err_code, std::string err_msg) {
  */
 bool Collator::fatal_error(std::string err_msg, int err_code) {
   return fatal_error(td::Status::Error(err_code, err_msg));
+}
+
+bool Collator::stale_collation_error(std::string err_msg) {
+  return fatal_error(td::Status::Error(ErrorCode::cancelled, PSTRING() << "stale collation context: " << err_msg));
 }
 
 /**
@@ -919,15 +931,15 @@ bool Collator::check_cur_validator_set() {
   std::vector<ValidatorDescr> export_nodes;
   if (params_.validator_set.not_null()) {
     if (params_.validator_set->get_catchain_seqno() != cc_seqno) {
-      return fatal_error(PSTRING() << "current validator set catchain seqno mismatch: this validator set has cc_seqno="
-                                   << params_.validator_set->get_catchain_seqno()
-                                   << ", only validator set with cc_seqno=" << cc_seqno
-                                   << " is entitled to create block in shardchain " << shard_);
+      return stale_collation_error(
+          PSTRING() << "current validator set catchain seqno mismatch: this validator set has cc_seqno="
+                    << params_.validator_set->get_catchain_seqno() << ", only validator set with cc_seqno=" << cc_seqno
+                    << " is entitled to create block in shardchain " << shard_);
     }
     export_nodes = params_.validator_set->export_vector();
   }
   if (export_nodes != nodes /* && !is_fake_ */) {
-    return fatal_error(
+    return stale_collation_error(
         "current validator set mismatch: this validator set is not entitled to create block in shardchain "s +
         shard_.to_str());
   }
@@ -1567,13 +1579,14 @@ bool Collator::add_trivial_neighbor() {
  */
 bool Collator::check_prev_block(const BlockIdExt& listed, const BlockIdExt& prev, bool chk_chain_len) {
   if (listed.seqno() > prev.seqno()) {
-    return fatal_error(PSTRING() << "cannot generate a shardchain block after previous block " << prev
-                                 << " because masterchain configuration already contains a newer block " << listed);
+    return stale_collation_error(PSTRING() << "cannot generate a shardchain block after previous block " << prev
+                                           << " because masterchain configuration already contains a newer block "
+                                           << listed);
   }
   if (listed.seqno() == prev.seqno() && listed != prev) {
-    return fatal_error(PSTRING() << "cannot generate a shardchain block after previous block " << prev
-                                 << " because masterchain configuration lists another block " << listed
-                                 << " of the same height");
+    return stale_collation_error(PSTRING() << "cannot generate a shardchain block after previous block " << prev
+                                           << " because masterchain configuration lists another block " << listed
+                                           << " of the same height");
   }
   if (chk_chain_len && prev.seqno() >= listed.seqno() + 8) {
     return fatal_error(PSTRING() << "cannot generate next block after " << prev

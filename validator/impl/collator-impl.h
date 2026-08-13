@@ -60,6 +60,7 @@ class Collator final : public td::actor::Actor {
   const ShardIdFull shard_;
   ton::BlockId new_id{workchainInvalid, 0, 0};
   bool busy_{false};
+  bool error_reported_{false};
   bool before_split_{false};
   bool after_split_{false};
   bool after_merge_{false};
@@ -278,6 +279,7 @@ class Collator final : public td::actor::Actor {
   bool fatal_error(td::Status error);
   bool fatal_error(int err_code, std::string err_msg);
   bool fatal_error(std::string err_msg, int err_code = -666);
+  bool stale_collation_error(std::string err_msg);
   void check_pending();
   void after_get_mc_state(td::Result<std::pair<Ref<MasterchainState>, BlockIdExt>> res, td::PerfLogAction token);
   void after_get_shard_state(int idx, td::Result<Ref<ShardState>> res, td::PerfLogAction token);

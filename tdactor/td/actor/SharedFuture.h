@@ -6,6 +6,9 @@
 
 #pragma once
 
+#include <atomic>
+#include <memory>
+
 #include "td/actor/coro_task.h"
 #include "td/utils/CancellationToken.h"
 
@@ -58,24 +61,47 @@ class SharedFuture {
 constexpr int AWAIT_TIMEOUT_CODE = 6520;
 
 template <typename T>
+class AwaitWithTimeoutState {
+ public:
+  explicit AwaitWithTimeoutState(Promise<T> promise) : promise_(std::move(promise)) {
+  }
+
+  void try_set_result(Result<T> result) {
+    if (!completed_.exchange(true, std::memory_order_acq_rel)) {
+      promise_.set_result(std::move(result));
+    }
+  }
+
+  void try_set_error(Status error) {
+    if (!completed_.exchange(true, std::memory_order_acq_rel)) {
+      promise_.set_error(std::move(error));
+    }
+  }
+
+ private:
+  std::atomic<bool> completed_{false};
+  Promise<T> promise_;
+};
+
+template <typename T>
 Task<T> await_with_timeout(StartedTask<T> task, Timestamp timeout) {
   auto [task_result, promise] = StartedTask<T>::make_bridge();
-  auto promise_ptr = std::make_shared<Promise<T>>(std::move(promise));
+  auto state = std::make_shared<AwaitWithTimeoutState<T>>(std::move(promise));
   if (timeout) {
-    auto worker_timeout = [](Timestamp timeout, std::shared_ptr<Promise<T>> promise_ptr) -> Task<> {
+    auto worker_timeout = [](Timestamp timeout, std::shared_ptr<AwaitWithTimeoutState<T>> state) -> Task<> {
       co_await td::actor::detach_from_actor();
       co_await coro_sleep(timeout);
-      promise_ptr->set_error(Status::Error(AWAIT_TIMEOUT_CODE, "await timeout"));
+      state->try_set_error(Status::Error(AWAIT_TIMEOUT_CODE, "await timeout"));
       co_return {};
     };
-    worker_timeout(timeout, promise_ptr).start().detach_silent();
+    worker_timeout(timeout, state).start().detach_silent();
   }
-  auto worker_wait = [](StartedTask<T> task, std::shared_ptr<Promise<T>> promise_ptr) -> Task<> {
+  auto worker_wait = [](StartedTask<T> task, std::shared_ptr<AwaitWithTimeoutState<T>> state) -> Task<> {
     co_await td::actor::detach_from_actor();
-    promise_ptr->set_result(co_await std::move(task).wrap());
+    state->try_set_result(co_await std::move(task).wrap());
     co_return {};
   };
-  worker_wait(std::move(task), std::move(promise_ptr)).start().detach_silent();
+  worker_wait(std::move(task), std::move(state)).start().detach_silent();
   co_return co_await std::move(task_result);
 }
 

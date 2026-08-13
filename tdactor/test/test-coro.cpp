@@ -8,6 +8,7 @@
 
 #include "td/actor/actor.h"
 #include "td/actor/coro.h"
+#include "td/actor/SharedFuture.h"
 #include "td/utils/Random.h"
 #include "td/utils/port/sleep.h"
 #include "td/utils/tests.h"
@@ -1190,6 +1191,33 @@ class CoroSpec final : public td::actor::Actor {
     co_return td::Unit{};
   }
 
+  Task<td::Unit> await_with_timeout_late_completion() {
+    LOG(INFO) << "=== await_with_timeout late completion ===";
+
+    auto delayed_value = [](td::Timestamp ready_at, int value) -> Task<int> {
+      co_await coro_sleep(ready_at);
+      co_return value;
+    };
+
+    for (int i = 0; i < 100; ++i) {
+      auto result = co_await await_with_timeout(delayed_value(td::Timestamp::in(0.01), i), td::Timestamp::in(0.001))
+                        .wrap();
+      expect_true(result.is_error(), "timeout must win over a late task completion");
+      expect_eq(result.error().code(), AWAIT_TIMEOUT_CODE, "late task must return the timeout error");
+    }
+
+    // Let every losing task complete. Its result must be ignored without touching
+    // the coroutine promise that the timeout has already resumed and destroyed.
+    co_await coro_sleep(td::Timestamp::in(0.05));
+
+    auto result = co_await await_with_timeout(delayed_value(td::Timestamp::in(0.001), 42), td::Timestamp::in(0.05))
+                      .wrap();
+    expect_true(result.is_ok(), "task completion must win before a later timeout");
+    expect_eq(result.ok(), 42, "successful await_with_timeout result");
+
+    co_return td::Unit{};
+  }
+
   // Master runner
   Task<td::Unit> run_all() {
     LOG(ERROR) << "Run tests";
@@ -1207,6 +1235,7 @@ class CoroSpec final : public td::actor::Actor {
     co_await lifecycle();
     co_await helpers();
     co_await combinators();
+    co_await await_with_timeout_late_completion();
     co_await ask_dead_actor();
     co_await try_awaitable();
     co_await test_trace();

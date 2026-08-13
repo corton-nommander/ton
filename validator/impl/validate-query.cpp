@@ -645,7 +645,7 @@ bool ValidateQuery::init_parse() {
   } else if (extra.custom->size_refs()) {
     auto batch_res = block::NativeTransferBatch::unpack(extra.custom->prefetch_ref());
     if (batch_res.is_error()) {
-      return reject_query("non-masterchain block cannot have McBlockExtra");
+      return reject_query("non-masterchain block custom payload must be a native transfer batch");
     }
     native_transfer_batch_ = batch_res.move_as_ok();
     native_compact_accounts_.clear();

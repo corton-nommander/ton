@@ -1,7 +1,7 @@
 FROM ubuntu:22.04 AS builder
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NINJA_JOBS=2
-ARG TON_BUILD_TARGETS="storage-daemon storage-daemon-cli tonlibjson fift func validator-engine validator-engine-console generate-random-id dht-server lite-client tolk rldp-http-proxy dht-server proxy-liteserver create-state blockchain-explorer emulator tonlibjson http-proxy dht-ping-servers dht-resolve"
+ARG TON_BUILD_TARGETS="storage-daemon storage-daemon-cli tonlibjson fift func validator-engine validator-engine-console generate-random-id dht-server lite-client native-load-generator tolk rldp-http-proxy dht-server proxy-liteserver create-state blockchain-explorer emulator tonlibjson http-proxy dht-ping-servers dht-resolve"
 ARG VCS_REF=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.revision=$VCS_REF \
@@ -48,6 +48,7 @@ RUN mkdir -p /var/ton-work/db /var/ton-work/scripts /usr/share/ton/smartcont/aut
 COPY --from=builder /ton/build/storage/storage-daemon/storage-daemon /usr/local/bin/
 COPY --from=builder /ton/build/storage/storage-daemon/storage-daemon-cli /usr/local/bin/
 COPY --from=builder /ton/build/lite-client/lite-client /usr/local/bin/
+COPY --from=builder /ton/build/lite-client/native-load-generator /usr/local/bin/
 COPY --from=builder /ton/build/validator-engine/validator-engine /usr/local/bin/
 COPY --from=builder /ton/build/validator-engine-console/validator-engine-console /usr/local/bin/
 COPY --from=builder /ton/build/utils/generate-random-id /usr/local/bin/

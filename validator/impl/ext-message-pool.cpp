@@ -22,9 +22,30 @@
 #include "transaction.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
+#include <thread>
 
 namespace ton::validator {
+void ExtMessagePool::start_up() {
+  unsigned workers = 0;
+  if (const char* value = std::getenv("TON_NATIVE_EXECUTOR_THREADS")) {
+    char* end = nullptr;
+    auto parsed = std::strtoul(value, &end, 10);
+    if (end != value && !*end && parsed > 0) {
+      workers = static_cast<unsigned>(std::min<unsigned long>(parsed, 64));
+    }
+  }
+  if (!workers) {
+    workers = std::clamp(std::max(1u, std::thread::hardware_concurrency()) / 2, 1u, 8u);
+  }
+  native_signature_verifiers_.reserve(workers);
+  for (unsigned i = 0; i < workers; ++i) {
+    native_signature_verifiers_.push_back(td::actor::create_actor<NativeSignatureVerifier>("native-sig-verify"));
+  }
+  LOG(INFO) << "started " << workers << " native signature verifier workers";
+}
+
 td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_external_message(td::BufferSlice data,
                                                                                         int priority,
                                                                                         bool add_to_mempool) {
@@ -373,7 +394,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
       co_return td::Status::Error(PSTRING() << "Too new native nonce: msg_nonce=" << transfer.nonce
                                             << ", account_nonce=" << acc.native_nonce);
     }
-    if (acc.status != block::Account::acc_uninit) {
+    if (acc.status != block::Account::acc_uninit || !acc.is_native) {
       co_return td::Status::Error("native transfer source account must be balance-only");
     }
     if (acc.balance.extra.not_null() || acc.balance.grams.is_null() || !acc.balance.grams->unsigned_fits_bits(64)) {
@@ -401,9 +422,12 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     if (!(acc.balance >= required)) {
       co_return td::Status::Error("native transfer has insufficient source balance");
     }
-    auto signature_status = transfer.verify_signature();
-    if (signature_status.is_error()) {
-      co_return signature_status.move_as_error();
+    CHECK(!native_signature_verifiers_.empty());
+    auto& verifier =
+        native_signature_verifiers_[native_signature_verifier_cursor_++ % native_signature_verifiers_.size()];
+    auto signature_result = co_await td::actor::ask(verifier, &NativeSignatureVerifier::verify, transfer).wrap();
+    if (signature_result.is_error()) {
+      co_return signature_result.move_as_error();
     }
     native_info.messages.emplace(
         transfer.nonce,

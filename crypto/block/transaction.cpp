@@ -30,10 +30,14 @@
 #include "vm/vm.h"
 
 #include <deque>
+#include <atomic>
+#include <array>
+#include <cstdlib>
 #include <limits>
 #include <map>
 #include <mutex>
 #include <set>
+#include <thread>
 
 #define FAIL_UNLESS_MSG(condition, msg) \
   if (!(condition)) {                   \
@@ -642,6 +646,57 @@ bool Account::init_new(ton::UnixTime now) {
   return true;
 }
 
+td::optional<td::uint64> Account::native_balance_uint64() const {
+  if (balance.extra.not_null() || balance.grams.is_null() || !balance.grams->unsigned_fits_bits(64)) {
+    return {};
+  }
+  unsigned char bytes[sizeof(td::uint64)]{};
+  if (!balance.grams->export_bytes_lsb(bytes, sizeof(bytes), false)) {
+    return {};
+  }
+  td::uint64 value = 0;
+  for (std::size_t i = 0; i < sizeof(bytes); ++i) {
+    value |= static_cast<td::uint64>(bytes[i]) << (8 * i);
+  }
+  return value;
+}
+
+bool Account::set_native_state(td::uint64 new_balance, td::uint64 new_nonce, td::uint8 new_flags) {
+  if (workchain != ton::basechainId || (status != acc_uninit && status != acc_nonexist)) {
+    return false;
+  }
+  vm::CellBuilder cb;
+  Ref<vm::Cell> new_total_state;
+  if (!(cb.store_long_bool(1, 2)  // account_native$01
+        && cb.store_ulong_rchk_bool(new_balance, 64) && cb.store_ulong_rchk_bool(new_nonce, 64) &&
+        cb.store_ulong_rchk_bool(new_flags, 8) && cb.finalize_to(new_total_state) &&
+        block::gen::t_Account.validate_ref(new_total_state) && block::tlb::t_Account.validate_ref(new_total_state))) {
+    return false;
+  }
+
+  total_state = std::move(new_total_state);
+  status = acc_uninit;
+  is_native = true;
+  native_nonce = new_nonce;
+  native_flags = new_flags;
+  balance = block::CurrencyCollection{td::make_refint(new_balance)};
+  last_paid = 0;
+  storage_used = {};
+  storage_dict_hash = {};
+  account_storage_stat = {};
+  due_payment = td::zero_refint();
+  storage.clear();
+  inner_state.clear();
+  code.clear();
+  data.clear();
+  library.clear();
+  tick = false;
+  tock = false;
+  fixed_prefix_length = 0;
+  state_hash = addr;
+  return true;
+}
+
 /**
  * Removes extra currencies dict from AccountStorage.
  *
@@ -894,6 +949,7 @@ namespace {
 constexpr std::size_t native_transfer_public_key_size = 32;
 constexpr std::size_t native_transfer_signature_size = 64;
 constexpr std::size_t native_transfer_signature_cache_capacity = 262144;
+constexpr std::size_t native_transfer_signature_cache_shards = 64;
 
 void append_u32_be(std::string& out, td::uint32 value) {
   for (int i = 3; i >= 0; --i) {
@@ -914,26 +970,37 @@ td::RefInt256 native_uint(td::uint64 value) {
 class NativeTransferSignatureCache {
  public:
   bool contains(const td::Bits256& key) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return entries_.contains(key);
+    auto& shard = shards_[shard_index(key)];
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    return shard.entries.contains(key);
   }
 
   void insert(td::Bits256 key) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!entries_.insert(key).second) {
+    auto& shard = shards_[shard_index(key)];
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    if (!shard.entries.insert(key).second) {
       return;
     }
-    order_.push_back(key);
-    while (entries_.size() > native_transfer_signature_cache_capacity) {
-      entries_.erase(order_.front());
-      order_.pop_front();
+    shard.order.push_back(key);
+    constexpr auto shard_capacity = native_transfer_signature_cache_capacity / native_transfer_signature_cache_shards;
+    while (shard.entries.size() > shard_capacity) {
+      shard.entries.erase(shard.order.front());
+      shard.order.pop_front();
     }
   }
 
  private:
-  std::mutex mutex_;
-  std::set<td::Bits256> entries_;
-  std::deque<td::Bits256> order_;
+  struct Shard {
+    std::mutex mutex;
+    std::set<td::Bits256> entries;
+    std::deque<td::Bits256> order;
+  };
+
+  static std::size_t shard_index(const td::Bits256& key) {
+    return static_cast<unsigned char>(key.as_slice()[0]) & (native_transfer_signature_cache_shards - 1);
+  }
+
+  std::array<Shard, native_transfer_signature_cache_shards> shards_;
 };
 
 NativeTransferSignatureCache& native_transfer_signature_cache() {
@@ -1009,6 +1076,29 @@ td::Result<std::string> fetch_native_signature_inline(vm::CellSlice& cs) {
   }
   return signature;
 }
+
+unsigned native_executor_workers(unsigned requested, std::size_t work_items) {
+  if (!work_items) {
+    return 0;
+  }
+  if (!requested) {
+    if (const char* value = std::getenv("TON_NATIVE_EXECUTOR_THREADS")) {
+      char* end = nullptr;
+      auto parsed = std::strtoul(value, &end, 10);
+      if (end != value && !*end && parsed > 0) {
+        requested = static_cast<unsigned>(std::min<unsigned long>(parsed, 64));
+      }
+    }
+  }
+  if (!requested) {
+    auto hardware = std::max(1u, std::thread::hardware_concurrency());
+    requested = std::clamp(hardware / 2, 1u, 8u);
+  }
+  if (work_items < 64) {
+    requested = 1;
+  }
+  return static_cast<unsigned>(std::min<std::size_t>(requested, work_items));
+}
 }  // namespace
 
 bool NativeTransfer::is_valid() const {
@@ -1048,6 +1138,159 @@ td::Status NativeTransfer::verify_signature() const {
 #else
   return td::Status::Error("Ed25519 signature verification is not available");
 #endif
+}
+
+const char* NativeTransferStateResult::message() const {
+  switch (code) {
+    case ok:
+      return "ok";
+    case invalid_fields:
+      return "invalid native transfer fields";
+    case invalid_signature:
+      return "invalid native transfer signature";
+    case expired:
+      return "native transfer expired";
+    case nonce_mismatch:
+      return "native transfer nonce mismatch";
+    case nonce_overflow:
+      return "native transfer nonce overflow";
+    case invalid_source:
+      return "native transfer source must be balance-only";
+    case invalid_destination:
+      return "native transfer destination must be balance-only";
+    case insufficient_balance:
+      return "native transfer has insufficient source balance";
+    case balance_overflow:
+      return "native transfer destination balance overflow";
+  }
+  return "unknown native transfer result";
+}
+
+NativeTransferStateResult execute_native_transfer_state(const NativeTransferStateInput& input, ton::UnixTime now,
+                                                        bool verify_signature) {
+  NativeTransferStateResult result;
+  if (!input.transfer || !input.transfer->is_valid()) {
+    return result;
+  }
+  const auto& transfer = *input.transfer;
+  if (input.src_status != Account::acc_uninit || !input.src_is_native) {
+    result.code = NativeTransferStateResult::invalid_source;
+    return result;
+  }
+  if ((input.dst_status != Account::acc_uninit && input.dst_status != Account::acc_nonexist) ||
+      (input.dst_status == Account::acc_uninit && !input.dst_is_native)) {
+    result.code = NativeTransferStateResult::invalid_destination;
+    return result;
+  }
+  if (now >= transfer.valid_until) {
+    result.code = NativeTransferStateResult::expired;
+    return result;
+  }
+  if (transfer.nonce != input.src_nonce) {
+    result.code = NativeTransferStateResult::nonce_mismatch;
+    return result;
+  }
+  if (transfer.nonce == std::numeric_limits<td::uint64>::max()) {
+    result.code = NativeTransferStateResult::nonce_overflow;
+    return result;
+  }
+  if (verify_signature && transfer.verify_signature().is_error()) {
+    result.code = NativeTransferStateResult::invalid_signature;
+    return result;
+  }
+  const auto debit = transfer.amount + transfer.fee;
+  if (debit < transfer.amount || input.src_balance < debit) {
+    result.code = NativeTransferStateResult::insufficient_balance;
+    return result;
+  }
+
+  result.src_nonce = transfer.nonce + 1;
+  if (input.same_account) {
+    // Debit and credit are one atomic state write; only the fee leaves the
+    // account when source and destination are equal.
+    result.src_balance = input.src_balance - transfer.fee;
+    result.dst_balance = result.src_balance;
+  } else {
+    if (input.dst_balance + transfer.amount < input.dst_balance) {
+      result.code = NativeTransferStateResult::balance_overflow;
+      return result;
+    }
+    result.src_balance = input.src_balance - debit;
+    result.dst_balance = input.dst_balance + transfer.amount;
+  }
+  result.code = NativeTransferStateResult::ok;
+  return result;
+}
+
+std::vector<NativeTransferStateResult> execute_native_transfer_states_parallel(
+    const std::vector<NativeTransferStateInput>& inputs, ton::UnixTime now, bool verify_signatures, unsigned workers) {
+  std::vector<NativeTransferStateResult> results(inputs.size());
+  workers = native_executor_workers(workers, inputs.size());
+  if (!workers) {
+    return results;
+  }
+  std::atomic<std::size_t> cursor{0};
+  auto run = [&] {
+    while (true) {
+      auto index = cursor.fetch_add(1, std::memory_order_relaxed);
+      if (index >= inputs.size()) {
+        return;
+      }
+      results[index] = execute_native_transfer_state(inputs[index], now, verify_signatures);
+    }
+  };
+  if (workers == 1) {
+    run();
+  } else {
+    std::vector<std::thread> threads;
+    threads.reserve(workers);
+    for (unsigned i = 0; i < workers; ++i) {
+      threads.emplace_back(run);
+    }
+    for (auto& thread : threads) {
+      thread.join();
+    }
+  }
+  return results;
+}
+
+td::Status verify_native_transfer_signatures_parallel(const std::vector<const NativeTransfer*>& transfers,
+                                                      unsigned workers) {
+  workers = native_executor_workers(workers, transfers.size());
+  if (!workers) {
+    return td::Status::OK();
+  }
+  std::atomic<std::size_t> cursor{0};
+  std::atomic<std::size_t> first_failure{transfers.size()};
+  auto run = [&] {
+    while (true) {
+      auto index = cursor.fetch_add(1, std::memory_order_relaxed);
+      if (index >= transfers.size()) {
+        return;
+      }
+      if (!transfers[index] || transfers[index]->verify_signature().is_error()) {
+        auto expected = transfers.size();
+        first_failure.compare_exchange_strong(expected, index, std::memory_order_relaxed);
+      }
+    }
+  };
+  if (workers == 1) {
+    run();
+  } else {
+    std::vector<std::thread> threads;
+    threads.reserve(workers);
+    for (unsigned i = 0; i < workers; ++i) {
+      threads.emplace_back(run);
+    }
+    for (auto& thread : threads) {
+      thread.join();
+    }
+  }
+  auto failure = first_failure.load(std::memory_order_relaxed);
+  if (failure != transfers.size()) {
+    return td::Status::Error(PSTRING() << "native transfer signature verification failed at batch index " << failure);
+  }
+  return td::Status::OK();
 }
 
 bool NativeTransfer::store_external(vm::CellBuilder& cb) const {
@@ -1140,7 +1383,7 @@ td::Result<NativeTransferCredit> NativeTransferCredit::unpack_description(Ref<vm
 }
 
 bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
-  if (entries.size() > std::numeric_limits<td::uint32>::max()) {
+  if ((version != 1 && version != 2) || entries.size() > std::numeric_limits<td::uint32>::max()) {
     return false;
   }
   std::vector<ton::StdSmcAddress> account_table;
@@ -1158,7 +1401,8 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
     return true;
   };
   for (const auto& entry : entries) {
-    if (!entry.transfer.is_valid() || !entry.debit_lt || !entry.credit_lt || !add_account(entry.transfer.src) ||
+    if (!entry.transfer.is_valid() || (version == 1 && (!entry.debit_lt || !entry.credit_lt)) ||
+        !add_account(entry.transfer.src) ||
         !add_account(entry.transfer.dst)) {
       return false;
     }
@@ -1198,14 +1442,15 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
           chunk.store_ulong_rchk_bool(entry.transfer.fee, 64) &&
           chunk.store_ulong_rchk_bool(entry.transfer.nonce, 64) &&
           chunk.store_ulong_rchk_bool(entry.transfer.valid_until, 32) &&
-          chunk.store_ulong_rchk_bool(entry.debit_lt, 64) && chunk.store_ulong_rchk_bool(entry.credit_lt, 64) &&
+          (version != 1 || (chunk.store_ulong_rchk_bool(entry.debit_lt, 64) &&
+                            chunk.store_ulong_rchk_bool(entry.credit_lt, 64))) &&
           store_native_signature_inline(chunk, td::Slice(entry.transfer.signature)) &&
           chunk.store_maybe_ref(std::move(transfer_root)) && chunk.finalize_to(transfer_root))) {
       return false;
     }
   }
 
-  return cb.store_ulong_rchk_bool(magic, 32) && cb.store_ulong_rchk_bool(1, 8) &&
+  return cb.store_ulong_rchk_bool(magic, 32) && cb.store_ulong_rchk_bool(version, 8) &&
          cb.store_ulong_rchk_bool(static_cast<td::uint32>(account_table.size()), 32) &&
          cb.store_ulong_rchk_bool(static_cast<td::uint32>(entries.size()), 32) &&
          cb.store_maybe_ref(std::move(account_root)) && cb.store_maybe_ref(std::move(transfer_root));
@@ -1222,10 +1467,11 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
   auto accounts_count = cs.fetch_ulong(32);
   auto entries_count = cs.fetch_ulong(32);
   Ref<vm::Cell> account_root, transfer_root;
-  if (tag != magic || version != 1 || accounts_count < 0 || entries_count < 0 ||
+  if (tag != magic || (version != 1 && version != 2) || accounts_count < 0 || entries_count < 0 ||
       !cs.fetch_maybe_ref(account_root) || !cs.fetch_maybe_ref(transfer_root) || !cs.empty_ext()) {
     return td::Status::Error("Failed to unpack native transfer batch header");
   }
+  batch.version = static_cast<td::uint8>(version);
 
   batch.accounts.reserve(static_cast<std::size_t>(accounts_count));
   while (account_root.not_null()) {
@@ -1261,8 +1507,9 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
         !chunk.fetch_uint_to(32, dst_index) || src_index >= batch.accounts.size() ||
         dst_index >= batch.accounts.size() || !chunk.fetch_uint_to(64, entry.transfer.amount) ||
         !chunk.fetch_uint_to(64, entry.transfer.fee) || !chunk.fetch_uint_to(64, entry.transfer.nonce) ||
-        !chunk.fetch_uint_to(32, entry.transfer.valid_until) || !chunk.fetch_uint_to(64, entry.debit_lt) ||
-        !chunk.fetch_uint_to(64, entry.credit_lt)) {
+        !chunk.fetch_uint_to(32, entry.transfer.valid_until) ||
+        (version == 1 &&
+         (!chunk.fetch_uint_to(64, entry.debit_lt) || !chunk.fetch_uint_to(64, entry.credit_lt)))) {
       return td::Status::Error("Failed to unpack native transfer vector entry");
     }
     auto signature = fetch_native_signature_inline(chunk);
@@ -1272,7 +1519,7 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
     entry.transfer.src = batch.accounts[src_index];
     entry.transfer.dst = batch.accounts[dst_index];
     entry.transfer.signature = signature.move_as_ok();
-    if (!entry.transfer.is_valid() || !entry.debit_lt || !entry.credit_lt) {
+    if (!entry.transfer.is_valid() || (version == 1 && (!entry.debit_lt || !entry.credit_lt))) {
       return td::Status::Error("Invalid native transfer vector entry");
     }
     batch.entries.push_back(std::move(entry));

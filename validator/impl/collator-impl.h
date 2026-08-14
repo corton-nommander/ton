@@ -368,6 +368,14 @@ class Collator final : public td::actor::Actor {
   td::actor::Task<bool> process_inbound_external_messages();
   td::actor::Task<bool> process_native_fast_path_external_messages();
   int process_external_message(Ref<vm::Cell> msg);
+  struct PreparedNativeTransfer {
+    block::Account* src_acc{nullptr};
+    block::Account* dst_acc{nullptr};
+    block::NativeTransferStateInput input;
+  };
+  int prepare_native_transfer(const block::NativeTransfer& transfer, PreparedNativeTransfer& prepared);
+  int commit_native_transfer(const block::NativeTransfer& transfer, const PreparedNativeTransfer& prepared,
+                             const block::NativeTransferStateResult& result);
   int process_native_transfer(const block::NativeTransfer& transfer);
   bool process_dispatch_queue();
   bool process_deferred_message(Ref<vm::CellSlice> enq_msg, StdSmcAddress src_addr, LogicalTime lt,
@@ -385,6 +393,7 @@ class Collator final : public td::actor::Actor {
   bool register_out_msg_queue_op(bool force = false);
   bool register_dispatch_queue_op(bool force = false);
   bool update_account_dict_estimation(const block::transaction::Transaction& trans);
+  bool update_native_account_dict_estimation(const block::Account& account);
   void update_account_storage_dict_info(const block::transaction::Transaction& trans);
   bool update_min_mc_seqno(ton::BlockSeqno some_mc_seqno);
   bool process_account_storage_dict(block::Account& account);

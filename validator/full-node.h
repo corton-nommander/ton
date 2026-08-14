@@ -115,10 +115,12 @@ class FullNode : public td::actor::Actor {
                                                    overlay::OverlayMemberCertificate cert) = 0;
 
   static constexpr td::uint32 max_block_size() {
-    return 4 << 20;
+    // Sidechain blocks use a 5 MiB economic soft limit.  Keep transport headroom
+    // above that so a valid candidate is never rejected by full-node/RLDP code.
+    return 16 << 20;
   }
   static constexpr td::uint32 max_proof_size() {
-    return 4 << 20;
+    return 16 << 20;
   }
   static constexpr td::uint64 max_zerostate_size() {
     return 16 << 20;

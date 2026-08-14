@@ -17,6 +17,7 @@
     Copyright 2017-2020 Telegram Systems LLP
 */
 #include <ctime>
+#include <numeric>
 
 #include "adnl/utils.hpp"
 #include "block/block-auto.h"
@@ -6704,68 +6705,137 @@ bool ValidateQuery::check_native_transfer_batch() {
     return result;
   };
 
-  for (const auto& entry : native_transfer_batch_.value().entries) {
-    auto* src_acc = get_account(entry.transfer.src, false);
-    if (!src_acc) {
-      return false;
+  if (native_transfer_batch_.value().version == 2) {
+    const auto& entries = native_transfer_batch_.value().entries;
+    std::vector<std::size_t> pending(entries.size()), next_round;
+    std::iota(pending.begin(), pending.end(), 0);
+    while (!pending.empty()) {
+      std::set<StdSmcAddress> touched;
+      std::vector<std::size_t> round;
+      std::vector<block::NativeTransferStateInput> inputs;
+      std::vector<std::pair<block::Account*, block::Account*>> account_pairs;
+      next_round.clear();
+      for (auto index : pending) {
+        const auto& transfer = entries[index].transfer;
+        if (touched.contains(transfer.src) || touched.contains(transfer.dst)) {
+          next_round.push_back(index);
+          continue;
+        }
+        touched.insert(transfer.src);
+        touched.insert(transfer.dst);
+        auto* src_acc = get_account(transfer.src, false);
+        auto* dst_acc = get_account(transfer.dst, true);
+        if (!src_acc || !dst_acc) {
+          return false;
+        }
+        auto src_balance = src_acc->native_balance_uint64();
+        auto dst_balance = dst_acc->native_balance_uint64();
+        if (!src_balance || !dst_balance) {
+          return reject_query("native state-engine account balance is not uint64");
+        }
+        round.push_back(index);
+        account_pairs.emplace_back(src_acc, dst_acc);
+        inputs.push_back(block::NativeTransferStateInput{
+            .transfer = &transfer,
+            .src_balance = src_balance.value(),
+            .src_nonce = src_acc->native_nonce,
+            .src_flags = src_acc->native_flags,
+            .src_status = src_acc->status,
+            .src_is_native = src_acc->is_native,
+            .dst_balance = dst_balance.value(),
+            .dst_nonce = dst_acc->native_nonce,
+            .dst_flags = dst_acc->native_flags,
+            .dst_status = dst_acc->status,
+            .dst_is_native = dst_acc->is_native,
+            .same_account = src_acc == dst_acc,
+        });
+      }
+      auto results = block::execute_native_transfer_states_parallel(inputs, now_);
+      for (std::size_t i = 0; i < round.size(); ++i) {
+        const auto& transfer = entries[round[i]].transfer;
+        const auto& input = inputs[i];
+        const auto& result = results[i];
+        auto [src_acc, dst_acc] = account_pairs[i];
+        if (result.code != block::NativeTransferStateResult::ok) {
+          return reject_query(PSTRING() << result.message() << " for native state-engine transfer "
+                                        << transfer.src.to_hex() << " -> " << transfer.dst.to_hex());
+        }
+        if (!src_acc->set_native_state(result.src_balance, result.src_nonce, input.src_flags) ||
+            (dst_acc != src_acc &&
+             !dst_acc->set_native_state(result.dst_balance, input.dst_nonce, input.dst_flags))) {
+          return reject_query("cannot apply direct native account state");
+        }
+        transaction_fees_ += block::CurrencyCollection{td::make_refint(transfer.fee)};
+        if (!transaction_fees_.is_valid()) {
+          return reject_query("invalid total native state-engine fees");
+        }
+      }
+      pending.swap(next_round);
     }
-    auto* dst_acc = get_account(entry.transfer.dst, true);
-    if (!dst_acc) {
-      return false;
-    }
-    if (dst_acc->status != block::Account::acc_uninit && dst_acc->status != block::Account::acc_nonexist) {
-      return reject_query("native compact transfer destination account must be balance-only: "s +
-                          entry.transfer.dst.to_hex());
-    }
+  } else {
+    for (const auto& entry : native_transfer_batch_.value().entries) {
+      auto* src_acc = get_account(entry.transfer.src, false);
+      if (!src_acc) {
+        return false;
+      }
+      auto* dst_acc = get_account(entry.transfer.dst, true);
+      if (!dst_acc) {
+        return false;
+      }
+      if (dst_acc->status != block::Account::acc_uninit && dst_acc->status != block::Account::acc_nonexist) {
+        return reject_query("native compact transfer destination account must be balance-only: "s +
+                            entry.transfer.dst.to_hex());
+      }
 
-    block::transaction::Transaction debit(*src_acc, block::transaction::Transaction::tr_native_transfer_debit,
-                                          entry.debit_lt, now_);
-    if (debit.start_lt != entry.debit_lt) {
-      return reject_query(PSTRING() << "native compact debit lt mismatch for " << entry.transfer.src.to_hex()
-                                    << ": expected " << debit.start_lt << ", block has " << entry.debit_lt);
-    }
-    if (!debit.prepare_native_transfer_debit(entry.transfer)) {
-      return reject_query("cannot replay native compact debit for account "s + entry.transfer.src.to_hex());
-    }
-    if (!debit.serialize(serialize_cfg_)) {
-      return reject_query("cannot serialize replayed native compact debit for account "s +
-                          entry.transfer.src.to_hex());
-    }
-    if (entry.credit_lt < debit.end_lt) {
-      return reject_query(PSTRING() << "native compact credit lt " << entry.credit_lt
-                                    << " precedes debit end lt " << debit.end_lt);
-    }
-    auto debit_root = debit.commit(*src_acc);
-    if (debit_root.is_null()) {
-      return fatal_error("cannot commit replayed native compact debit");
-    }
-    transaction_fees_ += debit.total_fees;
-    if (!transaction_fees_.is_valid()) {
-      return reject_query("invalid total native compact transaction fees");
-    }
-    total_burned_ += debit.blackhole_burned;
-    native_transfer_debits_.emplace(entry.transfer.src, entry.transfer.dst, entry.debit_lt, entry.transfer.amount);
+      block::transaction::Transaction debit(*src_acc, block::transaction::Transaction::tr_native_transfer_debit,
+                                            entry.debit_lt, now_);
+      if (debit.start_lt != entry.debit_lt) {
+        return reject_query(PSTRING() << "native compact debit lt mismatch for " << entry.transfer.src.to_hex()
+                                      << ": expected " << debit.start_lt << ", block has " << entry.debit_lt);
+      }
+      if (!debit.prepare_native_transfer_debit(entry.transfer)) {
+        return reject_query("cannot replay native compact debit for account "s + entry.transfer.src.to_hex());
+      }
+      if (!debit.serialize(serialize_cfg_)) {
+        return reject_query("cannot serialize replayed native compact debit for account "s +
+                            entry.transfer.src.to_hex());
+      }
+      if (entry.credit_lt < debit.end_lt) {
+        return reject_query(PSTRING() << "native compact credit lt " << entry.credit_lt
+                                      << " precedes debit end lt " << debit.end_lt);
+      }
+      auto debit_root = debit.commit(*src_acc);
+      if (debit_root.is_null()) {
+        return fatal_error("cannot commit replayed native compact debit");
+      }
+      transaction_fees_ += debit.total_fees;
+      if (!transaction_fees_.is_valid()) {
+        return reject_query("invalid total native compact transaction fees");
+      }
+      total_burned_ += debit.blackhole_burned;
+      native_transfer_debits_.emplace(entry.transfer.src, entry.transfer.dst, entry.debit_lt, entry.transfer.amount);
 
-    block::NativeTransferCredit credit{entry.transfer.src, entry.debit_lt, entry.transfer.amount};
-    block::transaction::Transaction credit_trans(*dst_acc, block::transaction::Transaction::tr_native_transfer_credit,
-                                                 entry.credit_lt, now_);
-    if (credit_trans.start_lt != entry.credit_lt) {
-      return reject_query(PSTRING() << "native compact credit lt mismatch for " << entry.transfer.dst.to_hex()
-                                    << ": expected " << credit_trans.start_lt << ", block has " << entry.credit_lt);
+      block::NativeTransferCredit credit{entry.transfer.src, entry.debit_lt, entry.transfer.amount};
+      block::transaction::Transaction credit_trans(
+          *dst_acc, block::transaction::Transaction::tr_native_transfer_credit, entry.credit_lt, now_);
+      if (credit_trans.start_lt != entry.credit_lt) {
+        return reject_query(PSTRING() << "native compact credit lt mismatch for " << entry.transfer.dst.to_hex()
+                                      << ": expected " << credit_trans.start_lt << ", block has " << entry.credit_lt);
+      }
+      if (!credit_trans.prepare_native_transfer_credit(credit)) {
+        return reject_query("cannot replay native compact credit for account "s + entry.transfer.dst.to_hex());
+      }
+      if (!credit_trans.serialize(serialize_cfg_)) {
+        return reject_query("cannot serialize replayed native compact credit for account "s +
+                            entry.transfer.dst.to_hex());
+      }
+      auto credit_root = credit_trans.commit(*dst_acc);
+      if (credit_root.is_null()) {
+        return fatal_error("cannot commit replayed native compact credit");
+      }
+      total_burned_ += credit_trans.blackhole_burned;
+      native_transfer_credits_.emplace(entry.transfer.src, entry.transfer.dst, entry.debit_lt, entry.transfer.amount);
     }
-    if (!credit_trans.prepare_native_transfer_credit(credit)) {
-      return reject_query("cannot replay native compact credit for account "s + entry.transfer.dst.to_hex());
-    }
-    if (!credit_trans.serialize(serialize_cfg_)) {
-      return reject_query("cannot serialize replayed native compact credit for account "s +
-                          entry.transfer.dst.to_hex());
-    }
-    auto credit_root = credit_trans.commit(*dst_acc);
-    if (credit_root.is_null()) {
-      return fatal_error("cannot commit replayed native compact credit");
-    }
-    total_burned_ += credit_trans.blackhole_burned;
-    native_transfer_credits_.emplace(entry.transfer.src, entry.transfer.dst, entry.debit_lt, entry.transfer.amount);
   }
 
   for (const auto& [addr, account] : accounts) {

@@ -5,4 +5,7 @@ target_link_libraries(lite-client-common PUBLIC tdactor adnllite tl_api tl_lite_
 add_executable(lite-client lite-client.cpp lite-client.h ext-client.h ext-client.cpp)
 target_link_libraries(lite-client tdutils tdactor adnllite tl_api tl_lite_api tl-lite-utils terminal lite-client-common git)
 
-install(TARGETS lite-client RUNTIME DESTINATION bin)
+add_executable(native-load-generator native-load-generator.cpp)
+target_link_libraries(native-load-generator tdutils tdactor adnllite tl_api tl_lite_api tl-lite-utils lite-client-common git)
+
+install(TARGETS lite-client native-load-generator RUNTIME DESTINATION bin)

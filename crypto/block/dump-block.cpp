@@ -58,8 +58,8 @@ void print_native_transfer_batch_summary(std::ostream& os, Ref<vm::Cell> root) {
     return;
   }
   auto batch = batch_res.move_as_ok();
-  os << "native_transfer_batch accounts=" << batch.accounts.size() << " transfers=" << batch.entries.size()
-     << std::endl;
+  os << "native_transfer_batch version=" << static_cast<unsigned>(batch.version)
+     << " accounts=" << batch.accounts.size() << " transfers=" << batch.entries.size() << std::endl;
 }
 
 struct IntError {

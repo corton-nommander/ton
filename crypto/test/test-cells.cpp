@@ -32,6 +32,8 @@
 #include "common/refcnt.hpp"
 #include "common/refint.h"
 #include "common/util.h"
+#include "block/transaction.h"
+#include "crypto/Ed25519.h"
 #include "td/utils/crypto.h"
 #include "td/utils/misc.h"
 #include "td/utils/tests.h"
@@ -652,4 +654,52 @@ TEST(uint64_exp, main) {
     os << "uint64_exp test FAILED\n";
   }
   REGRESSION_VERIFY(os.str());
+}
+
+TEST(NativeStateEngine, compact_batch_v2) {
+  auto source_key = td::Ed25519::generate_private_key().move_as_ok();
+  auto destination_key = td::Ed25519::generate_private_key().move_as_ok();
+  auto source_public = source_key.get_public_key().move_as_ok().as_octet_string();
+  auto destination_public = destination_key.get_public_key().move_as_ok().as_octet_string();
+
+  block::NativeTransfer transfer;
+  transfer.src.as_slice().copy_from(source_public);
+  transfer.dst.as_slice().copy_from(destination_public);
+  transfer.amount = 100;
+  transfer.fee = 3;
+  transfer.nonce = 7;
+  transfer.valid_until = std::numeric_limits<ton::UnixTime>::max();
+  transfer.signature = source_key.sign(transfer.signing_payload()).move_as_ok().as_slice().str();
+  ASSERT_TRUE(transfer.verify_signature().is_ok());
+
+  block::NativeTransferBatch batch;
+  batch.entries.push_back({transfer, 0, 0});
+  vm::CellBuilder builder;
+  ASSERT_TRUE(batch.store(builder));
+  auto unpacked = block::NativeTransferBatch::unpack(builder.finalize()).move_as_ok();
+  ASSERT_EQ(unpacked.version, 2);
+  ASSERT_EQ(unpacked.entries.size(), 1u);
+  ASSERT_EQ(unpacked.entries[0].debit_lt, 0u);
+  ASSERT_EQ(unpacked.entries[0].credit_lt, 0u);
+  ASSERT_EQ(unpacked.entries[0].transfer.signature, transfer.signature);
+
+  block::NativeTransferStateInput input{
+      .transfer = &unpacked.entries[0].transfer,
+      .src_balance = 1000,
+      .src_nonce = 7,
+      .src_status = block::Account::acc_uninit,
+      .src_is_native = true,
+      .dst_balance = 50,
+      .dst_status = block::Account::acc_uninit,
+      .dst_is_native = true,
+  };
+  std::vector<block::NativeTransferStateInput> inputs(128, input);
+  auto results = block::execute_native_transfer_states_parallel(inputs, transfer.valid_until - 1, true, 4);
+  ASSERT_EQ(results.size(), inputs.size());
+  for (const auto& result : results) {
+    ASSERT_EQ(result.code, block::NativeTransferStateResult::ok);
+    ASSERT_EQ(result.src_balance, 897u);
+    ASSERT_EQ(result.src_nonce, 8u);
+    ASSERT_EQ(result.dst_balance, 150u);
+  }
 }

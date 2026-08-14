@@ -4513,8 +4513,13 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
 
       std::set<StdSmcAddress> touched_accounts;
+      std::vector<size_t> selected;
+      std::vector<PreparedNativeTransfer> prepared;
       next_round.clear();
-      for (auto& item : pending) {
+      selected.reserve(pending.size());
+      prepared.reserve(pending.size());
+      for (size_t index = 0; index < pending.size(); ++index) {
+        auto& item = pending[index];
         if (full) {
           delay_ext_msgs_.emplace_back(item.ext_msg->hash());
           continue;
@@ -4526,7 +4531,35 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         touched_accounts.insert(item.transfer.src);
         touched_accounts.insert(item.transfer.dst);
 
-        int r = process_native_transfer(item.transfer);
+        PreparedNativeTransfer item_prepared;
+        int r = prepare_native_transfer(item.transfer, item_prepared);
+        if (r > 0) {
+          selected.push_back(index);
+          prepared.push_back(std::move(item_prepared));
+          continue;
+        }
+        ++stats_.ext_msgs_rejected;
+        if (r < 0) {
+          bad_ext_msgs_.emplace_back(item.ext_msg->hash());
+          co_return false;
+        }
+        delay_ext_msgs_.emplace_back(item.ext_msg->hash());
+      }
+
+      std::vector<block::NativeTransferStateInput> inputs;
+      inputs.reserve(prepared.size());
+      for (const auto& item : prepared) {
+        inputs.push_back(item.input);
+      }
+      auto results = block::execute_native_transfer_states_parallel(inputs, now_);
+      CHECK(results.size() == selected.size());
+      for (size_t i = 0; i < selected.size(); ++i) {
+        auto& item = pending[selected[i]];
+        if (full) {
+          delay_ext_msgs_.emplace_back(item.ext_msg->hash());
+          continue;
+        }
+        int r = commit_native_transfer(item.transfer, prepared[i], results[i]);
         if (r > 0) {
           ++stats_.ext_msgs_accepted;
         } else {
@@ -4604,6 +4637,19 @@ int Collator::process_external_message(Ref<vm::Cell> msg) {
 }
 
 int Collator::process_native_transfer(const block::NativeTransfer& transfer) {
+  PreparedNativeTransfer prepared;
+  int r = prepare_native_transfer(transfer, prepared);
+  if (r <= 0) {
+    return r;
+  }
+  return commit_native_transfer(transfer, prepared, block::execute_native_transfer_state(prepared.input, now_));
+}
+
+int Collator::prepare_native_transfer(const block::NativeTransfer& transfer, PreparedNativeTransfer& prepared) {
+  if (!use_native_fast_path()) {
+    LOG(DEBUG) << "native state-engine transfer requires the native fast-path capability";
+    return 0;
+  }
   if (workchain() != basechainId) {
     return 0;
   }
@@ -4618,8 +4664,8 @@ int Collator::process_native_transfer(const block::NativeTransfer& transfer) {
     fatal_error(src_acc_res.move_as_error());
     return -1;
   }
-  block::Account* src_acc = src_acc_res.move_as_ok();
-  if (!src_acc) {
+  prepared.src_acc = src_acc_res.move_as_ok();
+  if (!prepared.src_acc) {
     LOG(DEBUG) << "native transfer source account does not exist: " << transfer.src.to_hex();
     return 0;
   }
@@ -4628,90 +4674,71 @@ int Collator::process_native_transfer(const block::NativeTransfer& transfer) {
     fatal_error(dst_acc_res.move_as_error());
     return -1;
   }
-  block::Account* dst_acc = dst_acc_res.move_as_ok();
-  CHECK(dst_acc);
-  if (dst_acc->status != block::Account::acc_uninit && dst_acc->status != block::Account::acc_nonexist) {
-    LOG(DEBUG) << "native transfer destination account must be balance-only: " << transfer.dst.to_hex();
+  prepared.dst_acc = dst_acc_res.move_as_ok();
+  CHECK(prepared.dst_acc);
+  auto src_balance = prepared.src_acc->native_balance_uint64();
+  auto dst_balance = prepared.dst_acc->native_balance_uint64();
+  if (!src_balance || !dst_balance) {
+    LOG(DEBUG) << "native transfer accounts must have uint64 balances without extra currencies";
+    return 0;
+  }
+  prepared.input = block::NativeTransferStateInput{
+      .transfer = &transfer,
+      .src_balance = src_balance.value(),
+      .src_nonce = prepared.src_acc->native_nonce,
+      .src_flags = prepared.src_acc->native_flags,
+      .src_status = prepared.src_acc->status,
+      .src_is_native = prepared.src_acc->is_native,
+      .dst_balance = dst_balance.value(),
+      .dst_nonce = prepared.dst_acc->native_nonce,
+      .dst_flags = prepared.dst_acc->native_flags,
+      .dst_status = prepared.dst_acc->status,
+      .dst_is_native = prepared.dst_acc->is_native,
+      .same_account = prepared.src_acc == prepared.dst_acc,
+  };
+  return 1;
+}
+
+int Collator::commit_native_transfer(const block::NativeTransfer& transfer,
+                                     const PreparedNativeTransfer& prepared,
+                                     const block::NativeTransferStateResult& result) {
+  if (result.code != block::NativeTransferStateResult::ok) {
+    LOG(DEBUG) << result.message() << " for " << transfer.src.to_hex() << " -> " << transfer.dst.to_hex();
     return 0;
   }
 
-  LogicalTime debit_after_lt = std::max(start_lt, last_proc_int_msg_.first);
-  auto src_dispatch_it = last_dispatch_queue_emitted_lt_.find(src_acc->addr);
-  if (src_dispatch_it != last_dispatch_queue_emitted_lt_.end()) {
-    debit_after_lt = std::max(debit_after_lt, src_dispatch_it->second);
+  auto* src_acc = prepared.src_acc;
+  auto* dst_acc = prepared.dst_acc;
+  const auto& input = prepared.input;
+  bool src_first_update = src_acc->total_state->get_hash() == src_acc->orig_total_state->get_hash();
+  bool dst_first_update = dst_acc != src_acc &&
+                          dst_acc->total_state->get_hash() == dst_acc->orig_total_state->get_hash();
+  if (!src_acc->set_native_state(result.src_balance, result.src_nonce, input.src_flags) ||
+      (dst_acc != src_acc && !dst_acc->set_native_state(result.dst_balance, input.dst_nonce, input.dst_flags))) {
+    fatal_error("cannot commit direct native account state");
+    return -1;
   }
 
-  set_current_tx_storage_dict(*src_acc);
-  auto debit = std::make_unique<block::transaction::Transaction>(
-      *src_acc, block::transaction::Transaction::tr_native_transfer_debit, debit_after_lt + 1, now_);
-  if (!debit->prepare_native_transfer_debit(transfer)) {
-    LOG(DEBUG) << "native transfer debit rejected by source account " << transfer.src.to_hex();
-    return 0;
-  }
-  if (!debit->serialize(serialize_cfg_)) {
-    fatal_error("cannot serialize native transfer debit transaction");
+  // The compact vector and the two state cells are the complete native hot
+  // path.  Count one economic payment, not two synthetic TON transactions.
+  if (!(block_limit_status_->add_proof(src_acc->total_state) &&
+        (dst_acc == src_acc || block_limit_status_->add_proof(dst_acc->total_state)) &&
+        block_limit_status_->add_transaction() && block_limit_status_->add_account(src_first_update) &&
+        block_limit_status_->add_account(dst_first_update))) {
+    fatal_error("cannot update block limits for direct native transfer");
     return -1;
   }
-  if (!debit->update_limits(*block_limit_status_, /* with_gas = */ false)) {
-    fatal_error("cannot update block limit status to include native transfer debit");
+  if (!update_native_account_dict_estimation(*src_acc) ||
+      (dst_acc != src_acc && !update_native_account_dict_estimation(*dst_acc))) {
+    fatal_error("cannot update account dictionary estimate for direct native transfer");
     return -1;
   }
-  const auto debit_lt = debit->start_lt;
-  const auto debit_end_lt = debit->end_lt;
-  auto debit_root = debit->commit(*src_acc);
-  if (debit_root.is_null()) {
-    fatal_error("cannot commit native transfer debit transaction");
+  native_compact_transaction_fees_ += block::CurrencyCollection{td::make_refint(transfer.fee)};
+  if (!native_compact_transaction_fees_.is_valid()) {
+    fatal_error("native transfer fee total overflow");
     return -1;
   }
-  if (!update_account_dict_estimation(*debit)) {
-    fatal_error("cannot update account dict size estimation for native transfer debit");
-    return -1;
-  }
-  update_account_storage_dict_info(*debit);
-  update_max_lt(src_acc->last_trans_end_lt_);
-  value_flow_.burned += debit->blackhole_burned;
-  if (use_native_fast_path()) {
-    native_compact_transaction_fees_ += debit->total_fees;
-  }
-  ++stats_.transactions;
-
-  block::NativeTransferCredit credit{transfer.src, debit_lt, transfer.amount};
-  LogicalTime credit_after_lt = debit_end_lt;
-  auto dst_dispatch_it = last_dispatch_queue_emitted_lt_.find(dst_acc->addr);
-  if (dst_dispatch_it != last_dispatch_queue_emitted_lt_.end()) {
-    credit_after_lt = std::max(credit_after_lt, dst_dispatch_it->second);
-  }
-  set_current_tx_storage_dict(*dst_acc);
-  auto credit_trans = std::make_unique<block::transaction::Transaction>(
-      *dst_acc, block::transaction::Transaction::tr_native_transfer_credit, credit_after_lt, now_);
-  if (!credit_trans->prepare_native_transfer_credit(credit)) {
-    fatal_error("native transfer credit rejected by destination account "s + transfer.dst.to_hex());
-    return -1;
-  }
-  if (!credit_trans->serialize(serialize_cfg_)) {
-    fatal_error("cannot serialize native transfer credit transaction");
-    return -1;
-  }
-  if (!credit_trans->update_limits(*block_limit_status_, /* with_gas = */ false)) {
-    fatal_error("cannot update block limit status to include native transfer credit");
-    return -1;
-  }
-  const auto credit_lt = credit_trans->start_lt;
-  auto credit_root = credit_trans->commit(*dst_acc);
-  if (credit_root.is_null()) {
-    fatal_error("cannot commit native transfer credit transaction");
-    return -1;
-  }
-  if (!update_account_dict_estimation(*credit_trans)) {
-    fatal_error("cannot update account dict size estimation for native transfer credit");
-    return -1;
-  }
-  update_account_storage_dict_info(*credit_trans);
-  update_max_lt(dst_acc->last_trans_end_lt_);
-  value_flow_.burned += credit_trans->blackhole_burned;
-  if (use_native_fast_path()) {
-    native_transfer_batch_entries_.push_back(block::NativeTransferBatchEntry{transfer, debit_lt, credit_lt});
-  }
+  native_transfer_batch_entries_.push_back(block::NativeTransferBatchEntry{transfer, 0, 0});
   ++stats_.transactions;
   return 1;
 }
@@ -6106,6 +6133,19 @@ bool Collator::update_account_dict_estimation(const block::transaction::Transact
     return block_limit_status_->add_proof(account_dict_estimator_->get_root_cell());
   }
   return true;
+}
+
+bool Collator::update_native_account_dict_estimation(const block::Account& acc) {
+  if (acc.orig_total_state->get_hash() != acc.total_state->get_hash() &&
+      account_dict_estimator_added_accounts_.insert(acc.addr).second) {
+    vm::CellBuilder cb;
+    if (!(cb.store_ref_bool(acc.total_state) && cb.store_bits_bool(acc.last_trans_hash_) &&
+          cb.store_long_bool(acc.last_trans_lt_, 64) && account_dict_estimator_->set_builder(acc.addr, cb))) {
+      return false;
+    }
+  }
+  ++account_dict_ops_;
+  return (account_dict_ops_ & 15) || block_limit_status_->add_proof(account_dict_estimator_->get_root_cell());
 }
 
 /**

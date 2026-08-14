@@ -126,6 +126,7 @@ struct NativeTransferBatch {
   static constexpr td::uint32 accounts_chunk_magic = 0x4e414343;  // "NACC"
   static constexpr td::uint32 transfers_chunk_magic = 0x4e545843; // "NTXC"
 
+  td::uint8 version{2};
   std::vector<ton::StdSmcAddress> accounts;
   std::vector<NativeTransferBatchEntry> entries;
 
@@ -358,9 +359,14 @@ struct Account {
   block::CurrencyCollection get_balance() const {
     return balance;
   }
+  td::optional<td::uint64> native_balance_uint64() const;
   bool set_address(ton::WorkchainId wc, td::ConstBitPtr new_addr);
   bool unpack(Ref<vm::CellSlice> account, ton::UnixTime now, bool special);
   bool init_new(ton::UnixTime now);
+  // Applies the compact balance-only account representation directly.  Native
+  // state transitions intentionally do not synthesize Transaction cells and do
+  // not modify the legacy last_trans_lt/hash fields.
+  bool set_native_state(td::uint64 new_balance, td::uint64 new_nonce, td::uint8 new_flags);
   td::Result<Ref<vm::Cell>> compute_account_storage_dict() const;
   td::Status init_account_storage_stat(Ref<vm::Cell> dict_root);
   bool deactivate();
@@ -394,6 +400,57 @@ struct Account {
   bool store_maybe_anycast(vm::CellBuilder& cb) const;
   bool compute_my_addr(bool force = false);
 };
+
+struct NativeTransferStateInput {
+  const NativeTransfer* transfer{nullptr};
+  td::uint64 src_balance{0};
+  td::uint64 src_nonce{0};
+  td::uint8 src_flags{0};
+  int src_status{Account::acc_nonexist};
+  bool src_is_native{false};
+  td::uint64 dst_balance{0};
+  td::uint64 dst_nonce{0};
+  td::uint8 dst_flags{0};
+  int dst_status{Account::acc_nonexist};
+  bool dst_is_native{false};
+  bool same_account{false};
+};
+
+struct NativeTransferStateResult {
+  enum Code : td::uint8 {
+    ok = 0,
+    invalid_fields,
+    invalid_signature,
+    expired,
+    nonce_mismatch,
+    nonce_overflow,
+    invalid_source,
+    invalid_destination,
+    insufficient_balance,
+    balance_overflow
+  };
+
+  Code code{invalid_fields};
+  td::uint64 src_balance{0};
+  td::uint64 src_nonce{0};
+  td::uint64 dst_balance{0};
+  const char* message() const;
+};
+
+// Pure, allocation-free native execution.  A caller may execute independent
+// inputs concurrently and then commit the returned states in deterministic
+// block order.
+NativeTransferStateResult execute_native_transfer_state(const NativeTransferStateInput& input, ton::UnixTime now,
+                                                        bool verify_signature = true);
+std::vector<NativeTransferStateResult> execute_native_transfer_states_parallel(
+    const std::vector<NativeTransferStateInput>& inputs, ton::UnixTime now, bool verify_signatures = true,
+    unsigned workers = 0);
+
+// Verifies a block batch on a bounded number of CPU workers.  The worker count
+// defaults to TON_NATIVE_EXECUTOR_THREADS, or a laptop-safe hardware-derived
+// value when the variable is unset.
+td::Status verify_native_transfer_signatures_parallel(const std::vector<const NativeTransfer*>& transfers,
+                                                      unsigned workers = 0);
 
 namespace transaction {
 struct Transaction {

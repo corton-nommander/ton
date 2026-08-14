@@ -24,8 +24,8 @@ false =: valid_until_set
 begin-options
      " <filename-base> <dest-addr> <nonce> <amount> [-f <fee>] [-t <timeout>|-u <unix-time>] [<savefile>]" +cr +tab
     +"Creates a signed native-transfer external message with private key loaded from <filename-base>.pk. "
-    +"The message is consumed by the native fast path and produces trans_native_transfer_debit plus "
-    +"trans_native_transfer_credit; no TVM wallet contract, action phase, bounce phase, or generated messages are used."
+    +"The message is consumed by the native state engine as a direct balance/nonce update; "
+    +"no TVM wallet contract, Transaction cells, action phase, bounce phase, or generated messages are used."
     disable-digit-options generic-help-setopt
   "f" "--fee" { $>GR =: fee } short-long-option-arg
     "Sets protocol fee in grams/nanograms syntax (0 by default)" option-help

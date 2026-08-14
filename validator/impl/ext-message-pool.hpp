@@ -20,6 +20,7 @@
 #include <set>
 
 #include "interfaces/validator-manager.h"
+#include "block/transaction.h"
 #include "td/actor/coro_utils.h"
 #include "td/utils/PersistentTreap.h"
 
@@ -51,9 +52,22 @@ class ExtMessagePool : public td::actor::Actor {
   }
   std::vector<std::pair<std::string, std::string>> prepare_stats();
 
+  void start_up() override;
   void alarm() override;
 
  private:
+  class NativeSignatureVerifier final : public td::actor::Actor {
+   public:
+    void verify(block::NativeTransfer transfer, td::Promise<td::Unit> promise) {
+      auto status = transfer.verify_signature();
+      if (status.is_error()) {
+        promise.set_error(std::move(status));
+      } else {
+        promise.set_value(td::Unit{});
+      }
+    }
+  };
+
   struct MessageId {
     AccountIdPrefixFull dst;
     ExtMessage::Hash hash;
@@ -114,6 +128,8 @@ class ExtMessagePool : public td::actor::Actor {
   td::Ref<ValidatorManagerOptions> opts_;
   td::actor::ActorId<ValidatorManager> manager_;
   td::Ref<MasterchainState> last_masterchain_state_;
+  std::vector<td::actor::ActorOwn<NativeSignatureVerifier>> native_signature_verifiers_;
+  std::size_t native_signature_verifier_cursor_{0};
 
   struct ExtMessages {
     td::PersistentTreap<MessageId, std::shared_ptr<MempoolMsg>> ext_messages_;

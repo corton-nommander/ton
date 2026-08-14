@@ -2,10 +2,7 @@
 
 ## Native Transfer Wallets
 
-Native transfer wallets are used with the protocol-level native transfer fast path. They do not deploy or call a TVM wallet contract. A signed native transfer external message is consumed by the validator and produces:
-
-- `trans_native_transfer_debit`
-- `trans_native_transfer_credit`
+Native transfer wallets are used with the protocol-level native transfer fast path. They do not deploy or call a TVM wallet contract. New version-2 native blocks apply balance and nonce changes directly to `account_native` cells; they contain no synthetic per-account `Transaction` cells. Version-1 compact blocks with `trans_native_transfer_debit` and `trans_native_transfer_credit` remain readable for chain compatibility.
 
 The native wallet account id is the Ed25519 public key bytes. Fund the generated address as a balance-only account before sending native transfers.
 
@@ -67,3 +64,5 @@ native-wallet.fif <filename-base> <dest-addr> <nonce> <amount> [-f <fee>] [-t <t
 ```
 
 For a freshly funded balance-only native account, use nonce `0`. After each successful native transfer, use the source account's printed `native_nonce` as the next nonce.
+
+For sustained load, use the standalone `native-load-generator` binary/container. It loads keys once, signs and serializes in memory, and submits over persistent lite-server connections; the Fift script is intended for individual transfers and debugging.

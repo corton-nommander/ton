@@ -55,6 +55,19 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_external_
   auto message = co_await create_ext_message(std::move(data), last_masterchain_state_->get_ext_msg_limits());
   WorkchainId wc = message->wc();
   StdSmcAddress addr = message->addr();
+  if (add_to_mempool) {
+    auto existing = ext_messages_hashes_.find(message->hash());
+    if (existing != ext_messages_hashes_.end() && existing->second.first >= priority) {
+      // sendMessage is idempotent for a byte-identical message that is still in
+      // the mempool.  In particular, a client can safely retry after losing the
+      // first response without repeating the expensive account/signature check.
+      auto [wait_allow_broadcast, allow_broadcast_promise] = td::actor::StartedTask<>::make_bridge();
+      allow_broadcast_promise.set_value(td::Unit{});
+      co_return CheckResult{.message = std::move(message),
+                            .wait_allow_broadcast = std::move(wait_allow_broadcast),
+                            .should_broadcast = false};
+    }
+  }
   if (checked_ext_msg_counter_.get_msg_count(wc, addr) >= MAX_EXT_MSG_PER_ADDR) {
     co_return td::Status::Error(PSTRING() << "too many external messages to address " << wc << ":" << addr.to_hex());
   }
@@ -65,10 +78,27 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_external_
     co_return result.move_as_error();
   }
   if (checked_ext_msg_counter_.inc_msg_count(wc, addr) > MAX_EXT_MSG_PER_ADDR) {
+    rollback_checked_message(message, msg_seqno);
     co_return td::Status::Error(PSTRING() << "too many external messages to address " << wc << ":" << addr.to_hex());
   }
   if (add_to_mempool) {
-    add_message_to_mempool(message, priority, msg_seqno);
+    auto add_status = add_message_to_mempool(message, priority, msg_seqno);
+    if (add_status.is_error()) {
+      // check_message reserves wallet seqnos/native nonces before insertion so
+      // concurrent checks cannot overspend.  A rejected insertion must release
+      // that reservation; otherwise later valid messages are rejected as
+      // duplicates even though this message was never available to a collator.
+      rollback_checked_message(message, msg_seqno);
+      co_return std::move(add_status);
+    }
+  }
+  auto commit_status = commit_checked_message(message, msg_seqno);
+  if (commit_status.is_error()) {
+    if (add_to_mempool) {
+      erase_message(priority, MessageId{message->shard(), message->hash()});
+    }
+    rollback_checked_message(message, msg_seqno);
+    co_return std::move(commit_status);
   }
   co_return result.move_as_ok();
 }
@@ -356,16 +386,11 @@ void ExtMessagePool::alarm() {
   });
 }
 
-void ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, int priority,
-                                            td::optional<td::uint32> msg_seqno) {
+td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, int priority,
+                                                  td::optional<td::uint32> msg_seqno) {
   WorkchainId wc = message->wc();
   StdSmcAddress addr = message->addr();
   auto &msgs = ext_msgs_[priority];
-  if (msgs.ext_messages_.size() > opts_->max_mempool_num()) {
-    LOG(INFO) << "cannot add message addr=" << wc << ":" << addr.to_hex() << " prio=" << priority
-              << " to mempool: mempool is full (limit=" << opts_->max_mempool_num() << ")";
-    return;
-  }
   auto msg = std::make_shared<MempoolMsg>(message);
   msg->msg_seqno = msg_seqno;
   auto native_transfer_res = block::NativeTransfer::unpack_external(message->root_cell());
@@ -374,20 +399,32 @@ void ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, int pri
   }
   MessageId id{message->shard(), message->hash()};
   auto address = msg->address();
+  auto it2 = ext_messages_hashes_.find(id.hash);
+  if (it2 != ext_messages_hashes_.end() && it2->second.first >= priority) {
+    LOG(DEBUG) << "message addr=" << wc << ":" << addr.to_hex() << " prio=" << priority
+               << " is already present in mempool at priority " << it2->second.first;
+    return td::Status::OK();
+  }
+  if (msgs.ext_messages_.size() >= opts_->max_mempool_num()) {
+    auto error = td::Status::Error(ErrorCode::notready,
+                                   PSTRING() << "external message mempool is full (priority=" << priority
+                                             << ", limit=" << opts_->max_mempool_num() << ")");
+    LOG(INFO) << "cannot add message addr=" << wc << ":" << addr.to_hex() << " prio=" << priority << " : "
+              << error;
+    return error;
+  }
   auto it = msgs.ext_addr_messages_.find(address);
   if (it != msgs.ext_addr_messages_.end() && it->second.size() >= PER_ADDRESS_LIMIT) {
-    LOG(INFO) << "cannot add message addr=" << wc << ":" << addr.to_hex() << " prio=" << priority
-              << " to mempool: per address limit reached (limit=" << PER_ADDRESS_LIMIT << ")";
-    return;
+    auto error = td::Status::Error(ErrorCode::notready,
+                                   PSTRING() << "external message per-address mempool limit reached (address=" << wc
+                                             << ":" << addr.to_hex() << ", priority=" << priority
+                                             << ", limit=" << PER_ADDRESS_LIMIT << ")");
+    LOG(INFO) << "cannot add message addr=" << wc << ":" << addr.to_hex() << " prio=" << priority << " : "
+              << error;
+    return error;
   }
-  auto it2 = ext_messages_hashes_.find(id.hash);
   if (it2 != ext_messages_hashes_.end()) {
     int old_priority = it2->second.first;
-    if (old_priority >= priority) {
-      LOG(INFO) << "cannot add message addr=" << wc << ":" << addr.to_hex() << " prio=" << priority
-                << " to mempool: already exists";
-      return;
-    }
     erase_message(old_priority, id);
   }
   auto hash_norm = msg->hash_norm;
@@ -411,6 +448,66 @@ void ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, int pri
     }
     return false;
   });
+  return td::Status::OK();
+}
+
+td::Status ExtMessagePool::commit_checked_message(td::Ref<ExtMessage> message,
+                                                  td::optional<td::uint32> msg_seqno) {
+  auto address = std::make_pair(message->wc(), message->addr());
+  auto native_transfer = block::NativeTransfer::unpack_external(message->root_cell());
+  if (native_transfer.is_ok()) {
+    auto native_it = native_accounts_.find(address);
+    if (native_it == native_accounts_.end() || !native_it->second.commit_message(native_transfer.ok().nonce)) {
+      return td::Status::Error("native message reservation disappeared before mempool commit");
+    }
+    return td::Status::OK();
+  }
+  if (msg_seqno) {
+    auto wallet_it = wallets_.find(address);
+    if (wallet_it == wallets_.end() || !wallet_it->second.commit_message(msg_seqno.value())) {
+      return td::Status::Error("wallet message reservation disappeared before mempool commit");
+    }
+  }
+  return td::Status::OK();
+}
+
+void ExtMessagePool::rollback_checked_message(td::Ref<ExtMessage> message,
+                                              td::optional<td::uint32> msg_seqno) {
+  auto address = std::make_pair(message->wc(), message->addr());
+  auto native_transfer = block::NativeTransfer::unpack_external(message->root_cell());
+  if (native_transfer.is_ok()) {
+    auto native_it = native_accounts_.find(address);
+    if (native_it != native_accounts_.end()) {
+      auto message_it = native_it->second.messages.find(native_transfer.ok().nonce);
+      if (message_it != native_it->second.messages.end()) {
+        if (message_it->second.allow_broadcast_promise) {
+          message_it->second.allow_broadcast_promise.set_error(
+              td::Status::Error("native message was not inserted into the mempool"));
+        }
+        native_it->second.messages.erase(message_it);
+      }
+      if (native_it->second.messages.empty()) {
+        native_accounts_.erase(native_it);
+      }
+    }
+    return;
+  }
+  if (msg_seqno) {
+    auto wallet_it = wallets_.find(address);
+    if (wallet_it != wallets_.end()) {
+      auto message_it = wallet_it->second.messages.find(msg_seqno.value());
+      if (message_it != wallet_it->second.messages.end()) {
+        if (message_it->second.allow_broadcast_promise) {
+          message_it->second.allow_broadcast_promise.set_error(
+              td::Status::Error("wallet message was not inserted into the mempool"));
+        }
+        wallet_it->second.messages.erase(message_it);
+      }
+      if (wallet_it->second.messages.empty()) {
+        wallets_.erase(wallet_it);
+      }
+    }
+  }
 }
 
 td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::Ref<ExtMessage> message,
@@ -454,22 +551,8 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     if (transfer.amount + transfer.fee < transfer.amount) {
       co_return td::Status::Error("native transfer amount and fee overflow");
     }
-    auto &native_info = native_accounts_[{wc, addr}];
-    SCOPE_EXIT {
-      if (native_info.messages.empty()) {
-        native_accounts_.erase({wc, addr});
-      }
-    };
-    native_info.process_messages(acc.native_nonce, utime);
-    if (native_info.messages.contains(transfer.nonce)) {
-      co_return td::Status::Error(PSTRING() << "Duplicate native nonce " << transfer.nonce);
-    }
     td::uint64 required_amount = transfer.amount + transfer.fee;
-    td::uint64 reserved_amount = native_info.reserved_amount(acc.native_nonce);
-    if (reserved_amount + required_amount < reserved_amount) {
-      co_return td::Status::Error("native transfer pending amount overflow");
-    }
-    block::CurrencyCollection required{td::make_refint(reserved_amount + required_amount)};
+    block::CurrencyCollection required{td::make_refint(required_amount)};
     if (!(acc.balance >= required)) {
       co_return td::Status::Error("native transfer has insufficient source balance");
     }
@@ -480,13 +563,38 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     if (signature_result.is_error()) {
       co_return signature_result.move_as_error();
     }
-    native_info.messages.emplace(
+
+    // Do not retain references into native_accounts_ across the asynchronous
+    // signature check. Other checks for the same source can complete while this
+    // coroutine is suspended and may erase or replace that map entry.
+    auto &native_info = native_accounts_[{wc, addr}];
+    SCOPE_EXIT {
+      if (native_info.messages.empty()) {
+        native_accounts_.erase({wc, addr});
+      }
+    };
+    native_info.process_messages(acc.native_nonce, utime);
+    if (native_info.messages.contains(transfer.nonce)) {
+      co_return td::Status::Error(PSTRING() << "Duplicate native nonce " << transfer.nonce);
+    }
+    td::uint64 reserved_amount = native_info.reserved_amount(acc.native_nonce);
+    if (reserved_amount + required_amount < reserved_amount) {
+      co_return td::Status::Error("native transfer pending amount overflow");
+    }
+    required = block::CurrencyCollection{td::make_refint(reserved_amount + required_amount)};
+    if (!(acc.balance >= required)) {
+      co_return td::Status::Error("native transfer has insufficient source balance");
+    }
+    auto insert_result = native_info.messages.emplace(
         transfer.nonce,
         NativeMessageInfo{.amount = transfer.amount,
                           .fee = transfer.fee,
                           .valid_until = transfer.valid_until,
-                          .allow_broadcast_promise = std::move(allow_broadcast_promise)});
-    native_info.process_messages(acc.native_nonce, utime);
+                          .allow_broadcast_promise = std::move(allow_broadcast_promise),
+                          .committed = false});
+    if (!insert_result.second) {
+      co_return td::Status::Error(PSTRING() << "Duplicate native nonce " << transfer.nonce);
+    }
     co_return check_result;
   }
 
@@ -541,13 +649,18 @@ td::Result<td::uint32> ExtMessagePool::check_message_to_wallet(td::Ref<ExtMessag
   acc.storage_dict_hash = acc.orig_storage_dict_hash = {};
   TRY_STATUS(ExtMessageQ::run_message_on_account(wc, &acc, utime, lt + 1, message->root_cell(), std::move(config)));
   wallet_info.messages[msg_seqno] =
-      WalletMessageInfo{.valid_until = msg_valid_until, .allow_broadcast_promise = std::move(allow_broadcast_promise)};
-  wallet_info.process_messages(wallet_seqno, utime);
+      WalletMessageInfo{.valid_until = msg_valid_until,
+                        .allow_broadcast_promise = std::move(allow_broadcast_promise),
+                        .committed = false};
   LOG(DEBUG) << "Checked external message to " << wc << ":" << addr.to_hex() << ", " << wallet->name();
   return msg_seqno;
 }
 
 void ExtMessagePool::WalletInfo::process_messages(td::uint32 wallet_seqno, UnixTime utime) {
+  observed_seqno = std::max(observed_seqno, wallet_seqno);
+  observed_utime = std::max(observed_utime, utime);
+  wallet_seqno = observed_seqno;
+  utime = observed_utime;
   for (auto it = messages.begin(); it != messages.end();) {
     auto &[seqno, message] = *it;
     if (seqno < wallet_seqno) {
@@ -569,7 +682,7 @@ void ExtMessagePool::WalletInfo::process_messages(td::uint32 wallet_seqno, UnixT
   }
   for (td::uint32 seqno = wallet_seqno;; ++seqno) {
     auto it = messages.find(seqno);
-    if (it == messages.end()) {
+    if (it == messages.end() || !it->second.committed) {
       break;
     }
     if (it->second.allow_broadcast_promise) {
@@ -578,7 +691,21 @@ void ExtMessagePool::WalletInfo::process_messages(td::uint32 wallet_seqno, UnixT
   }
 }
 
+bool ExtMessagePool::WalletInfo::commit_message(td::uint32 msg_seqno) {
+  auto it = messages.find(msg_seqno);
+  if (it == messages.end()) {
+    return false;
+  }
+  it->second.committed = true;
+  process_messages(observed_seqno, observed_utime);
+  return true;
+}
+
 void ExtMessagePool::NativeInfo::process_messages(td::uint64 native_nonce, UnixTime utime) {
+  observed_nonce = std::max(observed_nonce, native_nonce);
+  observed_utime = std::max(observed_utime, utime);
+  native_nonce = observed_nonce;
+  utime = observed_utime;
   for (auto it = messages.begin(); it != messages.end();) {
     auto &[nonce, message] = *it;
     if (nonce < native_nonce) {
@@ -601,7 +728,7 @@ void ExtMessagePool::NativeInfo::process_messages(td::uint64 native_nonce, UnixT
   }
   for (td::uint64 nonce = native_nonce;; ++nonce) {
     auto it = messages.find(nonce);
-    if (it == messages.end()) {
+    if (it == messages.end() || !it->second.committed) {
       break;
     }
     if (it->second.allow_broadcast_promise) {
@@ -611,6 +738,16 @@ void ExtMessagePool::NativeInfo::process_messages(td::uint64 native_nonce, UnixT
       break;
     }
   }
+}
+
+bool ExtMessagePool::NativeInfo::commit_message(td::uint64 native_nonce) {
+  auto it = messages.find(native_nonce);
+  if (it == messages.end()) {
+    return false;
+  }
+  it->second.committed = true;
+  process_messages(observed_nonce, observed_utime);
+  return true;
 }
 
 td::uint64 ExtMessagePool::NativeInfo::reserved_amount(td::uint64 native_nonce) const {

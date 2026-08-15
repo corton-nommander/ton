@@ -87,6 +87,7 @@ LiteQuery::LiteQuery(
 
 void LiteQuery::abort_query(td::Status reason) {
   LOG(INFO) << "aborted liteserver query: " << reason.to_string();
+  release_send_message_cache();
   if (acc_state_promise_) {
     acc_state_promise_.set_error(std::move(reason));
   } else if (promise_) {
@@ -115,6 +116,7 @@ void LiteQuery::alarm() {
 }
 
 bool LiteQuery::finish_query(td::BufferSlice result, bool skip_cache_update) {
+  release_send_message_cache();
   if (use_cache_ && !skip_cache_update) {
     td::actor::send_closure(cache_, &LiteServerCache::update, cache_key_, result.clone());
   }
@@ -127,6 +129,25 @@ bool LiteQuery::finish_query(td::BufferSlice result, bool skip_cache_update) {
   } else {
     stop();
     return false;
+  }
+}
+
+void LiteQuery::tear_down() {
+  release_send_message_cache();
+}
+
+void LiteQuery::release_send_message_cache() {
+  if (!send_message_cache_active_) {
+    return;
+  }
+  send_message_cache_active_ = false;
+  td::actor::send_closure(cache_, &LiteServerCache::drop_send_message_from_cache, cache_key_,
+                          send_message_cache_owner_);
+}
+
+void LiteQuery::perform_after_send_message_cache_acquired() {
+  if (send_message_cache_active_) {
+    perform();
   }
 }
 
@@ -146,12 +167,18 @@ void LiteQuery::start_up() {
   query_obj_ = F.move_as_ok();
 
   if (!cache_.empty() && query_obj_->get_id() == lite_api::liteServer_sendMessage::ID) {
-    // Dropping duplicate "sendMessage"
+    // Only suppress work while an identical query is actually in flight. Once
+    // it completes, exact retries reach ExtMessagePool, which can distinguish a
+    // currently stored message from one that has left the mempool.
     cache_key_ = td::sha256_bits256(query_);
-    td::actor::send_closure(cache_, &LiteServerCache::process_send_message, cache_key_,
+    do {
+      send_message_cache_owner_ = td::Random::fast_uint64();
+    } while (send_message_cache_owner_ == 0);
+    send_message_cache_active_ = true;
+    td::actor::send_closure(cache_, &LiteServerCache::process_send_message, cache_key_, send_message_cache_owner_,
                             [SelfId = actor_id(this)](td::Result<td::Unit> R) {
                               if (R.is_ok()) {
-                                td::actor::send_closure(SelfId, &LiteQuery::perform);
+                                td::actor::send_closure(SelfId, &LiteQuery::perform_after_send_message_cache_acquired);
                               } else {
                                 td::actor::send_closure(SelfId, &LiteQuery::abort_query,
                                                         R.move_as_error_prefix("cannot send external message : "));
@@ -556,10 +583,8 @@ void LiteQuery::perform_sendMessage(td::BufferSlice data) {
   td::actor::send_closure(
       manager_, &ValidatorManager::new_external_message_query, std::move(data),
       td::PromiseCreator::lambda(
-          [Self = actor_id(this), cache = cache_, cache_key = cache_key_](td::Result<td::Unit> res) mutable {
+          [Self = actor_id(this)](td::Result<td::Unit> res) mutable {
             if (res.is_error()) {
-              // Don't cache errors
-              td::actor::send_closure(cache, &LiteServerCache::drop_send_message_from_cache, cache_key);
               td::actor::send_closure(Self, &LiteQuery::abort_query,
                                       res.move_as_error_prefix("cannot apply external message to current state : "s));
             } else {

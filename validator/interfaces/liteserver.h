@@ -31,8 +31,11 @@ class LiteServerCache : public td::actor::Actor {
   virtual void lookup(td::Bits256 key, td::Promise<td::BufferSlice> promise) = 0;
   virtual void update(td::Bits256 key, td::BufferSlice value) = 0;
 
-  virtual void process_send_message(td::Bits256 key, td::Promise<td::Unit> promise) = 0;
-  virtual void drop_send_message_from_cache(td::Bits256 key) = 0;
+  // The cache only owns in-flight sendMessage queries. The caller-provided
+  // token makes cleanup idempotent and prevents a rejected duplicate from
+  // erasing the original query's entry.
+  virtual void process_send_message(td::Bits256 key, td::uint64 owner, td::Promise<td::Unit> promise) = 0;
+  virtual void drop_send_message_from_cache(td::Bits256 key, td::uint64 owner) = 0;
 };
 
 }  // namespace ton::validator

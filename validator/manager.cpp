@@ -462,10 +462,14 @@ td::actor::Task<> ValidatorManagerImpl::new_external_message_query(td::BufferSli
   // without temp/permanent validator keys registered here, so gating this on
   // is_validator() can accept native externals without ever offering them to
   // the local collator.
-  auto [message, wait_allow_broadcast] =
+  auto check_result =
       co_await td::actor::ask(ext_message_pool_, &ExtMessagePool::check_add_external_message, std::move(data), 0,
                               /* add_to_mempool = */ true);
-  new_external_message_query_cont(std::move(message), std::move(wait_allow_broadcast)).start().detach();
+  if (check_result.should_broadcast) {
+    new_external_message_query_cont(std::move(check_result.message), std::move(check_result.wait_allow_broadcast))
+        .start()
+        .detach();
+  }
   co_return td::Unit{};
 }
 

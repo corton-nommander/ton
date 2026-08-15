@@ -38,6 +38,7 @@ class ExtMessagePool : public td::actor::Actor {
   struct CheckResult {
     td::Ref<ExtMessage> message;
     td::actor::StartedTask<> wait_allow_broadcast;
+    bool should_broadcast{true};
   };
   td::actor::Task<CheckResult> check_add_external_message(td::BufferSlice data, int priority, bool add_to_mempool);
   void install_collator_queue(ShardIdFull shard, std::unique_ptr<ExtMsgCallback> callback);
@@ -196,15 +197,21 @@ class ExtMessagePool : public td::actor::Actor {
 
   td::Timestamp cleanup_mempool_at_ = td::Timestamp::now();
 
-  void add_message_to_mempool(td::Ref<ExtMessage> message, int priority, td::optional<td::uint32> msg_seqno);
+  td::Status add_message_to_mempool(td::Ref<ExtMessage> message, int priority,
+                                    td::optional<td::uint32> msg_seqno);
+  td::Status commit_checked_message(td::Ref<ExtMessage> message, td::optional<td::uint32> msg_seqno);
+  void rollback_checked_message(td::Ref<ExtMessage> message, td::optional<td::uint32> msg_seqno);
   bool erase_message(int priority, const MessageId &id);
 
   struct WalletMessageInfo {
     td::uint32 valid_until;
     td::Promise<td::Unit> allow_broadcast_promise;
+    bool committed{false};
   };
   struct WalletInfo {
     std::map<td::uint32, WalletMessageInfo> messages;
+    td::uint32 observed_seqno{0};
+    UnixTime observed_utime{0};
     ~WalletInfo() {
       for (auto &[_, message] : messages) {
         if (message.allow_broadcast_promise) {
@@ -213,6 +220,7 @@ class ExtMessagePool : public td::actor::Actor {
       }
     }
     void process_messages(td::uint32 wallet_seqno, UnixTime utime);
+    bool commit_message(td::uint32 msg_seqno);
   };
   std::map<std::pair<WorkchainId, StdSmcAddress>, WalletInfo> wallets_;
 
@@ -221,9 +229,12 @@ class ExtMessagePool : public td::actor::Actor {
     td::uint64 fee;
     td::uint32 valid_until;
     td::Promise<td::Unit> allow_broadcast_promise;
+    bool committed{false};
   };
   struct NativeInfo {
     std::map<td::uint64, NativeMessageInfo> messages;
+    td::uint64 observed_nonce{0};
+    UnixTime observed_utime{0};
     ~NativeInfo() {
       for (auto &[_, message] : messages) {
         if (message.allow_broadcast_promise) {
@@ -232,6 +243,7 @@ class ExtMessagePool : public td::actor::Actor {
       }
     }
     void process_messages(td::uint64 native_nonce, UnixTime utime);
+    bool commit_message(td::uint64 native_nonce);
     td::uint64 reserved_amount(td::uint64 native_nonce) const;
   };
   std::map<std::pair<WorkchainId, StdSmcAddress>, NativeInfo> native_accounts_;

@@ -78,18 +78,21 @@ class LiteServerCacheImpl : public LiteServerCache {
     }
   }
 
-  void process_send_message(td::Bits256 key, td::Promise<td::Unit> promise) override {
+  void process_send_message(td::Bits256 key, td::uint64 owner, td::Promise<td::Unit> promise) override {
     if (send_message_cache_.contains(key)) {
       ++send_message_error_cnt_;
-      promise.set_error(td::Status::Error("duplicate message"));
+      promise.set_error(td::Status::Error(ErrorCode::notready, "identical sendMessage query is still in flight"));
       return;
     }
-    send_message_cache_.put(key, td::Unit{});
-    promise.set_result(td::Unit());
+    send_message_cache_.put(key, owner);
+    promise.set_value(td::Unit{});
   }
 
-  void drop_send_message_from_cache(td::Bits256 key) override {
-    send_message_cache_.erase(key);
+  void drop_send_message_from_cache(td::Bits256 key, td::uint64 owner) override {
+    auto current_owner = send_message_cache_.get_if_exists(key, false);
+    if (current_owner != nullptr && *current_owner == owner) {
+      send_message_cache_.erase(key);
+    }
   }
 
  private:
@@ -113,7 +116,7 @@ class LiteServerCacheImpl : public LiteServerCache {
 
   size_t queries_cnt_ = 0, queries_hit_cnt_ = 0;
 
-  td::LRUCache<td::Bits256, td::Unit> send_message_cache_{MAX_MSG_CACHE_SIZE};
+  td::LRUCache<td::Bits256, td::uint64> send_message_cache_{MAX_MSG_CACHE_SIZE};
   size_t send_message_error_cnt_ = 0;
 };
 

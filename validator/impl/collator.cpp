@@ -4587,7 +4587,19 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           co_return false;
         }
         if (r == 0) {
-          delay_ext_msgs_.emplace_back(item.ext_msg->hash());
+          // A lower nonce proves that this exact native transfer is already
+          // represented by canonical state.  Expiration is permanent too.
+          // Future nonces and temporarily insufficient balances must remain
+          // retryable, because an earlier transfer or incoming credit can
+          // make them valid in a later candidate.
+          bool stale_nonce = results[i].code == block::NativeTransferStateResult::nonce_mismatch &&
+                             item.transfer.nonce < prepared[i].input.src_nonce;
+          bool permanently_invalid = stale_nonce || results[i].code == block::NativeTransferStateResult::expired;
+          if (permanently_invalid) {
+            bad_ext_msgs_.emplace_back(item.ext_msg->hash());
+          } else {
+            delay_ext_msgs_.emplace_back(item.ext_msg->hash());
+          }
         } else {
           full = !block_limit_status_->fits(block::ParamLimits::cl_soft);
           block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());

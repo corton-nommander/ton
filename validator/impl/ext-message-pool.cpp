@@ -81,19 +81,28 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
   MessageId shard_hi{AccountIdPrefixFull{hi_prefix_plus1 == 0 ? shard.workchain + 1 : shard.workchain, hi_prefix_plus1},
                      Bits256::zero()};
 
-  // Take O(log n) shard slices from each priority level
+  // Take O(log n) generic shard slices and O(1) native snapshots from each
+  // priority level.  Native messages have their own nonce-first index so a
+  // large backlog does not have to be rebuilt and sorted for every candidate.
   using Treap = td::PersistentTreap<MessageId, std::shared_ptr<MempoolMsg>>;
   using Snapshot = std::vector<std::pair<int, Treap>>;
-  Snapshot snapshot;
+  using NativeTreap = td::PersistentTreap<NativeMessageId, std::shared_ptr<MempoolMsg>>;
+  using NativeSnapshot = std::vector<std::pair<int, NativeTreap>>;
+  Snapshot generic_snapshot;
+  NativeSnapshot native_snapshot;
   for (auto it = ext_msgs_.rbegin(); it != ext_msgs_.rend(); ++it) {
-    auto [_, in_shard, __] = it->second.ext_messages_.split_range(shard_lo, shard_hi);
+    auto [_, in_shard, __] = it->second.generic_messages_.split_range(shard_lo, shard_hi);
     if (!in_shard.empty()) {
-      snapshot.emplace_back(it->first, std::move(in_shard));
+      generic_snapshot.emplace_back(it->first, std::move(in_shard));
+    }
+    if (!it->second.native_messages_.empty()) {
+      native_snapshot.emplace_back(it->first, it->second.native_messages_);
     }
   }
 
   // Spawn a coroutine that drains native messages by source nonce and leaves other messages in stable key order.
-  auto push_existing = [](ExtMsgQueue queue, td::CancellationToken token, ShardIdFull shard, Snapshot snapshot,
+  auto push_existing = [](ExtMsgQueue queue, td::CancellationToken token, ShardIdFull shard,
+                          Snapshot generic_snapshot, NativeSnapshot native_snapshot,
                           bool sync_only) -> td::actor::Task<> {
     struct QueueItem {
       int priority;
@@ -110,6 +119,9 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
         return a_native;
       }
       if (a_native && b_native) {
+        if (a.msg->native_nonce.value() != b.msg->native_nonce.value()) {
+          return a.msg->native_nonce.value() < b.msg->native_nonce.value();
+        }
         auto a_address = a.msg->address();
         auto b_address = b.msg->address();
         if (a_address < b_address) {
@@ -117,9 +129,6 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
         }
         if (b_address < a_address) {
           return false;
-        }
-        if (a.msg->native_nonce.value() != b.msg->native_nonce.value()) {
-          return a.msg->native_nonce.value() < b.msg->native_nonce.value();
         }
       }
       return a.key < b.key;
@@ -131,13 +140,39 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
     };
     td::Timer t;
     std::vector<QueueItem> items;
-    for (auto &[priority, treap] : snapshot) {
-      while (!treap.empty()) {
+    items.reserve(NATIVE_COLLATOR_QUEUE_LIMIT);
+    size_t native_selected = 0;
+    for (auto &[priority, treap] : native_snapshot) {
+      for (size_t index = 0; index < treap.size() && native_selected < NATIVE_COLLATOR_QUEUE_LIMIT; ++index) {
         if (token.check().is_error()) {
           co_return {};
         }
-        auto [key, msg] = treap.at(0);
-        treap = treap.erase_at(0);  // local snapshot only
+        auto [native_key, msg] = treap.at(index);
+        if (!shard_contains(shard, msg->message->shard()) || msg->expired() || !msg->is_active()) {
+          continue;
+        }
+        items.push_back(QueueItem{.priority = priority,
+                                  .key = MessageId{native_key.dst, native_key.hash},
+                                  .msg = std::move(msg)});
+        ++native_selected;
+      }
+      if (native_selected >= NATIVE_COLLATOR_QUEUE_LIMIT) {
+        break;
+      }
+    }
+    for (auto &[priority, treap] : generic_snapshot) {
+      // The treap is already an immutable snapshot.  Erasing rank zero on
+      // every iteration rebuilt O(log n) persistent paths and allocated a
+      // new temporary treap for every mempool message.  Under a 100k+ native
+      // backlog that consumed the complete collation deadline before the
+      // first queue item was delivered.  Ranked reads preserve the snapshot
+      // and avoid all of those transient allocations.
+      auto size = treap.size();
+      for (size_t index = 0; index < size; ++index) {
+        if (token.check().is_error()) {
+          co_return {};
+        }
+        auto [key, msg] = treap.at(index);
         if (msg->expired() || !msg->is_active()) {
           continue;
         }
@@ -156,11 +191,12 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
       }
       ++pushed;
     }
-    LOG(WARNING) << "install_collator_queue: pushed " << pushed << " existing messages to shard " << shard << " in "
-                 << t.elapsed() << "s";
+    LOG(WARNING) << "install_collator_queue: selected_native=" << native_selected << " pushed=" << pushed
+                 << " existing messages to shard " << shard << " in " << t.elapsed() << "s";
     co_return {};
   };
-  push_existing(callback->queue, callback->cancellation_token, shard, std::move(snapshot), callback->sync_only)
+  push_existing(callback->queue, callback->cancellation_token, shard, std::move(generic_snapshot),
+                std::move(native_snapshot), callback->sync_only)
       .start()
       .detach();
 
@@ -245,6 +281,8 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id) {
   auto hash_norm = msg_opt.value()->hash_norm;
   auto native_nonce = msg_opt.value()->native_nonce;
   if (native_nonce) {
+    msgs.native_messages_ =
+        msgs.native_messages_.erase(NativeMessageId{native_nonce.value(), id.dst, id.hash});
     auto native_it = native_accounts_.find(address);
     if (native_it != native_accounts_.end()) {
       native_it->second.messages.erase(native_nonce.value());
@@ -252,6 +290,8 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id) {
         native_accounts_.erase(native_it);
       }
     }
+  } else {
+    msgs.generic_messages_ = msgs.generic_messages_.erase(id);
   }
   msgs.ext_addr_messages_[address].erase(id.hash);
   msgs.ext_messages_ = msgs.ext_messages_.erase(id);
@@ -351,7 +391,13 @@ void ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, int pri
     erase_message(old_priority, id);
   }
   auto hash_norm = msg->hash_norm;
-  msgs.ext_messages_ = msgs.ext_messages_.insert(id, std::move(msg));
+  msgs.ext_messages_ = msgs.ext_messages_.insert(id, msg);
+  if (msg->native_nonce) {
+    msgs.native_messages_ =
+        msgs.native_messages_.insert(NativeMessageId{msg->native_nonce.value(), id.dst, id.hash}, msg);
+  } else {
+    msgs.generic_messages_ = msgs.generic_messages_.insert(id, msg);
+  }
   msgs.ext_addr_messages_[address].emplace(id.hash, id);
   ext_messages_hashes_[id.hash] = {priority, id};
   ext_messages_hashes_norm_[hash_norm].insert(NormalizedMessageId{priority, id});

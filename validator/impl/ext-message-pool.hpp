@@ -86,6 +86,24 @@ class ExtMessagePool : public td::actor::Actor {
       return !(*this < msg) && !(msg < *this);
     }
   };
+  struct NativeMessageId {
+    td::uint64 nonce;
+    AccountIdPrefixFull dst;
+    ExtMessage::Hash hash;
+
+    bool operator<(const NativeMessageId &msg) const {
+      if (nonce != msg.nonce) {
+        return nonce < msg.nonce;
+      }
+      if (dst < msg.dst) {
+        return true;
+      }
+      if (msg.dst < dst) {
+        return false;
+      }
+      return hash < msg.hash;
+    }
+  };
   struct MempoolMsg {
     td::Ref<ExtMessage> message;
     ExtMessage::Hash hash_norm;
@@ -146,6 +164,8 @@ class ExtMessagePool : public td::actor::Actor {
 
   struct ExtMessages {
     td::PersistentTreap<MessageId, std::shared_ptr<MempoolMsg>> ext_messages_;
+    td::PersistentTreap<MessageId, std::shared_ptr<MempoolMsg>> generic_messages_;
+    td::PersistentTreap<NativeMessageId, std::shared_ptr<MempoolMsg>> native_messages_;
     std::map<std::pair<WorkchainId, StdSmcAddress>, std::map<ExtMessage::Hash, MessageId>> ext_addr_messages_;
   };
   struct NormalizedMessageId {
@@ -228,6 +248,7 @@ class ExtMessagePool : public td::actor::Actor {
   static constexpr size_t MAX_EXT_MSG_PER_ADDR = 4096;
   static constexpr size_t PER_ADDRESS_LIMIT = 8192;
   static constexpr size_t SOFT_MEMPOOL_LIMIT = 262144;
+  static constexpr size_t NATIVE_COLLATOR_QUEUE_LIMIT = 32768;
   static constexpr td::uint32 MAX_WALLET_SEQNO_DIFF = 16;
   static constexpr td::uint64 MAX_NATIVE_NONCE_DIFF = 4096;
 };

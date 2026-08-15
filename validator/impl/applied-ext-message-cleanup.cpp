@@ -19,7 +19,6 @@
 
 #include "block/block-auto.h"
 #include "block/block-parse.h"
-#include "block/transaction.h"
 #include "ton/ton-io.hpp"
 #include "vm/dict.h"
 
@@ -78,20 +77,12 @@ td::Result<std::vector<ExtMessage::Hash>> get_applied_external_messages_hashes(t
       return td::Status::Error("failed to iterate applied block InMsgDescr");
     }
 
-    if (!block->block_id().is_masterchain() && extra.custom.not_null() && extra.custom->have_refs()) {
-      auto batch_res = block::NativeTransferBatch::unpack(extra.custom->prefetch_ref());
-      if (batch_res.is_ok()) {
-        auto batch = batch_res.move_as_ok();
-        for (const auto& entry : batch.entries) {
-          vm::CellBuilder cb;
-          Ref<vm::Cell> ext_msg;
-          if (!(entry.transfer.store_external(cb) && cb.finalize_to(ext_msg))) {
-            return td::Status::Error("cannot reconstruct compact native external message for cleanup");
-          }
-          hashes.push_back(ext_msg->get_hash().bits());
-        }
-      }
-    }
+    // Compact native transfers are deliberately not erased here.  ApplyBlock
+    // may run for a validated fork which loses consensus, so treating it as
+    // final would lose the nonce required by every later transfer from that
+    // source.  Native messages stay in the pool across competing candidates;
+    // once canonical state advances, the collator recognizes their nonce as
+    // stale and removes them through complete_external_messages().
 
     std::sort(hashes.begin(), hashes.end());
     hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());

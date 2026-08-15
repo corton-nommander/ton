@@ -125,8 +125,12 @@ struct NativeTransferBatch {
   static constexpr td::uint32 magic = 0x4e545842;           // "NTXB"
   static constexpr td::uint32 accounts_chunk_magic = 0x4e414343;  // "NACC"
   static constexpr td::uint32 transfers_chunk_magic = 0x4e545843; // "NTXC"
+  static constexpr td::uint32 accounts_leaf_magic = 0x4e414c46;   // "NALF"
+  static constexpr td::uint32 accounts_node_magic = 0x4e414e44;   // "NAND"
+  static constexpr td::uint32 transfers_leaf_magic = 0x4e54584c;  // "NTXL"
+  static constexpr td::uint32 transfers_node_magic = 0x4e54584e;  // "NTXN"
 
-  td::uint8 version{2};
+  td::uint8 version{3};
   std::vector<ton::StdSmcAddress> accounts;
   std::vector<NativeTransferBatchEntry> entries;
 

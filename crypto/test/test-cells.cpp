@@ -673,6 +673,7 @@ TEST(NativeStateEngine, compact_batch_v2) {
   ASSERT_TRUE(transfer.verify_signature().is_ok());
 
   block::NativeTransferBatch batch;
+  batch.version = 2;
   batch.entries.push_back({transfer, 0, 0});
   vm::CellBuilder builder;
   ASSERT_TRUE(batch.store(builder));
@@ -702,4 +703,40 @@ TEST(NativeStateEngine, compact_batch_v2) {
     ASSERT_EQ(result.src_nonce, 8u);
     ASSERT_EQ(result.dst_balance, 150u);
   }
+}
+
+TEST(NativeStateEngine, compact_batch_v3_balanced_tree) {
+  block::NativeTransferBatch batch;
+  constexpr std::size_t transfer_count = 5000;
+  batch.entries.reserve(transfer_count);
+  for (std::size_t i = 0; i < transfer_count; ++i) {
+    block::NativeTransfer transfer;
+    std::string source(32, '\0'), destination(32, '\0');
+    source[0] = 2;
+    destination[0] = 3;
+    for (std::size_t byte = 0; byte < sizeof(i); ++byte) {
+      source[31 - byte] = static_cast<char>(i >> (byte * 8));
+      destination[31 - byte] = static_cast<char>(i >> (byte * 8));
+    }
+    transfer.src.as_slice().copy_from(source);
+    transfer.dst.as_slice().copy_from(destination);
+    transfer.amount = i + 1;
+    transfer.nonce = i;
+    transfer.valid_until = std::numeric_limits<ton::UnixTime>::max();
+    transfer.signature.assign(64, static_cast<char>(i));
+    ASSERT_TRUE(transfer.is_valid());
+    batch.entries.push_back({std::move(transfer), 0, 0});
+  }
+
+  vm::CellBuilder builder;
+  ASSERT_TRUE(batch.store(builder));
+  auto root = builder.finalize();
+  ASSERT_TRUE(root->get_depth() < 64);
+  auto unpacked = block::NativeTransferBatch::unpack(root).move_as_ok();
+  ASSERT_EQ(unpacked.version, 3);
+  ASSERT_EQ(unpacked.accounts.size(), transfer_count * 2);
+  ASSERT_EQ(unpacked.entries.size(), transfer_count);
+  ASSERT_EQ(unpacked.entries.front().transfer.src, batch.entries.front().transfer.src);
+  ASSERT_EQ(unpacked.entries.back().transfer.dst, batch.entries.back().transfer.dst);
+  ASSERT_EQ(unpacked.entries.back().transfer.nonce, transfer_count - 1);
 }

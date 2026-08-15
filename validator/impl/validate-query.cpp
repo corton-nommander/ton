@@ -6720,7 +6720,7 @@ bool ValidateQuery::check_native_transfer_batch() {
     return result;
   };
 
-  if (native_transfer_batch_.value().version == 2) {
+  if (native_transfer_batch_.value().version >= 2) {
     const auto& entries = native_transfer_batch_.value().entries;
     std::vector<std::size_t> pending(entries.size()), next_round;
     std::iota(pending.begin(), pending.end(), 0);

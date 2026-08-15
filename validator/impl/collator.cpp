@@ -1005,11 +1005,28 @@ bool Collator::request_neighbor_msg_queues() {
         if (!descr.processed_upto) {
           return fatal_error("native fast path cannot unpack masterchain neighbor ProcessedUpto");
         }
+        // The regular neighbor-queue path requests every masterchain state referenced by
+        // ProcessedUpto after unpacking the queue proof.  The native path obtains the same
+        // queue directly from the full state, but still needs those auxiliary states later
+        // in fix_one_processed_upto().  Register the dependency before preinitialization so
+        // collation waits for it instead of failing when the state is first dereferenced.
+        for (const auto& entry : descr.processed_upto->list) {
+          Ref<MasterchainStateQ> state;
+          if (!request_aux_mc_state(entry.mc_seqno, state)) {
+            return false;
+          }
+        }
         continue;
       }
       if (shard_intersects(descr.shard(), shard_)) {
         descr.set_queue_root(out_msg_queue_->get_root_cell());
         descr.processed_upto = processed_upto_;
+        for (const auto& entry : descr.processed_upto->list) {
+          Ref<MasterchainStateQ> state;
+          if (!request_aux_mc_state(entry.mc_seqno, state)) {
+            return false;
+          }
+        }
         continue;
       }
       return fatal_error(PSTRING() << "native fast path does not support non-local neighbor message queues: neighbor="

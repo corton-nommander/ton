@@ -16,6 +16,7 @@
 */
 #pragma once
 
+#include <algorithm>
 #include <map>
 #include <set>
 
@@ -116,6 +117,18 @@ class ExtMessagePool : public td::actor::Actor {
       }
       active = false;
       reactivate_at = td::Timestamp::in(generation * 5.0);
+    }
+    void postpone_native() {
+      if (!active) {
+        return;
+      }
+      active = false;
+      // Native transfers are nonce-ordered.  Dropping a temporarily unprocessable
+      // transfer can strand every later nonce from the same source, so retain it
+      // until it is applied or expires and use a short capped retry backoff.
+      auto exponent = std::min(generation, td::uint32{5});
+      auto delay = std::min(1.0, 0.05 * static_cast<double>(1u << exponent));
+      reactivate_at = td::Timestamp::in(delay);
     }
     bool expired() const {
       return delete_at.is_in_past();

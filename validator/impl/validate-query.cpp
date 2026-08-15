@@ -1701,6 +1701,15 @@ bool ValidateQuery::request_neighbor_queues() {
         if (!descr.processed_upto) {
           return reject_query("native fast path cannot unpack masterchain neighbor ProcessedUpto");
         }
+        // Keep the native full-state shortcut equivalent to the proof-backed path:
+        // fix_one_processed_upto() needs every masterchain state named here, even
+        // though no OutMsgQueue proof has to be fetched.
+        for (const auto& entry : descr.processed_upto->list) {
+          Ref<MasterchainStateQ> state;
+          if (!request_aux_mc_state(entry.mc_seqno, state)) {
+            return false;
+          }
+        }
         continue;
       }
       if (shard_intersects(descr.shard(), shard_)) {
@@ -1708,6 +1717,12 @@ bool ValidateQuery::request_neighbor_queues() {
         REJECT_UNLESS(ps_.processed_upto_);
         descr.set_queue_root(ps_.out_msg_queue_->get_root_cell());
         descr.processed_upto = ps_.processed_upto_;
+        for (const auto& entry : descr.processed_upto->list) {
+          Ref<MasterchainStateQ> state;
+          if (!request_aux_mc_state(entry.mc_seqno, state)) {
+            return false;
+          }
+        }
         continue;
       }
       return reject_query(PSTRING()

@@ -201,7 +201,12 @@ void ExtMessagePool::complete_external_messages(std::vector<ExtMessage::Hash> to
       auto msg_id = it->second.second;
       auto &msgs = ext_msgs_[priority];
       auto msg_opt = msgs.ext_messages_.find(msg_id);
-      if (msg_opt && msgs.ext_messages_.size() < SOFT_MEMPOOL_LIMIT && msg_opt.value()->can_postpone()) {
+      if (msg_opt && msg_opt.value()->native_nonce && !msg_opt.value()->expired()) {
+        // A native message may be delayed simply because the current candidate is
+        // full, timed out, or lost consensus.  Never evict it for retry count or
+        // soft-pool pressure: deleting one nonce permanently blocks later nonces.
+        msg_opt.value()->postpone_native();
+      } else if (msg_opt && msgs.ext_messages_.size() < SOFT_MEMPOOL_LIMIT && msg_opt.value()->can_postpone()) {
         msg_opt.value()->postpone();
       } else {
         erase_message(priority, msg_id);

@@ -48,6 +48,8 @@ class LiteQuery : public td::actor::Actor {
   tl_object_ptr<ton::lite_api::Function> query_obj_;
   bool use_cache_{false};
   td::Bits256 cache_key_;
+  td::uint64 send_message_cache_owner_{0};
+  bool send_message_cache_active_{false};
 
   int pending_{0};
   int mode_{0};
@@ -106,6 +108,9 @@ class LiteQuery : public td::actor::Actor {
   bool finish_query(td::BufferSlice result, bool skip_cache_update = false);
   void alarm() override;
   void start_up() override;
+  void tear_down() override;
+  void release_send_message_cache();
+  void perform_after_send_message_cache_acquired();
   bool use_cache();
   void perform();
   void perform_getTime();

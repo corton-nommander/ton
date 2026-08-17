@@ -18,6 +18,7 @@
 
 #include "auto/tl/lite_api.hpp"
 #include "block/block-auto.h"
+#include "block/transaction.h"
 #include "td/utils/overloaded.h"
 #include "tl-utils/common-utils.hpp"
 #include "tl-utils/lite-utils.hpp"
@@ -28,13 +29,66 @@
 #include "block-parse.h"
 #include "query-utils.hpp"
 
+#include <algorithm>
+
 namespace liteclient {
 
 using namespace ton;
 
+namespace {
+
+td::Result<std::vector<ShardIdFull>> external_message_routing_shards(const td::BufferSlice& body) {
+  TRY_RESULT(root, vm::std_boc_deserialize(body.clone()));
+  auto native = block::NativeTransfer::unpack_external(root);
+  if (native.is_ok()) {
+    auto transfer = native.move_as_ok();
+    std::vector<ShardIdFull> result;
+    result.push_back(extract_addr_prefix(basechainId, transfer.src).as_leaf_shard());
+    auto destination = extract_addr_prefix(basechainId, transfer.dst).as_leaf_shard();
+    if (destination != result.front()) {
+      result.push_back(destination);
+    }
+    return result;
+  }
+  block::gen::CommonMsgInfo::Record_ext_in_msg_info msg_info;
+  if (!tlb::unpack_cell_inexact(root, msg_info)) {
+    return td::Status::Error("body is neither a native transfer nor an external inbound message");
+  }
+  auto dest_prefix = block::tlb::MsgAddressInt::get_prefix(msg_info.dest);
+  if (!dest_prefix.is_valid()) {
+    return td::Status::Error("external inbound message has an invalid destination");
+  }
+  return std::vector<ShardIdFull>{dest_prefix.as_leaf_shard()};
+}
+
+void add_routing_shards(QueryInfo& info, std::vector<ShardIdFull> shards) {
+  for (const auto& shard : shards) {
+    if (std::find(info.routing_shards.begin(), info.routing_shards.end(), shard) ==
+        info.routing_shards.end()) {
+      info.routing_shards.push_back(shard);
+    }
+  }
+  if (!info.routing_shards.empty()) {
+    info.shard_id = info.routing_shards.front();
+  }
+}
+
+void invalidate_routing(QueryInfo& info, std::string error) {
+  info.routing_valid = false;
+  info.routing_error = std::move(error);
+  info.routing_shards.clear();
+}
+
+}  // namespace
+
 std::string QueryInfo::to_str() const {
   td::StringBuilder sb;
   sb << "[ " << lite_query_name_by_id(query_id) << " " << shard_id.to_str();
+  if (!routing_valid) {
+    sb << " invalid-routing=\"" << routing_error << "\"";
+  } else if (routing_shards.size() > 1) {
+    sb << " routing_shards=" << routing_shards.size();
+  }
   switch (type) {
     case t_simple:
       break;
@@ -127,19 +181,29 @@ QueryInfo get_query_info(const lite_api::Function& f) {
                      },
                      [&](const lite_api::liteServer_sendMessage& q) {
                        info.type = QueryInfo::t_simple;
-                       auto r_root = vm::std_boc_deserialize(q.body_);
-                       if (r_root.is_error()) {
+                       auto shards = external_message_routing_shards(q.body_);
+                       if (shards.is_error()) {
+                         invalidate_routing(info, shards.move_as_error().message().str());
+                       } else {
+                         add_routing_shards(info, shards.move_as_ok());
+                       }
+                     },
+                     [&](const lite_api::liteServer_sendMessageBatch& q) {
+                       info.type = QueryInfo::t_simple;
+                       if (q.bodies_.empty()) {
+                         invalidate_routing(info, "sendMessageBatch has no bodies");
                          return;
                        }
-                       block::gen::CommonMsgInfo::Record_ext_in_msg_info msg_info;
-                       if (!tlb::unpack_cell_inexact(r_root.ok(), msg_info)) {
-                         return;
+                       for (std::size_t i = 0; i < q.bodies_.size(); ++i) {
+                         auto shards = external_message_routing_shards(q.bodies_[i]);
+                         if (shards.is_error()) {
+                           invalidate_routing(
+                               info, PSTRING() << "cannot route batch body " << i << ": "
+                                               << shards.error().message());
+                           return;
+                         }
+                         add_routing_shards(info, shards.move_as_ok());
                        }
-                       auto dest_prefix = block::tlb::MsgAddressInt::get_prefix(msg_info.dest);
-                       if (!dest_prefix.is_valid()) {
-                         return;
-                       }
-                       info.shard_id = dest_prefix.as_leaf_shard();
                      },
                      [&](const lite_api::liteServer_getShardInfo& q) { from_block_id(q.id_); },
                      [&](const lite_api::liteServer_getAllShardsInfo& q) { from_block_id(q.id_); },
@@ -217,6 +281,20 @@ QueryInfo get_query_info(const lite_api::Function& f) {
                      [&](const lite_api::liteServer_getDispatchQueueInfo& q) { from_block_id(q.id_); },
                      [&](const lite_api::liteServer_getDispatchQueueMessages& q) { from_block_id(q.id_); },
                      [&](const auto&) { /* t_simple */ }));
+  if (info.routing_valid) {
+    for (auto& shard : info.routing_shards) {
+      if (shard.workchain == masterchainId) {
+        shard.shard = shardIdAll;
+      }
+      if (!shard.is_valid_ext()) {
+        invalidate_routing(info, "message has an invalid routing shard");
+        break;
+      }
+    }
+    if (!info.routing_shards.empty()) {
+      info.shard_id = info.routing_shards.front();
+    }
+  }
   if (info.shard_id.workchain == masterchainId) {
     info.shard_id.shard = shardIdAll;
   }
@@ -229,15 +307,32 @@ QueryInfo get_query_info(const lite_api::Function& f) {
 }
 
 bool LiteServerConfig::accepts_query(const QueryInfo& query_info) const {
+  if (!query_info.routing_valid) {
+    return false;
+  }
   if (is_full) {
     return true;
   }
-  for (const Slice& s : slices) {
-    if (s.accepts_query(query_info)) {
-      return true;
+  auto accepts_one = [&](const QueryInfo& one) {
+    for (const Slice& s : slices) {
+      if (s.accepts_query(one)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (query_info.routing_shards.empty()) {
+    return accepts_one(query_info);
+  }
+  QueryInfo one = query_info;
+  one.routing_shards.clear();
+  for (const auto& shard : query_info.routing_shards) {
+    one.shard_id = shard;
+    if (!accepts_one(one)) {
+      return false;
     }
   }
-  return false;
+  return true;
 }
 
 bool LiteServerConfig::Slice::accepts_query(const QueryInfo& query_info) const {

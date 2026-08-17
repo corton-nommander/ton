@@ -17,8 +17,10 @@
 #pragma once
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <set>
+#include <vector>
 
 #include "interfaces/validator-manager.h"
 #include "block/transaction.h"
@@ -41,9 +43,13 @@ class ExtMessagePool : public td::actor::Actor {
     bool should_broadcast{true};
   };
   td::actor::Task<CheckResult> check_add_external_message(td::BufferSlice data, int priority, bool add_to_mempool);
+  td::actor::Task<CheckResult> check_add_external_message_until(td::BufferSlice data, int priority,
+                                                                bool add_to_mempool,
+                                                                td::Timestamp deadline);
   void install_collator_queue(ShardIdFull shard, std::unique_ptr<ExtMsgCallback> callback);
   void cleanup_external_messages(ShardIdFull shard);
   void complete_external_messages(std::vector<ExtMessage::Hash> to_delay, std::vector<ExtMessage::Hash> to_delete);
+  void finalize_native_external_messages(std::vector<FinalizedNativeExternalMessage> messages);
   void erase_external_messages(std::vector<ExtMessage::Hash> to_delete);
 
   void update_last_masterchain_state(td::Ref<MasterchainState> state) {
@@ -60,8 +66,8 @@ class ExtMessagePool : public td::actor::Actor {
  private:
   class NativeSignatureVerifier final : public td::actor::Actor {
    public:
-    void verify(block::NativeTransfer transfer, td::Promise<td::Unit> promise) {
-      auto status = transfer.verify_signature();
+    void verify(block::NativeTransfer transfer, Bits256 chain_domain, td::Promise<td::Unit> promise) {
+      auto status = transfer.verify_signature(chain_domain);
       if (status.is_error()) {
         promise.set_error(std::move(status));
       } else {
@@ -152,9 +158,14 @@ class ExtMessagePool : public td::actor::Actor {
     bool expired() const {
       return delete_at.is_in_past();
     }
-    explicit MempoolMsg(td::Ref<ExtMessage> msg) : message(std::move(msg)), hash_norm(message->hash_norm()) {
-      delete_at = td::Timestamp::in(600);
+    void set_retention(double seconds) {
+      delete_at = td::Timestamp::in(std::max(0.001, seconds));
     }
+    explicit MempoolMsg(td::Ref<ExtMessage> msg) : message(std::move(msg)), hash_norm(message->hash_norm()) {
+      set_retention(GENERIC_MEMPOOL_TTL_SECONDS);
+    }
+
+    static constexpr double GENERIC_MEMPOOL_TTL_SECONDS = 600.0;
   };
 
   td::Ref<ValidatorManagerOptions> opts_;
@@ -194,6 +205,8 @@ class ExtMessagePool : public td::actor::Actor {
   } checked_ext_msg_counter_;
   td::uint64 total_check_ext_messages_ok_{0}, total_check_ext_messages_error_{0};
   td::uint64 applied_ext_msgs_delete_requests_{0}, applied_ext_msgs_deleted_{0};
+  std::size_t native_collator_queue_limit_{32768};
+  td::uint32 native_mempool_max_ttl_{3600};
 
   td::Timestamp cleanup_mempool_at_ = td::Timestamp::now();
 
@@ -225,11 +238,27 @@ class ExtMessagePool : public td::actor::Actor {
   std::map<std::pair<WorkchainId, StdSmcAddress>, WalletInfo> wallets_;
 
   struct NativeMessageInfo {
+    ExtMessage::Hash hash;
     td::uint64 amount;
     td::uint64 fee;
     td::uint32 valid_until;
+    td::uint64 account_revision{0};
     td::Promise<td::Unit> allow_broadcast_promise;
+    std::vector<td::Promise<td::Unit>> insertion_waiters;
     bool committed{false};
+
+    void insertion_succeeded() {
+      for (auto &waiter : insertion_waiters) {
+        waiter.set_value(td::Unit{});
+      }
+      insertion_waiters.clear();
+    }
+    void insertion_failed(td::Slice reason) {
+      for (auto &waiter : insertion_waiters) {
+        waiter.set_error(td::Status::Error(reason));
+      }
+      insertion_waiters.clear();
+    }
   };
   struct NativeInfo {
     std::map<td::uint64, NativeMessageInfo> messages;
@@ -240,15 +269,77 @@ class ExtMessagePool : public td::actor::Actor {
         if (message.allow_broadcast_promise) {
           message.allow_broadcast_promise.set_error(td::Status::Error("native account is no longer valid"));
         }
+        message.insertion_failed("native account is no longer valid");
       }
     }
-    void process_messages(td::uint64 native_nonce, UnixTime utime);
+    std::vector<ExtMessage::Hash> process_messages(td::uint64 native_nonce, UnixTime utime);
     bool commit_message(td::uint64 native_nonce);
-    td::uint64 reserved_amount(td::uint64 native_nonce) const;
+    td::uint64 reserved_amount_before(td::uint64 native_nonce, td::uint64 before_nonce) const;
   };
-  std::map<std::pair<WorkchainId, StdSmcAddress>, NativeInfo> native_accounts_;
+  using NativeAddress = std::pair<WorkchainId, StdSmcAddress>;
+  struct NativeNonceWatermark {
+    // Account nonce is the first nonce not consumed by the observed canonical
+    // state. A separately recorded finalized nonce closes the window in which
+    // an asynchronous verifier can resume with an older account fetch.
+    td::uint64 observed_next_nonce{0};
+    td::optional<td::uint64> highest_finalized_nonce;
+    td::optional<td::uint64> observed_balance;
+    LogicalTime observed_lt{0};
+    td::uint64 revision{0};
 
-  td::actor::Task<CheckResult> check_message(td::Ref<ExtMessage> message, td::optional<td::uint32> &msg_seqno);
+    bool observe_account_state(td::uint64 nonce, td::uint64 balance, LogicalTime lt) {
+      // A finalized debit is known before ValidatorManager necessarily exposes
+      // the corresponding account state. Never bless balance from that older
+      // snapshot; the caller retries after state catch-up.
+      if (highest_finalized_nonce && nonce <= highest_finalized_nonce.value()) {
+        return false;
+      }
+      if (observed_balance && lt < observed_lt) {
+        return false;
+      }
+      bool changed = nonce > observed_next_nonce || !observed_balance ||
+                     (lt >= observed_lt && balance != observed_balance.value());
+      observed_next_nonce = std::max(observed_next_nonce, nonce);
+      if (lt >= observed_lt) {
+        observed_lt = lt;
+        observed_balance = balance;
+      }
+      if (changed) {
+        ++revision;
+      }
+      return true;
+    }
+    void observe_finalized_nonce(td::uint64 nonce) {
+      if (!highest_finalized_nonce || nonce > highest_finalized_nonce.value()) {
+        highest_finalized_nonce = nonce;
+        // Finalization consumed source balance, but this callback does not
+        // carry the new balance. Invalidate it and force a canonical refetch.
+        observed_balance = {};
+        ++revision;
+      }
+    }
+    bool is_consumed(td::uint64 nonce) const {
+      return nonce < observed_next_nonce ||
+             (highest_finalized_nonce && nonce <= highest_finalized_nonce.value());
+    }
+    td::optional<td::uint64> first_unconsumed_nonce() const {
+      if (!highest_finalized_nonce) {
+        return observed_next_nonce;
+      }
+      if (highest_finalized_nonce.value() == std::numeric_limits<td::uint64>::max()) {
+        return {};
+      }
+      return std::max(observed_next_nonce, highest_finalized_nonce.value() + 1);
+    }
+  };
+  std::map<NativeAddress, NativeInfo> native_accounts_;
+  // Do not discard a watermark when an account has no pending messages: an
+  // older account-state fetch can still be suspended in a signature worker.
+  std::map<NativeAddress, NativeNonceWatermark> native_nonce_watermarks_;
+
+  td::actor::Task<CheckResult> check_message(td::Ref<ExtMessage> message,
+                                             td::optional<td::uint32> &msg_seqno,
+                                             td::Timestamp deadline = td::Timestamp::never());
   td::Result<td::uint32> check_message_to_wallet(td::Ref<ExtMessage> message, const WalletMessageProcessor *wallet,
                                                  block::Account acc, UnixTime utime, LogicalTime lt,
                                                  std::unique_ptr<block::ConfigInfo> config,
@@ -260,7 +351,8 @@ class ExtMessagePool : public td::actor::Actor {
   static constexpr size_t MAX_EXT_MSG_PER_ADDR = 4096;
   static constexpr size_t PER_ADDRESS_LIMIT = 8192;
   static constexpr size_t SOFT_MEMPOOL_LIMIT = 262144;
-  static constexpr size_t NATIVE_COLLATOR_QUEUE_LIMIT = 32768;
+  static constexpr size_t MAX_NATIVE_COLLATOR_QUEUE_LIMIT = 262144;
+  static constexpr td::uint32 MAX_NATIVE_MEMPOOL_TTL = 86400;
   static constexpr td::uint32 MAX_WALLET_SEQNO_DIFF = 16;
   static constexpr td::uint64 MAX_NATIVE_NONCE_DIFF = 4096;
 };

@@ -69,7 +69,8 @@ std::string FinalizeBlock::contents_to_string() const {
 
 std::string OurLeaderWindowStarted::contents_to_string() const {
   return PSTRING() << "{base=" << base << ", state=" << state << ", start_slot=" << start_slot
-                   << ", end_slot=" << end_slot << ", start_time=" << start_time.at_unix() << "}";
+                   << ", end_slot=" << end_slot << ", start_time=" << start_time.at_unix()
+                   << ", excluded_ext_messages=" << excluded_ext_messages.size() << "}";
 }
 
 std::string CandidateGenerated::contents_to_string() const {
@@ -79,6 +80,10 @@ std::string CandidateGenerated::contents_to_string() const {
 
 std::string CandidateReceived::contents_to_string() const {
   return PSTRING() << "{candidate=" << candidate_to_string(candidate) << "}";
+}
+
+std::string ConsensusSlotAdvanced::contents_to_string() const {
+  return PSTRING() << "{first_active_slot=" << first_active_slot << "}";
 }
 
 std::string ValidationRequest::contents_to_string() const {

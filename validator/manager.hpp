@@ -348,6 +348,8 @@ class ValidatorManagerImpl : public ValidatorManager {
 
   td::actor::Task<> new_external_message_broadcast(td::BufferSlice data, int priority) override;
   td::actor::Task<> new_external_message_query(td::BufferSlice data) override;
+  td::actor::Task<> new_external_message_query_until(td::BufferSlice data,
+                                                      td::Timestamp deadline) override;
   td::actor::Task<> new_external_message_query_cont(td::Ref<ExtMessage> message,
                                                     td::actor::StartedTask<> wait_allow_broadcast);
 
@@ -432,6 +434,8 @@ class ValidatorManagerImpl : public ValidatorManager {
                                      td::Promise<std::vector<td::Ref<ShardTopBlockDescription>>> promise) override;
   void complete_external_messages(std::vector<ExtMessage::Hash> to_delay,
                                   std::vector<ExtMessage::Hash> to_delete) override;
+  void finalize_external_messages(std::vector<FinalizedNativeExternalMessage> messages,
+                                  td::Promise<td::Unit> promise) override;
   void cleanup_applied_external_messages(BlockHandle handle, td::Ref<BlockData> block) override;
   void complete_ihr_messages(std::vector<IhrMessage::Hash> to_delay, std::vector<IhrMessage::Hash> to_delete) override;
 

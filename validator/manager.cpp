@@ -473,6 +473,30 @@ td::actor::Task<> ValidatorManagerImpl::new_external_message_query(td::BufferSli
   co_return td::Unit{};
 }
 
+td::actor::Task<> ValidatorManagerImpl::new_external_message_query_until(td::BufferSlice data,
+                                                                          td::Timestamp deadline) {
+  if (deadline && deadline.is_in_past()) {
+    co_return td::Status::Error(ErrorCode::timeout,
+                                "external message admission deadline expired");
+  }
+  auto check_result =
+      co_await td::actor::ask(ext_message_pool_, &ExtMessagePool::check_add_external_message_until,
+                              std::move(data), 0, /* add_to_mempool = */ true, deadline);
+  if (deadline && deadline.is_in_past()) {
+    // ExtMessagePool checks the same deadline before its synchronous commit.
+    // This second check keeps the liteserver response semantics explicit.
+    co_return td::Status::Error(ErrorCode::timeout,
+                                "external message admission deadline expired");
+  }
+  if (check_result.should_broadcast) {
+    new_external_message_query_cont(std::move(check_result.message),
+                                    std::move(check_result.wait_allow_broadcast))
+        .start()
+        .detach();
+  }
+  co_return td::Unit{};
+}
+
 td::actor::Task<> ValidatorManagerImpl::new_external_message_query_cont(td::Ref<ExtMessage> message,
                                                                         td::actor::StartedTask<> wait_allow_broadcast) {
   auto result = co_await std::move(wait_allow_broadcast).wrap();
@@ -1181,6 +1205,15 @@ void ValidatorManagerImpl::complete_external_messages(std::vector<ExtMessage::Ha
                                                       std::vector<ExtMessage::Hash> to_delete) {
   td::actor::send_closure(ext_message_pool_, &ExtMessagePool::complete_external_messages, std::move(to_delay),
                           std::move(to_delete));
+}
+
+void ValidatorManagerImpl::finalize_external_messages(std::vector<FinalizedNativeExternalMessage> messages,
+                                                       td::Promise<td::Unit> promise) {
+  td::actor::send_closure(ext_message_pool_, &ExtMessagePool::finalize_native_external_messages,
+                          std::move(messages));
+  // Subsequent messages sent by this manager to ExtMessagePool are ordered
+  // after the finalization purge.
+  promise.set_value(td::Unit{});
 }
 
 void ValidatorManagerImpl::cleanup_applied_external_messages(BlockHandle handle, td::Ref<BlockData> block) {

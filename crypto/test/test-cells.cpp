@@ -671,6 +671,10 @@ TEST(NativeStateEngine, compact_batch_v2) {
   transfer.valid_until = std::numeric_limits<ton::UnixTime>::max();
   transfer.signature = source_key.sign(transfer.signing_payload()).move_as_ok().as_slice().str();
   ASSERT_TRUE(transfer.verify_signature().is_ok());
+  vm::CellBuilder external_builder;
+  ASSERT_TRUE(transfer.store_external(external_builder));
+  auto external_root = external_builder.finalize();
+  ASSERT_EQ(transfer.external_hash().move_as_ok(), ton::Bits256{external_root->get_hash().bits()});
 
   block::NativeTransferBatch batch;
   batch.version = 2;
@@ -705,8 +709,29 @@ TEST(NativeStateEngine, compact_batch_v2) {
   }
 }
 
+TEST(NativeStateEngine, native_signature_is_bound_to_zerostate_domain) {
+  auto source_key = td::Ed25519::generate_private_key().move_as_ok();
+  auto destination_key = td::Ed25519::generate_private_key().move_as_ok();
+  block::NativeTransfer transfer;
+  transfer.src.as_slice().copy_from(source_key.get_public_key().move_as_ok().as_octet_string());
+  transfer.dst.as_slice().copy_from(destination_key.get_public_key().move_as_ok().as_octet_string());
+  transfer.amount = 1;
+  transfer.nonce = 9;
+  transfer.valid_until = std::numeric_limits<ton::UnixTime>::max();
+
+  ton::Bits256 domain_a, domain_b;
+  domain_a.as_slice().copy_from(std::string(32, '\x11'));
+  domain_b.as_slice().copy_from(std::string(32, '\x22'));
+  transfer.signature = source_key.sign(transfer.signing_payload(domain_a)).move_as_ok().as_slice().str();
+
+  ASSERT_TRUE(transfer.verify_signature(domain_a).is_ok());
+  ASSERT_TRUE(transfer.verify_signature(domain_b).is_error());
+  ASSERT_TRUE(transfer.verify_signature().is_error());
+}
+
 TEST(NativeStateEngine, compact_batch_v3_balanced_tree) {
   block::NativeTransferBatch batch;
+  batch.version = 3;
   constexpr std::size_t transfer_count = 5000;
   batch.entries.reserve(transfer_count);
   for (std::size_t i = 0; i < transfer_count; ++i) {
@@ -739,4 +764,72 @@ TEST(NativeStateEngine, compact_batch_v3_balanced_tree) {
   ASSERT_EQ(unpacked.entries.front().transfer.src, batch.entries.front().transfer.src);
   ASSERT_EQ(unpacked.entries.back().transfer.dst, batch.entries.back().transfer.dst);
   ASSERT_EQ(unpacked.entries.back().transfer.nonce, transfer_count - 1);
+}
+
+TEST(NativeStateEngine, compact_batch_v4_balanced_tree) {
+  block::NativeTransferBatch batch;
+  ASSERT_EQ(batch.version, block::NativeTransferBatch::current_version);
+  constexpr std::size_t transfer_count = 8192;
+  batch.entries.reserve(transfer_count);
+  for (std::size_t i = 0; i < transfer_count; ++i) {
+    block::NativeTransfer transfer;
+    std::string source(32, '\0'), destination(32, '\0');
+    source[0] = 2;
+    destination[0] = 3;
+    for (std::size_t byte = 0; byte < sizeof(i); ++byte) {
+      source[31 - byte] = static_cast<char>(i >> (byte * 8));
+    }
+    transfer.src.as_slice().copy_from(source);
+    transfer.dst.as_slice().copy_from(destination);
+    transfer.amount = 1;
+    transfer.nonce = 0;
+    transfer.valid_until = std::numeric_limits<ton::UnixTime>::max();
+    transfer.signature.assign(64, static_cast<char>(i));
+    ASSERT_TRUE(transfer.is_valid());
+    batch.entries.push_back({std::move(transfer), 0, 0});
+  }
+
+  vm::CellBuilder builder;
+  ASSERT_TRUE(batch.store(builder));
+  auto root = builder.finalize();
+  ASSERT_TRUE(root->get_depth() < 64);
+  auto unpacked = block::NativeTransferBatch::unpack(root).move_as_ok();
+  ASSERT_EQ(unpacked.version, 4);
+  ASSERT_EQ(unpacked.accounts.size(), transfer_count + 1);
+  ASSERT_EQ(unpacked.entries.size(), transfer_count);
+  ASSERT_EQ(unpacked.entries.front().transfer.dst, unpacked.entries.back().transfer.dst);
+}
+
+TEST(NativeStateEngine, compact_batch_rejects_unbounded_header_counts) {
+  auto dummy_ref = [] {
+    vm::CellBuilder builder;
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(0, 1));
+    return builder.finalize();
+  };
+  auto make_header = [&](td::uint32 accounts_count, td::uint32 entries_count, bool accounts_root,
+                         bool entries_root) {
+    vm::CellBuilder builder;
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(block::NativeTransferBatch::magic, 32));
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(block::NativeTransferBatch::current_version, 8));
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(accounts_count, 32));
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(entries_count, 32));
+    ASSERT_TRUE(builder.store_maybe_ref(accounts_root ? dummy_ref() : td::Ref<vm::Cell>{}));
+    ASSERT_TRUE(builder.store_maybe_ref(entries_root ? dummy_ref() : td::Ref<vm::Cell>{}));
+    return builder.finalize();
+  };
+
+  ASSERT_TRUE(block::NativeTransferBatch::unpack(
+                  make_header(block::NativeTransferBatch::max_accounts + 1, 1, true, true))
+                  .is_error());
+  ASSERT_TRUE(block::NativeTransferBatch::unpack(
+                  make_header(0, block::NativeTransferBatch::max_entries + 1, false, true))
+                  .is_error());
+  ASSERT_TRUE(block::NativeTransferBatch::unpack(make_header(3, 1, true, true)).is_error());
+}
+
+TEST(NativeStateEngine, compact_batch_domain_signature_activation_rejects_downgrade) {
+  ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version(3, 13));
+  ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version(4, 13));
+  ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version(3, 14));
+  ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version(4, 14));
 }

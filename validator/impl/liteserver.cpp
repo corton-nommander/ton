@@ -27,6 +27,7 @@
 #include "block/check-proof.h"
 #include "block/signature-set.h"
 #include "block/validator-set.h"
+#include "td/actor/SharedFuture.h"
 #include "td/actor/MultiPromise.h"
 #include "td/utils/Random.h"
 #include "td/utils/Slice.h"
@@ -112,6 +113,16 @@ bool LiteQuery::fatal_error(int err_code, std::string err_msg) {
 }
 
 void LiteQuery::alarm() {
+  if (send_message_batch_active_) {
+    // Detaching the local waiter is safe because each manager/pool admission
+    // carries an earlier deadline and checks it after every asynchronous step
+    // and immediately before the synchronous mempool commit. Thus no late
+    // admission can outlive the enclosing response timeout.
+    send_message_batch_active_ = false;
+    send_message_batch_task_ = {};
+    fatal_error(ErrorCode::timeout, "sendMessageBatch admission deadline expired");
+    return;
+  }
   fatal_error(-503, "timeout");
 }
 
@@ -166,7 +177,9 @@ void LiteQuery::start_up() {
   }
   query_obj_ = F.move_as_ok();
 
-  if (!cache_.empty() && query_obj_->get_id() == lite_api::liteServer_sendMessage::ID) {
+  if (!cache_.empty() &&
+      (query_obj_->get_id() == lite_api::liteServer_sendMessage::ID ||
+       query_obj_->get_id() == lite_api::liteServer_sendMessageBatch::ID)) {
     // Only suppress work while an identical query is actually in flight. Once
     // it completes, exact retries reach ExtMessagePool, which can distinguish a
     // currently stored message from one that has left the mempool.
@@ -249,6 +262,7 @@ void LiteQuery::perform() {
                                           static_cast<LogicalTime>(q.lt_), q.hash_, static_cast<unsigned>(q.count_));
           },
           [&](lite_api::liteServer_sendMessage& q) { this->perform_sendMessage(std::move(q.body_)); },
+          [&](lite_api::liteServer_sendMessageBatch& q) { this->perform_sendMessageBatch(std::move(q.bodies_)); },
           [&](lite_api::liteServer_getShardInfo& q) {
             this->perform_getShardInfo(ton::create_block_id(q.id_),
                                        ShardIdFull{q.workchain_, static_cast<ShardId>(q.shard_)}, q.exact_);
@@ -592,6 +606,64 @@ void LiteQuery::perform_sendMessage(td::BufferSlice data) {
               td::actor::send_closure(Self, &LiteQuery::finish_query, std::move(b), false);
             }
           }));
+}
+
+void LiteQuery::perform_sendMessageBatch(std::vector<td::BufferSlice> messages) {
+  constexpr std::size_t max_batch_messages = 1024;
+  constexpr std::size_t max_batch_bytes = 8 << 20;
+  if (messages.empty() || messages.size() > max_batch_messages) {
+    abort_query(td::Status::Error(ErrorCode::protoviolation,
+                                  PSTRING() << "sendMessageBatch requires 1.." << max_batch_messages << " messages"));
+    return;
+  }
+  std::size_t total_bytes = 0;
+  for (const auto& message : messages) {
+    total_bytes += message.size();
+    if (total_bytes > max_batch_bytes) {
+      abort_query(td::Status::Error(ErrorCode::protoviolation,
+                                    PSTRING() << "sendMessageBatch payload exceeds " << max_batch_bytes << " bytes"));
+      return;
+    }
+  }
+  LOG(DEBUG) << "started a sendMessageBatch(" << messages.size() << " messages, " << total_bytes
+             << " bytes) liteserver query";
+  timeout_ = td::Timestamp::in(send_message_batch_response_timeout_msec * 0.001);
+  auto admission_deadline = td::Timestamp::in(send_message_batch_item_timeout_msec * 0.001);
+  alarm_timestamp() = timeout_;
+  auto run = [](td::actor::ActorId<LiteQuery> self,
+                td::actor::ActorId<ton::validator::ValidatorManager> manager,
+                std::vector<td::BufferSlice> batch,
+                td::Timestamp deadline) -> td::actor::Task<> {
+    // ask() returns an already-started task. Wrap and start every waiter with
+    // the same absolute item deadline before awaiting any result. This both
+    // preserves parallel admission and guarantees a non-cooperative manager
+    // ask cannot hold all_wrap until the enclosing response alarm.
+    std::vector<td::actor::StartedTask<td::Unit>> tasks;
+    tasks.reserve(batch.size());
+    for (auto& message : batch) {
+      auto admission = td::actor::ask(manager, &ValidatorManager::new_external_message_query_until,
+                                      std::move(message), deadline);
+      tasks.push_back(td::actor::await_with_timeout(std::move(admission), deadline).start());
+    }
+    auto results = co_await td::actor::all_wrap(std::move(tasks));
+    std::vector<ton::tl_object_ptr<ton::lite_api::liteServer_sendMsgResult>> statuses;
+    statuses.reserve(results.size());
+    for (auto& result : results) {
+      if (result.is_ok()) {
+        statuses.push_back(ton::create_tl_object<ton::lite_api::liteServer_sendMsgResult>(1, 0, std::string{}));
+      } else {
+        auto error = result.move_as_error();
+        statuses.push_back(ton::create_tl_object<ton::lite_api::liteServer_sendMsgResult>(
+            0, error.code(), error.message().str()));
+      }
+    }
+    auto response = ton::create_serialize_tl_object<ton::lite_api::liteServer_sendMsgStatusBatch>(
+        std::move(statuses));
+    td::actor::send_closure(self, &LiteQuery::finish_query, std::move(response), false);
+    co_return td::Unit{};
+  };
+  send_message_batch_active_ = true;
+  send_message_batch_task_ = run(actor_id(this), manager_, std::move(messages), admission_deadline).start();
 }
 
 void LiteQuery::get_block_handle_checked(BlockIdExt blkid, td::Promise<ConstBlockHandle> promise) {

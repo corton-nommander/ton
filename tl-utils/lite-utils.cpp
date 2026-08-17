@@ -142,6 +142,7 @@ std::string lite_query_name_by_id(int id) {
       {lite_api::liteServer_getState::ID, "getState"},
       {lite_api::liteServer_getBlockHeader::ID, "getBlockHeader"},
       {lite_api::liteServer_sendMessage::ID, "sendMessage"},
+      {lite_api::liteServer_sendMessageBatch::ID, "sendMessageBatch"},
       {lite_api::liteServer_getAccountState::ID, "getAccountState"},
       {lite_api::liteServer_getAccountStatePrunned::ID, "getAccountStatePrunned"},
       {lite_api::liteServer_runSmcMethod::ID, "runSmcMethod"},

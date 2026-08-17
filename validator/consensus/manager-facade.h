@@ -23,6 +23,12 @@ class ManagerFacade : public td::actor::Actor {
                                          td::Ref<block::BlockSignatureSet> signatures, int send_broadcast_mode,
                                          bool apply) = 0;
 
+  // Permanently erase exact external messages only after their block has won
+  // consensus and was accepted. Speculative candidates must never call this.
+  virtual td::actor::Task<> finalize_external_messages(std::vector<FinalizedNativeExternalMessage> messages) {
+    co_return {};
+  }
+
   virtual td::actor::Task<td::Ref<vm::Cell>> wait_block_state_root(BlockIdExt block_id, td::Timestamp timeout) = 0;
   virtual td::actor::Task<td::Ref<BlockData>> wait_block_data(BlockIdExt block_id, td::Timestamp timeout) = 0;
 

@@ -99,8 +99,11 @@ struct NativeTransfer {
 
   bool is_valid() const;
   std::string signing_payload() const;
+  std::string signing_payload(const ton::Bits256& chain_domain) const;
   td::Status verify_signature() const;
+  td::Status verify_signature(const ton::Bits256& chain_domain) const;
   bool store_external(vm::CellBuilder& cb) const;
+  td::Result<ton::Bits256> external_hash() const;
   bool store_debit_description(vm::CellBuilder& cb) const;
   static td::Result<NativeTransfer> unpack_external(Ref<vm::Cell> cell);
   static td::Result<NativeTransfer> unpack_debit_description(ton::StdSmcAddress src, Ref<vm::Cell> cell);
@@ -130,7 +133,22 @@ struct NativeTransferBatch {
   static constexpr td::uint32 transfers_leaf_magic = 0x4e54584c;  // "NTXL"
   static constexpr td::uint32 transfers_node_magic = 0x4e54584e;  // "NTXN"
 
-  td::uint8 version{3};
+  // Counts are attacker-controlled when a candidate is decoded.  Keep an
+  // absolute protocol bound below any practical hard block capacity so a
+  // tiny malformed header cannot trigger multi-gigabyte reserve() calls.
+  static constexpr td::uint32 max_entries = 65536;
+  static constexpr td::uint32 max_accounts = max_entries * 2;
+
+  // v4 keeps the balanced packed representation introduced by v3, but the
+  // transfer vector itself is the complete authorization for native account
+  // state changes.  Per-account AccountBlock/HASH_UPDATE records are omitted.
+  static constexpr td::uint8 current_version = 4;
+  static constexpr int domain_signatures_global_version = 14;
+
+  static bool version_allowed_for_global_version(td::uint8 candidate_version, int global_version) {
+    return global_version < domain_signatures_global_version || candidate_version == current_version;
+  }
+  td::uint8 version{current_version};
   std::vector<ton::StdSmcAddress> accounts;
   std::vector<NativeTransferBatchEntry> entries;
 
@@ -455,6 +473,8 @@ std::vector<NativeTransferStateResult> execute_native_transfer_states_parallel(
 // value when the variable is unset.
 td::Status verify_native_transfer_signatures_parallel(const std::vector<const NativeTransfer*>& transfers,
                                                       unsigned workers = 0);
+td::Status verify_native_transfer_signatures_parallel(const std::vector<const NativeTransfer*>& transfers,
+                                                      const ton::Bits256& chain_domain, unsigned workers = 0);
 
 namespace transaction {
 struct Transaction {

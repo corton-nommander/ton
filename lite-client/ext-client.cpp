@@ -65,6 +65,11 @@ class ExtClientImpl : public ExtClient {
     }
     server_idx = server_indices_[server_idx];
     QueryInfo query_info = get_query_info(data);
+    if (!query_info.routing_valid) {
+      promise.set_error(td::Status::Error(PSTRING() << "invalid query routing: "
+                                                    << query_info.routing_error));
+      return;
+    }
     prepare_server(server_idx, &query_info);
     send_query_internal(std::move(name), std::move(data), std::move(query_info), server_idx, timeout,
                         std::move(promise));

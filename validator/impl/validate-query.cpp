@@ -1030,6 +1030,14 @@ bool ValidateQuery::try_unpack_mc_state() {
                                     << " while the masterchain configuration expects " << config_->get_vert_seqno());
     }
     global_version_ = config_->get_global_version();
+    if (native_transfer_batch_ && !block::NativeTransferBatch::version_allowed_for_global_version(
+                                      native_transfer_batch_.value().version, global_version_)) {
+      return reject_query(PSTRING() << "native transfer batch version "
+                                    << static_cast<unsigned>(native_transfer_batch_.value().version)
+                                    << " is disabled at global version " << global_version_
+                                    << "; expected domain-signed version "
+                                    << static_cast<unsigned>(block::NativeTransferBatch::current_version));
+    }
     allow_same_timestamp_ = global_version_ >= 13;
     prev_key_block_exists_ = config_->get_last_key_block(prev_key_block_, prev_key_block_lt_);
     if (prev_key_block_exists_) {
@@ -3105,6 +3113,17 @@ bool ValidateQuery::precheck_one_account_update(td::ConstBitPtr acc_id, Ref<vm::
   new_value = ns_.account_dict_->extract_value(std::move(new_value));
   auto acc_blk_root = account_blocks_dict_->lookup(acc_id, 256);
   if (acc_blk_root.is_null()) {
+    if (native_transfer_batch_ && native_transfer_batch_.value().version >= 4 &&
+        has_native_compact_account(acc_id)) {
+      if (new_value.is_null() || !block::tlb::t_ShardAccount.validate_csr(10000, new_value)) {
+        return reject_query("v4 native transfer produced an invalid or absent state for account "s +
+                            acc_id.to_hex(256));
+      }
+      // check_native_transfer_batch() deterministically replays the packed
+      // vector and compares this exact new state.  v4 deliberately carries no
+      // per-account AccountBlock/HASH_UPDATE duplicate.
+      return true;
+    }
     if (verbosity >= 3 * 0) {
       FLOG(INFO) {
         sb << "state of account " << workchain() << ":" << acc_id.to_hex(256)
@@ -6684,6 +6703,7 @@ bool ValidateQuery::check_native_transfer_batch() {
   if (!use_native_fast_path()) {
     return reject_query("compact native transfer batch is only allowed in native fast path");
   }
+  td::ScopedRealCpuTimer replay_timer{stats_.work_time.native_batch_replay};
   std::map<StdSmcAddress, std::unique_ptr<block::Account>> accounts;
   auto get_account = [&](const StdSmcAddress& addr, bool allow_create) -> block::Account* {
     auto it = accounts.find(addr);
@@ -6720,7 +6740,104 @@ bool ValidateQuery::check_native_transfer_batch() {
     return result;
   };
 
-  if (native_transfer_batch_.value().version >= 2) {
+  if (native_transfer_batch_.value().version >= 4) {
+    const auto& entries = native_transfer_batch_.value().entries;
+    std::vector<const block::NativeTransfer*> transfers;
+    transfers.reserve(entries.size());
+    for (const auto& entry : entries) {
+      transfers.push_back(&entry.transfer);
+    }
+    auto signature_status = block::verify_native_transfer_signatures_parallel(
+        transfers, config_->get_zerostate_id().root_hash);
+    if (signature_status.is_error()) {
+      return reject_query("v4 native transfer signature verification failed: "s + signature_status.to_string());
+    }
+
+    struct NativeAccountState {
+      block::Account* account{nullptr};
+      td::uint64 balance{0};
+      td::uint64 nonce{0};
+      td::uint8 flags{0};
+      int status{block::Account::acc_nonexist};
+      bool is_native{false};
+      bool changed{false};
+    };
+    std::map<StdSmcAddress, NativeAccountState> states;
+    auto get_state = [&](const StdSmcAddress& addr, bool allow_create) -> NativeAccountState* {
+      auto found = states.find(addr);
+      if (found != states.end()) {
+        return &found->second;
+      }
+      auto* account = get_account(addr, allow_create);
+      if (!account) {
+        return nullptr;
+      }
+      auto balance = account->native_balance_uint64();
+      if (!balance) {
+        reject_query("v4 native state-engine account balance is not uint64: "s + addr.to_hex());
+        return nullptr;
+      }
+      NativeAccountState state{
+          .account = account,
+          .balance = balance.value(),
+          .nonce = account->native_nonce,
+          .flags = account->native_flags,
+          .status = account->status,
+          .is_native = account->is_native,
+      };
+      return &states.emplace(addr, std::move(state)).first->second;
+    };
+
+    for (const auto& entry : entries) {
+      const auto& transfer = entry.transfer;
+      auto* src = get_state(transfer.src, false);
+      auto* dst = get_state(transfer.dst, true);
+      if (!src || !dst) {
+        return false;
+      }
+      block::NativeTransferStateInput input{
+          .transfer = &transfer,
+          .src_balance = src->balance,
+          .src_nonce = src->nonce,
+          .src_flags = src->flags,
+          .src_status = src->status,
+          .src_is_native = src->is_native,
+          .dst_balance = dst->balance,
+          .dst_nonce = dst->nonce,
+          .dst_flags = dst->flags,
+          .dst_status = dst->status,
+          .dst_is_native = dst->is_native,
+          .same_account = src == dst,
+      };
+      auto result = block::execute_native_transfer_state(input, now_, /*verify_signature=*/false);
+      if (result.code != block::NativeTransferStateResult::ok) {
+        return reject_query(PSTRING() << result.message() << " for v4 native state-engine transfer "
+                                      << transfer.src.to_hex() << " -> " << transfer.dst.to_hex());
+      }
+      src->balance = result.src_balance;
+      src->nonce = result.src_nonce;
+      src->status = block::Account::acc_uninit;
+      src->is_native = true;
+      src->changed = true;
+      if (dst != src) {
+        dst->balance = result.dst_balance;
+        dst->status = block::Account::acc_uninit;
+        dst->is_native = true;
+        dst->changed = true;
+      }
+      transaction_fees_ += block::CurrencyCollection{td::make_refint(transfer.fee)};
+      if (!transaction_fees_.is_valid()) {
+        return reject_query("invalid total v4 native state-engine fees");
+      }
+    }
+    for (auto& [_, state] : states) {
+      if (state.changed && !state.account->set_native_state(state.balance, state.nonce, state.flags)) {
+        return reject_query("cannot apply aggregated v4 native account state");
+      }
+    }
+    LOG(INFO) << "replayed v4 native transfer batch: transfers=" << entries.size()
+              << " accounts=" << states.size();
+  } else if (native_transfer_batch_.value().version >= 2) {
     const auto& entries = native_transfer_batch_.value().entries;
     std::vector<std::size_t> pending(entries.size()), next_round;
     std::iota(pending.begin(), pending.end(), 0);
@@ -6854,7 +6971,12 @@ bool ValidateQuery::check_native_transfer_batch() {
   }
 
   for (const auto& [addr, account] : accounts) {
-    if (!account_blocks_dict_->key_exists(addr)) {
+    bool has_account_block = account_blocks_dict_->key_exists(addr);
+    if (native_transfer_batch_.value().version >= 4) {
+      if (has_account_block) {
+        return reject_query("v4 native compact account must not have an AccountBlock: "s + addr.to_hex());
+      }
+    } else if (!has_account_block) {
       return reject_query("native compact account has no AccountBlock: "s + addr.to_hex());
     }
     block::tlb::ShardAccount::Record new_state;

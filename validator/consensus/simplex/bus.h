@@ -75,6 +75,7 @@ struct ResolveState {
   struct Result {
     ChainStateRef state;
     std::optional<double> gen_utime_exact = std::nullopt;
+    std::vector<Bits256> excluded_ext_messages;
   };
 
   using ReturnType = Result;

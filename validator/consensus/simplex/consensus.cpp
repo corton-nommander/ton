@@ -40,6 +40,11 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
     slots_per_leader_window_ = bus.config.slots_per_leader_window;
     params_ = bus.config.noncritical_params;
     first_block_timeout_ = params_.first_block_timeout;
+    if (max_tps_mode_enabled()) {
+      LOG(WARNING) << "Simplex work-driven candidate failure timeout: " << max_tps_candidate_timeout().count()
+                   << "ms, local work budget: " << max_tps_candidate_work_timeout().count()
+                   << "ms (successful blocks are not paced by either timeout)";
+    }
     state_.emplace(State({}));
 
     for (const auto& vote : bus.bootstrap_votes) {
@@ -113,6 +118,14 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
   template <>
   void handle(BusHandle, std::shared_ptr<const LeaderWindowObserved> event) {
     auto& bus = *owning_bus();
+    if (event->start_slot < first_active_slot_) {
+      LOG(WARNING) << "Ignoring stale leader-window observation at slot " << event->start_slot
+                   << "; first active slot is " << first_active_slot_;
+      return;
+    }
+    first_active_slot_ = event->start_slot;
+    ++generation_epoch_;
+    owning_bus().publish<ConsensusSlotAdvanced>(event->start_slot);
     td::uint32 new_window = event->start_slot / slots_per_leader_window_;
     current_window_ = new_window;
 
@@ -128,14 +141,19 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
       previous_window_had_skip_ = false;
 
       if (bus.collator_schedule->is_expected_collator(bus.local_id.idx, event->start_slot)) {
-        start_generation(event->base, event->start_slot).start().detach();
+        start_generation(event->base, event->start_slot, generation_epoch_).start().detach();
       }
     }
 
     if (timeout_slot_ <= event->start_slot) {
       timeout_slot_ = event->start_slot + 1;
-      timeout_base_ = td::Timestamp::in(std::chrono::round<std::chrono::nanoseconds>(first_block_timeout_));
-      alarm_timestamp() = td::Timestamp::in(params_.target_rate, timeout_base_);
+      if (max_tps_mode_enabled()) {
+        timeout_base_ = td::Timestamp::now();
+        alarm_timestamp() = td::Timestamp::in(max_tps_candidate_timeout(), timeout_base_);
+      } else {
+        timeout_base_ = td::Timestamp::in(std::chrono::round<std::chrono::nanoseconds>(first_block_timeout_));
+        alarm_timestamp() = td::Timestamp::in(params_.target_rate, timeout_base_);
+      }
     }
   }
 
@@ -151,6 +169,10 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
         previous_window_had_skip_ = true;
       }
     }
+    first_active_slot_ = std::max(first_active_slot_, window_end);
+    current_window_ = std::max(current_window_, window_end / slots_per_leader_window_);
+    ++generation_epoch_;
+    owning_bus().publish<ConsensusSlotAdvanced>(window_end);
     timeout_slot_ = window_end;
   }
 
@@ -170,7 +192,6 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
     if (slot->state->voted_notar) {
       return;
     }
-
     const auto& candidate = event->candidate;
 
     if (candidate->parent_id.has_value() && candidate->parent_id->slot >= candidate->id.slot) {
@@ -193,25 +214,57 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
   }
 
  private:
-  td::actor::Task<> start_generation(ParentId base, td::uint32 start_slot) {
+  td::actor::Task<> start_generation(ParentId base, td::uint32 start_slot, td::uint64 generation_epoch) {
     auto parent = co_await owning_bus().publish<ResolveState>(base);
     td::Timestamp start_time = td::Timestamp::now();
-    if (parent.gen_utime_exact.has_value()) {
+    if (!max_tps_mode_enabled() && parent.gen_utime_exact.has_value()) {
       start_time = std::max(start_time, td::Timestamp::at_unix(*parent.gen_utime_exact) + params_.target_rate);
       start_time = std::min(start_time, td::Timestamp::in(params_.target_rate));
     }
 
-    if (current_window_ != start_slot / slots_per_leader_window_) {
+    // ResolveState may suspend past an alarm/skip into a newer window.  Both
+    // the epoch and slot watermark are checked after that await so an old
+    // resolution cannot resurrect local production for an obsolete window.
+    if (generation_epoch != generation_epoch_ || start_slot < first_active_slot_ ||
+        current_window_ != start_slot / slots_per_leader_window_) {
+      LOG(WARNING) << "Dropping stale local generation start at slot " << start_slot
+                   << "; first_active_slot=" << first_active_slot_
+                   << " generation_epoch=" << generation_epoch << " current_epoch=" << generation_epoch_;
       co_return {};
     }
 
+    if (max_tps_mode_enabled()) {
+      // ResolveState has its own failure coverage from LeaderWindowObserved.
+      // Once it succeeds, align the protocol alarm with the producer/collator
+      // budget so a valid large candidate gets the complete configured time.
+      timeout_base_ = td::Timestamp::now();
+      alarm_timestamp() = td::Timestamp::in(max_tps_candidate_timeout(), timeout_base_);
+    }
+
     owning_bus().publish<OurLeaderWindowStarted>(base, parent.state, start_slot, start_slot + slots_per_leader_window_,
-                                                 start_time);
+                                                 start_time, std::move(parent.excluded_ext_messages));
     co_return {};
   }
 
   td::actor::Task<> try_notarize(State::SlotRef slot) {
     const auto& candidate = *slot.state->pending_block;
+    auto is_voteable = [&] {
+      auto current = state_->slot_at(slot.i);
+      return current.has_value() && current->state == slot.state &&
+             slot.i / slots_per_leader_window_ >= current_window_ && !slot.state->voted_final &&
+             !slot.state->voted_notar && slot.state->pending_block.has_value() &&
+             (*slot.state->pending_block)->id == candidate->id;
+    };
+    auto abandon_obsolete = [&] {
+      if (is_voteable()) {
+        return false;
+      }
+      LOG(WARNING) << "Abandoning notarization of obsolete or already-voted candidate " << candidate->id
+                   << ": skipped=" << slot.state->voted_skip
+                   << " voted_notar=" << slot.state->voted_notar.has_value()
+                   << " voted_final=" << slot.state->voted_final;
+      return true;
+    };
     auto store_candidate = owning_bus().publish<StoreCandidate>(candidate).start();
 
     auto maybe_misbehavior = co_await owning_bus().publish<WaitForParent>(candidate);
@@ -219,14 +272,23 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
       owning_bus().publish<MisbehaviorReport>(candidate->leader, *maybe_misbehavior);
       co_return {};
     }
+    if (abandon_obsolete()) {
+      co_return {};
+    }
 
     auto parent = co_await owning_bus().publish<ResolveState>(candidate->parent_id);
+    if (abandon_obsolete()) {
+      co_return {};
+    }
 
-    if (!candidate->is_empty() && parent.gen_utime_exact.has_value()) {
+    if (!max_tps_mode_enabled() && !candidate->is_empty() && parent.gen_utime_exact.has_value()) {
       auto earliest = td::Timestamp::at_unix(*parent.gen_utime_exact) + params_.min_block_interval;
       if (!earliest.is_in_past()) {
         co_await td::actor::coro_sleep(earliest);
       }
+    }
+    if (abandon_obsolete()) {
+      co_return {};
     }
 
     auto validation_result = co_await owning_bus().publish<ValidationRequest>(parent.state, candidate);
@@ -237,7 +299,18 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
       // FIXME: Report misbehavior
       co_return {};
     }
+    if (abandon_obsolete()) {
+      co_return {};
+    }
     co_await std::move(store_candidate);
+
+    // Every await above can yield while the slot is finalized, replaced, or a
+    // newer leader window becomes active. This final check and vote-state
+    // update execute in one actor turn. A Skip+Notarize pair is intentionally
+    // allowed by Simplex; only Finalize+Skip is prohibited by try_vote_final().
+    if (abandon_obsolete()) {
+      co_return {};
+    }
 
     slot.state->voted_notar = candidate->id;
 
@@ -266,8 +339,16 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
       // In the first case above, alarm_timestamp() is very likely to be at this position via
       // NotarCert of the previous slot but in case we missed the certificate let's give the
       // certificate as much time as protocol allows to arrive.
-      alarm_timestamp() = td::Timestamp::in(
-          (timeout_slot_ - current_window_ * slots_per_leader_window_) * params_.target_rate, timeout_base_);
+      if (max_tps_mode_enabled()) {
+        // Each successful notarization starts a fresh failure budget for the
+        // next work-driven candidate. This timestamp is never a production
+        // interval and is cancelled/rearmed by protocol progress.
+        timeout_base_ = td::Timestamp::now();
+        alarm_timestamp() = td::Timestamp::in(max_tps_candidate_timeout(), timeout_base_);
+      } else {
+        alarm_timestamp() = td::Timestamp::in(
+            (timeout_slot_ - current_window_ * slots_per_leader_window_) * params_.target_rate, timeout_base_);
+      }
     }
 
     slot->state->notar_cert = event->id;
@@ -293,6 +374,8 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
   bool previous_window_had_skip_ = false;
   std::optional<State> state_;
   td::uint32 current_window_ = 0;
+  td::uint32 first_active_slot_ = 0;
+  td::uint64 generation_epoch_ = 0;
 };
 
 }  // namespace

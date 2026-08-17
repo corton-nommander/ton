@@ -38,7 +38,6 @@ class LiteServerCacheImpl : public LiteServerCache {
                    << " duplicates";
       queries_cnt_ = 0;
       queries_hit_cnt_ = 0;
-      send_message_cache_.clear();
       send_message_error_cnt_ = 0;
     }
   }

@@ -112,6 +112,34 @@ TEST(PersistentTreap, AtRandomAccess) {
   EXPECT_EQ(50, k4);
 }
 
+TEST(PersistentTreap, InOrderIterator) {
+  PersistentTreap<int, int> live;
+  live = live.insert(30, 3).insert(10, 1).insert(50, 5).insert(20, 2).insert(40, 4);
+
+  auto iterator = live.in_order();
+  // Mutating the live handle must not affect the iterator's persistent
+  // snapshot.
+  live = live.erase(20).insert(60, 6);
+
+  std::vector<std::pair<int, int>> visited;
+  while (auto item = iterator.next()) {
+    visited.push_back(std::move(item.value()));
+  }
+  EXPECT_EQ(5u, visited.size());
+  for (size_t i = 0; i < visited.size(); ++i) {
+    EXPECT_EQ(static_cast<int>((i + 1) * 10), visited[i].first);
+    EXPECT_EQ(static_cast<int>(i + 1), visited[i].second);
+  }
+  EXPECT(!iterator.next().has_value());
+
+  auto new_iterator = live.in_order();
+  std::vector<int> live_keys;
+  while (auto item = new_iterator.next()) {
+    live_keys.push_back(item->first);
+  }
+  EXPECT_EQ((std::vector<int>{10, 30, 40, 50, 60}), live_keys);
+}
+
 TEST(PersistentTreap, SnapshotIsolation) {
   PersistentTreap<int, int> t;
   auto v1 = t.insert(1, 10).insert(2, 20).insert(3, 30);

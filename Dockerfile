@@ -1,6 +1,8 @@
 FROM ubuntu:22.04 AS builder
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NINJA_JOBS=2
+ARG PORTABLE=1
+ARG TON_ARCH=
 ARG TON_BUILD_TARGETS="storage-daemon storage-daemon-cli tonlibjson fift func validator-engine validator-engine-console generate-random-id dht-server lite-client native-load-generator tolk rldp-http-proxy dht-server proxy-liteserver create-state blockchain-explorer emulator tonlibjson http-proxy dht-ping-servers dht-resolve"
 ARG VCS_REF=unknown
 ARG BUILD_DATE=unknown
@@ -29,7 +31,7 @@ COPY ./ ./
 
 RUN mkdir build && \
         cd build && \
-        cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DPORTABLE=1 -DTON_ARCH= -DTON_USE_JEMALLOC=ON .. && \
+        cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DPORTABLE="${PORTABLE}" -DTON_ARCH="${TON_ARCH}" -DTON_USE_JEMALLOC=ON .. && \
         ninja -j "${NINJA_JOBS}" ${TON_BUILD_TARGETS}
 
 FROM ubuntu:22.04

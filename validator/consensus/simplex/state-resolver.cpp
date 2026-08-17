@@ -10,6 +10,9 @@
 
 #include "bus.h"
 
+#include <algorithm>
+#include <iterator>
+
 namespace ton::validator::consensus::simplex {
 
 namespace tl {
@@ -20,6 +23,25 @@ using db_key_finalizedBlockRef = tl_object_ptr<db_key_finalizedBlock>;
 }  // namespace tl
 
 namespace {
+
+void merge_external_hashes(std::vector<Bits256>& target, std::vector<Bits256> added) {
+  if (added.empty()) {
+    return;
+  }
+  target.insert(target.end(), std::make_move_iterator(added.begin()), std::make_move_iterator(added.end()));
+  std::sort(target.begin(), target.end());
+  target.erase(std::unique(target.begin(), target.end()), target.end());
+}
+
+void remove_external_hashes(std::vector<Bits256>& target, const std::vector<Bits256>& removed) {
+  if (target.empty() || removed.empty()) {
+    return;
+  }
+  std::vector<Bits256> retained;
+  retained.reserve(target.size());
+  std::set_difference(target.begin(), target.end(), removed.begin(), removed.end(), std::back_inserter(retained));
+  target = std::move(retained);
+}
 
 class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::ConnectsTo<Bus> {
   using ResolvedState = ResolveState::Result;
@@ -97,6 +119,9 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     if (!entry.started) {
       entry.started = true;
       auto result = co_await resolve_state_inner(id).wrap();
+      if (result.is_ok()) {
+        remove_external_hashes(result.ok_ref().excluded_ext_messages, finalized_native_hashes_);
+      }
       for (auto& p : entry.promises) {
         p.set_result(result.clone());
       }
@@ -106,6 +131,7 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       } else {
         state_cache_.erase(id);
       }
+      maybe_clear_finalized_native_hashes();
     }
     co_return co_await std::move(task);
   }
@@ -120,7 +146,7 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       auto genesis = co_await genesis_.get();
       auto state = co_await ChainState::from_manager(owning_bus()->manager, owning_bus()->shard,
                                                      genesis->state->block_ids(), genesis->state->min_mc_block_id());
-      co_return ResolvedState{state, std::nullopt};
+      co_return ResolvedState{state, std::nullopt, {}};
     }
 
     auto candidate = (co_await owning_bus().publish<ResolveCandidate>(*id)).candidate;
@@ -128,18 +154,23 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       co_return co_await resolve_state(candidate->parent_id);
     }
     auto gen_utime_exact = get_candidate_gen_utime_exact(std::get<BlockCandidate>(candidate->block)).move_as_ok();
+    auto native_hashes =
+        get_candidate_native_external_hashes(std::get<BlockCandidate>(candidate->block)).move_as_ok();
 
     if (is_finalized(*id)) {
       auto genesis = co_await genesis_.get();
       auto state = co_await ChainState::from_manager(owning_bus()->manager, owning_bus()->shard,
                                                      {candidate->block_id()}, genesis->state->min_mc_block_id());
-      co_return ResolvedState{state, gen_utime_exact};
+      co_return ResolvedState{state, gen_utime_exact, {}};
     }
 
     auto prev_data_state = co_await resolve_state(candidate->parent_id);
+    merge_external_hashes(prev_data_state.excluded_ext_messages, std::move(native_hashes));
+    remove_external_hashes(prev_data_state.excluded_ext_messages, finalized_native_hashes_);
     co_return ResolvedState{
         .state = prev_data_state.state->apply(std::get<BlockCandidate>(candidate->block)),
         .gen_utime_exact = gen_utime_exact,
+        .excluded_ext_messages = std::move(prev_data_state.excluded_ext_messages),
     };
   }
 
@@ -151,6 +182,42 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
   };
 
   std::map<CandidateId, FinalizedBlock> finalized_blocks_;
+
+  // Normally finalized hashes are scrubbed from every cached result
+  // immediately. Keep this temporary set only while state resolutions that
+  // started before finalization are still in flight.
+  std::vector<Bits256> finalized_native_hashes_;
+
+  void record_finalized_native_hashes(std::vector<Bits256> hashes) {
+    if (hashes.empty()) {
+      return;
+    }
+    merge_external_hashes(finalized_native_hashes_, std::move(hashes));
+    for (auto& [_, cached] : state_cache_) {
+      if (cached.result) {
+        remove_external_hashes(cached.result->excluded_ext_messages, finalized_native_hashes_);
+      }
+    }
+    maybe_clear_finalized_native_hashes();
+  }
+
+  void maybe_clear_finalized_native_hashes() {
+    // finalize_blocks_inner records hashes after accept_block, but the outer
+    // coroutine marks the candidate done only after its finalized DB marker is
+    // durable.  Keep the scrub set across that await so a concurrently started
+    // ResolveState cannot recache the just-finalized ancestor exclusions.
+    for (const auto& [_, finalized] : finalized_blocks_) {
+      if (finalized.started && !finalized.done) {
+        return;
+      }
+    }
+    for (const auto& [_, cached] : state_cache_) {
+      if (cached.started && !cached.result) {
+        return;
+      }
+    }
+    finalized_native_hashes_.clear();
+  }
 
   td::actor::Task<> finalize_blocks(CandidateId id, std::optional<FinalCertRef> final_cert,
                                     std::optional<CandidateRef> final_candidate) {
@@ -172,6 +239,7 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       } else {
         finalized_blocks_.erase(id);
       }
+      maybe_clear_finalized_native_hashes();
     }
     co_return co_await std::move(task);
   }
@@ -195,6 +263,9 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
         co_await finalize_blocks(*parent, std::nullopt, std::nullopt);
       }
 
+      auto finalized_native_hashes =
+          get_candidate_native_external_hashes(std::get<BlockCandidate>(candidate->block)).move_as_ok();
+
       td::Ref<block::BlockSignatureSet> sig_set;
       if (final_cert) {
         sig_set = (*final_cert)->to_signature_set(*final_candidate, bus);
@@ -202,6 +273,7 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
         sig_set = notar_cert->to_signature_set(candidate, bus);
       }
       co_await owning_bus().publish<FinalizeBlock>(candidate, sig_set);
+      record_finalized_native_hashes(std::move(finalized_native_hashes));
     } else {
       if (auto parent = candidate->parent_id) {
         co_await finalize_blocks(*parent, final_cert, final_candidate);

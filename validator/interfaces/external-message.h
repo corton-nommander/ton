@@ -40,6 +40,17 @@ class ExtMessage : public td::CntObject {
   virtual ton::StdSmcAddress addr() const = 0;
 };
 
+// Canonical identity of a compact native external consumed by a finalized
+// block.  Source/nonce accompany the raw hash so a validator can purge every
+// locally admitted losing variant of that now-obsolete nonce, even if it never
+// held the winning byte representation in its mempool.
+struct FinalizedNativeExternalMessage {
+  ExtMessage::Hash hash;
+  WorkchainId workchain{basechainId};
+  StdSmcAddress source;
+  td::uint64 nonce{0};
+};
+
 }  // namespace validator
 
 }  // namespace ton

@@ -42,6 +42,17 @@ struct CollateParams {
   td::Timestamp hard_timeout = td::Timestamp::in(10.0);
   td::Timestamp soft_timeout = {};
   td::Timestamp wait_externals_until = {};
+  // Optional lifetime of the live external-message callback.  This is
+  // deliberately independent from wait_externals_until: work-driven
+  // collation uses the latter only as its first-work trigger, while messages
+  // arriving during state preparation must remain observable until the hard
+  // collation deadline (or cancellation).
+  td::Timestamp ext_msg_callback_until = {};
+
+  // Raw external-message hashes already consumed by speculative ancestors of
+  // this exact candidate branch. They remain in the global mempool until
+  // finalization, but must not be offered again to a child of that branch.
+  std::vector<Bits256> excluded_ext_messages = {};
 
   // Optional - if empty, blocks and states are taken from manager
   // If not empty, should be the same size as prev

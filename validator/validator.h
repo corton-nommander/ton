@@ -350,6 +350,13 @@ class ValidatorManagerInterface : public td::actor::Actor {
   virtual td::actor::Task<> new_external_message_query(td::BufferSlice data) {
     co_return td::Status::Error("not implemented");
   }
+  virtual td::actor::Task<> new_external_message_query_until(td::BufferSlice data,
+                                                              td::Timestamp deadline) {
+    if (deadline && deadline.is_in_past()) {
+      co_return td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
+    }
+    co_return co_await new_external_message_query(std::move(data));
+  }
   virtual void new_ihr_message(td::BufferSlice data) = 0;
   virtual void new_shard_block_description_broadcast(BlockIdExt block_id, CatchainSeqno cc_seqno,
                                                      td::BufferSlice data) = 0;

@@ -1008,8 +1008,8 @@ NativeTransferSignatureCache& native_transfer_signature_cache() {
   return cache;
 }
 
-td::Bits256 native_transfer_signature_cache_key(const NativeTransfer& transfer) {
-  auto payload = transfer.signing_payload();
+td::Bits256 native_transfer_signature_cache_key(const NativeTransfer& transfer, const ton::Bits256* chain_domain) {
+  auto payload = chain_domain ? transfer.signing_payload(*chain_domain) : transfer.signing_payload();
   payload.append(transfer.signature);
   return td::sha256_bits256(td::Slice(payload));
 }
@@ -1119,17 +1119,52 @@ std::string NativeTransfer::signing_payload() const {
   return payload;
 }
 
+std::string NativeTransfer::signing_payload(const ton::Bits256& chain_domain) const {
+  // The zero-state root is the immutable chain identity available at mempool
+  // admission, collation, and validation.  A fixed protocol separator prevents
+  // this authorization from being confused with any other Ed25519 payload.
+  static constexpr td::Slice separator{"TON_NATIVE_TRANSFER_V1"};
+  auto legacy = signing_payload();
+  std::string payload;
+  payload.reserve(separator.size() + chain_domain.as_slice().size() + legacy.size());
+  payload.append(separator.data(), separator.size());
+  payload.append(chain_domain.as_slice().data(), chain_domain.as_slice().size());
+  payload.append(legacy);
+  return payload;
+}
+
 td::Status NativeTransfer::verify_signature() const {
   if (!is_valid()) {
     return td::Status::Error("Invalid native transfer fields");
   }
-  auto cache_key = native_transfer_signature_cache_key(*this);
+  auto cache_key = native_transfer_signature_cache_key(*this, nullptr);
   if (native_transfer_signature_cache().contains(cache_key)) {
     return td::Status::OK();
   }
 #if TD_HAVE_OPENSSL
   td::Ed25519::PublicKey pub_key{td::SecureString(src.as_slice())};
   auto payload = signing_payload();
+  auto status = pub_key.verify_signature(td::Slice(payload), td::Slice(signature));
+  if (status.is_ok()) {
+    native_transfer_signature_cache().insert(cache_key);
+  }
+  return status;
+#else
+  return td::Status::Error("Ed25519 signature verification is not available");
+#endif
+}
+
+td::Status NativeTransfer::verify_signature(const ton::Bits256& chain_domain) const {
+  if (!is_valid()) {
+    return td::Status::Error("Invalid native transfer fields");
+  }
+  auto cache_key = native_transfer_signature_cache_key(*this, &chain_domain);
+  if (native_transfer_signature_cache().contains(cache_key)) {
+    return td::Status::OK();
+  }
+#if TD_HAVE_OPENSSL
+  td::Ed25519::PublicKey pub_key{td::SecureString(src.as_slice())};
+  auto payload = signing_payload(chain_domain);
   auto status = pub_key.verify_signature(td::Slice(payload), td::Slice(signature));
   if (status.is_ok()) {
     native_transfer_signature_cache().insert(cache_key);
@@ -1293,11 +1328,60 @@ td::Status verify_native_transfer_signatures_parallel(const std::vector<const Na
   return td::Status::OK();
 }
 
+td::Status verify_native_transfer_signatures_parallel(const std::vector<const NativeTransfer*>& transfers,
+                                                      const ton::Bits256& chain_domain, unsigned workers) {
+  workers = native_executor_workers(workers, transfers.size());
+  if (!workers) {
+    return td::Status::OK();
+  }
+  std::atomic<std::size_t> cursor{0};
+  std::atomic<std::size_t> first_failure{transfers.size()};
+  auto run = [&] {
+    while (true) {
+      auto index = cursor.fetch_add(1, std::memory_order_relaxed);
+      if (index >= transfers.size()) {
+        return;
+      }
+      if (!transfers[index] || transfers[index]->verify_signature(chain_domain).is_error()) {
+        auto expected = transfers.size();
+        first_failure.compare_exchange_strong(expected, index, std::memory_order_relaxed);
+      }
+    }
+  };
+  if (workers == 1) {
+    run();
+  } else {
+    std::vector<std::thread> threads;
+    threads.reserve(workers);
+    for (unsigned i = 0; i < workers; ++i) {
+      threads.emplace_back(run);
+    }
+    for (auto& thread : threads) {
+      thread.join();
+    }
+  }
+  auto failure = first_failure.load(std::memory_order_relaxed);
+  if (failure != transfers.size()) {
+    return td::Status::Error(PSTRING() << "native transfer domain signature verification failed at batch index "
+                                       << failure);
+  }
+  return td::Status::OK();
+}
+
 bool NativeTransfer::store_external(vm::CellBuilder& cb) const {
   return is_valid() && cb.store_ulong_rchk_bool(magic, 32) && cb.store_bits_bool(src) && cb.store_bits_bool(dst) &&
          cb.store_ulong_rchk_bool(amount, 64) && cb.store_ulong_rchk_bool(fee, 64) &&
          cb.store_ulong_rchk_bool(nonce, 64) && cb.store_ulong_rchk_bool(valid_until, 32) &&
          store_native_signature_ref(cb, td::Slice(signature));
+}
+
+td::Result<ton::Bits256> NativeTransfer::external_hash() const {
+  vm::CellBuilder cb;
+  Ref<vm::Cell> root;
+  if (!(store_external(cb) && cb.finalize_to(root))) {
+    return td::Status::Error("Cannot serialize native transfer external message");
+  }
+  return ton::Bits256{root->get_hash().bits()};
 }
 
 bool NativeTransfer::store_debit_description(vm::CellBuilder& cb) const {
@@ -1383,8 +1467,8 @@ td::Result<NativeTransferCredit> NativeTransferCredit::unpack_description(Ref<vm
 }
 
 bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
-  if ((version != 1 && version != 2 && version != 3) ||
-      entries.size() > std::numeric_limits<td::uint32>::max()) {
+  if ((version != 1 && version != 2 && version != 3 && version != 4) ||
+      entries.size() > max_entries) {
     return false;
   }
   std::vector<ton::StdSmcAddress> account_table;
@@ -1393,7 +1477,7 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
     if (account_index.count(addr)) {
       return true;
     }
-    if (account_table.size() > std::numeric_limits<td::uint32>::max()) {
+    if (account_table.size() >= max_accounts) {
       return false;
     }
     auto index = static_cast<td::uint32>(account_table.size());
@@ -1408,10 +1492,13 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
       return false;
     }
   }
+  if (account_table.size() > max_accounts || account_table.size() > entries.size() * 2) {
+    return false;
+  }
 
   Ref<vm::Cell> account_root;
   Ref<vm::Cell> transfer_root;
-  if (version == 3) {
+  if (version >= 3) {
     struct TreeNode {
       Ref<vm::Cell> cell;
       td::uint32 count;
@@ -1558,16 +1645,25 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
   auto accounts_count = cs.fetch_ulong(32);
   auto entries_count = cs.fetch_ulong(32);
   Ref<vm::Cell> account_root, transfer_root;
-  if (tag != magic || (version != 1 && version != 2 && version != 3) || accounts_count < 0 || entries_count < 0 ||
+  if (tag != magic || (version != 1 && version != 2 && version != 3 && version != 4) || accounts_count < 0 ||
+      entries_count < 0 ||
       !cs.fetch_maybe_ref(account_root) || !cs.fetch_maybe_ref(transfer_root) || !cs.empty_ext()) {
     return td::Status::Error("Failed to unpack native transfer batch header");
   }
+  const auto accounts_count_u32 = static_cast<td::uint32>(accounts_count);
+  const auto entries_count_u32 = static_cast<td::uint32>(entries_count);
+  if (entries_count_u32 > max_entries || accounts_count_u32 > max_accounts ||
+      static_cast<td::uint64>(accounts_count_u32) > static_cast<td::uint64>(entries_count_u32) * 2 ||
+      (accounts_count_u32 == 0) != account_root.is_null() ||
+      (entries_count_u32 == 0) != transfer_root.is_null()) {
+    return td::Status::Error("Native transfer batch counts or roots exceed protocol limits");
+  }
   batch.version = static_cast<td::uint8>(version);
 
-  batch.accounts.reserve(static_cast<std::size_t>(accounts_count));
-  if (batch.version == 3 && account_root.not_null()) {
+  batch.accounts.reserve(accounts_count_u32);
+  if (batch.version >= 3 && account_root.not_null()) {
     std::vector<std::pair<Ref<vm::Cell>, td::uint32>> stack;
-    stack.emplace_back(std::move(account_root), static_cast<td::uint32>(accounts_count));
+    stack.emplace_back(std::move(account_root), accounts_count_u32);
     while (!stack.empty()) {
       auto [cell, expected] = std::move(stack.back());
       stack.pop_back();
@@ -1607,7 +1703,7 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
       auto chunk_tag = chunk.fetch_ulong(32);
       auto chunk_count = chunk.fetch_ulong(8);
       if (chunk_tag != accounts_chunk_magic || chunk_count <= 0 || chunk_count > 3 ||
-          batch.accounts.size() + static_cast<std::size_t>(chunk_count) > static_cast<std::size_t>(accounts_count)) {
+          batch.accounts.size() + static_cast<std::size_t>(chunk_count) > accounts_count_u32) {
         return td::Status::Error("Invalid native transfer account table chunk");
       }
       for (int i = 0; i < static_cast<int>(chunk_count); ++i) {
@@ -1622,7 +1718,7 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
       }
     }
   }
-  if (batch.accounts.size() != static_cast<std::size_t>(accounts_count)) {
+  if (batch.accounts.size() != accounts_count_u32) {
     return td::Status::Error("Native transfer account table length mismatch");
   }
 
@@ -1652,10 +1748,10 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
     batch.entries.push_back(std::move(entry));
     return td::Status::OK();
   };
-  batch.entries.reserve(static_cast<std::size_t>(entries_count));
-  if (batch.version == 3 && transfer_root.not_null()) {
+  batch.entries.reserve(entries_count_u32);
+  if (batch.version >= 3 && transfer_root.not_null()) {
     std::vector<std::pair<Ref<vm::Cell>, td::uint32>> stack;
-    stack.emplace_back(std::move(transfer_root), static_cast<td::uint32>(entries_count));
+    stack.emplace_back(std::move(transfer_root), entries_count_u32);
     while (!stack.empty()) {
       auto [cell, expected] = std::move(stack.back());
       stack.pop_back();
@@ -1693,13 +1789,13 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
       if (status.is_error()) {
         return status;
       }
-      if (batch.entries.size() > static_cast<std::size_t>(entries_count) ||
+      if (batch.entries.size() > entries_count_u32 ||
           !chunk.fetch_maybe_ref(transfer_root) || !chunk.empty_ext()) {
         return td::Status::Error("Invalid trailing data in native transfer vector chunk");
       }
     }
   }
-  if (batch.entries.size() != static_cast<std::size_t>(entries_count)) {
+  if (batch.entries.size() != entries_count_u32) {
     return td::Status::Error("Native transfer vector length mismatch");
   }
   if (batch.entries.empty() != batch.accounts.empty()) {

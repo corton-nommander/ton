@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include "td/utils/Random.h"
 
@@ -103,7 +104,43 @@ class PersistentTreap {
   }
 
  public:
+  // Amortized O(1) forward cursor over a stable persistent snapshot.  Unlike
+  // repeated at(i), walking the whole tree through this cursor is O(n), and
+  // retaining the cursor also retains exactly the nodes needed by its
+  // snapshot when a newer treap version is created.
+  class InOrderIterator {
+   public:
+    explicit InOrderIterator(NodePtr root) {
+      push_left(std::move(root));
+    }
+
+    std::optional<std::pair<K, V>> next() {
+      if (stack_.empty()) {
+        return std::nullopt;
+      }
+      auto node = std::move(stack_.back());
+      stack_.pop_back();
+      push_left(node->right);
+      return std::make_pair(node->key, node->value);
+    }
+
+   private:
+    void push_left(NodePtr node) {
+      while (node) {
+        stack_.push_back(node);
+        node = node->left;
+      }
+    }
+
+    std::vector<NodePtr> stack_;
+  };
+
   PersistentTreap() = default;
+
+  // O(1) construction and O(n) total traversal in sorted key order.
+  InOrderIterator in_order() const {
+    return InOrderIterator(root_);
+  }
 
   // O(log n). Split into elements < key and elements >= key.
   std::pair<PersistentTreap, PersistentTreap> split(const K& key) const {

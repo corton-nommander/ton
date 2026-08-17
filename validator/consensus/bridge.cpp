@@ -69,6 +69,14 @@ class ManagerFacadeImpl : public ManagerFacade {
     co_return {};
   }
 
+  td::actor::Task<> finalize_external_messages(std::vector<FinalizedNativeExternalMessage> messages) override {
+    if (messages.empty()) {
+      co_return {};
+    }
+    co_await td::actor::ask(manager_, &ValidatorManager::finalize_external_messages, std::move(messages));
+    co_return {};
+  }
+
   td::actor::Task<td::Ref<vm::Cell>> wait_block_state_root(BlockIdExt block_id, td::Timestamp timeout) override {
     auto state =
         co_await td::actor::ask(manager_, &ValidatorManager::wait_block_state_short, block_id, 0, timeout, false);

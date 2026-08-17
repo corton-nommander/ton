@@ -26,6 +26,11 @@ struct QueryInfo {
   enum Type { t_simple, t_seqno, t_utime, t_lt, t_mc_seqno };
   int query_id = 0;
   ton::ShardIdFull shard_id{ton::masterchainId};
+  // A batch may touch several address prefixes.  It can only be sent to a
+  // liteserver whose configured slices cover every routing shard.
+  std::vector<ton::ShardIdFull> routing_shards;
+  bool routing_valid = true;
+  std::string routing_error;
   Type type = t_simple;
   td::uint64 value = 0;
   /* Query types and examples:

@@ -8,6 +8,7 @@
 
 #include "bus.h"
 #include "stats.h"
+#include "utils.h"
 
 namespace ton::validator::consensus {
 
@@ -39,6 +40,12 @@ class BlockAccepterImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     }
     co_await td::actor::ask(owning_bus()->manager, &ManagerFacade::accept_block, block.id, block_data,
                             event->candidate->leader.value(), event->signatures, broadcast_mode, true);
+    auto native_messages = get_candidate_native_external_messages(block);
+    if (native_messages.is_error()) {
+      co_return native_messages.move_as_error_prefix("cannot finalize native external messages: ");
+    }
+    co_await td::actor::ask(owning_bus()->manager, &ManagerFacade::finalize_external_messages,
+                            native_messages.move_as_ok());
     owning_bus().publish<TraceEvent>(stats::BlockAccepted::create(event->candidate->id));
     co_return {};
   }

@@ -80,9 +80,9 @@ td::Result<std::vector<ExtMessage::Hash>> get_applied_external_messages_hashes(t
     // Compact native transfers are deliberately not erased here.  ApplyBlock
     // may run for a validated fork which loses consensus, so treating it as
     // final would lose the nonce required by every later transfer from that
-    // source.  Native messages stay in the pool across competing candidates;
-    // once canonical state advances, the collator recognizes their nonce as
-    // stale and removes them through complete_external_messages().
+    // source. Native messages stay in the pool across competing candidates;
+    // the Simplex finalization path erases their exact external hashes only
+    // after accept_block succeeds.
 
     std::sort(hashes.begin(), hashes.end());
     hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());

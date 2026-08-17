@@ -19,6 +19,8 @@
 
 #include "block-auto.h"
 
+#include <atomic>
+
 using namespace ton;
 using namespace ton::validator;
 using namespace ton::validator::consensus;
@@ -107,6 +109,9 @@ bool NET_GREMLIN_KILLS_LEADER = false;
 std::pair<double, double> DB_DELAY = {0.0, 0.0};
 std::pair<double, double> COLLATION_TIME = {0.0, 0.0};
 std::pair<double, double> VALIDATION_TIME = {0.0, 0.0};
+bool IDLE_AFTER_FIRST = false;
+std::atomic<size_t> IDLE_COLLATION_ATTEMPTS{0};
+std::atomic<size_t> GENERATED_CANDIDATES{0};
 
 class TestSimplexBus : public simplex::Bus {
  public:
@@ -215,6 +220,9 @@ class TestOverlayNode : public td::actor::SpawnsWith<Bus>, public td::actor::Con
 
   template <>
   void handle(BusHandle bus, std::shared_ptr<const CandidateGenerated> event) {
+    if (IDLE_AFTER_FIRST) {
+      ++GENERATED_CANDIDATES;
+    }
     for (size_t i = 0; i < bus->validator_set.size(); ++i) {
       if (bus->local_id.idx.value() != i) {
         td::actor::ask(test_overlay, &TestOverlay::send_candidate, bus->local_id, instance_idx_, i, event->candidate)
@@ -352,6 +360,15 @@ class TestManagerFacade : public ManagerFacade {
           params.prev_block_state_roots[0]->get_hash() == gen_shard_state(prev_seqno)->get_hash());
     if (prev_seqno != 0) {
       CHECK(params.prev_block_data.size() == 1 && params.prev_block_data[0]->block_id() == params.prev[0]);
+    }
+    if (IDLE_AFTER_FIRST && prev_seqno != 0) {
+      CHECK(max_tps_mode_enabled());
+      CHECK(params.wait_externals_until);
+      CHECK(params.ext_msg_callback_until >= params.wait_externals_until);
+      CHECK(params.wait_externals_until.in() > 0.5);
+      ++IDLE_COLLATION_ATTEMPTS;
+      co_await td::actor::coro_sleep(params.wait_externals_until);
+      co_return native_collation_idle_status();
     }
     double gen_utime = params.utime ? params.utime.value() : td::Clocks::system();
 
@@ -836,6 +853,15 @@ class TestConsensus : public td::actor::Actor {
                      << inst.last_accepted_block;
       }
     }
+    if (IDLE_AFTER_FIRST) {
+      // One real bootstrap candidate is produced.  Every later local
+      // candidate remains parked on the native ingress waiter and must not be
+      // retried or converted into an empty candidate.  Simplex still advances
+      // leader windows on its independently armed failure deadline.
+      CHECK(GENERATED_CANDIDATES.load() == 1);
+      CHECK(IDLE_COLLATION_ATTEMPTS.load() >= 2);
+      CHECK(IDLE_COLLATION_ATTEMPTS.load() <= 4);
+    }
     co_return td::Unit{};
   }
 
@@ -1038,9 +1064,17 @@ int main(int argc, char *argv[]) {
                          }
                          return td::Status::OK();
                        });
+  p.add_option('\0', "idle-after-first",
+               "after the bootstrap candidate, model a work-driven native queue that stays idle", [&]() {
+                 IDLE_AFTER_FIRST = true;
+               });
 
   p.run(argc, argv).ensure();
   CHECK(N_DOUBLE_NODES <= N_NODES);
+  if (IDLE_AFTER_FIRST) {
+    CHECK(N_NODES == 1);
+    CHECK(max_tps_mode_enabled());
+  }
 
   td::actor::Scheduler scheduler({7});
   td::actor::ActorOwn<TestConsensus> test;

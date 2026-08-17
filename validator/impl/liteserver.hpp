@@ -50,6 +50,8 @@ class LiteQuery : public td::actor::Actor {
   td::Bits256 cache_key_;
   td::uint64 send_message_cache_owner_{0};
   bool send_message_cache_active_{false};
+  bool send_message_batch_active_{false};
+  td::actor::StartedTask<> send_message_batch_task_;
 
   int pending_{0};
   int mode_{0};
@@ -78,6 +80,13 @@ class LiteQuery : public td::actor::Actor {
 
  public:
   constexpr static double default_timeout_msec = 4500;  // 4.5 seconds
+  // Per-item admission stops before the enclosing response alarm, leaving a
+  // bounded interval to collect statuses, serialize, and send the partial
+  // result. The outer alarm itself remains below the generator's enforced
+  // >=9s client timeout.
+  constexpr static double send_message_batch_item_timeout_msec = 7000;
+  constexpr static double send_message_batch_response_timeout_msec = 8000;
+  static_assert(send_message_batch_item_timeout_msec + 500 <= send_message_batch_response_timeout_msec);
   enum {
     max_transaction_count = 16,       // fetch at most 16 transactions in one query
     client_method_gas_limit = 300000  // gas limit for liteServer.runSmcMethod
@@ -126,6 +135,7 @@ class LiteQuery : public td::actor::Actor {
   void continue_getState(BlockIdExt blkid, Ref<ShardState> state);
   void continue_getZeroState(BlockIdExt blkid, td::BufferSlice state);
   void perform_sendMessage(td::BufferSlice ext_msg);
+  void perform_sendMessageBatch(std::vector<td::BufferSlice> ext_msgs);
   void perform_getAccountState(BlockIdExt blkid, WorkchainId workchain, StdSmcAddress addr, int mode);
   void continue_getAccountState_0(Ref<MasterchainState> mc_state, BlockIdExt blkid);
   void continue_getAccountState();

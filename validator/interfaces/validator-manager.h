@@ -143,6 +143,10 @@ struct CollationStats {
     td::RealCpuTimer::Time trx_tvm;
     td::RealCpuTimer::Time trx_storage_stat;
     td::RealCpuTimer::Time trx_other;
+    td::RealCpuTimer::Time native_prepare;
+    td::RealCpuTimer::Time native_execute;
+    td::RealCpuTimer::Time native_commit;
+    td::RealCpuTimer::Time native_batch_serialize;
     td::RealCpuTimer::Time final_storage_stat;
     td::RealCpuTimer::Time enqueue_new_messages;
     td::RealCpuTimer::Time combine_account_transactions;
@@ -157,6 +161,10 @@ struct CollationStats {
                        << " prelim_storage_stat=" << prelim_storage_stat.get(is_cpu)
                        << " trx_tvm=" << trx_tvm.get(is_cpu) << " trx_storage_stat=" << trx_storage_stat.get(is_cpu)
                        << " trx_other=" << trx_other.get(is_cpu)
+                       << " native_prepare=" << native_prepare.get(is_cpu)
+                       << " native_execute=" << native_execute.get(is_cpu)
+                       << " native_commit=" << native_commit.get(is_cpu)
+                       << " native_batch_serialize=" << native_batch_serialize.get(is_cpu)
                        << " final_storage_stat=" << final_storage_stat.get(is_cpu)
                        << " enqueue_new_messages=" << enqueue_new_messages.get(is_cpu)
                        << " combine_account_transactions=" << combine_account_transactions.get(is_cpu)
@@ -220,6 +228,7 @@ struct ValidationStats {
     td::RealCpuTimer::Time trx_storage_stat;
     td::RealCpuTimer::Time trx_other;
     td::RealCpuTimer::Time check_transactions_other;
+    td::RealCpuTimer::Time native_batch_replay;
     td::RealCpuTimer::Time unpack_state;
     td::RealCpuTimer::Time validate_block_tlb;
     td::RealCpuTimer::Time unpack_block_data;
@@ -240,6 +249,7 @@ struct ValidationStats {
                        << " process_mc_state=" << process_mc_state.get(is_cpu) << " trx_tvm=" << trx_tvm.get(is_cpu)
                        << " trx_storage_stat=" << trx_storage_stat.get(is_cpu) << " trx_other=" << trx_other.get(is_cpu)
                        << " check_transactions_other=" << check_transactions_other.get(is_cpu)
+                       << " native_batch_replay=" << native_batch_replay.get(is_cpu)
                        << " unpack_state=" << unpack_state.get(is_cpu)
                        << " validate_block_tlb=" << validate_block_tlb.get(is_cpu)
                        << " unpack_block_data=" << unpack_block_data.get(is_cpu)
@@ -290,6 +300,7 @@ struct ExtMsgCallback {
   td::CancellationToken cancellation_token;
   td::Timestamp timeout;
   bool sync_only = false;
+  std::vector<ExtMessage::Hash> excluded_messages;
 };
 
 using ValidateCandidateResult = td::Variant<CandidateAccept, CandidateReject>;
@@ -358,6 +369,19 @@ class ValidatorManager : public ValidatorManagerInterface {
                                              td::Promise<std::vector<td::Ref<ShardTopBlockDescription>>> promise) = 0;
   virtual void complete_external_messages(std::vector<ExtMessage::Hash> to_delay,
                                           std::vector<ExtMessage::Hash> to_delete) = 0;
+  virtual void finalize_external_messages(std::vector<FinalizedNativeExternalMessage> messages,
+                                          td::Promise<td::Unit> promise) {
+    // Derived managers enqueue complete_external_messages() to their
+    // ExtMessagePool. Actor message ordering guarantees that a subsequently
+    // installed collator queue observes this deletion first.
+    std::vector<ExtMessage::Hash> hashes;
+    hashes.reserve(messages.size());
+    for (const auto &message : messages) {
+      hashes.push_back(message.hash);
+    }
+    complete_external_messages({}, std::move(hashes));
+    promise.set_value(td::Unit{});
+  }
   virtual void cleanup_applied_external_messages(BlockHandle handle, td::Ref<BlockData> block) = 0;
   virtual void complete_ihr_messages(std::vector<IhrMessage::Hash> to_delay,
                                      std::vector<IhrMessage::Hash> to_delete) = 0;

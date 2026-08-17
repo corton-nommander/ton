@@ -43,6 +43,7 @@ struct OurLeaderWindowStarted {
   td::uint32 start_slot;
   td::uint32 end_slot;
   td::Timestamp start_time;
+  std::vector<Bits256> excluded_ext_messages;
 
   std::string contents_to_string() const;
 };
@@ -57,6 +58,15 @@ struct CandidateGenerated {
 // The only guarantee is that the candidate has a valid signature from `candidate->leader`.
 struct CandidateReceived {
   CandidateRef candidate;
+
+  std::string contents_to_string() const;
+};
+
+// The protocol has advanced past these slots (for example through a skip
+// certificate). Any still-running local collation for an older slot must be
+// cancelled and its result discarded.
+struct ConsensusSlotAdvanced {
+  td::uint32 first_active_slot;
 
   std::string contents_to_string() const;
 };
@@ -162,9 +172,10 @@ class Db {
 class Bus : public td::actor::Bus {
  public:
   using Events = td::TypeList<Start, StopRequested, FinalizeBlock, OurLeaderWindowStarted, CandidateGenerated,
-                              CandidateReceived, ValidationRequest, IncomingProtocolMessage, OutgoingProtocolMessage,
-                              IncomingOverlayRequest, OutgoingOverlayRequest, BlockFinalizedInMasterchain,
-                              MisbehaviorReport, TraceEvent, NoncriticalParamsUpdated, PrecheckCandidateBroadcast>;
+                              CandidateReceived, ConsensusSlotAdvanced, ValidationRequest, IncomingProtocolMessage,
+                              OutgoingProtocolMessage, IncomingOverlayRequest, OutgoingOverlayRequest,
+                              BlockFinalizedInMasterchain, MisbehaviorReport, TraceEvent, NoncriticalParamsUpdated,
+                              PrecheckCandidateBroadcast>;
 
   Bus() = default;
   ~Bus() override {

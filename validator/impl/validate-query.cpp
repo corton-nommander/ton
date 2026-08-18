@@ -6787,11 +6787,31 @@ bool ValidateQuery::check_native_transfer_batch() {
       };
       return &states.emplace(addr, std::move(state)).first->second;
     };
+    StdSmcAddress cached_src_address, cached_dst_address;
+    NativeAccountState* cached_src_state = nullptr;
+    NativeAccountState* cached_dst_state = nullptr;
+    auto get_cached_state = [&](const StdSmcAddress& addr, bool allow_create) -> NativeAccountState* {
+      if (cached_src_state && addr == cached_src_address) {
+        return cached_src_state;
+      }
+      if (cached_dst_state && addr == cached_dst_address) {
+        return cached_dst_state;
+      }
+      return get_state(addr, allow_create);
+    };
 
     for (const auto& entry : entries) {
       const auto& transfer = entry.transfer;
-      auto* src = get_state(transfer.src, false);
-      auto* dst = get_state(transfer.dst, true);
+      auto* src = get_cached_state(transfer.src, false);
+      if (src) {
+        cached_src_address = transfer.src;
+        cached_src_state = src;
+      }
+      auto* dst = get_cached_state(transfer.dst, true);
+      if (dst) {
+        cached_dst_address = transfer.dst;
+        cached_dst_state = dst;
+      }
       if (!src || !dst) {
         return false;
       }

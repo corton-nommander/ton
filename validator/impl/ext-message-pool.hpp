@@ -41,11 +41,20 @@ class ExtMessagePool : public td::actor::Actor {
     td::Ref<ExtMessage> message;
     td::actor::StartedTask<> wait_allow_broadcast;
     bool should_broadcast{true};
+    td::optional<td::uint32> msg_seqno;
+    td::optional<block::NativeTransfer> native_transfer;
+  };
+  struct BatchCheckResult {
+    ExternalMessageAdmissionResults statuses;
+    std::vector<CheckResult> checked_messages;
   };
   td::actor::Task<CheckResult> check_add_external_message(td::BufferSlice data, int priority, bool add_to_mempool);
   td::actor::Task<CheckResult> check_add_external_message_until(td::BufferSlice data, int priority,
                                                                 bool add_to_mempool,
                                                                 td::Timestamp deadline);
+  td::actor::Task<BatchCheckResult> check_add_external_messages_until(std::vector<td::BufferSlice> batch,
+                                                                      int priority, bool add_to_mempool,
+                                                                      td::Timestamp deadline);
   void install_collator_queue(ShardIdFull shard, std::unique_ptr<ExtMsgCallback> callback);
   void cleanup_external_messages(ShardIdFull shard);
   void complete_external_messages(std::vector<ExtMessage::Hash> to_delay, std::vector<ExtMessage::Hash> to_delete);
@@ -204,6 +213,10 @@ class ExtMessagePool : public td::actor::Actor {
     void before_query();
   } checked_ext_msg_counter_;
   td::uint64 total_check_ext_messages_ok_{0}, total_check_ext_messages_error_{0};
+  td::uint64 native_batch_count_{0}, native_batch_messages_{0}, native_batch_unique_messages_{0};
+  td::uint64 native_batch_account_lookups_{0}, native_batch_shard_fetches_{0};
+  td::uint64 native_batch_accepted_{0}, native_batch_rejected_{0};
+  td::Timestamp native_batch_log_at_ = td::Timestamp::now();
   td::uint64 applied_ext_msgs_delete_requests_{0}, applied_ext_msgs_deleted_{0};
   std::size_t native_collator_queue_limit_{32768};
   td::uint32 native_mempool_max_ttl_{3600};
@@ -211,9 +224,12 @@ class ExtMessagePool : public td::actor::Actor {
   td::Timestamp cleanup_mempool_at_ = td::Timestamp::now();
 
   td::Status add_message_to_mempool(td::Ref<ExtMessage> message, int priority,
-                                    td::optional<td::uint32> msg_seqno);
-  td::Status commit_checked_message(td::Ref<ExtMessage> message, td::optional<td::uint32> msg_seqno);
-  void rollback_checked_message(td::Ref<ExtMessage> message, td::optional<td::uint32> msg_seqno);
+                                    td::optional<td::uint32> msg_seqno,
+                                    const block::NativeTransfer *native_transfer = nullptr);
+  td::Status commit_checked_message(td::Ref<ExtMessage> message, td::optional<td::uint32> msg_seqno,
+                                    const block::NativeTransfer *native_transfer = nullptr);
+  void rollback_checked_message(td::Ref<ExtMessage> message, td::optional<td::uint32> msg_seqno,
+                                const block::NativeTransfer *native_transfer = nullptr);
   bool erase_message(int priority, const MessageId &id);
 
   struct WalletMessageInfo {
@@ -338,8 +354,20 @@ class ExtMessagePool : public td::actor::Actor {
   std::map<NativeAddress, NativeNonceWatermark> native_nonce_watermarks_;
 
   td::actor::Task<CheckResult> check_message(td::Ref<ExtMessage> message,
-                                             td::optional<td::uint32> &msg_seqno,
                                              td::Timestamp deadline = td::Timestamp::never());
+  td::actor::Task<CheckResult> check_add_parsed_external_message_until(td::Ref<ExtMessage> message,
+                                                                       int priority, bool add_to_mempool,
+                                                                       td::Timestamp deadline);
+  td::Result<td::optional<CheckResult>> check_existing_external_message(td::Ref<ExtMessage> message,
+                                                                        int priority, bool add_to_mempool);
+  td::Result<CheckResult> finalize_checked_message(CheckResult result, int priority, bool add_to_mempool,
+                                                   td::Timestamp deadline);
+  td::actor::Task<CheckResult> reserve_verified_native_message(td::Ref<ExtMessage> message,
+                                                               block::NativeTransfer transfer,
+                                                               td::uint64 available_balance,
+                                                               td::uint64 account_revision, UnixTime utime,
+                                                               td::Timestamp deadline);
+  void log_native_batch_stats();
   td::Result<td::uint32> check_message_to_wallet(td::Ref<ExtMessage> message, const WalletMessageProcessor *wallet,
                                                  block::Account acc, UnixTime utime, LogicalTime lt,
                                                  std::unique_ptr<block::ConfigInfo> config,

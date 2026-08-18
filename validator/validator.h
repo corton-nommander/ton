@@ -357,6 +357,17 @@ class ValidatorManagerInterface : public td::actor::Actor {
     }
     co_return co_await new_external_message_query(std::move(data));
   }
+  virtual td::actor::Task<ExternalMessageAdmissionResults> new_external_message_batch_query_until(
+      std::vector<td::BufferSlice> batch, td::Timestamp deadline) {
+    ExternalMessageAdmissionResults results;
+    results.reserve(batch.size());
+    for (auto &data : batch) {
+      auto result = co_await new_external_message_query_until(std::move(data), deadline).wrap();
+      results.push_back(result.is_ok() ? ExternalMessageAdmissionResult::success()
+                                       : ExternalMessageAdmissionResult::failure(result.move_as_error()));
+    }
+    co_return results;
+  }
   virtual void new_ihr_message(td::BufferSlice data) = 0;
   virtual void new_shard_block_description_broadcast(BlockIdExt block_id, CatchainSeqno cc_seqno,
                                                      td::BufferSlice data) = 0;

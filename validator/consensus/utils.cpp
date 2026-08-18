@@ -18,6 +18,8 @@
 
 namespace ton::validator::consensus {
 
+static_assert(native_collator_queue_max_capacity == block::NativeTransferBatch::max_entries);
+
 std::chrono::milliseconds max_tps_candidate_timeout() {
   static const auto timeout = [] {
     constexpr long long default_ms = 5'000;

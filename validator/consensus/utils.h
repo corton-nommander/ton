@@ -14,8 +14,10 @@
 #include "td/utils/Status.h"
 #include "ton/ton-types.h"
 
-#include <cstdlib>
+#include <algorithm>
 #include <chrono>
+#include <cstddef>
+#include <cstdlib>
 #include <string_view>
 #include <vector>
 
@@ -46,6 +48,42 @@ inline bool max_tps_mode_enabled() {
     return parsed == "1" || parsed == "true" || parsed == "TRUE" || parsed == "yes" || parsed == "YES";
   }();
   return enabled;
+}
+
+// The native pool and collator intentionally share TON_NATIVE_COLLATOR_QUEUE_LIMIT.
+// A full protocol batch is enough to keep one candidate busy; accepting more
+// queue entries would only retain extra message references which cannot fit in
+// that candidate.  The default matches ExtMessagePool's default snapshot size.
+inline constexpr std::size_t native_collator_queue_default_capacity = 32'768;
+inline constexpr std::size_t native_collator_queue_max_capacity = 65'536;
+inline constexpr std::size_t standard_collator_queue_capacity = 500;
+
+constexpr std::size_t parse_native_collator_queue_capacity(std::string_view value) {
+  if (value.empty()) {
+    return native_collator_queue_default_capacity;
+  }
+  std::size_t parsed = 0;
+  for (char ch : value) {
+    if (ch < '0' || ch > '9') {
+      return native_collator_queue_default_capacity;
+    }
+    auto digit = static_cast<std::size_t>(ch - '0');
+    if (parsed < native_collator_queue_max_capacity) {
+      if (parsed > (native_collator_queue_max_capacity - digit) / 10) {
+        parsed = native_collator_queue_max_capacity;
+      } else {
+        parsed = parsed * 10 + digit;
+      }
+    }
+  }
+  if (!parsed) {
+    return native_collator_queue_default_capacity;
+  }
+  return std::min(parsed, native_collator_queue_max_capacity);
+}
+
+constexpr std::size_t select_collator_queue_capacity(bool max_tps_mode, std::string_view native_limit) {
+  return max_tps_mode ? parse_native_collator_queue_capacity(native_limit) : standard_collator_queue_capacity;
 }
 
 // Failure budget for one work-driven candidate. It does not delay a

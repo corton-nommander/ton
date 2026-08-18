@@ -634,27 +634,24 @@ void LiteQuery::perform_sendMessageBatch(std::vector<td::BufferSlice> messages) 
                 td::actor::ActorId<ton::validator::ValidatorManager> manager,
                 std::vector<td::BufferSlice> batch,
                 td::Timestamp deadline) -> td::actor::Task<> {
-    // ask() returns an already-started task. Wrap and start every waiter with
-    // the same absolute item deadline before awaiting any result. This both
-    // preserves parallel admission and guarantees a non-cooperative manager
-    // ask cannot hold all_wrap until the enclosing response alarm.
-    std::vector<td::actor::StartedTask<td::Unit>> tasks;
-    tasks.reserve(batch.size());
-    for (auto& message : batch) {
-      auto admission = td::actor::ask(manager, &ValidatorManager::new_external_message_query_until,
-                                      std::move(message), deadline);
-      tasks.push_back(td::actor::await_with_timeout(std::move(admission), deadline).start());
+    auto results = co_await td::actor::await_with_timeout(
+                       td::actor::ask(manager, &ValidatorManager::new_external_message_batch_query_until,
+                                      std::move(batch), deadline),
+                       deadline)
+                       .wrap();
+    if (results.is_error()) {
+      td::actor::send_closure(self, &LiteQuery::abort_query, results.move_as_error());
+      co_return td::Unit{};
     }
-    auto results = co_await td::actor::all_wrap(std::move(tasks));
     std::vector<ton::tl_object_ptr<ton::lite_api::liteServer_sendMsgResult>> statuses;
-    statuses.reserve(results.size());
-    for (auto& result : results) {
-      if (result.is_ok()) {
+    auto admissions = results.move_as_ok();
+    statuses.reserve(admissions.size());
+    for (auto& result : admissions) {
+      if (result.accepted) {
         statuses.push_back(ton::create_tl_object<ton::lite_api::liteServer_sendMsgResult>(1, 0, std::string{}));
       } else {
-        auto error = result.move_as_error();
         statuses.push_back(ton::create_tl_object<ton::lite_api::liteServer_sendMsgResult>(
-            0, error.code(), error.message().str()));
+            0, result.error_code, std::move(result.error_message)));
       }
     }
     auto response = ton::create_serialize_tl_object<ton::lite_api::liteServer_sendMsgStatusBatch>(

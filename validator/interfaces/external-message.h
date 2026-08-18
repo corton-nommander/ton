@@ -18,6 +18,10 @@
 */
 #pragma once
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 #include "crypto/common/refcnt.hpp"
 #include "crypto/vm/cells.h"
 #include "ton/ton-types.h"
@@ -50,6 +54,61 @@ struct FinalizedNativeExternalMessage {
   StdSmcAddress source;
   td::uint64 nonce{0};
 };
+
+// Ordered result of admitting one element of a sendMessageBatch request.  This
+// intentionally contains no actor-local state: ValidatorManager consumes the
+// pool's broadcast handles and returns only these stable per-input statuses to
+// the liteserver.
+struct ExternalMessageAdmissionResult {
+  bool accepted{false};
+  int error_code{0};
+  std::string error_message;
+
+  static ExternalMessageAdmissionResult success() {
+    return {.accepted = true, .error_code = 0, .error_message = {}};
+  }
+  static ExternalMessageAdmissionResult failure(td::Status error) {
+    return {.accepted = false,
+            .error_code = error.code(),
+            .error_message = error.message().str()};
+  }
+};
+
+using ExternalMessageAdmissionResults = std::vector<ExternalMessageAdmissionResult>;
+
+struct NativeAdmissionOrderKey {
+  WorkchainId workchain{basechainId};
+  StdSmcAddress source;
+  td::uint64 nonce{0};
+  Bits256 hash;
+  std::size_t input_index{0};
+
+  bool operator<(const NativeAdmissionOrderKey &other) const {
+    if (workchain != other.workchain) {
+      return workchain < other.workchain;
+    }
+    if (source != other.source) {
+      return source < other.source;
+    }
+    if (nonce != other.nonce) {
+      return nonce < other.nonce;
+    }
+    if (hash != other.hash) {
+      return hash < other.hash;
+    }
+    return input_index < other.input_index;
+  }
+};
+
+inline std::vector<std::size_t> order_native_admissions(std::vector<NativeAdmissionOrderKey> keys) {
+  std::sort(keys.begin(), keys.end());
+  std::vector<std::size_t> order;
+  order.reserve(keys.size());
+  for (const auto &key : keys) {
+    order.push_back(key.input_index);
+  }
+  return order;
+}
 
 }  // namespace validator
 

@@ -1485,12 +1485,22 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
     account_index.emplace(addr, index);
     return true;
   };
+  ton::StdSmcAddress last_src, last_dst;
+  bool have_last_src = false, have_last_dst = false;
   for (const auto& entry : entries) {
-    if (!entry.transfer.is_valid() || (version == 1 && (!entry.debit_lt || !entry.credit_lt)) ||
-        !add_account(entry.transfer.src) ||
-        !add_account(entry.transfer.dst)) {
+    if (!entry.transfer.is_valid() || (version == 1 && (!entry.debit_lt || !entry.credit_lt))) {
       return false;
     }
+    if ((!have_last_src || entry.transfer.src != last_src) && !add_account(entry.transfer.src)) {
+      return false;
+    }
+    last_src = entry.transfer.src;
+    have_last_src = true;
+    if ((!have_last_dst || entry.transfer.dst != last_dst) && !add_account(entry.transfer.dst)) {
+      return false;
+    }
+    last_dst = entry.transfer.dst;
+    have_last_dst = true;
   }
   if (account_table.size() > max_accounts || account_table.size() > entries.size() * 2) {
     return false;
@@ -1498,6 +1508,31 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
 
   Ref<vm::Cell> account_root;
   Ref<vm::Cell> transfer_root;
+  ton::StdSmcAddress cached_index_address, second_cached_index_address;
+  td::uint32 cached_index = 0, second_cached_index = 0;
+  bool have_cached_index = false, have_second_cached_index = false;
+  auto find_account_index = [&](const ton::StdSmcAddress& address, td::uint32& index) -> bool {
+    if (have_cached_index && address == cached_index_address) {
+      index = cached_index;
+      return true;
+    }
+    if (have_second_cached_index && address == second_cached_index_address) {
+      index = second_cached_index;
+      return true;
+    }
+    auto it = account_index.find(address);
+    if (it == account_index.end()) {
+      return false;
+    }
+    second_cached_index_address = cached_index_address;
+    second_cached_index = cached_index;
+    have_second_cached_index = have_cached_index;
+    cached_index_address = address;
+    cached_index = it->second;
+    have_cached_index = true;
+    index = cached_index;
+    return true;
+  };
   if (version >= 3) {
     struct TreeNode {
       Ref<vm::Cell> cell;
@@ -1560,14 +1595,14 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
     std::vector<TreeNode> transfer_leaves;
     transfer_leaves.reserve(entries.size());
     for (const auto& entry : entries) {
-      auto src_it = account_index.find(entry.transfer.src);
-      auto dst_it = account_index.find(entry.transfer.dst);
-      if (src_it == account_index.end() || dst_it == account_index.end()) {
+      td::uint32 src_index = 0, dst_index = 0;
+      if (!find_account_index(entry.transfer.src, src_index) ||
+          !find_account_index(entry.transfer.dst, dst_index)) {
         return false;
       }
       vm::CellBuilder leaf;
       if (!(leaf.store_ulong_rchk_bool(transfers_leaf_magic, 32) &&
-            leaf.store_ulong_rchk_bool(src_it->second, 32) && leaf.store_ulong_rchk_bool(dst_it->second, 32) &&
+            leaf.store_ulong_rchk_bool(src_index, 32) && leaf.store_ulong_rchk_bool(dst_index, 32) &&
             leaf.store_ulong_rchk_bool(entry.transfer.amount, 64) &&
             leaf.store_ulong_rchk_bool(entry.transfer.fee, 64) &&
             leaf.store_ulong_rchk_bool(entry.transfer.nonce, 64) &&
@@ -1607,14 +1642,14 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
 
     for (std::size_t i = entries.size(); i > 0; --i) {
       const auto& entry = entries[i - 1];
-      auto src_it = account_index.find(entry.transfer.src);
-      auto dst_it = account_index.find(entry.transfer.dst);
-      if (src_it == account_index.end() || dst_it == account_index.end()) {
+      td::uint32 src_index = 0, dst_index = 0;
+      if (!find_account_index(entry.transfer.src, src_index) ||
+          !find_account_index(entry.transfer.dst, dst_index)) {
         return false;
       }
       vm::CellBuilder chunk;
       if (!(chunk.store_ulong_rchk_bool(transfers_chunk_magic, 32) &&
-            chunk.store_ulong_rchk_bool(src_it->second, 32) && chunk.store_ulong_rchk_bool(dst_it->second, 32) &&
+            chunk.store_ulong_rchk_bool(src_index, 32) && chunk.store_ulong_rchk_bool(dst_index, 32) &&
             chunk.store_ulong_rchk_bool(entry.transfer.amount, 64) &&
             chunk.store_ulong_rchk_bool(entry.transfer.fee, 64) &&
             chunk.store_ulong_rchk_bool(entry.transfer.nonce, 64) &&

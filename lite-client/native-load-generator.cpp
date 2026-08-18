@@ -59,6 +59,21 @@ constexpr bool canonical_cohorts_complete(td::uint64 measured_anchored,
   return measured_anchored >= measured_offered && total_anchored >= total_offered;
 }
 
+constexpr bool canonical_follower_retry_available(td::uint32 consecutive_failures,
+                                                   td::uint32 retry_limit) {
+  return consecutive_failures <= retry_limit;
+}
+
+constexpr double canonical_follower_retry_backoff(double initial_seconds,
+                                                   td::uint32 consecutive_failures,
+                                                   double maximum_seconds) {
+  auto delay = initial_seconds;
+  for (td::uint32 i = 1; i < consecutive_failures && delay < maximum_seconds; ++i) {
+    delay *= 2.0;
+  }
+  return delay < maximum_seconds ? delay : maximum_seconds;
+}
+
 // Regression guards for two subtle benchmark rules: extending the half-open
 // measured range makes an in-window proof count immediately, and completing
 // only the measured cohort must never declare the full run drained.
@@ -66,6 +81,12 @@ static_assert(!nonce_in_half_open_cohort(7, 5, 7));
 static_assert(nonce_in_half_open_cohort(7, 5, 8));
 static_assert(!canonical_cohorts_complete(10, 10, 11, 12));
 static_assert(canonical_cohorts_complete(10, 10, 12, 12));
+static_assert(!canonical_follower_retry_available(1, 0));
+static_assert(canonical_follower_retry_available(5, 5));
+static_assert(!canonical_follower_retry_available(6, 5));
+static_assert(canonical_follower_retry_backoff(0.25, 1, 10.0) == 0.25);
+static_assert(canonical_follower_retry_backoff(0.25, 5, 10.0) == 4.0);
+static_assert(canonical_follower_retry_backoff(0.25, 8, 10.0) == 10.0);
 
 void request_stop(int) {
   stop_requested = 1;
@@ -81,6 +102,7 @@ struct Options {
   td::uint32 workers{1};
   td::uint32 max_inflight{8192};
   td::uint32 submit_batch_size{1};
+  td::uint32 submit_source_run_size{1};
   td::uint64 max_canonical_backlog{262144};
   td::uint32 max_source_canonical_backlog{64};
   td::uint32 duration_seconds{600};
@@ -100,6 +122,10 @@ struct Options {
   double report_interval{1.0};
   double finality_poll_seconds{10.0};
   double canonical_poll_seconds{0.25};
+  double canonical_query_timeout{30.0};
+  td::uint32 canonical_retry_limit{5};
+  double canonical_retry_backoff_seconds{0.25};
+  double canonical_retry_max_backoff_seconds{5.0};
   double repair_cooldown_seconds{10.0};
   double adaptive_initial_rtt_seconds{1.0};
   bool auto_nonce{false};
@@ -234,6 +260,8 @@ struct WorkerStats {
   td::uint64 wire_batches{0};
   td::uint64 wire_batch_messages{0};
   td::uint64 max_wire_batch_size{0};
+  td::uint64 wire_batch_source_runs{0};
+  td::uint64 max_wire_batch_source_run{0};
   td::uint64 retries{0};
   td::uint64 retry_exhausted{0};
   td::uint64 resigned{0};
@@ -309,7 +337,16 @@ struct CanonicalFollowerStats {
   td::uint64 measured_native_transfers{0};
   td::uint64 max_native_transfers_per_block{0};
   td::uint64 measured_max_native_transfers_per_block{0};
+  // `errors` contains only non-transport proof/data/ancestry validity failures.
+  // Transient transport failures and exhausted retry streaks are separate.
   td::uint64 errors{0};
+  td::uint64 fatal_errors{0};
+  td::uint64 transient_timeouts{0};
+  td::uint64 transient_cancellations{0};
+  td::uint64 transient_retries{0};
+  td::uint64 transient_recoveries{0};
+  td::uint64 retry_exhausted{0};
+  td::uint64 reconnects{0};
   td::uint64 reorgs{0};
   td::uint64 lag_blocks{0};
   td::uint64 max_lag_blocks{0};
@@ -384,7 +421,7 @@ class NativeLoadWorker final : public td::actor::Actor {
     }
   };
 
-  enum class TaskState { signing, ready, inflight, retry_wait, resolved };
+  enum class TaskState { signing, ready, dispatching, inflight, retry_wait, resolved };
   enum class TaskResolution { admitted, proof_observed };
 
   struct TransferTask {
@@ -527,7 +564,11 @@ class NativeLoadWorker final : public td::actor::Actor {
   td::optional<std::size_t> select_client() const;
   td::uint32 client_available_capacity(std::size_t client_idx) const;
   bool ready_for_first_submission(const std::shared_ptr<TransferTask>& task) const;
-  std::shared_ptr<TransferTask> take_dispatchable_ready_task();
+  std::shared_ptr<TransferTask>
+  take_dispatchable_ready_task(const std::vector<std::size_t>* excluded_wallets = nullptr);
+  void append_ready_source_run(std::shared_ptr<TransferTask> first,
+                               std::vector<std::shared_ptr<TransferTask>>& tasks,
+                               std::size_t batch_limit);
   void dispatch_ready();
   void send_task(std::shared_ptr<TransferTask> task, std::size_t client_idx);
   void send_batch(std::vector<std::shared_ptr<TransferTask>> tasks, std::size_t client_idx);
@@ -616,9 +657,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       workers_complete_ = true;
       if (!options_.canonical_block_follower) {
         finish_process();
-      } else if (!follower_query_active_) {
-        final_follower_poll_ = true;
-        request_follower_poll(false);
+      } else if (!follower_query_active_ && !follower_retry_pending_) {
+        request_final_follower_poll();
       }
     }
   }
@@ -679,13 +719,19 @@ class NativeLoadCoordinator final : public td::actor::Actor {
   bool startup_discovery_anchor_ready_{false};
   bool startup_discovery_dispatched_{false};
   bool follower_query_active_{false};
+  bool follower_retry_pending_{false};
+  bool follower_retry_baseline_{false};
+  bool follower_transient_recovery_pending_{false};
   bool workers_complete_{false};
   bool final_follower_poll_{false};
+  bool final_follower_catchup_complete_{false};
   bool finalizing_workers_{false};
+  td::uint32 follower_transient_failure_streak_{0};
   double start_at_{0.0};
   double start_system_at_{0.0};
   double last_report_at_{0.0};
   double next_follower_poll_at_{0.0};
+  double follower_retry_at_{0.0};
   double follower_poll_started_system_at_{0.0};
   ton::BlockIdExt followed_shard_block_;
   ton::BlockIdExt follower_target_block_;
@@ -706,7 +752,12 @@ class NativeLoadCoordinator final : public td::actor::Actor {
   void request_follower_block(ton::BlockIdExt block_id);
   void on_follower_block(ton::BlockIdExt requested, td::Result<td::BufferSlice> result);
   void complete_follower_poll();
-  void follower_error(td::Status error);
+  void mark_follower_recovered();
+  void discard_follower_poll();
+  void follower_query_error(bool baseline, td::Status error);
+  void follower_fatal_error(td::Status error);
+  void complete_terminal_follower_error(td::Status error, bool fatal);
+  void request_final_follower_poll();
   void finalize_workers_after_follower();
   void finish_process();
 
@@ -803,12 +854,19 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         td::actor::send_closure(worker, &NativeLoadWorker::request_graceful_stop);
       }
     }
+    auto now = td::Time::now();
+    if (follower_retry_pending_ && !follower_query_active_ && now >= follower_retry_at_) {
+      auto baseline = follower_retry_baseline_;
+      follower_retry_pending_ = false;
+      ++follower_stats_.transient_retries;
+      request_follower_poll(baseline);
+    }
     if (!started_) {
       alarm_timestamp() = td::Timestamp::in(0.05);
       return;
     }
-    auto now = td::Time::now();
-    if (options_.canonical_block_follower && !follower_query_active_ && now >= next_follower_poll_at_) {
+    if (options_.canonical_block_follower && !follower_retry_pending_ &&
+        !follower_query_active_ && now >= next_follower_poll_at_) {
       request_follower_poll(false);
     }
     if (now - last_report_at_ >= options_.report_interval) {
@@ -817,6 +875,11 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     }
     if (done_count_ != workers_.size()) {
       alarm_timestamp() = td::Timestamp::in(std::min(0.1, options_.report_interval));
+    } else if (follower_retry_pending_ && !follower_query_active_) {
+      // Workers may finish while a follower retry is backed off.  Keep the
+      // coordinator alarm alive until that retry is actually dispatched.
+      alarm_timestamp() =
+          td::Timestamp::in(std::max(0.001, follower_retry_at_ - td::Time::now()));
     }
   }
 
@@ -839,6 +902,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(wire_queries);
       ADD_FIELD(wire_batches);
       ADD_FIELD(wire_batch_messages);
+      ADD_FIELD(wire_batch_source_runs);
       ADD_FIELD(retries);
       ADD_FIELD(retry_exhausted);
       ADD_FIELD(resigned);
@@ -886,6 +950,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       total.congestion_window += value.congestion_window;
       total.initial_congestion_window += value.initial_congestion_window;
       total.max_wire_batch_size = std::max(total.max_wire_batch_size, value.max_wire_batch_size);
+      total.max_wire_batch_source_run =
+          std::max(total.max_wire_batch_source_run, value.max_wire_batch_source_run);
       total.pacing_tokens += value.pacing_tokens;
       total.measure_elapsed_seconds = std::max(total.measure_elapsed_seconds, value.measure_elapsed_seconds);
       total.drain_to_anchor_seconds = std::max(total.drain_to_anchor_seconds, value.drain_to_anchor_seconds);
@@ -946,7 +1012,9 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     auto rate = [interval](td::uint64 current, td::uint64 previous) {
       return static_cast<double>(current - previous) / interval;
     };
-    bool canonical_result_valid = options_.canonical_block_follower && follower_stats_.errors == 0 &&
+    bool final_catchup_valid = !final || final_follower_catchup_complete_;
+    bool canonical_result_valid = options_.canonical_block_follower && final_catchup_valid &&
+                                  follower_stats_.errors == 0 && follower_stats_.retry_exhausted == 0 &&
                                   follower_stats_.reorgs == 0 && total.canonical_hash_conflicts == 0 &&
                                   total.duplicate_nonce_conflicts == 0 && total.external_nonce_conflicts == 0;
     bool benchmark_result_valid = final && canonical_result_valid && !total.interrupted &&
@@ -957,7 +1025,10 @@ class NativeLoadCoordinator final : public td::actor::Actor {
                                       total.total_anchored_after_drain, total.offered);
     std::cout << "{\"schema\":\"native-load-v2\",\"final\":" << (final ? "true" : "false")
               << ",\"phase\":\"" << (final ? "finished" : phase(now, total)) << "\",\"elapsed_s\":"
-              << std::max(0.0, now - start_at_) << ",\"target_tps\":" << options_.target_tps
+              << std::max(0.0, now - start_at_) << ",\"load_start_unix_s\":" << start_system_at_
+              << ",\"measure_start_unix_s\":" << measure_begin_system
+              << ",\"measure_end_unix_s\":" << measure_end_system
+              << ",\"target_tps\":" << options_.target_tps
               << ",\"offered\":" << total.offered << ",\"steady_offered\":" << total.steady_offered
               << ",\"offered_tps\":" << rate(total.offered, previous_.offered)
               << ",\"submitted\":" << total.submitted << ",\"steady_submitted\":"
@@ -973,6 +1044,13 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << static_cast<double>(total.wire_batch_messages) /
                      static_cast<double>(std::max<td::uint64>(1, total.wire_batches))
               << ",\"wire_batch_max_size\":" << total.max_wire_batch_size
+              << ",\"wire_batch_source_run_target\":" << options_.submit_source_run_size
+              << ",\"wire_batch_source_runs\":" << total.wire_batch_source_runs
+              << ",\"wire_batch_source_run_avg_size\":"
+              << static_cast<double>(total.wire_batch_messages) /
+                     static_cast<double>(std::max<td::uint64>(1, total.wire_batch_source_runs))
+              << ",\"wire_batch_source_run_max_size\":"
+              << total.max_wire_batch_source_run
               << ",\"retries\":" << total.retries << ",\"retry_exhausted\":" << total.retry_exhausted
               << ",\"resigned\":" << total.resigned << ",\"repair_offered\":" << total.repair_offered
               << ",\"mempool_accepted\":"
@@ -1063,11 +1141,32 @@ class NativeLoadCoordinator final : public td::actor::Actor {
                      std::max(0.000001, total.measure_elapsed_seconds)
               << ",\"canonical_chain_measure_peak_1s_tps\":" << canonical_measure_peak_1s
               << ",\"canonical_follower_errors\":" << follower_stats_.errors
+              << ",\"canonical_follower_fatal_errors\":" << follower_stats_.fatal_errors
+              << ",\"canonical_follower_transient_timeouts\":"
+              << follower_stats_.transient_timeouts
+              << ",\"canonical_follower_transient_cancellations\":"
+              << follower_stats_.transient_cancellations
+              << ",\"canonical_follower_transient_retries\":"
+              << follower_stats_.transient_retries
+              << ",\"canonical_follower_transient_recoveries\":"
+              << follower_stats_.transient_recoveries
+              << ",\"canonical_follower_retry_exhausted\":" << follower_stats_.retry_exhausted
+              << ",\"canonical_follower_reconnects\":" << follower_stats_.reconnects
+              << ",\"canonical_follower_retry_streak\":" << follower_transient_failure_streak_
+              << ",\"canonical_follower_retry_limit\":" << options_.canonical_retry_limit
+              << ",\"canonical_follower_retry_backoff_s\":"
+              << options_.canonical_retry_backoff_seconds
+              << ",\"canonical_follower_retry_max_backoff_s\":"
+              << options_.canonical_retry_max_backoff_seconds
+              << ",\"canonical_follower_query_timeout_s\":"
+              << options_.canonical_query_timeout
               << ",\"canonical_follower_reorgs\":" << follower_stats_.reorgs
               << ",\"canonical_follower_lag_blocks\":" << follower_stats_.lag_blocks
               << ",\"canonical_follower_max_lag_blocks\":" << follower_stats_.max_lag_blocks
               << ",\"canonical_follower_enabled\":"
               << (options_.canonical_block_follower ? "true" : "false")
+              << ",\"canonical_follower_final_catchup_complete\":"
+              << (final ? (final_follower_catchup_complete_ ? "true" : "false") : "null")
               << ",\"canonical_result_valid\":" << (canonical_result_valid ? "true" : "false")
               << ",\"benchmark_result_valid\":"
               << (final ? (benchmark_result_valid ? "true" : "false") : "null")
@@ -1109,7 +1208,15 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     }
     std::cout << ",\"finalized\":null,\"finalized_semantics\":\"not_independently_observed\""
               << ",\"admission_semantics\":\"liteServer.sendMessage status=1; not block inclusion\""
-              << ",\"benchmark_result_valid_semantics\":\"final proof-consistent run with complete measured and total cohorts, zero drain timeout, and follower caught up to the anchored shard tip\""
+              << ",\"wire_batch_source_run_semantics\":\"adjacent ascending nonces from one source in a sendMessageBatch; each source appears in at most one bounded run per batch and seed selection remains globally fair\""
+              << ",\"benchmark_result_valid_semantics\":\"final proof-consistent run with complete measured and total cohorts, zero drain timeout, no fatal or retry-exhausted follower failure, and a final contiguous catch-up to the anchored shard tip\""
+              << ",\"canonical_follower_errors_semantics\":\"fatal proof, decoded-data, hash, or ancestry validity failures only; transient transport failures and exhausted retry streaks are reported separately\""
+              << ",\"canonical_follower_transient_timeouts_semantics\":\"ADNL/liteserver timeout responses discarded and retried from the last completely committed followed tip\""
+              << ",\"canonical_follower_transient_retries_semantics\":\"retry polls actually dispatched after a forced follower-client reconnect\""
+              << ",\"canonical_follower_transient_recoveries_semantics\":\"consecutive transient failure streaks ended by one complete proof-checked poll\""
+              << ",\"canonical_follower_reconnects_semantics\":\"forced resets of the dedicated follower liteserver client after timeout or cancellation\""
+              << ",\"canonical_follower_retry_exhausted_semantics\":\"transient failure streaks exceeding canonical_follower_retry_limit; any exhausted streak invalidates the benchmark even if later polling recovers\""
+              << ",\"canonical_follower_final_catchup_complete_semantics\":\"final poll atomically verified every basechain block back to the previously committed tip before workers were finalized\""
               << ",\"repeat_admission_successes_semantics\":\"status=1 responses for a nonce whose admission was already counted; excluded from mempool_accepted and TPS\""
               << ",\"duplicate_semantics\":\"different or concurrently unresolved message owns the nonce; conflict, never admission or canonical proof\""
               << ",\"accepted_inferred_semantics\":\"deprecated proof-resolution counter; do not use as TPS\""
@@ -1161,13 +1268,19 @@ void NativeLoadCoordinator::maybe_begin() {
   LOG(WARNING) << "native load generator ready: workers=" << workers_.size()
                << " sources=" << options_.sources << " connections=" << options_.connections
                << " signers=" << options_.signers << " max_inflight=" << options_.max_inflight
+               << " submit_batch=" << options_.submit_batch_size << " source_run="
+               << options_.submit_source_run_size
                << " target_tps=" << options_.target_tps << " ramp=" << options_.ramp_seconds
                << "s warmup=" << options_.warmup_seconds << "s duration=" << options_.duration_seconds
                << "s drain_timeout=" << options_.drain_timeout_seconds << "s canonical_backlog="
                << options_.max_canonical_backlog << " source_backlog="
                << options_.max_source_canonical_backlog << " canonical_follow="
                << options_.canonical_block_follower << " adaptive_initial_rtt_s="
-               << options_.adaptive_initial_rtt_seconds;
+               << options_.adaptive_initial_rtt_seconds << " canonical_retry_limit="
+               << options_.canonical_retry_limit << " canonical_retry_backoff_s="
+               << options_.canonical_retry_backoff_seconds << " canonical_retry_max_backoff_s="
+               << options_.canonical_retry_max_backoff_seconds << " canonical_query_timeout_s="
+               << options_.canonical_query_timeout;
   last_report_at_ = start_at_;
   next_follower_poll_at_ = start_at_;
   alarm_timestamp() = td::Timestamp::in(std::max(0.001, start_at_ - td::Time::now()));
@@ -1203,19 +1316,21 @@ void NativeLoadCoordinator::request_follower_poll(bool baseline) {
                                 std::move(result));
       });
   td::actor::send_closure(follower_client_, &liteclient::ExtClient::send_query, "native-load-follow-mc",
-                          envelope_query(std::move(query)), td::Timestamp::in(options_.query_timeout),
+                          envelope_query(std::move(query)),
+                          td::Timestamp::in(options_.canonical_query_timeout),
                           std::move(promise));
 }
 
 void NativeLoadCoordinator::on_follower_masterchain(bool baseline, td::Result<td::BufferSlice> result) {
   auto data = unwrap_lite_result(std::move(result));
   if (data.is_error()) {
-    follower_error(data.move_as_error_prefix("cannot obtain masterchain anchor: "));
+    follower_query_error(baseline,
+                         data.move_as_error_prefix("cannot obtain masterchain anchor: "));
     return;
   }
   auto parsed = ton::fetch_tl_object<ton::lite_api::liteServer_masterchainInfo>(data.move_as_ok(), true);
   if (parsed.is_error()) {
-    follower_error(parsed.move_as_error_prefix("cannot parse masterchain anchor: "));
+    follower_fatal_error(parsed.move_as_error_prefix("cannot parse masterchain anchor: "));
     return;
   }
   auto mc_block = ton::create_block_id(parsed.move_as_ok()->last_);
@@ -1229,7 +1344,8 @@ void NativeLoadCoordinator::on_follower_masterchain(bool baseline, td::Result<td
                                 std::move(shard_result));
       });
   td::actor::send_closure(follower_client_, &liteclient::ExtClient::send_query, "native-load-follow-shards",
-                          envelope_query(std::move(query)), td::Timestamp::in(options_.query_timeout),
+                          envelope_query(std::move(query)),
+                          td::Timestamp::in(options_.canonical_query_timeout),
                           std::move(promise));
 }
 
@@ -1237,27 +1353,32 @@ void NativeLoadCoordinator::on_follower_shards(bool baseline, ton::BlockIdExt mc
                                                 td::Result<td::BufferSlice> result) {
   auto data = unwrap_lite_result(std::move(result));
   if (data.is_error()) {
-    follower_error(data.move_as_error_prefix("cannot obtain anchored shard configuration: "));
+    follower_query_error(
+        baseline, data.move_as_error_prefix("cannot obtain anchored shard configuration: "));
     return;
   }
   auto parsed = ton::fetch_tl_object<ton::lite_api::liteServer_allShardsInfo>(data.move_as_ok(), true);
   if (parsed.is_error()) {
-    follower_error(parsed.move_as_error_prefix("cannot parse anchored shard configuration: "));
+    follower_fatal_error(
+        parsed.move_as_error_prefix("cannot parse anchored shard configuration: "));
     return;
   }
   auto response = parsed.move_as_ok();
   if (ton::create_block_id(response->id_) != mc_block) {
-    follower_error(td::Status::Error("getAllShardsInfo returned a different masterchain block"));
+    follower_fatal_error(
+        td::Status::Error("getAllShardsInfo returned a different masterchain block"));
     return;
   }
   auto proof_root = vm::std_boc_deserialize(response->proof_.clone());
   if (proof_root.is_error()) {
-    follower_error(proof_root.move_as_error_prefix("cannot deserialize shard configuration proof: "));
+    follower_fatal_error(
+        proof_root.move_as_error_prefix("cannot deserialize shard configuration proof: "));
     return;
   }
   auto virtual_root = vm::MerkleProof::virtualize(proof_root.move_as_ok());
   if (virtual_root.is_error()) {
-    follower_error(virtual_root.move_as_error_prefix("cannot virtualize shard configuration proof: "));
+    follower_fatal_error(
+        virtual_root.move_as_error_prefix("cannot virtualize shard configuration proof: "));
     return;
   }
   auto mc_root = virtual_root.move_as_ok();
@@ -1270,7 +1391,7 @@ void NativeLoadCoordinator::on_follower_shards(bool baseline, ton::BlockIdExt mc
   // below parse only the opened, response-relevant path.
   auto proven_root_hash = ton::RootHash{mc_root->get_hash().bits()};
   if (proven_root_hash != mc_block.root_hash) {
-    follower_error(td::Status::Error(
+    follower_fatal_error(td::Status::Error(
         PSLICE() << "getAllShardsInfo proof root hash mismatch: proven="
                  << proven_root_hash.to_hex() << " expected=" << mc_block.root_hash.to_hex()));
     return;
@@ -1281,32 +1402,36 @@ void NativeLoadCoordinator::on_follower_shards(bool baseline, ton::BlockIdExt mc
   if (!tlb::unpack_cell(mc_root, block_record) || !tlb::unpack_cell(block_record.extra, block_extra) ||
       !block_extra.custom->have_refs() ||
       !tlb::unpack_cell(block_extra.custom->prefetch_ref(), mc_extra)) {
-    follower_error(td::Status::Error("cannot unpack shard configuration from masterchain proof"));
+    follower_fatal_error(
+        td::Status::Error("cannot unpack shard configuration from masterchain proof"));
     return;
   }
   auto shard_data = vm::std_boc_deserialize(response->data_.clone());
   if (shard_data.is_error()) {
-    follower_error(shard_data.move_as_error_prefix("cannot deserialize ShardHashes data: "));
+    follower_fatal_error(
+        shard_data.move_as_error_prefix("cannot deserialize ShardHashes data: "));
     return;
   }
   auto shard_data_root = shard_data.move_as_ok();
   auto shard_data_cs = vm::load_cell_slice(shard_data_root);
   if (!mc_extra.shard_hashes->contents_equal(shard_data_cs)) {
-    follower_error(td::Status::Error("ShardHashes data does not match the masterchain proof"));
+    follower_fatal_error(
+        td::Status::Error("ShardHashes data does not match the masterchain proof"));
     return;
   }
   block::ShardConfig shard_config;
   if (!shard_config.unpack(vm::load_cell_slice_ref(shard_data_root))) {
-    follower_error(td::Status::Error("cannot unpack proof-checked ShardHashes"));
+    follower_fatal_error(td::Status::Error("cannot unpack proof-checked ShardHashes"));
     return;
   }
   auto shard = shard_config.get_shard_hash(ton::ShardIdFull{ton::basechainId, ton::shardIdAll});
   if (shard.is_null()) {
-    follower_error(td::Status::Error("masterchain has no unsplit basechain shard"));
+    follower_fatal_error(td::Status::Error("masterchain has no unsplit basechain shard"));
     return;
   }
   auto top = shard->top_block_id();
   if (baseline || !followed_shard_block_.is_valid_full()) {
+    mark_follower_recovered();
     followed_shard_block_ = top;
     startup_discovery_mc_block_ = mc_block;
     startup_discovery_anchor_ready_ = true;
@@ -1326,8 +1451,9 @@ void NativeLoadCoordinator::on_follower_shards(bool baseline, ton::BlockIdExt mc
   if (top.shard_full() != followed_shard_block_.shard_full() ||
       top.seqno() <= followed_shard_block_.seqno()) {
     ++follower_stats_.reorgs;
-    follower_error(td::Status::Error(PSLICE() << "anchored basechain tip does not extend followed tip: old="
-                                               << followed_shard_block_.to_str() << " new=" << top.to_str()));
+    follower_fatal_error(
+        td::Status::Error(PSLICE() << "anchored basechain tip does not extend followed tip: old="
+                                  << followed_shard_block_.to_str() << " new=" << top.to_str()));
     return;
   }
   follower_target_block_ = top;
@@ -1351,7 +1477,8 @@ void NativeLoadCoordinator::request_follower_block(ton::BlockIdExt block_id) {
         td::actor::send_closure(self, &NativeLoadCoordinator::on_follower_block, block_id, std::move(result));
       });
   td::actor::send_closure(follower_client_, &liteclient::ExtClient::send_query, "native-load-follow-block",
-                          envelope_query(std::move(query)), td::Timestamp::in(options_.query_timeout),
+                          envelope_query(std::move(query)),
+                          td::Timestamp::in(options_.canonical_query_timeout),
                           std::move(promise));
 }
 
@@ -1359,29 +1486,33 @@ void NativeLoadCoordinator::on_follower_block(ton::BlockIdExt requested,
                                                td::Result<td::BufferSlice> result) {
   auto data = unwrap_lite_result(std::move(result));
   if (data.is_error()) {
-    follower_error(data.move_as_error_prefix("cannot obtain anchored basechain block: "));
+    follower_query_error(
+        false, data.move_as_error_prefix("cannot obtain anchored basechain block: "));
     return;
   }
   auto parsed = ton::fetch_tl_object<ton::lite_api::liteServer_blockData>(data.move_as_ok(), true);
   if (parsed.is_error()) {
-    follower_error(parsed.move_as_error_prefix("cannot parse anchored basechain block: "));
+    follower_fatal_error(parsed.move_as_error_prefix("cannot parse anchored basechain block: "));
     return;
   }
   auto response = parsed.move_as_ok();
   auto response_id = ton::create_block_id(response->id_);
   if (response_id != requested || td::sha256_bits256(response->data_.as_slice()) != requested.file_hash) {
-    follower_error(td::Status::Error("anchored basechain block id or file hash mismatch"));
+    follower_fatal_error(
+        td::Status::Error("anchored basechain block id or file hash mismatch"));
     return;
   }
   auto root_result = vm::std_boc_deserialize(response->data_.clone());
   if (root_result.is_error()) {
-    follower_error(root_result.move_as_error_prefix("cannot deserialize anchored basechain block: "));
+    follower_fatal_error(
+        root_result.move_as_error_prefix("cannot deserialize anchored basechain block: "));
     return;
   }
   auto root = root_result.move_as_ok();
   auto header_status = block::check_block_header_proof(root, requested);
   if (header_status.is_error()) {
-    follower_error(header_status.move_as_error_prefix("invalid anchored basechain block: "));
+    follower_fatal_error(
+        header_status.move_as_error_prefix("invalid anchored basechain block: "));
     return;
   }
   block::gen::Block::Record block_record;
@@ -1389,7 +1520,7 @@ void NativeLoadCoordinator::on_follower_block(ton::BlockIdExt requested,
   block::gen::BlockExtra::Record block_extra;
   if (!tlb::unpack_cell(root, block_record) || !tlb::unpack_cell(block_record.info, block_info) ||
       !block_info.not_master || !tlb::unpack_cell(block_record.extra, block_extra)) {
-    follower_error(td::Status::Error("cannot unpack anchored basechain block"));
+    follower_fatal_error(td::Status::Error("cannot unpack anchored basechain block"));
     return;
   }
   ++follower_poll_delta_.blocks;
@@ -1397,7 +1528,8 @@ void NativeLoadCoordinator::on_follower_block(ton::BlockIdExt requested,
   if (block_extra.custom->have_refs()) {
     auto batch = block::NativeTransferBatch::unpack(block_extra.custom->prefetch_ref());
     if (batch.is_error()) {
-      follower_error(batch.move_as_error_prefix("cannot unpack canonical native transfer batch: "));
+      follower_fatal_error(
+          batch.move_as_error_prefix("cannot unpack canonical native transfer batch: "));
       return;
     }
     auto native_batch = batch.move_as_ok();
@@ -1423,7 +1555,7 @@ void NativeLoadCoordinator::on_follower_block(ton::BlockIdExt requested,
       }
       auto external_hash = entry.transfer.external_hash();
       if (external_hash.is_error()) {
-        follower_error(external_hash.move_as_error_prefix(
+        follower_fatal_error(external_hash.move_as_error_prefix(
             "cannot hash decoded canonical native transfer: "));
         return;
       }
@@ -1437,9 +1569,10 @@ void NativeLoadCoordinator::on_follower_block(ton::BlockIdExt requested,
   bool after_split = false;
   auto prev_status = block::unpack_block_prev_blk_try(root, requested, previous, referenced_mc, after_split);
   if (prev_status.is_error() || previous.size() != 1) {
-    follower_error(prev_status.is_error()
-                       ? prev_status.move_as_error_prefix("cannot follow anchored basechain ancestry: ")
-                       : td::Status::Error("canonical follower supports exactly one unsplit basechain shard"));
+    follower_fatal_error(
+        prev_status.is_error()
+            ? prev_status.move_as_error_prefix("cannot follow anchored basechain ancestry: ")
+            : td::Status::Error("canonical follower supports exactly one unsplit basechain shard"));
     return;
   }
   if (previous[0] == followed_shard_block_) {
@@ -1449,13 +1582,15 @@ void NativeLoadCoordinator::on_follower_block(ton::BlockIdExt requested,
   }
   if (previous[0].seqno() >= requested.seqno() || previous[0].seqno() <= followed_shard_block_.seqno()) {
     ++follower_stats_.reorgs;
-    follower_error(td::Status::Error("anchored basechain ancestry does not reach the followed tip"));
+    follower_fatal_error(
+        td::Status::Error("anchored basechain ancestry does not reach the followed tip"));
     return;
   }
   request_follower_block(previous[0]);
 }
 
 void NativeLoadCoordinator::complete_follower_poll() {
+  mark_follower_recovered();
   follower_stats_.blocks += follower_poll_delta_.blocks;
   follower_stats_.native_blocks += follower_poll_delta_.native_blocks;
   follower_stats_.measured_native_blocks += follower_poll_delta_.measured_native_blocks;
@@ -1517,16 +1652,27 @@ void NativeLoadCoordinator::complete_follower_poll() {
   }
   if (workers_complete_) {
     if (final_follower_poll_) {
+      final_follower_catchup_complete_ = true;
       finalize_workers_after_follower();
     } else {
-      final_follower_poll_ = true;
-      request_follower_poll(false);
+      request_final_follower_poll();
     }
   }
 }
 
-void NativeLoadCoordinator::follower_error(td::Status error) {
-  ++follower_stats_.errors;
+void NativeLoadCoordinator::mark_follower_recovered() {
+  follower_retry_pending_ = false;
+  if (!follower_transient_recovery_pending_) {
+    follower_transient_failure_streak_ = 0;
+    return;
+  }
+  ++follower_stats_.transient_recoveries;
+  follower_transient_recovery_pending_ = false;
+  follower_transient_failure_streak_ = 0;
+  LOG(WARNING) << "canonical block follower recovered with a complete contiguous proof poll";
+}
+
+void NativeLoadCoordinator::discard_follower_poll() {
   follower_poll_delta_ = {};
   follower_poll_measure_second_counts_.clear();
   follower_poll_block_second_counts_.clear();
@@ -1534,20 +1680,80 @@ void NativeLoadCoordinator::follower_error(td::Status error) {
     observations.clear();
   }
   follower_query_active_ = false;
+}
+
+void NativeLoadCoordinator::follower_query_error(bool baseline, td::Status error) {
+  if (error.code() != ton::ErrorCode::timeout && error.code() != ton::ErrorCode::cancelled) {
+    follower_fatal_error(std::move(error));
+    return;
+  }
+  if (error.code() == ton::ErrorCode::timeout) {
+    ++follower_stats_.transient_timeouts;
+  } else {
+    ++follower_stats_.transient_cancellations;
+  }
+  discard_follower_poll();
+  follower_transient_recovery_pending_ = true;
+  ++follower_transient_failure_streak_;
+  ++follower_stats_.reconnects;
+  td::actor::send_closure(follower_client_, &liteclient::ExtClient::reset_servers);
+  if (canonical_follower_retry_available(follower_transient_failure_streak_,
+                                         options_.canonical_retry_limit)) {
+    auto delay = canonical_follower_retry_backoff(
+        options_.canonical_retry_backoff_seconds, follower_transient_failure_streak_,
+        options_.canonical_retry_max_backoff_seconds);
+    follower_retry_pending_ = true;
+    follower_retry_baseline_ = baseline;
+    follower_retry_at_ = td::Time::now() + delay;
+    LOG(WARNING) << "canonical block follower transient transport failure "
+                 << follower_transient_failure_streak_ << "/" << options_.canonical_retry_limit
+                 << "; reconnecting and retrying from the last committed tip in " << delay
+                 << "s: " << error;
+    alarm_timestamp().relax(td::Timestamp::in(delay));
+    return;
+  }
+
+  ++follower_stats_.retry_exhausted;
+  follower_retry_pending_ = false;
+  follower_transient_failure_streak_ = 0;
+  complete_terminal_follower_error(std::move(error), false);
+}
+
+void NativeLoadCoordinator::follower_fatal_error(td::Status error) {
+  discard_follower_poll();
+  follower_retry_pending_ = false;
+  follower_transient_recovery_pending_ = false;
+  follower_transient_failure_streak_ = 0;
+  ++follower_stats_.errors;
+  ++follower_stats_.fatal_errors;
+  complete_terminal_follower_error(std::move(error), true);
+}
+
+void NativeLoadCoordinator::complete_terminal_follower_error(td::Status error, bool fatal) {
   if (!started_ && !follower_ready_) {
     worker_failed(0, error.to_string());
     return;
   }
-  LOG(ERROR) << "canonical block follower: " << error;
+  LOG(ERROR) << "canonical block follower "
+             << (fatal ? "fatal proof/data failure" : "transient retry budget exhausted")
+             << ": " << error;
   next_follower_poll_at_ = td::Time::now() + options_.canonical_poll_seconds;
   if (workers_complete_) {
     if (final_follower_poll_) {
       finalize_workers_after_follower();
     } else {
-      final_follower_poll_ = true;
-      request_follower_poll(false);
+      request_final_follower_poll();
     }
   }
+}
+
+void NativeLoadCoordinator::request_final_follower_poll() {
+  if (final_follower_poll_ || follower_query_active_ || follower_retry_pending_) {
+    return;
+  }
+  final_follower_poll_ = true;
+  final_follower_catchup_complete_ = false;
+  request_follower_poll(false);
 }
 
 void NativeLoadCoordinator::finalize_workers_after_follower() {
@@ -1566,11 +1772,16 @@ void NativeLoadCoordinator::finish_process() {
   report(true);
   auto total = aggregate();
   if (options_.canonical_block_follower &&
-      (follower_stats_.errors || total.canonical_hash_conflicts ||
+      (follower_stats_.errors || follower_stats_.retry_exhausted ||
+       !final_follower_catchup_complete_ ||
+       total.canonical_hash_conflicts ||
        total.duplicate_nonce_conflicts || total.external_nonce_conflicts)) {
     process_exit_code.store(3);
     LOG(ERROR) << "native load generator canonical result is invalid: follower_errors="
-               << follower_stats_.errors << " hash_conflicts=" << total.canonical_hash_conflicts
+               << follower_stats_.errors << " retry_exhausted="
+               << follower_stats_.retry_exhausted << " final_catchup_complete="
+               << final_follower_catchup_complete_ << " hash_conflicts="
+               << total.canonical_hash_conflicts
                << " duplicate_nonce_conflicts=" << total.duplicate_nonce_conflicts
                << " external_nonce_conflicts=" << total.external_nonce_conflicts;
   } else if (total.drain_timed_out) {
@@ -2075,12 +2286,19 @@ bool NativeLoadWorker::ready_for_first_submission(
 }
 
 std::shared_ptr<NativeLoadWorker::TransferTask>
-NativeLoadWorker::take_dispatchable_ready_task() {
+NativeLoadWorker::take_dispatchable_ready_task(
+    const std::vector<std::size_t>* excluded_wallets) {
   auto candidates = ready_tasks_.size();
   while (candidates-- && !ready_tasks_.empty()) {
     auto task = ready_tasks_.front();
     ready_tasks_.pop_front();
     if (task->state != TaskState::ready || !task_is_active(task)) {
+      continue;
+    }
+    if (excluded_wallets &&
+        std::find(excluded_wallets->begin(), excluded_wallets->end(), task->wallet_idx) !=
+            excluded_wallets->end()) {
+      ready_tasks_.push_back(std::move(task));
       continue;
     }
     if (ready_for_first_submission(task)) {
@@ -2089,6 +2307,53 @@ NativeLoadWorker::take_dispatchable_ready_task() {
     ready_tasks_.push_back(std::move(task));
   }
   return {};
+}
+
+void NativeLoadWorker::append_ready_source_run(
+    std::shared_ptr<TransferTask> first,
+    std::vector<std::shared_ptr<TransferTask>>& tasks, std::size_t batch_limit) {
+  CHECK(first && first->state == TaskState::ready && task_is_active(first));
+  auto wallet_idx = first->wallet_idx;
+  auto nonce = first->transfer.nonce;
+  first->state = TaskState::dispatching;
+  tasks.push_back(std::move(first));
+
+  auto& wallet = wallets_[wallet_idx];
+  auto it = wallet.tasks.upper_bound(nonce);
+  auto source_run_limit = std::min<std::size_t>(options_.submit_source_run_size, batch_limit);
+  std::size_t source_run_size = 1;
+  while (source_run_size < source_run_limit && tasks.size() < batch_limit &&
+         nonce != std::numeric_limits<td::uint64>::max() && it != wallet.tasks.end()) {
+    ++nonce;
+    if (it->first != nonce) {
+      break;
+    }
+    auto task = it->second;
+    if (!task || task->state != TaskState::ready || !task_is_active(task)) {
+      break;
+    }
+    if (!task->ever_submitted) {
+      // A retry seed may bypass ready_for_first_submission().  Do not let a
+      // later new nonce leapfrog an older never-submitted task: every earlier
+      // task must either have reached the wire before this batch or already be
+      // staged earlier in this same ascending source run.
+      bool first_wire_ordered = true;
+      for (auto previous = wallet.tasks.begin(); previous != it; ++previous) {
+        if (!previous->second->ever_submitted &&
+            previous->second->state != TaskState::dispatching) {
+          first_wire_ordered = false;
+          break;
+        }
+      }
+      if (!first_wire_ordered) {
+        break;
+      }
+    }
+    task->state = TaskState::dispatching;
+    tasks.push_back(std::move(task));
+    ++source_run_size;
+    ++it;
+  }
 }
 
 void NativeLoadWorker::dispatch_ready() {
@@ -2109,13 +2374,16 @@ void NativeLoadWorker::dispatch_ready() {
                                          options_.max_inflight - inflight_);
     auto batch_limit = std::min<td::uint64>(options_.submit_batch_size, capacity);
     std::vector<std::shared_ptr<TransferTask>> tasks;
+    std::vector<std::size_t> batch_wallets;
     tasks.reserve(batch_limit);
+    batch_wallets.reserve(batch_limit);
     while (tasks.size() < batch_limit) {
-      auto task = take_dispatchable_ready_task();
+      auto task = take_dispatchable_ready_task(&batch_wallets);
       if (!task) {
         break;
       }
-      tasks.push_back(std::move(task));
+      batch_wallets.push_back(task->wallet_idx);
+      append_ready_source_run(std::move(task), tasks, batch_limit);
     }
     if (!tasks.empty()) {
       send_batch(std::move(tasks), client_idx.value());
@@ -2161,8 +2429,22 @@ void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tas
   CHECK(!tasks.empty() && tasks.size() <= options_.submit_batch_size);
   std::vector<td::BufferSlice> bodies;
   bodies.reserve(tasks.size());
+  td::uint64 source_runs = 0;
+  td::uint64 current_source_run = 0;
+  td::uint64 max_source_run = 0;
+  td::optional<std::size_t> previous_wallet;
+  for (const auto& task : tasks) {
+    if (!previous_wallet || previous_wallet.value() != task->wallet_idx) {
+      ++source_runs;
+      current_source_run = 0;
+      previous_wallet = task->wallet_idx;
+    }
+    ++current_source_run;
+    max_source_run = std::max(max_source_run, current_source_run);
+  }
   auto sent_at = td::Time::now();
   for (auto& task : tasks) {
+    CHECK(task->state == TaskState::dispatching);
     bodies.push_back(task->boc.clone());
     task->state = TaskState::inflight;
     task->last_sent_at = sent_at;
@@ -2191,6 +2473,9 @@ void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tas
   ++stats_.wire_batches;
   stats_.wire_batch_messages += tasks.size();
   stats_.max_wire_batch_size = std::max<td::uint64>(stats_.max_wire_batch_size, tasks.size());
+  stats_.wire_batch_source_runs += source_runs;
+  stats_.max_wire_batch_source_run =
+      std::max(stats_.max_wire_batch_source_run, max_source_run);
   inflight_ += tasks.size();
   clients_[client_idx].inflight += tasks.size();
   td::actor::send_closure(clients_[client_idx].actor, &liteclient::ExtClient::send_query,
@@ -3190,6 +3475,16 @@ int main(int argc, char* argv[]) {
                                          ? td::Status::OK()
                                          : td::Status::Error("submit-batch-size must be 1..1024");
                             });
+  parser.add_checked_option(0, "submit-source-run-size",
+                            "maximum ascending same-source nonce run per submission batch",
+                            [&](td::Slice value) {
+                              options.submit_source_run_size = td::to_integer<td::uint32>(value);
+                              return options.submit_source_run_size >= 1 &&
+                                             options.submit_source_run_size <= 1024
+                                         ? td::Status::OK()
+                                         : td::Status::Error(
+                                               "submit-source-run-size must be 1..1024");
+                            });
   parser.add_option(0, "max-canonical-backlog",
                     "proof-observed global outstanding transfer limit; zero disables",
                     [&](td::Slice value) {
@@ -3276,6 +3571,45 @@ int main(int argc, char* argv[]) {
                                          ? td::Status::OK()
                                          : td::Status::Error("canonical poll interval must be positive");
                             });
+  parser.add_checked_option(0, "canonical-query-timeout",
+                            "independent timeout for canonical follower liteserver queries",
+                            [&](td::Slice value) {
+                              options.canonical_query_timeout = td::to_double(value);
+                              return std::isfinite(options.canonical_query_timeout) &&
+                                             options.canonical_query_timeout > 0.0
+                                         ? td::Status::OK()
+                                         : td::Status::Error(
+                                               "canonical query timeout must be finite and positive");
+                            });
+  parser.add_checked_option(0, "canonical-retry-limit",
+                            "reconnect retries per consecutive follower transport-failure streak",
+                            [&](td::Slice value) {
+                              options.canonical_retry_limit = td::to_integer<td::uint32>(value);
+                              return options.canonical_retry_limit <= 100
+                                         ? td::Status::OK()
+                                         : td::Status::Error(
+                                               "canonical retry limit must be at most 100");
+                            });
+  parser.add_checked_option(0, "canonical-retry-backoff-seconds",
+                            "initial canonical follower reconnect backoff",
+                            [&](td::Slice value) {
+                              options.canonical_retry_backoff_seconds = td::to_double(value);
+                              return std::isfinite(options.canonical_retry_backoff_seconds) &&
+                                             options.canonical_retry_backoff_seconds > 0.0
+                                         ? td::Status::OK()
+                                         : td::Status::Error(
+                                               "canonical retry backoff must be finite and positive");
+                            });
+  parser.add_checked_option(0, "canonical-retry-max-backoff-seconds",
+                            "maximum canonical follower reconnect backoff",
+                            [&](td::Slice value) {
+                              options.canonical_retry_max_backoff_seconds = td::to_double(value);
+                              return std::isfinite(options.canonical_retry_max_backoff_seconds) &&
+                                             options.canonical_retry_max_backoff_seconds > 0.0
+                                         ? td::Status::OK()
+                                         : td::Status::Error(
+                                               "canonical retry max backoff must be finite and positive");
+                            });
   parser.add_checked_option(0, "repair-cooldown-seconds",
                             "minimum delay before resubmitting the same canonical nonce gap",
                             [&](td::Slice value) {
@@ -3321,6 +3655,13 @@ int main(int argc, char* argv[]) {
                                          : td::Status::Error("report interval must be positive");
                             });
   parser.run(argc, argv).ensure();
+  if (options.canonical_retry_max_backoff_seconds <
+      options.canonical_retry_backoff_seconds) {
+    LOG(FATAL) << "canonical retry max backoff must be at least the initial backoff";
+  }
+  if (options.submit_source_run_size > options.submit_batch_size) {
+    LOG(FATAL) << "submit-source-run-size must not exceed submit-batch-size";
+  }
   if (options.workers > options.sources || options.workers > options.connections ||
       options.workers > options.signers || options.workers > options.max_inflight) {
     LOG(FATAL) << "workers must not exceed sources, connections, signers, or inflight";

@@ -497,6 +497,42 @@ td::actor::Task<> ValidatorManagerImpl::new_external_message_query_until(td::Buf
   co_return td::Unit{};
 }
 
+td::actor::Task<ExternalMessageAdmissionResults> ValidatorManagerImpl::new_external_message_batch_query_until(
+    std::vector<td::BufferSlice> batch, td::Timestamp deadline) {
+  if (deadline && deadline.is_in_past()) {
+    ExternalMessageAdmissionResults results;
+    results.reserve(batch.size());
+    for (std::size_t i = 0; i < batch.size(); ++i) {
+      results.push_back(ExternalMessageAdmissionResult::failure(
+          td::Status::Error(ErrorCode::timeout, "external message admission deadline expired")));
+    }
+    co_return results;
+  }
+  auto checked = co_await td::actor::ask(ext_message_pool_, &ExtMessagePool::check_add_external_messages_until,
+                                         std::move(batch), 0, /* add_to_mempool = */ true, deadline);
+  std::vector<ExtMessagePool::CheckResult> pending_broadcasts;
+  for (auto &message : checked.checked_messages) {
+    if (!message.should_broadcast) {
+      continue;
+    }
+    if (!message.wait_allow_broadcast.await_ready()) {
+      pending_broadcasts.push_back(std::move(message));
+      continue;
+    }
+    auto allowed = co_await std::move(message.wait_allow_broadcast).wrap();
+    if (allowed.is_error()) {
+      VLOG(VALIDATOR_DEBUG) << "Dropping checked external message " << message.message->wc() << ":"
+                            << message.message->addr().to_hex() << " : " << allowed.error();
+    } else {
+      callback_->send_ext_message(message.message->shard(), message.message->serialize());
+    }
+  }
+  if (!pending_broadcasts.empty()) {
+    new_external_message_batch_query_cont(std::move(pending_broadcasts)).start().detach();
+  }
+  co_return std::move(checked.statuses);
+}
+
 td::actor::Task<> ValidatorManagerImpl::new_external_message_query_cont(td::Ref<ExtMessage> message,
                                                                         td::actor::StartedTask<> wait_allow_broadcast) {
   auto result = co_await std::move(wait_allow_broadcast).wrap();
@@ -504,8 +540,27 @@ td::actor::Task<> ValidatorManagerImpl::new_external_message_query_cont(td::Ref<
     LOG(INFO) << "Cannot send external message to " << message->wc() << ":" << message->addr().to_hex() << " : "
               << result.error();
   } else {
-    LOG(INFO) << "Sending external message to " << message->wc() << ":" << message->addr().to_hex();
+    VLOG(VALIDATOR_DEBUG) << "Sending external message to " << message->wc() << ":" << message->addr().to_hex();
     callback_->send_ext_message(message->shard(), message->serialize());
+  }
+  co_return td::Unit{};
+}
+
+td::actor::Task<> ValidatorManagerImpl::new_external_message_batch_query_cont(
+    std::vector<ExtMessagePool::CheckResult> messages) {
+  std::vector<td::actor::StartedTask<td::Unit>> waits;
+  waits.reserve(messages.size());
+  for (auto &message : messages) {
+    waits.push_back(std::move(message.wait_allow_broadcast));
+  }
+  auto results = co_await td::actor::all_wrap(std::move(waits));
+  for (std::size_t i = 0; i < results.size(); ++i) {
+    if (results[i].is_error()) {
+      VLOG(VALIDATOR_DEBUG) << "Dropping checked external message " << messages[i].message->wc() << ":"
+                            << messages[i].message->addr().to_hex() << " : " << results[i].error();
+      continue;
+    }
+    callback_->send_ext_message(messages[i].message->shard(), messages[i].message->serialize());
   }
   co_return td::Unit{};
 }

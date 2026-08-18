@@ -25,6 +25,20 @@ using namespace ton;
 using namespace ton::validator;
 using namespace ton::validator::consensus;
 
+static_assert(parse_native_collator_queue_capacity("") == native_collator_queue_default_capacity);
+static_assert(parse_native_collator_queue_capacity("0") == native_collator_queue_default_capacity);
+static_assert(parse_native_collator_queue_capacity("invalid") == native_collator_queue_default_capacity);
+static_assert(parse_native_collator_queue_capacity("-1") == native_collator_queue_default_capacity);
+static_assert(parse_native_collator_queue_capacity("1") == 1);
+static_assert(parse_native_collator_queue_capacity("32768") == 32'768);
+static_assert(parse_native_collator_queue_capacity("65536") == native_collator_queue_max_capacity);
+static_assert(parse_native_collator_queue_capacity("262144") == native_collator_queue_max_capacity);
+static_assert(parse_native_collator_queue_capacity("999999999999999999999999") ==
+              native_collator_queue_max_capacity);
+static_assert(select_collator_queue_capacity(false, "262144") == standard_collator_queue_capacity);
+static_assert(select_collator_queue_capacity(true, "") == native_collator_queue_default_capacity);
+static_assert(select_collator_queue_capacity(true, "262144") == native_collator_queue_max_capacity);
+
 namespace {
 td::Bits256 from_hex(td::Slice s) {
   td::Bits256 x;

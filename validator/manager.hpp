@@ -350,8 +350,11 @@ class ValidatorManagerImpl : public ValidatorManager {
   td::actor::Task<> new_external_message_query(td::BufferSlice data) override;
   td::actor::Task<> new_external_message_query_until(td::BufferSlice data,
                                                       td::Timestamp deadline) override;
+  td::actor::Task<ExternalMessageAdmissionResults> new_external_message_batch_query_until(
+      std::vector<td::BufferSlice> batch, td::Timestamp deadline) override;
   td::actor::Task<> new_external_message_query_cont(td::Ref<ExtMessage> message,
                                                     td::actor::StartedTask<> wait_allow_broadcast);
+  td::actor::Task<> new_external_message_batch_query_cont(std::vector<ExtMessagePool::CheckResult> messages);
 
   void new_ihr_message(td::BufferSlice data) override;
   void new_shard_block_description_broadcast(BlockIdExt block_id, CatchainSeqno cc_seqno,

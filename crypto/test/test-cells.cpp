@@ -37,6 +37,7 @@
 #include "td/utils/crypto.h"
 #include "td/utils/misc.h"
 #include "td/utils/tests.h"
+#include "vm/boc.h"
 #include "vm/cells.h"
 #include "vm/cellslice.h"
 
@@ -798,6 +799,87 @@ TEST(NativeStateEngine, compact_batch_v4_balanced_tree) {
   ASSERT_EQ(unpacked.accounts.size(), transfer_count + 1);
   ASSERT_EQ(unpacked.entries.size(), transfer_count);
   ASSERT_EQ(unpacked.entries.front().transfer.dst, unpacked.entries.back().transfer.dst);
+}
+
+TEST(NativeStateEngine, compact_encoding_sizes) {
+  auto make_transfer = [](std::size_t i, bool shared_destination) {
+    block::NativeTransfer transfer;
+    std::string source(32, '\0'), destination(32, '\0');
+    source[0] = 2;
+    destination[0] = 3;
+    for (std::size_t byte = 0; byte < sizeof(i); ++byte) {
+      source[31 - byte] = static_cast<char>(i >> (byte * 8));
+      if (!shared_destination) {
+        destination[31 - byte] = static_cast<char>(i >> (byte * 8));
+      }
+    }
+    transfer.src.as_slice().copy_from(source);
+    transfer.dst.as_slice().copy_from(destination);
+    transfer.amount = 1;
+    transfer.nonce = i;
+    transfer.valid_until = std::numeric_limits<ton::UnixTime>::max();
+    transfer.signature.assign(64, static_cast<char>(i));
+    return transfer;
+  };
+
+  auto external = make_transfer(0, false);
+  vm::CellBuilder external_builder;
+  ASSERT_TRUE(external.store_external(external_builder));
+  auto external_root = external_builder.finalize();
+  vm::NewCellStorageStat external_stat;
+  external_stat.add_cell(external_root);
+  auto external_boc = vm::std_boc_serialize(external_root).move_as_ok();
+  ASSERT_EQ(external_stat.get_stat().cells, 2u);
+  ASSERT_EQ(external_stat.get_stat().bits, 1280u);
+  ASSERT_EQ(external_boc.size(), 176u);
+
+  vm::CellBuilder native_state_builder;
+  ASSERT_TRUE(native_state_builder.store_long_bool(1, 2));
+  ASSERT_TRUE(native_state_builder.store_ulong_rchk_bool(1, 64));
+  ASSERT_TRUE(native_state_builder.store_ulong_rchk_bool(0, 64));
+  ASSERT_TRUE(native_state_builder.store_ulong_rchk_bool(0, 8));
+  auto native_state = native_state_builder.finalize();
+  vm::CellBuilder shard_account_builder;
+  ASSERT_TRUE(shard_account_builder.store_ref_bool(native_state));
+  ASSERT_TRUE(shard_account_builder.store_bits_bool(ton::Bits256{}));
+  ASSERT_TRUE(shard_account_builder.store_ulong_rchk_bool(0, 64));
+  auto shard_account = shard_account_builder.finalize();
+  vm::NewCellStorageStat shard_account_stat;
+  shard_account_stat.add_cell(shard_account);
+  ASSERT_EQ(shard_account_stat.get_stat().cells, 2u);
+  ASSERT_EQ(shard_account_stat.get_stat().bits, 458u);
+  ASSERT_EQ(vm::std_boc_serialize(native_state).move_as_ok().size(), 31u);
+  ASSERT_EQ(vm::std_boc_serialize(shard_account).move_as_ok().size(), 74u);
+
+  // Lock down the compact v4 wire cost at one collator microbatch. With
+  // unique endpoints, the account table contributes materially more than in
+  // the shared-destination load shape even though transfer leaves are fixed.
+  constexpr std::size_t count = 512;
+  for (bool shared_destination : {false, true}) {
+    block::NativeTransferBatch batch;
+    batch.entries.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+      batch.entries.push_back({make_transfer(i, shared_destination), 0, 0});
+    }
+    vm::CellBuilder builder;
+    ASSERT_TRUE(batch.store(builder));
+    auto root = builder.finalize();
+    vm::NewCellStorageStat stat;
+    stat.add_cell(root);
+    auto boc = vm::std_boc_serialize(root).move_as_ok();
+    auto accounts = block::NativeTransferBatch::unpack(root).move_as_ok().accounts.size();
+    if (shared_destination) {
+      ASSERT_EQ(accounts, 513u);
+      ASSERT_EQ(stat.get_stat().cells, 1365u);
+      ASSERT_EQ(stat.get_stat().bits, 607842u);
+      ASSERT_EQ(boc.size(), 81456u);
+    } else {
+      ASSERT_EQ(accounts, 1024u);
+      ASSERT_EQ(stat.get_stat().cells, 1707u);
+      ASSERT_EQ(stat.get_stat().bits, 756442u);
+      ASSERT_EQ(boc.size(), 101399u);
+    }
+  }
 }
 
 TEST(NativeStateEngine, compact_batch_rejects_unbounded_header_counts) {

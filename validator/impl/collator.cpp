@@ -60,11 +60,10 @@ static constexpr int HIGH_PRIORITY_EXTERNAL = 10;  // don't skip high priority e
 // committed.  Keep that deferred materialization bounded so a high-fanout
 // batch cannot jump from below the soft limit past the hard limit in one step.
 static constexpr std::size_t NATIVE_FAST_PATH_EXTERNAL_BATCH = 512;
-// Backpressure between ExtMessagePool and Collator uses a bounded 500-entry
-// actor queue.  After consuming nonempty native work, briefly let that queue
-// refill before declaring ingress idle.  This is intentionally an ingress
+// After consuming nonempty native work, briefly let the bounded snapshot
+// producer refill before declaring ingress idle. This is an ingress
 // coalescing grace, not a block period or a consensus timing parameter.
-static constexpr double NATIVE_QUEUE_COALESCING_GRACE_SECONDS = 0.002;
+static constexpr double NATIVE_QUEUE_COALESCING_GRACE_SECONDS = 0.010;
 
 static constexpr int MAX_ATTEMPTS = 5;
 
@@ -222,7 +221,14 @@ void Collator::start_up() {
   // 3. install external message queue
   if (!params_.is_hardfork) {
     LOG(DEBUG) << "installing external message queue";
-    ext_msg_queue_ = ExtMsgQueue("ext_msg_queue", 500);
+    const char* native_queue_limit = std::getenv("TON_NATIVE_COLLATOR_QUEUE_LIMIT");
+    const auto queue_capacity = consensus::select_collator_queue_capacity(
+        consensus::max_tps_mode_enabled(),
+        native_queue_limit ? std::string_view{native_queue_limit} : std::string_view{});
+    ext_msg_queue_ = ExtMsgQueue("ext_msg_queue", queue_capacity);
+    if (consensus::max_tps_mode_enabled()) {
+      LOG(DEBUG) << "native Collator BackpressureQueue capacity=" << queue_capacity;
+    }
     auto callback = std::make_unique<ExtMsgCallback>();
     callback->shard = shard_;
     callback->cancellation_token = ext_msg_cancellation_.get_cancellation_token();
@@ -4360,8 +4366,8 @@ td::actor::Task<> Collator::process_external_and_new_messages() {
     timer_total.pause();
     auto wait_until = params_.wait_externals_until;
     if (native_queue_coalescing) {
-      // Allow the bounded snapshot producer to refill the 500-entry
-      // backpressure queue, then seal a nonempty block as soon as ingress is
+      // Allow the bounded snapshot producer to refill the native backpressure
+      // queue, then seal a nonempty block as soon as ingress is
       // momentarily idle.  This coalescing grace is independent of the Simplex
       // target block rate.
       // The initial-work trigger may have expired while state was being
@@ -4660,6 +4666,22 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       };
       return &native_states.emplace(address, std::move(state)).first->second;
     };
+    StdSmcAddress cached_src_address, cached_dst_address;
+    NativeAccountState* cached_src_state = nullptr;
+    NativeAccountState* cached_dst_state = nullptr;
+    auto load_cached_native_state = [&](const StdSmcAddress& address, bool allow_create) -> NativeAccountState* {
+      // The load shape commonly reuses one destination. Map nodes are stable
+      // across insertion, so retaining the two most recent pointers avoids
+      // that repeated O(log unique_accounts) lookup and also benefits any
+      // consecutive endpoint run without requiring one for correctness.
+      if (cached_src_state && address == cached_src_address) {
+        return cached_src_state;
+      }
+      if (cached_dst_state && address == cached_dst_address) {
+        return cached_dst_state;
+      }
+      return load_native_state(address, allow_create);
+    };
 
     std::size_t accepted_in_batch = 0;
     std::size_t delayed_in_batch = 0;
@@ -4690,8 +4712,16 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           break;
         }
 
-        auto* src = load_native_state(item.transfer.src, false);
-        auto* dst = load_native_state(item.transfer.dst, true);
+        auto* src = load_cached_native_state(item.transfer.src, false);
+        if (src) {
+          cached_src_address = item.transfer.src;
+          cached_src_state = src;
+        }
+        auto* dst = load_cached_native_state(item.transfer.dst, true);
+        if (dst) {
+          cached_dst_address = item.transfer.dst;
+          cached_dst_state = dst;
+        }
         if (fatal) {
           bad_ext_msgs_.emplace_back(item.ext_msg->hash());
           co_return false;

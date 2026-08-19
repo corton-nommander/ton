@@ -180,6 +180,13 @@ td::Result<ExtMessagePool::CheckResult> ExtMessagePool::finalize_checked_message
     rollback_checked_message(message, result.msg_seqno, native_transfer);
     return std::move(commit_status);
   }
+  if (add_to_mempool && native_transfer != nullptr) {
+    // Native reservations become executable only after commit_message().  A
+    // wake during insertion observes committed=false and can strand the first
+    // (or final) head until unrelated ingress arrives.
+    std::set<NativeAddress> committed_source{{wc, addr}};
+    wake_native_callbacks(&committed_source);
+  }
   return std::move(result);
 }
 
@@ -346,6 +353,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     td::uint64 revision{0};
   };
   std::map<NativeAddress, SourceSnapshot> source_snapshots;
+  std::set<NativeAddress> changed_native_sources;
   Bits256 chain_domain;
   if (!source_items.empty()) {
     auto mc_result = co_await td::actor::await_with_timeout(
@@ -450,6 +458,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
               continue;
             }
             auto &watermark = native_nonce_watermarks_[address];
+            auto previous_revision = watermark.revision;
             if (!watermark.observe_account_state(account.native_nonce, available_balance.value(), state_info.gen_lt)) {
               for (auto index : source_items[address]) {
                 reject(index, td::Status::Error(
@@ -457,6 +466,9 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
                                   "canonical native account state has not caught up with finalized balance"));
               }
               continue;
+            }
+            if (watermark.revision != previous_revision) {
+              changed_native_sources.insert(address);
             }
             auto first_nonce = watermark.first_unconsumed_nonce();
             if (!first_nonce) {
@@ -474,6 +486,9 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
         }
       }
     }
+  }
+  if (!changed_native_sources.empty()) {
+    wake_native_callbacks(&changed_native_sources);
   }
 
   std::vector<std::size_t> verify_indices;
@@ -600,187 +615,383 @@ void ExtMessagePool::log_native_batch_stats() {
   native_batch_log_at_ = td::Timestamp::in(1.0);
 }
 
+ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
+    ShardIdFull shard, const std::vector<ExtMessage::Hash> &excluded_messages,
+    const std::set<ExtMessage::Hash> &already_delivered, std::size_t limit,
+    td::optional<NativeAddress> cursor, const std::set<NativeAddress> *source_filter) {
+  NativeQueueSelection selection;
+  selection.cursor = cursor;
+  if (shard.workchain == masterchainId || limit == 0) {
+    return selection;
+  }
+
+  struct SourceState {
+    NativeAddress source;
+    const NativeInfo *info{nullptr};
+    td::uint64 next_nonce{0};
+    td::optional<NativeQueueItem> next;
+    bool blocked{false};
+    bool ready_counted{false};
+  };
+  std::vector<SourceState> sources;
+  sources.reserve(source_filter ? source_filter->size() : native_accounts_.size());
+  auto add_source = [&](const NativeAddress &source, const NativeInfo &info) {
+    if (!shard_contains(shard, extract_addr_prefix(source.first, source.second))) {
+      return;
+    }
+    auto watermark_it = native_nonce_watermarks_.find(source);
+    if (watermark_it == native_nonce_watermarks_.end()) {
+      if (!info.messages.empty()) {
+        ++selection.counters.head_gaps;
+      }
+      return;
+    }
+    auto first_nonce = watermark_it->second.first_unconsumed_nonce();
+    if (!first_nonce) {
+      return;
+    }
+    sources.push_back(SourceState{.source = source,
+                                  .info = &info,
+                                  .next_nonce = first_nonce.value(),
+                                  .next = {},
+                                  .blocked = false,
+                                  .ready_counted = false});
+  };
+  if (source_filter) {
+    for (const auto &source : *source_filter) {
+      auto info = native_accounts_.find(source);
+      if (info != native_accounts_.end()) {
+        add_source(info->first, info->second);
+      }
+    }
+  } else {
+    for (const auto &[source, info] : native_accounts_) {
+      add_source(source, info);
+    }
+  }
+
+  // Address order is stable, but each queue install begins immediately after
+  // the source used last time. A bounded candidate therefore cannot starve the
+  // tail of a large source set merely because its address sorts late.
+  auto after_cursor = [&](const NativeAddress &source) {
+    return !cursor || source > cursor.value();
+  };
+  std::sort(sources.begin(), sources.end(), [&](const SourceState &lhs, const SourceState &rhs) {
+    bool lhs_after = after_cursor(lhs.source);
+    bool rhs_after = after_cursor(rhs.source);
+    if (lhs_after != rhs_after) {
+      return lhs_after;
+    }
+    return lhs.source < rhs.source;
+  });
+
+  auto advance_nonce = [](SourceState &source) {
+    if (source.next_nonce == std::numeric_limits<td::uint64>::max()) {
+      source.blocked = true;
+      return false;
+    }
+    ++source.next_nonce;
+    return true;
+  };
+  auto probe = [&](SourceState &source) {
+    source.next = {};
+    while (!source.blocked) {
+      auto reservation_it = source.info->messages.lower_bound(source.next_nonce);
+      if (reservation_it == source.info->messages.end()) {
+        source.blocked = true;
+        return;
+      }
+      if (reservation_it->first != source.next_nonce || !reservation_it->second.committed) {
+        ++selection.counters.head_gaps;
+        source.blocked = true;
+        return;
+      }
+      ++selection.counters.scanned;
+      const auto &hash = reservation_it->second.hash;
+      auto pool_it = ext_messages_hashes_.find(hash);
+      if (pool_it == ext_messages_hashes_.end()) {
+        ++selection.counters.head_gaps;
+        source.blocked = true;
+        return;
+      }
+      auto priority_it = ext_msgs_.find(pool_it->second.first);
+      if (priority_it == ext_msgs_.end()) {
+        ++selection.counters.head_gaps;
+        source.blocked = true;
+        return;
+      }
+      auto message = priority_it->second.ext_messages_.find(pool_it->second.second);
+      if (!message || !message.value()->native_nonce ||
+          message.value()->native_nonce.value() != source.next_nonce) {
+        ++selection.counters.head_gaps;
+        source.blocked = true;
+        return;
+      }
+
+      // Exclusions describe transfers already applied by the speculative
+      // parent. They advance only this callback's view; the canonical watermark
+      // and pool entry remain untouched so a losing fork can offer them again.
+      if (std::binary_search(excluded_messages.begin(), excluded_messages.end(), hash)) {
+        ++selection.counters.excluded;
+        if (!advance_nonce(source)) {
+          return;
+        }
+        continue;
+      }
+      if (already_delivered.contains(hash)) {
+        ++selection.counters.already_delivered;
+        if (!advance_nonce(source)) {
+          return;
+        }
+        continue;
+      }
+      auto &mempool_message = *message.value();
+      if (mempool_message.expired()) {
+        ++selection.counters.expired;
+        source.blocked = true;
+        return;
+      }
+      bool was_active = mempool_message.active;
+      if (!mempool_message.is_active()) {
+        ++selection.counters.inactive;
+        selection.earliest_reactivation.relax(mempool_message.reactivate_at);
+        source.blocked = true;
+        return;
+      }
+      if (!was_active) {
+        ++selection.counters.reactivated;
+      }
+      ++selection.counters.active;
+      if (!source.ready_counted) {
+        source.ready_counted = true;
+        ++selection.counters.ready_sources;
+      }
+      source.next = NativeQueueItem{.message = mempool_message.message,
+                                    .priority = pool_it->second.first,
+                                    .source = source.source,
+                                    .nonce = source.next_nonce};
+      return;
+    }
+  };
+
+  std::map<int, std::deque<std::size_t>> ready_by_priority;
+  for (std::size_t i = 0; i < sources.size(); ++i) {
+    probe(sources[i]);
+    if (sources[i].next) {
+      ready_by_priority[sources[i].next.value().priority].push_back(i);
+    }
+  }
+  while (selection.items.size() < limit && !ready_by_priority.empty()) {
+    int priority = ready_by_priority.rbegin()->first;
+    auto &ready = ready_by_priority[priority];
+    auto source_index = ready.front();
+    ready.pop_front();
+    if (ready.empty()) {
+      ready_by_priority.erase(priority);
+    }
+    auto &source = sources[source_index];
+    std::size_t run_size = 0;
+    while (selection.items.size() < limit && run_size < NATIVE_SOURCE_RUN_TARGET && source.next &&
+           source.next.value().priority == priority) {
+      selection.items.push_back(std::move(source.next.value()));
+      source.next = {};
+      ++selection.counters.selected;
+      ++run_size;
+      selection.cursor = source.source;
+      if (!advance_nonce(source)) {
+        break;
+      }
+      probe(source);
+    }
+    if (run_size != 0) {
+      ++selection.counters.runs;
+      selection.counters.run_messages += run_size;
+      selection.counters.max_run_size = std::max<td::uint64>(selection.counters.max_run_size, run_size);
+    }
+    if (source.next) {
+      ready_by_priority[source.next.value().priority].push_back(source_index);
+    }
+  }
+  return selection;
+}
+
+void ExtMessagePool::enqueue_callback_item(const std::shared_ptr<InstalledCallback> &callback,
+                                           std::pair<td::Ref<ExtMessage>, int> item) {
+  callback->pending.push_back(std::move(item));
+  if (!callback->pump_active) {
+    callback->pump_active = true;
+    pump_callback(callback).start().detach();
+  }
+}
+
+td::actor::Task<> ExtMessagePool::pump_callback(std::shared_ptr<InstalledCallback> callback) {
+  while (!callback->pending.empty() && callback->callback->cancellation_token.check().is_ok()) {
+    auto item = std::move(callback->pending.front());
+    callback->pending.pop_front();
+    if (!co_await callback->callback->queue.push(std::move(item))) {
+      break;
+    }
+  }
+  if (callback->callback->cancellation_token.check().is_error()) {
+    callback->pending.clear();
+    callback->callback->queue.close();
+  }
+  callback->pump_active = false;
+  if (callback->callback->sync_only) {
+    callback->callback->queue.close();
+  }
+  co_return {};
+}
+
+std::size_t ExtMessagePool::fill_callback_native(const std::shared_ptr<InstalledCallback> &callback,
+                                                 bool count_install,
+                                                 const std::set<NativeAddress> *source_filter) {
+  NativeQueueCounters counters;
+  if (count_install) {
+    counters.installs = 1;
+  }
+  if (callback->callback->shard.workchain == masterchainId) {
+    counters.masterchain_installs = count_install ? 1 : 0;
+    native_queue_counters_.add(counters);
+    return 0;
+  }
+  auto delivery_limit = std::min(native_collator_queue_limit_, callback->callback->queue_capacity);
+  if (callback->delivered_native.size() >= delivery_limit) {
+    native_queue_counters_.add(counters);
+    return 0;
+  }
+  auto remaining = delivery_limit - callback->delivered_native.size();
+  auto selection = select_native_messages(callback->callback->shard, callback->callback->excluded_messages,
+                                          callback->delivered_native, remaining, callback->native_cursor,
+                                          source_filter);
+  selection.counters.add(counters);
+  callback->native_cursor = selection.cursor;
+  if (selection.earliest_reactivation) {
+    alarm_timestamp().relax(selection.earliest_reactivation);
+  }
+  auto selected = selection.items.size();
+  for (auto &item : selection.items) {
+    callback->delivered_native.insert(item.message->hash());
+    enqueue_callback_item(callback, {std::move(item.message), item.priority});
+  }
+  native_queue_counters_.add(selection.counters);
+  return selected;
+}
+
+std::size_t ExtMessagePool::wake_native_callbacks(const std::set<NativeAddress> *source_filter) {
+  std::size_t woken = 0;
+  std::erase_if(callbacks_, [&](const std::shared_ptr<InstalledCallback> &callback) {
+    if (callback->callback->cancellation_token.check().is_error() ||
+        (callback->callback->timeout && callback->callback->timeout.is_in_past())) {
+      callback->pending.clear();
+      callback->callback->queue.close();
+      return true;
+    }
+    if (fill_callback_native(callback, false, source_filter) != 0) {
+      ++woken;
+    }
+    return false;
+  });
+  return woken;
+}
+
+std::size_t ExtMessagePool::reactivate_due_native_messages(td::Timestamp now) {
+  std::size_t reactivated = 0;
+  std::set<NativeAddress> reactivated_sources;
+  while (!native_reactivations_.empty() && native_reactivations_.begin()->first.is_in_past(now)) {
+    auto scheduled = native_reactivations_.begin()->second;
+    native_reactivations_.erase(native_reactivations_.begin());
+    auto priority_it = ext_msgs_.find(scheduled.first);
+    if (priority_it == ext_msgs_.end()) {
+      continue;
+    }
+    auto message = priority_it->second.ext_messages_.find(scheduled.second);
+    if (!message || !message.value()->native_nonce || message.value()->expired() || message.value()->active) {
+      continue;
+    }
+    if (!message.value()->reactivate_at.is_in_past(now)) {
+      native_reactivations_.emplace(message.value()->reactivate_at, scheduled);
+      continue;
+    }
+    if (message.value()->is_active()) {
+      ++reactivated;
+      reactivated_sources.insert(message.value()->address());
+    }
+  }
+  if (reactivated != 0) {
+    native_queue_counters_.reactivated += reactivated;
+    native_queue_counters_.reactivation_wakes += wake_native_callbacks(&reactivated_sources);
+  }
+  return reactivated;
+}
+
 void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<ExtMsgCallback> callback) {
   std::sort(callback->excluded_messages.begin(), callback->excluded_messages.end());
   callback->excluded_messages.erase(
       std::unique(callback->excluded_messages.begin(), callback->excluded_messages.end()),
       callback->excluded_messages.end());
-  auto excluded_snapshot = callback->excluded_messages;
+  auto installed = std::make_shared<InstalledCallback>(std::move(callback));
 
-  // Compute shard key range [lo, hi) for splitting
+  // Native scheduling is deliberately skipped for masterchain installs. Native
+  // transfers are basechain-only, and copying/scanning their large treaps while
+  // producing a masterchain anchor created avoidable multi-second stalls.
+  installed->native_cursor = native_scheduler_cursor_;
+  fill_callback_native(installed, true);
+  if (installed->callback->shard.workchain != masterchainId) {
+    native_scheduler_cursor_ = installed->native_cursor;
+  }
+
+  // Generic externals retain their stable priority/address order. Masterchain
+  // installs are bounded to the normal queue capacity even in max-TPS mode.
+  // This pool-side bound prevents a large basechain native backlog from
+  // influencing anchor production without changing generic admission rules.
+  shard = installed->callback->shard;
   td::uint64 lo_prefix = shard.shard & (shard.shard - 1);
   td::uint64 hi_prefix_plus1 = (shard.shard | (shard.shard - 1)) + 1;  // may overflow to 0
   MessageId shard_lo{AccountIdPrefixFull{shard.workchain, lo_prefix}, Bits256::zero()};
   MessageId shard_hi{AccountIdPrefixFull{hi_prefix_plus1 == 0 ? shard.workchain + 1 : shard.workchain, hi_prefix_plus1},
                      Bits256::zero()};
-
-  // Take O(log n) generic shard slices and O(1) native snapshots from each
-  // priority level.  Native messages have their own nonce-first index so a
-  // large backlog does not have to be rebuilt and sorted for every candidate.
-  using Treap = td::PersistentTreap<MessageId, std::shared_ptr<MempoolMsg>>;
-  using Snapshot = std::vector<std::pair<int, Treap>>;
-  using NativeTreap = td::PersistentTreap<NativeMessageId, std::shared_ptr<MempoolMsg>>;
-  using NativeSnapshot = std::vector<std::pair<int, NativeTreap>>;
-  Snapshot generic_snapshot;
-  NativeSnapshot native_snapshot;
+  auto generic_limit = shard.workchain == masterchainId ? STANDARD_COLLATOR_QUEUE_LIMIT
+                                                        : std::numeric_limits<std::size_t>::max();
+  if (installed->callback->sync_only) {
+    auto remaining_capacity = installed->callback->queue_capacity > installed->delivered_native.size()
+                                  ? installed->callback->queue_capacity - installed->delivered_native.size()
+                                  : 0;
+    generic_limit = std::min(generic_limit, remaining_capacity);
+  }
   for (auto it = ext_msgs_.rbegin(); it != ext_msgs_.rend(); ++it) {
     auto [_, in_shard, __] = it->second.generic_messages_.split_range(shard_lo, shard_hi);
-    if (!in_shard.empty()) {
-      generic_snapshot.emplace_back(it->first, std::move(in_shard));
+    auto iterator = in_shard.in_order();
+    while (installed->generic_selected < generic_limit) {
+      auto item = iterator.next();
+      if (!item) {
+        break;
+      }
+      auto [key, msg] = std::move(item.value());
+      if (msg->expired() || !msg->is_active() ||
+          std::binary_search(installed->callback->excluded_messages.begin(),
+                             installed->callback->excluded_messages.end(), msg->message->hash())) {
+        continue;
+      }
+      ++installed->generic_selected;
+      enqueue_callback_item(installed, {msg->message, it->first});
     }
-    if (!it->second.native_messages_.empty()) {
-      native_snapshot.emplace_back(it->first, it->second.native_messages_);
+    if (installed->generic_selected >= generic_limit) {
+      break;
     }
   }
 
-  // Spawn a coroutine that drains native messages by source nonce and leaves other messages in stable key order.
-  auto push_existing = [](ExtMsgQueue queue, td::CancellationToken token, ShardIdFull shard,
-                          Snapshot generic_snapshot, NativeSnapshot native_snapshot,
-                          bool sync_only, std::size_t native_queue_limit,
-                          std::vector<ExtMessage::Hash> excluded_messages) -> td::actor::Task<> {
-    struct QueueItem {
-      int priority;
-      MessageId key;
-      std::shared_ptr<MempoolMsg> msg;
-    };
-    auto comes_before = [](const QueueItem &a, const QueueItem &b) {
-      if (a.priority != b.priority) {
-        return a.priority > b.priority;
-      }
-      bool a_native = static_cast<bool>(a.msg->native_nonce);
-      bool b_native = static_cast<bool>(b.msg->native_nonce);
-      if (a_native != b_native) {
-        return a_native;
-      }
-      if (a_native && b_native) {
-        if (a.msg->native_nonce.value() != b.msg->native_nonce.value()) {
-          return a.msg->native_nonce.value() < b.msg->native_nonce.value();
-        }
-        auto a_address = a.msg->address();
-        auto b_address = b.msg->address();
-        if (a_address < b_address) {
-          return true;
-        }
-        if (b_address < a_address) {
-          return false;
-        }
-      }
-      return a.key < b.key;
-    };
-    SCOPE_EXIT {
-      if (sync_only) {
-        queue.close();
-      }
-    };
-    td::Timer t;
-    size_t native_selected = 0;
-    size_t pushed = 0;
-    if (generic_snapshot.empty()) {
-      // NativeTreap already has the required nonce/address/hash order and the
-      // priority snapshots were captured descending. Stream directly into the
-      // bounded queue so an idle work-trigger sees its first item immediately;
-      // materializing the full 262k snapshot before the first push could itself
-      // exceed the trigger deadline.
-      for (auto &[priority, treap] : native_snapshot) {
-        auto iterator = treap.in_order();
-        while (native_selected < native_queue_limit) {
-          if (token.check().is_error()) {
-            co_return {};
-          }
-          auto item = iterator.next();
-          if (!item) {
-            break;
-          }
-          auto [native_key, msg] = std::move(item.value());
-          if (!shard_contains(shard, msg->message->shard()) || msg->expired() || !msg->is_active() ||
-              std::binary_search(excluded_messages.begin(), excluded_messages.end(), msg->message->hash())) {
-            continue;
-          }
-          ++native_selected;
-          if (!co_await queue.push(std::make_pair(msg->message, priority))) {
-            co_return {};
-          }
-          ++pushed;
-        }
-        if (native_selected >= native_queue_limit) {
-          break;
-        }
-      }
-      VLOG(VALIDATOR_DEBUG) << "install_collator_queue: selected_native=" << native_selected << " pushed=" << pushed
-                            << " excluded=" << excluded_messages.size() << " limit=" << native_queue_limit
-                            << " existing native messages to shard " << shard << " in " << t.elapsed() << "s";
-      co_return {};
-    }
-
-    std::vector<QueueItem> items;
-    items.reserve(native_queue_limit);
-    for (auto &[priority, treap] : native_snapshot) {
-      auto iterator = treap.in_order();
-      while (native_selected < native_queue_limit) {
-        if (token.check().is_error()) {
-          co_return {};
-        }
-        auto item = iterator.next();
-        if (!item) {
-          break;
-        }
-        auto [native_key, msg] = std::move(item.value());
-        if (!shard_contains(shard, msg->message->shard()) || msg->expired() || !msg->is_active()) {
-          continue;
-        }
-        if (std::binary_search(excluded_messages.begin(), excluded_messages.end(), msg->message->hash())) {
-          continue;
-        }
-        items.push_back(QueueItem{.priority = priority,
-                                  .key = MessageId{native_key.dst, native_key.hash},
-                                  .msg = std::move(msg)});
-        ++native_selected;
-      }
-      if (native_selected >= native_queue_limit) {
-        break;
-      }
-    }
-    for (auto &[priority, treap] : generic_snapshot) {
-      auto iterator = treap.in_order();
-      while (auto item = iterator.next()) {
-        if (token.check().is_error()) {
-          co_return {};
-        }
-        auto [key, msg] = std::move(item.value());
-        if (msg->expired() || !msg->is_active()) {
-          continue;
-        }
-        if (std::binary_search(excluded_messages.begin(), excluded_messages.end(), msg->message->hash())) {
-          continue;
-        }
-        items.push_back(QueueItem{.priority = priority, .key = key, .msg = std::move(msg)});
-      }
-    }
-    std::sort(items.begin(), items.end(), comes_before);
-    for (auto &item : items) {
-      if (token.check().is_error()) {
-        co_return {};
-      }
-      bool ok = co_await queue.push(std::make_pair(item.msg->message, item.priority));
-      if (!ok) {
-        co_return {};
-      }
-      ++pushed;
-    }
-    VLOG(VALIDATOR_DEBUG) << "install_collator_queue: selected_native=" << native_selected << " pushed=" << pushed
-                          << " excluded=" << excluded_messages.size() << " limit=" << native_queue_limit
-                          << " existing messages to shard " << shard << " in " << t.elapsed() << "s";
-    co_return {};
-  };
-  push_existing(callback->queue, callback->cancellation_token, shard, std::move(generic_snapshot),
-                std::move(native_snapshot), callback->sync_only, native_collator_queue_limit_,
-                std::move(excluded_snapshot))
-      .start()
-      .detach();
-
-  if (!callback->sync_only) {
-    alarm_timestamp().relax(callback->timeout);
-    callbacks_.push_back(std::move(callback));
+  VLOG(VALIDATOR_DEBUG) << "install_collator_queue: selected_native=" << installed->delivered_native.size()
+                        << " selected_generic=" << installed->generic_selected
+                        << " excluded=" << installed->callback->excluded_messages.size()
+                        << " native_limit=" << native_collator_queue_limit_ << " shard=" << shard;
+  if (!installed->pump_active) {
+    installed->pump_active = true;
+    pump_callback(installed).start().detach();
+  }
+  if (!installed->callback->sync_only) {
+    alarm_timestamp().relax(installed->callback->timeout);
+    callbacks_.push_back(std::move(installed));
   }
 }
 
@@ -820,7 +1031,11 @@ void ExtMessagePool::complete_external_messages(std::vector<ExtMessage::Hash> to
         // A native message may be delayed simply because the current candidate is
         // full, timed out, or lost consensus.  Never evict it for retry count or
         // soft-pool pressure: deleting one nonce permanently blocks later nonces.
-        msg_opt.value()->postpone_native();
+        if (msg_opt.value()->postpone_native()) {
+          ++native_queue_counters_.delayed;
+          native_reactivations_.emplace(msg_opt.value()->reactivate_at, std::make_pair(priority, msg_id));
+          alarm_timestamp().relax(msg_opt.value()->reactivate_at);
+        }
       } else if (msg_opt && msgs.ext_messages_.size() < SOFT_MEMPOOL_LIMIT && msg_opt.value()->can_postpone()) {
         msg_opt.value()->postpone();
       } else {
@@ -900,6 +1115,13 @@ void ExtMessagePool::finalize_native_external_messages(
   }
   LOG(INFO) << "finalized native external cleanup: candidates=" << messages.size()
             << " sources=" << finalized_nonce.size() << " pool_entries=" << to_erase.size();
+  if (!finalized_nonce.empty()) {
+    std::set<NativeAddress> finalized_sources;
+    for (const auto &[address, _] : finalized_nonce) {
+      finalized_sources.insert(address);
+    }
+    wake_native_callbacks(&finalized_sources);
+  }
 }
 
 void ExtMessagePool::erase_external_messages(std::vector<ExtMessage::Hash> to_delete) {
@@ -1004,21 +1226,42 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                              << " shard_fetches:" << native_batch_shard_fetches_
                              << " account_lookups:" << native_batch_account_lookups_
                              << " accepted:" << native_batch_accepted_ << " rejected:" << native_batch_rejected_);
+  vec.emplace_back(
+      "total.ext_msg_native_scheduler",
+      PSTRING() << "installs:" << native_queue_counters_.installs
+                << " masterchain_installs:" << native_queue_counters_.masterchain_installs
+                << " scanned:" << native_queue_counters_.scanned << " selected:" << native_queue_counters_.selected
+                << " active:" << native_queue_counters_.active << " inactive:" << native_queue_counters_.inactive
+                << " excluded:" << native_queue_counters_.excluded << " expired:" << native_queue_counters_.expired
+                << " delivered_skips:" << native_queue_counters_.already_delivered
+                << " ready_sources:" << native_queue_counters_.ready_sources
+                << " head_gaps:" << native_queue_counters_.head_gaps << " runs:" << native_queue_counters_.runs
+                << " run_messages:" << native_queue_counters_.run_messages
+                << " max_run_size:" << native_queue_counters_.max_run_size
+                << " delayed:" << native_queue_counters_.delayed
+                << " reactivated:" << native_queue_counters_.reactivated
+                << " reactivation_wakes:" << native_queue_counters_.reactivation_wakes);
   return vec;
 }
 
 void ExtMessagePool::alarm() {
+  reactivate_due_native_messages(td::Timestamp::now());
   if (cleanup_mempool_at_.is_in_past()) {
     cleanup_external_messages(ShardIdFull{masterchainId, shardIdAll});
     cleanup_external_messages(ShardIdFull{basechainId, shardIdAll});
     cleanup_mempool_at_ = td::Timestamp::in(250.0);
   }
   alarm_timestamp().relax(cleanup_mempool_at_);
-  std::erase_if(callbacks_, [&](const std::unique_ptr<ExtMsgCallback> &callback) -> bool {
-    if (callback->timeout && callback->timeout.is_in_past()) {
+  if (!native_reactivations_.empty()) {
+    alarm_timestamp().relax(native_reactivations_.begin()->first);
+  }
+  std::erase_if(callbacks_, [&](const std::shared_ptr<InstalledCallback> &callback) -> bool {
+    if (callback->callback->timeout && callback->callback->timeout.is_in_past()) {
+      callback->pending.clear();
+      callback->callback->queue.close();
       return true;
     }
-    alarm_timestamp().relax(callback->timeout);
+    alarm_timestamp().relax(callback->callback->timeout);
     return false;
   });
 }
@@ -1118,17 +1361,22 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
   ext_messages_hashes_norm_[hash_norm].insert(NormalizedMessageId{priority, id});
   VLOG(VALIDATOR_DEBUG) << "adding message addr=" << wc << ":" << addr.to_hex() << " prio=" << priority
                         << " to mempool";
-  std::erase_if(callbacks_, [&](const std::unique_ptr<ExtMsgCallback> &callback) -> bool {
-    if (callback->cancellation_token.check().is_error()) {
-      return true;
-    }
-    if (shard_contains(callback->shard, message->shard()) &&
-        !std::binary_search(callback->excluded_messages.begin(), callback->excluded_messages.end(),
-                            message->hash())) {
-      callback->queue.try_push(std::make_pair(message, priority)).detach();
-    }
-    return false;
-  });
+  if (!msg->native_nonce) {
+    std::erase_if(callbacks_, [&](const std::shared_ptr<InstalledCallback> &callback) -> bool {
+      if (callback->callback->cancellation_token.check().is_error()) {
+        return true;
+      }
+      if (shard_contains(callback->callback->shard, message->shard()) &&
+          !std::binary_search(callback->callback->excluded_messages.begin(),
+                              callback->callback->excluded_messages.end(), message->hash()) &&
+          (callback->callback->shard.workchain != masterchainId ||
+           callback->generic_selected < STANDARD_COLLATOR_QUEUE_LIMIT)) {
+        ++callback->generic_selected;
+        enqueue_callback_item(callback, std::make_pair(message, priority));
+      }
+      return false;
+    });
+  }
   return td::Status::OK();
 }
 
@@ -1273,12 +1521,17 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     td::uint64 account_revision = 0;
     {
       auto &initial_watermark = native_nonce_watermarks_[native_address];
+      auto previous_revision = initial_watermark.revision;
       if (!initial_watermark.observe_account_state(acc.native_nonce, available_balance.value(), lt)) {
         co_return td::Status::Error(ErrorCode::notready,
                                     "canonical native account state has not caught up with finalized balance");
       }
       initial_native_nonce = initial_watermark.first_unconsumed_nonce();
       account_revision = initial_watermark.revision;
+      if (account_revision != previous_revision) {
+        std::set<NativeAddress> changed_source{native_address};
+        wake_native_callbacks(&changed_source);
+      }
     }
     if (!initial_native_nonce) {
       co_return td::Status::Error("native account nonce space is exhausted");

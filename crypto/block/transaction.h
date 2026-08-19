@@ -389,6 +389,12 @@ struct Account {
   // state transitions intentionally do not synthesize Transaction cells and do
   // not modify the legacy last_trans_lt/hash fields.
   bool set_native_state(td::uint64 new_balance, td::uint64 new_nonce, td::uint8 new_flags);
+  // Installs a compact Account cell which has already passed the generated and
+  // hand-written TL-B validators.  The encoded fields are still unpacked and
+  // matched against the supplied state before any Account member is changed,
+  // so callers cannot accidentally install a cell/state mismatch.
+  bool set_prevalidated_native_state(Ref<vm::Cell> new_total_state, td::uint64 new_balance,
+                                     td::uint64 new_nonce, td::uint8 new_flags);
   td::Result<Ref<vm::Cell>> compute_account_storage_dict() const;
   td::Status init_account_storage_stat(Ref<vm::Cell> dict_root);
   bool deactivate();
@@ -415,6 +421,8 @@ struct Account {
   bool init_rewrite_addr(int rewrite_length, td::ConstBitPtr orig_addr_rewrite);
 
  private:
+  bool install_native_state(Ref<vm::Cell> new_total_state, td::uint64 new_balance, td::uint64 new_nonce,
+                            td::uint8 new_flags);
   bool unpack_address(vm::CellSlice& addr_cs);
   bool unpack_storage_info(vm::CellSlice& cs);
   bool unpack_state(vm::CellSlice& cs);

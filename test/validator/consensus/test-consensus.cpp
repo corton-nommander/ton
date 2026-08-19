@@ -20,6 +20,7 @@
 #include "block-auto.h"
 
 #include <atomic>
+#include <mutex>
 
 using namespace ton;
 using namespace ton::validator;
@@ -38,6 +39,10 @@ static_assert(parse_native_collator_queue_capacity("999999999999999999999999") =
 static_assert(select_collator_queue_capacity(false, "262144") == standard_collator_queue_capacity);
 static_assert(select_collator_queue_capacity(true, "") == native_collator_queue_default_capacity);
 static_assert(select_collator_queue_capacity(true, "262144") == native_collator_queue_max_capacity);
+static_assert(!select_work_driven_max_tps_mode(false, false));
+static_assert(select_work_driven_max_tps_mode(true, false));
+static_assert(!select_work_driven_max_tps_mode(false, true));
+static_assert(!select_work_driven_max_tps_mode(true, true));
 
 namespace {
 td::Bits256 from_hex(td::Slice s) {
@@ -124,8 +129,12 @@ std::pair<double, double> DB_DELAY = {0.0, 0.0};
 std::pair<double, double> COLLATION_TIME = {0.0, 0.0};
 std::pair<double, double> VALIDATION_TIME = {0.0, 0.0};
 bool IDLE_AFTER_FIRST = false;
+bool EXPECT_PACED = false;
+bool EXPECT_WORK_DRIVEN = false;
 std::atomic<size_t> IDLE_COLLATION_ATTEMPTS{0};
 std::atomic<size_t> GENERATED_CANDIDATES{0};
+std::mutex GENERATED_AT_MUTEX;
+std::vector<double> GENERATED_AT;
 
 class TestSimplexBus : public simplex::Bus {
  public:
@@ -234,8 +243,10 @@ class TestOverlayNode : public td::actor::SpawnsWith<Bus>, public td::actor::Con
 
   template <>
   void handle(BusHandle bus, std::shared_ptr<const CandidateGenerated> event) {
-    if (IDLE_AFTER_FIRST) {
-      ++GENERATED_CANDIDATES;
+    ++GENERATED_CANDIDATES;
+    if (EXPECT_PACED || EXPECT_WORK_DRIVEN) {
+      std::scoped_lock lock(GENERATED_AT_MUTEX);
+      GENERATED_AT.push_back(td::Clocks::monotonic());
     }
     for (size_t i = 0; i < bus->validator_set.size(); ++i) {
       if (bus->local_id.idx.value() != i) {
@@ -376,7 +387,7 @@ class TestManagerFacade : public ManagerFacade {
       CHECK(params.prev_block_data.size() == 1 && params.prev_block_data[0]->block_id() == params.prev[0]);
     }
     if (IDLE_AFTER_FIRST && prev_seqno != 0) {
-      CHECK(max_tps_mode_enabled());
+      CHECK(work_driven_max_tps_mode_enabled(params.shard));
       CHECK(params.wait_externals_until);
       CHECK(params.ext_msg_callback_until >= params.wait_externals_until);
       CHECK(params.wait_externals_until.in() > 0.5);
@@ -876,6 +887,30 @@ class TestConsensus : public td::actor::Actor {
       CHECK(IDLE_COLLATION_ATTEMPTS.load() >= 2);
       CHECK(IDLE_COLLATION_ATTEMPTS.load() <= 4);
     }
+    if (EXPECT_PACED || EXPECT_WORK_DRIVEN) {
+      std::vector<double> generated_at;
+      {
+        std::scoped_lock lock(GENERATED_AT_MUTEX);
+        generated_at = GENERATED_AT;
+      }
+      CHECK(generated_at.size() >= 2);
+      auto target_rate_s = static_cast<double>(TARGET_RATE_MS) / 1000.0;
+      double min_gap = target_rate_s;
+      for (size_t i = 1; i < generated_at.size(); ++i) {
+        min_gap = std::min(min_gap, generated_at[i] - generated_at[i - 1]);
+      }
+      if (EXPECT_PACED) {
+        // Millisecond candidate timestamps and scheduler wake-up jitter can
+        // shave a small amount off an observed interval.  A 20% tolerance is
+        // still far away from the unpaced work-driven loop.
+        CHECK(min_gap >= target_rate_s * 0.8);
+        CHECK(last_accepted_block_.seqno() > FIRST_PARENT.seqno());
+        CHECK(generated_at.size() <= static_cast<size_t>(DURATION / target_rate_s) + 2);
+      } else {
+        CHECK(min_gap < target_rate_s * 0.5);
+        CHECK(generated_at.size() > static_cast<size_t>(DURATION / target_rate_s) + 1);
+      }
+    }
     co_return td::Unit{};
   }
 
@@ -1082,12 +1117,29 @@ int main(int argc, char *argv[]) {
                "after the bootstrap candidate, model a work-driven native queue that stays idle", [&]() {
                  IDLE_AFTER_FIRST = true;
                });
+  p.add_option('\0', "expect-paced",
+               "assert target-rate pacing and masterchain liveness under process-wide max-TPS mode",
+               [&]() { EXPECT_PACED = true; });
+  p.add_option('\0', "expect-work-driven",
+               "assert shardchain candidates are produced faster than target_rate under max-TPS mode",
+               [&]() { EXPECT_WORK_DRIVEN = true; });
 
   p.run(argc, argv).ensure();
   CHECK(N_DOUBLE_NODES <= N_NODES);
+  CHECK(!(EXPECT_PACED && EXPECT_WORK_DRIVEN));
+  CHECK(!work_driven_max_tps_mode_enabled(ShardIdFull{masterchainId}));
+  CHECK(work_driven_max_tps_mode_enabled(ShardIdFull{basechainId, shardIdAll}) == max_tps_mode_enabled());
+  if (EXPECT_PACED || EXPECT_WORK_DRIVEN) {
+    CHECK(N_NODES == 1);
+    CHECK(TARGET_RATE_MS > 0);
+    CHECK(max_tps_mode_enabled());
+    CHECK(!IDLE_AFTER_FIRST);
+    CHECK(EXPECT_PACED == SHARD.is_masterchain());
+    CHECK(EXPECT_WORK_DRIVEN == !SHARD.is_masterchain());
+  }
   if (IDLE_AFTER_FIRST) {
     CHECK(N_NODES == 1);
-    CHECK(max_tps_mode_enabled());
+    CHECK(work_driven_max_tps_mode_enabled(SHARD));
   }
 
   td::actor::Scheduler scheduler({7});

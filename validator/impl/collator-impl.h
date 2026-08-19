@@ -225,6 +225,7 @@ class Collator final : public td::actor::Actor {
   std::vector<ExtMessage::Hash> bad_ext_msgs_, delay_ext_msgs_;
   Ref<vm::Cell> shard_account_blocks_;  // ShardAccountBlocks
   std::vector<block::NativeTransferBatchEntry> native_transfer_batch_entries_;
+  std::set<StdSmcAddress> native_compact_accounts_;
   block::CurrencyCollection native_compact_transaction_fees_{0};
 
   std::map<td::Bits256, Ref<vm::Cell>> block_state_proofs_;

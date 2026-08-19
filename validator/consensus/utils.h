@@ -36,8 +36,7 @@ td::Result<std::vector<FinalizedNativeExternalMessage>> get_candidate_native_ext
 // Explicit sidechain-only throughput mode.  The environment switch is kept
 // outside consensus configuration deliberately: every validator in the
 // private deployment must opt in, while public/default TON behaviour remains
-// unchanged.  target_rate still controls Simplex failure/skip timeouts, but it
-// no longer paces successful candidate production in this mode.
+// unchanged.
 inline bool max_tps_mode_enabled() {
   static const bool enabled = [] {
     const char* value = std::getenv("TON_SIMPLEX_MAX_TPS");
@@ -48,6 +47,19 @@ inline bool max_tps_mode_enabled() {
     return parsed == "1" || parsed == "true" || parsed == "TRUE" || parsed == "yes" || parsed == "YES";
   }();
   return enabled;
+}
+
+// Max-TPS changes candidate scheduling only for shardchain production.  The
+// masterchain continues to use its normal target-rate pacing, minimum block
+// interval, and failure/skip deadlines even when the process also produces a
+// work-driven sidechain.  Keeping this predicate in one place prevents the two
+// consensus actors from silently choosing different timing policies.
+constexpr bool select_work_driven_max_tps_mode(bool max_tps_mode, bool is_masterchain) {
+  return max_tps_mode && !is_masterchain;
+}
+
+inline bool work_driven_max_tps_mode_enabled(ShardIdFull shard) {
+  return select_work_driven_max_tps_mode(max_tps_mode_enabled(), shard.is_masterchain());
 }
 
 // The native pool and collator intentionally share TON_NATIVE_COLLATOR_QUEUE_LIMIT.

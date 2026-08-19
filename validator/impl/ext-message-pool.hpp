@@ -17,8 +17,10 @@
 #pragma once
 
 #include <algorithm>
+#include <deque>
 #include <limits>
 #include <map>
+#include <memory>
 #include <set>
 #include <vector>
 
@@ -152,9 +154,9 @@ class ExtMessagePool : public td::actor::Actor {
       active = false;
       reactivate_at = td::Timestamp::in(generation * 5.0);
     }
-    void postpone_native() {
+    bool postpone_native() {
       if (!active) {
-        return;
+        return false;
       }
       active = false;
       // Native transfers are nonce-ordered.  Dropping a temporarily unprocessable
@@ -163,6 +165,7 @@ class ExtMessagePool : public td::actor::Actor {
       auto exponent = std::min(generation, td::uint32{5});
       auto delay = std::min(1.0, 0.05 * static_cast<double>(1u << exponent));
       reactivate_at = td::Timestamp::in(delay);
+      return true;
     }
     bool expired() const {
       return delete_at.is_in_past();
@@ -353,6 +356,86 @@ class ExtMessagePool : public td::actor::Actor {
   // older account-state fetch can still be suspended in a signature worker.
   std::map<NativeAddress, NativeNonceWatermark> native_nonce_watermarks_;
 
+  struct NativeQueueCounters {
+    td::uint64 installs{0};
+    td::uint64 masterchain_installs{0};
+    td::uint64 scanned{0};
+    td::uint64 selected{0};
+    td::uint64 active{0};
+    td::uint64 inactive{0};
+    td::uint64 excluded{0};
+    td::uint64 expired{0};
+    td::uint64 already_delivered{0};
+    td::uint64 ready_sources{0};
+    td::uint64 head_gaps{0};
+    td::uint64 runs{0};
+    td::uint64 run_messages{0};
+    td::uint64 max_run_size{0};
+    td::uint64 delayed{0};
+    td::uint64 reactivated{0};
+    td::uint64 reactivation_wakes{0};
+
+    void add(const NativeQueueCounters &other) {
+      installs += other.installs;
+      masterchain_installs += other.masterchain_installs;
+      scanned += other.scanned;
+      selected += other.selected;
+      active += other.active;
+      inactive += other.inactive;
+      excluded += other.excluded;
+      expired += other.expired;
+      already_delivered += other.already_delivered;
+      ready_sources += other.ready_sources;
+      head_gaps += other.head_gaps;
+      runs += other.runs;
+      run_messages += other.run_messages;
+      max_run_size = std::max(max_run_size, other.max_run_size);
+      delayed += other.delayed;
+      reactivated += other.reactivated;
+      reactivation_wakes += other.reactivation_wakes;
+    }
+  } native_queue_counters_;
+
+  struct NativeQueueItem {
+    td::Ref<ExtMessage> message;
+    int priority{0};
+    NativeAddress source;
+    td::uint64 nonce{0};
+  };
+  struct NativeQueueSelection {
+    std::vector<NativeQueueItem> items;
+    td::optional<NativeAddress> cursor;
+    td::Timestamp earliest_reactivation;
+    NativeQueueCounters counters;
+  };
+  struct InstalledCallback {
+    explicit InstalledCallback(std::unique_ptr<ExtMsgCallback> value) : callback(std::move(value)) {
+    }
+
+    std::unique_ptr<ExtMsgCallback> callback;
+    std::deque<std::pair<td::Ref<ExtMessage>, int>> pending;
+    std::set<ExtMessage::Hash> delivered_native;
+    td::optional<NativeAddress> native_cursor;
+    std::size_t generic_selected{0};
+    bool pump_active{false};
+  };
+
+  td::optional<NativeAddress> native_scheduler_cursor_;
+  std::multimap<td::Timestamp, std::pair<int, MessageId>> native_reactivations_;
+
+  NativeQueueSelection select_native_messages(
+      ShardIdFull shard, const std::vector<ExtMessage::Hash> &excluded_messages,
+      const std::set<ExtMessage::Hash> &already_delivered, std::size_t limit,
+      td::optional<NativeAddress> cursor, const std::set<NativeAddress> *source_filter = nullptr);
+  std::size_t fill_callback_native(const std::shared_ptr<InstalledCallback> &callback,
+                                   bool count_install = false,
+                                   const std::set<NativeAddress> *source_filter = nullptr);
+  std::size_t wake_native_callbacks(const std::set<NativeAddress> *source_filter = nullptr);
+  std::size_t reactivate_due_native_messages(td::Timestamp now);
+  void enqueue_callback_item(const std::shared_ptr<InstalledCallback> &callback,
+                             std::pair<td::Ref<ExtMessage>, int> item);
+  td::actor::Task<> pump_callback(std::shared_ptr<InstalledCallback> callback);
+
   td::actor::Task<CheckResult> check_message(td::Ref<ExtMessage> message,
                                              td::Timestamp deadline = td::Timestamp::never());
   td::actor::Task<CheckResult> check_add_parsed_external_message_until(td::Ref<ExtMessage> message,
@@ -373,13 +456,20 @@ class ExtMessagePool : public td::actor::Actor {
                                                  std::unique_ptr<block::ConfigInfo> config,
                                                  td::Promise<td::Unit> allow_broadcast_promise);
 
-  std::vector<std::unique_ptr<ExtMsgCallback>> callbacks_;
+  std::vector<std::shared_ptr<InstalledCallback>> callbacks_;
+
+  friend class ExtMessagePoolTestAccess;
 
   static constexpr double MAX_EXT_MSG_PER_ADDR_TIME_WINDOW = 10.0;
   static constexpr size_t MAX_EXT_MSG_PER_ADDR = 4096;
   static constexpr size_t PER_ADDRESS_LIMIT = 8192;
   static constexpr size_t SOFT_MEMPOOL_LIMIT = 262144;
-  static constexpr size_t MAX_NATIVE_COLLATOR_QUEUE_LIMIT = 262144;
+  // One compact native block cannot encode more entries than this. Selecting
+  // additional references only leaves a large callback backlog that the
+  // candidate can never consume.
+  static constexpr size_t MAX_NATIVE_COLLATOR_QUEUE_LIMIT = 65536;
+  static constexpr size_t NATIVE_SOURCE_RUN_TARGET = 16;
+  static constexpr size_t STANDARD_COLLATOR_QUEUE_LIMIT = 500;
   static constexpr td::uint32 MAX_NATIVE_MEMPOOL_TTL = 86400;
   static constexpr td::uint32 MAX_WALLET_SEQNO_DIFF = 16;
   static constexpr td::uint64 MAX_NATIVE_NONCE_DIFF = 4096;

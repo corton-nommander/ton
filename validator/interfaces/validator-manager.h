@@ -146,11 +146,17 @@ struct CollationStats {
     td::RealCpuTimer::Time native_prepare;
     td::RealCpuTimer::Time native_execute;
     td::RealCpuTimer::Time native_commit;
+    td::RealCpuTimer::Time native_account_cell_build;
+    td::RealCpuTimer::Time native_staged_dict_set;
+    td::RealCpuTimer::Time native_proof_preflight;
+    td::RealCpuTimer::Time native_state_install;
+    td::RealCpuTimer::Time native_canonical_dict_install;
     td::RealCpuTimer::Time native_batch_serialize;
     td::RealCpuTimer::Time final_storage_stat;
     td::RealCpuTimer::Time enqueue_new_messages;
     td::RealCpuTimer::Time combine_account_transactions;
     td::RealCpuTimer::Time create_shard_state;
+    td::RealCpuTimer::Time create_state_merkle_update;
     td::RealCpuTimer::Time create_block;
     td::RealCpuTimer::Time create_collated_data;
     td::RealCpuTimer::Time create_block_candidate;
@@ -164,21 +170,56 @@ struct CollationStats {
                        << " native_prepare=" << native_prepare.get(is_cpu)
                        << " native_execute=" << native_execute.get(is_cpu)
                        << " native_commit=" << native_commit.get(is_cpu)
+                       << " native_account_cell_build=" << native_account_cell_build.get(is_cpu)
+                       << " native_staged_dict_set=" << native_staged_dict_set.get(is_cpu)
+                       << " native_proof_preflight=" << native_proof_preflight.get(is_cpu)
+                       << " native_state_install=" << native_state_install.get(is_cpu)
+                       << " native_canonical_dict_install=" << native_canonical_dict_install.get(is_cpu)
                        << " native_batch_serialize=" << native_batch_serialize.get(is_cpu)
                        << " final_storage_stat=" << final_storage_stat.get(is_cpu)
                        << " enqueue_new_messages=" << enqueue_new_messages.get(is_cpu)
                        << " combine_account_transactions=" << combine_account_transactions.get(is_cpu)
                        << " create_shard_state=" << create_shard_state.get(is_cpu)
+                       << " create_state_merkle_update=" << create_state_merkle_update.get(is_cpu)
                        << " create_block=" << create_block.get(is_cpu)
                        << " create_collated_data=" << create_collated_data.get(is_cpu)
                        << " create_block_candidate=" << create_block_candidate.get(is_cpu);
     }
   };
   WorkTimeStats work_time;
+  td::uint64 native_microbatches = 0;
+  td::uint64 native_microbatch_input = 0;
+  td::uint64 native_microbatch_accepted = 0;
+  td::uint64 native_microbatch_delayed = 0;
+  td::uint64 native_microbatch_permanent = 0;
+  td::uint64 native_microbatch_unique_accounts = 0;
+  td::uint64 native_microbatch_max_input = 0;
+  td::uint64 native_microbatch_max_unique_accounts = 0;
+  td::uint64 native_account_cells_built = 0;
+  td::uint64 native_staged_dict_sets = 0;
+  td::uint64 native_hard_preflight_failures = 0;
+  td::uint64 native_canonical_accounts_reused = 0;
+  bool native_canonical_root_reused = false;
   double wait_externals_time = 0.0;
   double check_load_do_collate_time = -1.0;
   double check_load_total_time = -1.0;
   StorageStatCacheStats storage_stat_cache;
+
+  std::string work_time_to_str(bool is_cpu) const {
+    return PSTRING() << work_time.to_str(is_cpu) << " native_microbatches=" << native_microbatches
+                     << " native_microbatch_input=" << native_microbatch_input
+                     << " native_microbatch_accepted=" << native_microbatch_accepted
+                     << " native_microbatch_delayed=" << native_microbatch_delayed
+                     << " native_microbatch_permanent=" << native_microbatch_permanent
+                     << " native_microbatch_unique_accounts=" << native_microbatch_unique_accounts
+                     << " native_microbatch_max_input=" << native_microbatch_max_input
+                     << " native_microbatch_max_unique_accounts=" << native_microbatch_max_unique_accounts
+                     << " native_account_cells_built=" << native_account_cells_built
+                     << " native_staged_dict_sets=" << native_staged_dict_sets
+                     << " native_hard_preflight_failures=" << native_hard_preflight_failures
+                     << " native_canonical_root_reused=" << native_canonical_root_reused
+                     << " native_canonical_accounts_reused=" << native_canonical_accounts_reused;
+  }
 
   tl_object_ptr<ton_api::validatorStats_collatedBlock> tl() const {
     std::vector<tl_object_ptr<ton_api::tonNode_blockIdExt>> shards_obj;
@@ -197,7 +238,7 @@ struct CollationStats {
     return create_tl_object<ton_api::validatorStats_collatedBlock>(
         create_tl_block_id(block_id), collated_data_hash, cc_seqno, collated_at, actual_bytes,
         actual_collated_data_bytes, attempt, self.bits256_value(), is_validator, total_time, work_time.total.real,
-        work_time.total.cpu, time_stats, work_time.to_str(false), work_time.to_str(true), wait_externals_time,
+        work_time.total.cpu, time_stats, work_time_to_str(false), work_time_to_str(true), wait_externals_time,
         check_load_do_collate_time, check_load_total_time,
         create_tl_object<ton_api::validatorStats_blockLimitsStatus>(
             estimated_bytes, gas, lt_delta, estimated_collated_data_bytes, cat_bytes, cat_gas, cat_lt_delta,
@@ -297,6 +338,7 @@ using ExtMsgQueue = td::actor::BackpressureQueue<std::pair<td::Ref<ExtMessage>, 
 struct ExtMsgCallback {
   ShardIdFull shard;
   ExtMsgQueue queue;
+  std::size_t queue_capacity{500};
   td::CancellationToken cancellation_token;
   td::Timestamp timeout;
   bool sync_only = false;

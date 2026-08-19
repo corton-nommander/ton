@@ -32,6 +32,7 @@
 #include "common/refcnt.hpp"
 #include "common/refint.h"
 #include "common/util.h"
+#include "block/block-parse.h"
 #include "block/transaction.h"
 #include "crypto/Ed25519.h"
 #include "td/utils/crypto.h"
@@ -708,6 +709,96 @@ TEST(NativeStateEngine, compact_batch_v2) {
     ASSERT_EQ(result.src_nonce, 8u);
     ASSERT_EQ(result.dst_balance, 150u);
   }
+}
+
+TEST(NativeStateEngine, installs_prevalidated_native_account_cell) {
+  ton::StdSmcAddress address;
+  address.clear();
+  block::Account account{ton::basechainId, address.cbits()};
+  account.status = block::Account::acc_uninit;
+
+  vm::CellBuilder builder;
+  td::Ref<vm::Cell> prepared;
+  ASSERT_TRUE(builder.store_long_bool(1, 2));
+  ASSERT_TRUE(builder.store_ulong_rchk_bool(1234, 64));
+  ASSERT_TRUE(builder.store_ulong_rchk_bool(17, 64));
+  ASSERT_TRUE(builder.store_ulong_rchk_bool(3, 8));
+  ASSERT_TRUE(builder.finalize_to(prepared));
+  ASSERT_TRUE(block::gen::t_Account.validate_ref(prepared));
+
+  auto prepared_hash = prepared->get_hash();
+  ASSERT_TRUE(account.set_prevalidated_native_state(prepared, 1234, 17, 3));
+  ASSERT_EQ(account.total_state->get_hash(), prepared_hash);
+  ASSERT_TRUE(account.is_native);
+  ASSERT_EQ(account.native_balance_uint64().value(), 1234u);
+  ASSERT_EQ(account.native_nonce, 17u);
+  ASSERT_EQ(account.native_flags, 3u);
+
+  block::Account mismatch{ton::basechainId, address.cbits()};
+  mismatch.status = block::Account::acc_uninit;
+  ASSERT_TRUE(!mismatch.set_prevalidated_native_state(std::move(prepared), 1235, 17, 3));
+  ASSERT_TRUE(!mismatch.is_native);
+}
+
+TEST(NativeStateEngine, preflighted_shard_accounts_root_is_canonical_after_ordinary_corrections) {
+  auto address = [](unsigned char suffix) {
+    ton::StdSmcAddress result;
+    std::string bytes(32, '\0');
+    bytes.back() = static_cast<char>(suffix);
+    result.as_slice().copy_from(bytes);
+    return result;
+  };
+  auto shard_account = [](td::uint64 balance, td::uint64 nonce, td::uint64 last_lt) {
+    vm::CellBuilder state_builder;
+    ASSERT_TRUE(state_builder.store_long_bool(1, 2));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(balance, 64));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(nonce, 64));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(0, 8));
+    auto state = state_builder.finalize();
+    vm::CellBuilder account_builder;
+    ASSERT_TRUE(account_builder.store_ref_bool(std::move(state)));
+    ASSERT_TRUE(account_builder.store_bits_bool(ton::Bits256{}));
+    ASSERT_TRUE(account_builder.store_ulong_rchk_bool(last_lt, 64));
+    return vm::load_cell_slice_ref(account_builder.finalize());
+  };
+
+  auto native = address(1);
+  auto ordinary = address(2);
+  auto restored = address(3);
+  auto created = address(4);
+  auto deleted = address(5);
+  auto restored_absent = address(6);
+  vm::AugmentedDictionary initial{256, block::tlb::aug_ShardAccounts};
+  ASSERT_TRUE(initial.set(native, shard_account(100, 0, 0)));
+  ASSERT_TRUE(initial.set(ordinary, shard_account(200, 0, 0)));
+  ASSERT_TRUE(initial.set(restored, shard_account(300, 0, 0)));
+  ASSERT_TRUE(initial.set(deleted, shard_account(400, 0, 0)));
+
+  vm::AugmentedDictionary direct{initial};
+  ASSERT_TRUE(direct.set(native, shard_account(90, 1, 0)));
+  ASSERT_TRUE(direct.set(ordinary, shard_account(210, 0, 2)));
+  ASSERT_TRUE(direct.set(created, shard_account(50, 0, 2)));
+  ASSERT_TRUE(direct.lookup_delete(deleted).not_null());
+
+  vm::AugmentedDictionary estimator{initial};
+  // Native commit installs its exact final value, while ordinary estimation
+  // may hold an intermediate value until final combine.
+  ASSERT_TRUE(estimator.set(ordinary, shard_account(205, 0, 1)));
+  ASSERT_TRUE(estimator.set(restored, shard_account(299, 0, 1)));
+  ASSERT_TRUE(estimator.set(created, shard_account(25, 0, 1)));
+  ASSERT_TRUE(estimator.lookup_delete(deleted).not_null());
+  ASSERT_TRUE(estimator.set(restored_absent, shard_account(1, 0, 1)));
+  ASSERT_TRUE(estimator.set(native, shard_account(90, 1, 0)));
+  ASSERT_TRUE(estimator.set(ordinary, shard_account(210, 0, 2)));
+  ASSERT_TRUE(estimator.set(created, shard_account(50, 0, 2)));
+  ASSERT_TRUE(estimator.lookup_delete(deleted).is_null());
+  auto original_restored = initial.lookup_extra(restored.cbits(), 256).first;
+  ASSERT_TRUE(original_restored.not_null());
+  ASSERT_TRUE(estimator.set(restored, std::move(original_restored)));
+  ASSERT_TRUE(initial.lookup_extra(restored_absent.cbits(), 256).first.is_null());
+  ASSERT_TRUE(estimator.lookup_delete(restored_absent).not_null());
+
+  ASSERT_EQ(estimator.get_root_cell()->get_hash(), direct.get_root_cell()->get_hash());
 }
 
 TEST(NativeStateEngine, native_signature_is_bound_to_zerostate_domain) {

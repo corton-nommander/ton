@@ -34,6 +34,7 @@
 #include <cmath>
 #include <csignal>
 #include <deque>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -298,6 +299,7 @@ struct WorkerStats {
   td::uint64 total_anchored_after_drain{0};
   td::uint64 canonical_backlog{0};
   td::uint64 canonical_backpressure_events{0};
+  td::uint64 measure_canonical_backpressure_events{0};
   td::uint64 source_backpressure_stalls{0};
   td::uint64 inflight{0};
   td::uint64 signing{0};
@@ -311,6 +313,7 @@ struct WorkerStats {
   double measure_elapsed_seconds{0.0};
   double drain_to_anchor_seconds{0.0};
   double canonical_backpressure_seconds{0.0};
+  double measure_canonical_backpressure_seconds{0.0};
   bool steady_started{false};
   bool sending_done{false};
   bool end_snapshot_complete{false};
@@ -541,6 +544,8 @@ class NativeLoadWorker final : public td::actor::Actor {
   bool canonical_backpressure_paused_{false};
   double canonical_backpressure_started_at_{0.0};
   double canonical_backpressure_accumulated_{0.0};
+  td::uint64 measure_canonical_backpressure_events_{0};
+  double measure_canonical_backpressure_accumulated_{0.0};
 
   void start_up() override;
   td::Status initialize();
@@ -553,6 +558,7 @@ class NativeLoadWorker final : public td::actor::Actor {
   bool can_issue(double now) const;
   bool source_backlog_full(const Wallet& wallet) const;
   bool task_is_active(const std::shared_ptr<TransferTask>& task) const;
+  double measure_backpressure_overlap(double begin, double end) const;
   void update_backpressure_state(double now);
   void pump();
   td::optional<std::size_t> find_available_wallet();
@@ -939,6 +945,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(total_anchored_after_drain);
       ADD_FIELD(canonical_backlog);
       ADD_FIELD(canonical_backpressure_events);
+      ADD_FIELD(measure_canonical_backpressure_events);
       ADD_FIELD(source_backpressure_stalls);
       ADD_FIELD(inflight);
       ADD_FIELD(signing);
@@ -957,6 +964,9 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       total.drain_to_anchor_seconds = std::max(total.drain_to_anchor_seconds, value.drain_to_anchor_seconds);
       total.canonical_backpressure_seconds =
           std::max(total.canonical_backpressure_seconds, value.canonical_backpressure_seconds);
+      total.measure_canonical_backpressure_seconds =
+          std::max(total.measure_canonical_backpressure_seconds,
+                   value.measure_canonical_backpressure_seconds);
       total.steady_started = total.steady_started && value.steady_started;
       total.sending_done = total.sending_done && value.sending_done;
       total.end_snapshot_complete = total.end_snapshot_complete && value.end_snapshot_complete;
@@ -987,6 +997,12 @@ class NativeLoadCoordinator final : public td::actor::Actor {
   }
 
   void report(bool final) {
+    // Benchmark phase boundaries are consumed by the wrapper to slice
+    // validator telemetry.  The default iostream precision collapsed all
+    // three epoch-second values to the same scientific-notation number on a
+    // 30-minute run, so publish both lossless integer milliseconds and full
+    // double precision for compatibility.
+    std::cout << std::setprecision(std::numeric_limits<double>::max_digits10);
     auto now = td::Time::now();
     auto total = aggregate();
     canonical_backlog_sampled_peak_ =
@@ -1023,11 +1039,39 @@ class NativeLoadCoordinator final : public td::actor::Actor {
                                   canonical_cohorts_complete(
                                       total.anchored_after_drain, total.steady_offered,
                                       total.total_anchored_after_drain, total.offered);
+    auto measure_backpressure_fraction =
+        total.measure_elapsed_seconds > 0.0
+            ? std::min(1.0, total.measure_canonical_backpressure_seconds / total.measure_elapsed_seconds)
+            : 0.0;
+    auto measured_offered_avg_tps =
+        static_cast<double>(total.steady_offered) / std::max(0.000001, total.measure_elapsed_seconds);
+    auto measured_canonical_avg_tps =
+        static_cast<double>(follower_stats_.measured_native_transfers) /
+        std::max(0.000001, total.measure_elapsed_seconds);
+    auto offer_target_attainment_ratio =
+        options_.target_tps > 0.0 ? measured_offered_avg_tps / options_.target_tps : 1.0;
+    bool offer_target_attained = options_.target_tps <= 0.0 || offer_target_attainment_ratio >= 0.95;
+    bool ingress_capacity_valid = final && benchmark_result_valid && total.measure_elapsed_seconds > 0.0 &&
+                                  measure_backpressure_fraction <= 0.01 && total.retry_exhausted == 0 &&
+                                  total.sign_errors == 0 && total.transport_errors == 0 && offer_target_attained;
+    auto canonical_overdrive_ratio = measured_canonical_avg_tps > 0.0
+                                         ? measured_offered_avg_tps / measured_canonical_avg_tps
+                                         : 0.0;
+    bool chain_capacity_valid = final && benchmark_result_valid && total.measure_elapsed_seconds > 0.0 &&
+                                measure_backpressure_fraction <= 0.01 && total.retry_exhausted == 0 &&
+                                total.sign_errors == 0 && total.transport_errors == 0 &&
+                                (offer_target_attained || canonical_overdrive_ratio >= 1.05);
+    auto unix_ms = [](double seconds) {
+      return static_cast<td::int64>(std::llround(seconds * 1000.0));
+    };
     std::cout << "{\"schema\":\"native-load-v2\",\"final\":" << (final ? "true" : "false")
               << ",\"phase\":\"" << (final ? "finished" : phase(now, total)) << "\",\"elapsed_s\":"
               << std::max(0.0, now - start_at_) << ",\"load_start_unix_s\":" << start_system_at_
               << ",\"measure_start_unix_s\":" << measure_begin_system
               << ",\"measure_end_unix_s\":" << measure_end_system
+              << ",\"load_start_unix_ms\":" << unix_ms(start_system_at_)
+              << ",\"measure_start_unix_ms\":" << unix_ms(measure_begin_system)
+              << ",\"measure_end_unix_ms\":" << unix_ms(measure_end_system)
               << ",\"target_tps\":" << options_.target_tps
               << ",\"offered\":" << total.offered << ",\"steady_offered\":" << total.steady_offered
               << ",\"offered_tps\":" << rate(total.offered, previous_.offered)
@@ -1069,7 +1113,10 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"repair_suppressed\":" << total.repair_suppressed
               << ",\"measure_elapsed_s\":" << total.measure_elapsed_seconds
               << ",\"steady_offered_avg_tps\":"
-              << static_cast<double>(total.steady_offered) / std::max(0.000001, total.measure_elapsed_seconds)
+              << measured_offered_avg_tps
+              << ",\"offer_target_attainment_ratio\":" << offer_target_attainment_ratio
+              << ",\"offer_target_attained\":" << (offer_target_attained ? "true" : "false")
+              << ",\"canonical_overdrive_ratio\":" << canonical_overdrive_ratio
               << ",\"steady_mempool_accept_avg_tps\":"
               << static_cast<double>(total.steady_mempool_accepted) /
                      std::max(0.000001, total.measure_elapsed_seconds)
@@ -1088,6 +1135,12 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << (total.canonical_backpressure_paused ? "true" : "false")
               << ",\"canonical_backpressure_events\":" << total.canonical_backpressure_events
               << ",\"canonical_backpressure_s\":" << total.canonical_backpressure_seconds
+              << ",\"measure_canonical_backpressure_events\":"
+              << total.measure_canonical_backpressure_events
+              << ",\"measure_canonical_backpressure_s\":"
+              << total.measure_canonical_backpressure_seconds
+              << ",\"measure_canonical_backpressure_fraction\":"
+              << measure_backpressure_fraction
               << ",\"source_backpressure_stalls\":" << total.source_backpressure_stalls
               << ",\"signing\":" << total.signing << ",\"ready\":" << total.ready
               << ",\"retry_wait\":" << total.retry_wait << ",\"active_tasks\":"
@@ -1170,6 +1223,12 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"canonical_result_valid\":" << (canonical_result_valid ? "true" : "false")
               << ",\"benchmark_result_valid\":"
               << (final ? (benchmark_result_valid ? "true" : "false") : "null")
+              << ",\"chain_correctness_valid\":"
+              << (final ? (canonical_result_valid ? "true" : "false") : "null")
+              << ",\"ingress_capacity_valid\":"
+              << (final ? (ingress_capacity_valid ? "true" : "false") : "null")
+              << ",\"chain_capacity_valid\":"
+              << (final ? (chain_capacity_valid ? "true" : "false") : "null")
               << ",\"canonical_at_measure_end\":";
     if (total.end_snapshot_complete) {
       std::cout << total.anchored_at_end << ",\"canonical_measured_offers_at_measure_end\":"
@@ -1210,6 +1269,9 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"admission_semantics\":\"liteServer.sendMessage status=1; not block inclusion\""
               << ",\"wire_batch_source_run_semantics\":\"adjacent ascending nonces from one source in a sendMessageBatch; each source appears in at most one bounded run per batch and seed selection remains globally fair\""
               << ",\"benchmark_result_valid_semantics\":\"final proof-consistent run with complete measured and total cohorts, zero drain timeout, no fatal or retry-exhausted follower failure, and a final contiguous catch-up to the anchored shard tip\""
+              << ",\"chain_correctness_valid_semantics\":\"proof-consistent canonical follower result; independent from whether generator or node scheduling limited the offered load\""
+              << ",\"ingress_capacity_valid_semantics\":\"correct final run reaching at least 95 percent of the configured offered-TPS target, with at most one percent of the measured window stopped by canonical-backlog pressure and no generator retry exhaustion, signing failure, or transport failure\""
+              << ",\"chain_capacity_valid_semantics\":\"correct final run with no observer-backpressure distortion or generator failure, where load either reached the configured target or exceeded proof-observed canonical throughput by at least five percent\""
               << ",\"canonical_follower_errors_semantics\":\"fatal proof, decoded-data, hash, or ancestry validity failures only; transient transport failures and exhausted retry streaks are reported separately\""
               << ",\"canonical_follower_transient_timeouts_semantics\":\"ADNL/liteserver timeout responses discarded and retried from the last completely committed followed tip\""
               << ",\"canonical_follower_transient_retries_semantics\":\"retry polls actually dispatched after a forced follower-client reconnect\""
@@ -2017,6 +2079,15 @@ bool NativeLoadWorker::task_is_active(const std::shared_ptr<TransferTask>& task)
   return it != tasks.end() && it->second == task;
 }
 
+double NativeLoadWorker::measure_backpressure_overlap(double begin, double end) const {
+  if (!started_ || end <= begin) {
+    return 0.0;
+  }
+  auto measure_begin = start_at_ + options_.ramp_seconds + options_.warmup_seconds;
+  auto measure_end = measure_begin + options_.duration_seconds;
+  return std::max(0.0, std::min(end, measure_end) - std::max(begin, measure_begin));
+}
+
 void NativeLoadWorker::update_backpressure_state(double now) {
   bool paused = !sending_done_ && options_.max_canonical_backlog &&
                 (options_.auto_nonce || options_.canonical_block_follower) &&
@@ -2029,6 +2100,11 @@ void NativeLoadWorker::update_backpressure_state(double now) {
     ++stats_.canonical_backpressure_events;
   } else {
     canonical_backpressure_accumulated_ += std::max(0.0, now - canonical_backpressure_started_at_);
+    auto measure_overlap = measure_backpressure_overlap(canonical_backpressure_started_at_, now);
+    if (measure_overlap > 0.0) {
+      measure_canonical_backpressure_accumulated_ += measure_overlap;
+      ++measure_canonical_backpressure_events_;
+    }
   }
   canonical_backpressure_paused_ = paused;
 }
@@ -2942,6 +3018,12 @@ void NativeLoadWorker::refresh_stats() {
   stats_.canonical_backpressure_seconds =
       canonical_backpressure_accumulated_ +
       (canonical_backpressure_paused_ ? std::max(0.0, now - canonical_backpressure_started_at_) : 0.0);
+  auto active_measure_backpressure =
+      canonical_backpressure_paused_ ? measure_backpressure_overlap(canonical_backpressure_started_at_, now) : 0.0;
+  stats_.measure_canonical_backpressure_seconds =
+      measure_canonical_backpressure_accumulated_ + active_measure_backpressure;
+  stats_.measure_canonical_backpressure_events =
+      measure_canonical_backpressure_events_ + (active_measure_backpressure > 0.0 ? 1 : 0);
   stats_.interrupted = interrupted_;
   if (started_) {
     auto measure_begin = start_at_ + options_.ramp_seconds + options_.warmup_seconds;

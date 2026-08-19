@@ -674,6 +674,26 @@ bool Account::set_native_state(td::uint64 new_balance, td::uint64 new_nonce, td:
     return false;
   }
 
+  return install_native_state(std::move(new_total_state), new_balance, new_nonce, new_flags);
+}
+
+bool Account::set_prevalidated_native_state(Ref<vm::Cell> new_total_state, td::uint64 new_balance,
+                                            td::uint64 new_nonce, td::uint8 new_flags) {
+  if (workchain != ton::basechainId || (status != acc_uninit && status != acc_nonexist) || new_total_state.is_null()) {
+    return false;
+  }
+  block::gen::Account::Record_account_native native;
+  auto state_cs = vm::load_cell_slice(new_total_state);
+  if (!tlb::unpack_exact(state_cs, native) || native.balance != new_balance || native.nonce != new_nonce ||
+      native.flags != new_flags) {
+    return false;
+  }
+
+  return install_native_state(std::move(new_total_state), new_balance, new_nonce, new_flags);
+}
+
+bool Account::install_native_state(Ref<vm::Cell> new_total_state, td::uint64 new_balance, td::uint64 new_nonce,
+                                   td::uint8 new_flags) {
   total_state = std::move(new_total_state);
   status = acc_uninit;
   is_native = true;

@@ -223,14 +223,15 @@ void Collator::start_up() {
     LOG(DEBUG) << "installing external message queue";
     const char* native_queue_limit = std::getenv("TON_NATIVE_COLLATOR_QUEUE_LIMIT");
     const auto queue_capacity = consensus::select_collator_queue_capacity(
-        consensus::max_tps_mode_enabled(),
+        consensus::work_driven_max_tps_mode_enabled(shard_),
         native_queue_limit ? std::string_view{native_queue_limit} : std::string_view{});
     ext_msg_queue_ = ExtMsgQueue("ext_msg_queue", queue_capacity);
-    if (consensus::max_tps_mode_enabled()) {
+    if (consensus::work_driven_max_tps_mode_enabled(shard_)) {
       LOG(DEBUG) << "native Collator BackpressureQueue capacity=" << queue_capacity;
     }
     auto callback = std::make_unique<ExtMsgCallback>();
     callback->shard = shard_;
+    callback->queue_capacity = queue_capacity;
     callback->cancellation_token = ext_msg_cancellation_.get_cancellation_token();
     auto callback_until = params_.ext_msg_callback_until ? params_.ext_msg_callback_until
                                                          : params_.wait_externals_until;
@@ -3149,18 +3150,31 @@ bool Collator::combine_account_transactions() {
   bool compact_native_transactions = use_native_fast_path() && !native_transfer_batch_entries_.empty();
   bool omit_native_account_blocks =
       compact_native_transactions && block::NativeTransferBatch::current_version >= 4;
-  std::set<StdSmcAddress> native_compact_accounts;
-  if (omit_native_account_blocks) {
-    for (const auto& entry : native_transfer_batch_entries_) {
-      native_compact_accounts.insert(entry.transfer.src);
-      native_compact_accounts.insert(entry.transfer.dst);
-    }
+  // The estimator starts from the same ShardAccounts root as account_dict and
+  // v4 native commits install their exact, validated ShardAccount values into
+  // it transactionally.  Reuse that root as the canonical update target and
+  // correct only ordinary-account estimates below.  The original dictionary
+  // remains available until the end so an ordinary account whose speculative
+  // estimate returned to its original state can be restored exactly.
+  bool reuse_native_estimator_root = omit_native_account_blocks && !native_compact_accounts_.empty();
+  vm::AugmentedDictionary* account_dict_update_target =
+      reuse_native_estimator_root ? account_dict_estimator_.get() : account_dict.get();
+  if (!account_dict_update_target) {
+    return fatal_error("native ShardAccounts estimator is unavailable during final combine");
   }
+  auto restore_original_account = [&](const StdSmcAddress& address) {
+    auto original = account_dict->lookup_extra(address.cbits(), 256).first;
+    if (original.is_null()) {
+      account_dict_update_target->lookup_delete(address);
+      return true;
+    }
+    return account_dict_update_target->set(address, std::move(original));
+  };
   for (auto& z : accounts) {
     block::Account& acc = *(z.second);
     CHECK(acc.addr == z.first);
     bool account_changed = acc.total_state->get_hash() != acc.orig_total_state->get_hash();
-    bool omit_this_account_block = omit_native_account_blocks && native_compact_accounts.contains(acc.addr);
+    bool omit_this_account_block = omit_native_account_blocks && native_compact_accounts_.contains(acc.addr);
     if (omit_this_account_block && !acc.transactions.empty()) {
       return fatal_error(std::string{"v4 native account also acquired ordinary transactions during collation: "} +
                          acc.addr.to_hex());
@@ -3196,6 +3210,11 @@ bool Collator::combine_account_transactions() {
       }
     }
     if (!account_changed) {
+      if (reuse_native_estimator_root && !omit_this_account_block &&
+          account_dict_estimator_added_accounts_.contains(acc.addr) && !restore_original_account(acc.addr)) {
+        return fatal_error(std::string{"cannot restore unchanged account "} + acc.addr.to_hex() +
+                           " in preflighted ShardAccounts");
+      }
       continue;
     }
     if (!include_account_block && !omit_this_account_block) {
@@ -3206,31 +3225,47 @@ bool Collator::combine_account_transactions() {
     // v4 native batches authorize and replay these state changes directly, so
     // ShardAccountBlocks stays empty.  ShardAccounts still carries the actual
     // new canonical state and its Merkle update.
-    if (acc.orig_status == block::Account::acc_nonexist) {
+    if (omit_this_account_block && reuse_native_estimator_root) {
+      // The exact ShardAccount value is already present in the preflighted
+      // root.  Re-inserting it here was the second full trie update in every
+      // native-only block.
+      ++stats_.native_canonical_accounts_reused;
+    } else if (acc.orig_status == block::Account::acc_nonexist) {
       CHECK(acc.status != block::Account::acc_nonexist);
       vm::CellBuilder cb;
+      auto mode = reuse_native_estimator_root ? vm::Dictionary::SetMode::Set : vm::Dictionary::SetMode::Add;
       if (!(cb.store_ref_bool(acc.total_state) && cb.store_bits_bool(acc.last_trans_hash_) &&
             cb.store_long_bool(acc.last_trans_lt_, 64) &&
-            account_dict->set_builder(acc.addr, cb, vm::Dictionary::SetMode::Add))) {
+            account_dict_update_target->set_builder(acc.addr, cb, mode))) {
         return fatal_error(std::string{"cannot add newly-created account "} + acc.addr.to_hex() +
                            " into ShardAccounts");
       }
     } else if (acc.status == block::Account::acc_nonexist) {
-      if (account_dict->lookup_delete(acc.addr).is_null()) {
+      if (account_dict_update_target->lookup_delete(acc.addr).is_null() && !reuse_native_estimator_root) {
         return fatal_error(std::string{"cannot delete account "} + acc.addr.to_hex() + " from ShardAccounts");
       }
     } else {
       vm::CellBuilder cb;
+      auto mode = reuse_native_estimator_root ? vm::Dictionary::SetMode::Set : vm::Dictionary::SetMode::Replace;
       if (!(cb.store_ref_bool(acc.total_state) && cb.store_bits_bool(acc.last_trans_hash_) &&
             cb.store_long_bool(acc.last_trans_lt_, 64) &&
-            account_dict->set_builder(acc.addr, cb, vm::Dictionary::SetMode::Replace))) {
+            account_dict_update_target->set_builder(acc.addr, cb, mode))) {
         return fatal_error(std::string{"cannot modify existing account "} + acc.addr.to_hex() +
                            " in ShardAccounts");
       }
     }
-    if (!process_account_storage_dict(acc)) {
+    if (omit_this_account_block) {
+      // Native accounts have no AccountStorage dictionary. Avoid entering the
+      // per-account storage-stat/proof path for every compact account.
+      CHECK(!acc.orig_storage_dict_hash && !acc.storage_dict_hash);
+    } else if (!process_account_storage_dict(acc)) {
       return false;
     }
+  }
+  if (reuse_native_estimator_root) {
+    td::ScopedRealCpuTimer timer{stats_.work_time.native_canonical_dict_install};
+    account_dict = std::move(account_dict_estimator_);
+    stats_.native_canonical_root_reused = true;
   }
   vm::CellBuilder cb;
   if (!(cb.append_cellslice_bool(std::move(dict).extract_root()) && cb.finalize_to(shard_account_blocks_))) {
@@ -4791,21 +4826,29 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         if (!state.changed) {
           continue;
         }
-        vm::CellBuilder state_builder;
-        if (!(state_builder.store_long_bool(1, 2) && state_builder.store_ulong_rchk_bool(state.balance, 64) &&
-              state_builder.store_ulong_rchk_bool(state.nonce, 64) &&
-              state_builder.store_ulong_rchk_bool(state.flags, 8) &&
-              state_builder.finalize_to(state.staged_total_state) &&
-              block::gen::t_Account.validate_ref(state.staged_total_state) &&
-              block::tlb::t_Account.validate_ref(state.staged_total_state))) {
-          co_return fatal_error("cannot stage aggregated native account state");
+        {
+          td::ScopedRealCpuTimer cell_timer{stats_.work_time.native_account_cell_build};
+          vm::CellBuilder state_builder;
+          if (!(state_builder.store_long_bool(1, 2) && state_builder.store_ulong_rchk_bool(state.balance, 64) &&
+                state_builder.store_ulong_rchk_bool(state.nonce, 64) &&
+                state_builder.store_ulong_rchk_bool(state.flags, 8) &&
+                state_builder.finalize_to(state.staged_total_state) &&
+                block::gen::t_Account.validate_ref(state.staged_total_state) &&
+                block::tlb::t_Account.validate_ref(state.staged_total_state))) {
+            co_return fatal_error("cannot stage aggregated native account state");
+          }
+          ++stats_.native_account_cells_built;
         }
-        vm::CellBuilder account_builder;
-        if (!(account_builder.store_ref_bool(state.staged_total_state) &&
-              account_builder.store_bits_bool(state.account->last_trans_hash_) &&
-              account_builder.store_long_bool(state.account->last_trans_lt_, 64) &&
-              staged_account_dict.set_builder(address, account_builder))) {
-          co_return fatal_error("cannot stage native account dictionary update");
+        {
+          td::ScopedRealCpuTimer dict_timer{stats_.work_time.native_staged_dict_set};
+          vm::CellBuilder account_builder;
+          if (!(account_builder.store_ref_bool(state.staged_total_state) &&
+                account_builder.store_bits_bool(state.account->last_trans_hash_) &&
+                account_builder.store_long_bool(state.account->last_trans_lt_, 64) &&
+                staged_account_dict.set_builder(address, account_builder))) {
+            co_return fatal_error("cannot stage native account dictionary update");
+          }
+          ++stats_.native_staged_dict_sets;
         }
       }
 
@@ -4821,11 +4864,17 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       // preflight work and an increasingly large false hard-limit charge.
       // The staged ShardAccounts root reaches every staged Account cell, while
       // the main statistic's seen set stops at previously charged branches.
-      auto staged_cells = block_limit_status_->st_stat.tentative_add_proof(
-          staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
-      bool staged_fits = block_limit_status_->would_fit(block::ParamLimits::cl_hard,
-                                                        block_limit_status_->cur_lt, 0, &staged_cells);
+      vm::NewCellStorageStat::Stat staged_cells;
+      bool staged_fits;
+      {
+        td::ScopedRealCpuTimer preflight_timer{stats_.work_time.native_proof_preflight};
+        staged_cells = block_limit_status_->st_stat.tentative_add_proof(
+            staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
+        staged_fits = block_limit_status_->would_fit(block::ParamLimits::cl_hard,
+                                                      block_limit_status_->cur_lt, 0, &staged_cells);
+      }
       if (!staged_fits) {
+        ++stats_.native_hard_preflight_failures;
         block_limit_status_->transactions -= static_cast<unsigned>(accepted_indices.size());
         for (auto index : accepted_indices) {
           delay_ext_msgs_.emplace_back(batch[index].ext_msg->hash());
@@ -4837,19 +4886,23 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: deferred microbatch by hard-limit preflight\n";
       } else {
         unsigned changed_accounts = 0;
-        for (auto& [_, state] : native_states) {
-          if (!state.changed) {
-            continue;
+        {
+          td::ScopedRealCpuTimer install_timer{stats_.work_time.native_state_install};
+          for (auto& [_, state] : native_states) {
+            if (!state.changed) {
+              continue;
+            }
+            bool first_update = state.account->total_state->get_hash() == state.account->orig_total_state->get_hash();
+            if (!state.account->set_prevalidated_native_state(std::move(state.staged_total_state), state.balance,
+                                                               state.nonce, state.flags)) {
+              co_return fatal_error("cannot commit preflighted native account state");
+            }
+            block_limit_status_->add_proof(state.account->total_state);
+            block_limit_status_->add_account(first_update);
+            account_dict_estimator_added_accounts_.insert(state.account->addr);
+            native_compact_accounts_.insert(state.account->addr);
+            ++changed_accounts;
           }
-          bool first_update = state.account->total_state->get_hash() == state.account->orig_total_state->get_hash();
-          if (!state.account->set_native_state(state.balance, state.nonce, state.flags) ||
-              state.account->total_state->get_hash() != state.staged_total_state->get_hash()) {
-            co_return fatal_error("cannot commit preflighted native account state");
-          }
-          block_limit_status_->add_proof(state.account->total_state);
-          block_limit_status_->add_account(first_update);
-          account_dict_estimator_added_accounts_.insert(state.account->addr);
-          ++changed_accounts;
         }
         // Install exactly the augmented dictionary root that was preflighted.
         // Charging intermediate roots every 16 account updates retained
@@ -4875,6 +4928,15 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     }
     full = !block_limit_status_->fits(block::ParamLimits::cl_soft);
     block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+    ++stats_.native_microbatches;
+    stats_.native_microbatch_input += batch.size();
+    stats_.native_microbatch_accepted += accepted_in_batch;
+    stats_.native_microbatch_delayed += delayed_in_batch;
+    stats_.native_microbatch_permanent += permanent_in_batch;
+    stats_.native_microbatch_unique_accounts += native_states.size();
+    stats_.native_microbatch_max_input = std::max<td::uint64>(stats_.native_microbatch_max_input, batch.size());
+    stats_.native_microbatch_max_unique_accounts =
+        std::max<td::uint64>(stats_.native_microbatch_max_unique_accounts, native_states.size());
     LOG(INFO) << "native fast-path batch: input=" << batch.size() << " accepted=" << accepted_in_batch
               << " delayed=" << delayed_in_batch << " permanent=" << permanent_in_batch
               << " unique_accounts=" << native_states.size()
@@ -6521,7 +6583,11 @@ bool Collator::create_shard_state() {
     };
   }
   LOG(INFO) << "creating Merkle update for the ShardState";
-  auto r_state_update = vm::MerkleUpdate::generate(prev_state_root_, state_root, state_usage_tree_.get());
+  td::Result<Ref<vm::Cell>> r_state_update;
+  {
+    td::ScopedRealCpuTimer timer{stats_.work_time.create_state_merkle_update};
+    r_state_update = vm::MerkleUpdate::generate(prev_state_root_, state_root, state_usage_tree_.get());
+  }
   if (r_state_update.is_error()) {
     return fatal_error("cannot create Merkle update for ShardState");
   }

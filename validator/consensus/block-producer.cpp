@@ -41,16 +41,20 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
   void start_up() {
     target_rate_ = owning_bus()->config.noncritical_params.target_rate;
     no_empty_blocks_on_error_timeout_ = owning_bus()->config.noncritical_params.no_empty_blocks_on_error_timeout;
-    max_tps_mode_ = max_tps_mode_enabled();
-    if (max_tps_mode_) {
-      LOG(WARNING) << "Simplex block producer throughput mode: work-driven, target_rate=" << target_rate_.count()
-                   << "ms, candidate_failure_timeout=" << max_tps_candidate_timeout().count() << "ms";
+    work_driven_ = work_driven_max_tps_mode_enabled(owning_bus()->shard);
+    next_scheduling_stats_at_ = td::Timestamp::in(1.0);
+    const char* chain = owning_bus()->shard.is_masterchain() ? "masterchain" : "shardchain";
+    if (work_driven_) {
+      LOG(WARNING) << "Simplex block producer scheduling: chain=" << chain
+                   << " mode=work-driven target_rate_ms=" << target_rate_.count()
+                   << " candidate_failure_timeout_ms=" << max_tps_candidate_timeout().count();
       LOG(WARNING) << "Simplex local candidate work budget: " << max_tps_candidate_work_timeout().count()
                    << "ms; remaining consensus margin="
                    << (max_tps_candidate_timeout() - max_tps_candidate_work_timeout()).count() << "ms";
     } else {
-      LOG(WARNING) << "Simplex block producer throughput mode: target-rate-paced, target_rate="
-                   << target_rate_.count() << "ms";
+      LOG(WARNING) << "Simplex block producer scheduling: chain=" << chain
+                   << " mode=target-rate-paced target_rate_ms=" << target_rate_.count()
+                   << " process_max_tps=" << max_tps_mode_enabled();
     }
   }
 
@@ -73,6 +77,7 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     current_leader_window_ = std::nullopt;
     current_slot_ = std::nullopt;
     cancellation_source_.cancel();
+    emit_scheduling_stats(true);
     stop();
   }
 
@@ -86,6 +91,8 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
         (current_slot_ && *current_slot_ < event->first_active_slot) ||
         (current_leader_window_ && *current_leader_window_ < event->first_active_slot);
     if (generation_is_obsolete) {
+      ++scheduling_stats_.cancelled;
+      emit_scheduling_stats();
       ++generation_epoch_;
       LOG(WARNING) << "Cancelling collation for obsolete slot "
                    << (current_slot_ ? static_cast<td::int64>(*current_slot_) : -1)
@@ -123,6 +130,8 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     last_started_window_ = event->start_slot;
     ++generation_epoch_;
     cancellation_source_ = td::CancellationTokenSource();
+    ++scheduling_stats_.leader_windows;
+    emit_scheduling_stats();
     generate_candidates(event).start().detach();
   }
 
@@ -133,6 +142,33 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
   }
 
  private:
+  struct SchedulingStats {
+    td::uint64 leader_windows = 0;
+    td::uint64 triggers = 0;
+    td::uint64 full_outcomes = 0;
+    td::uint64 empty_outcomes = 0;
+    td::uint64 idle_outcomes = 0;
+    td::uint64 timeout_outcomes = 0;
+    td::uint64 error_outcomes = 0;
+    td::uint64 cancelled = 0;
+  };
+
+  void emit_scheduling_stats(bool force = false) {
+    if (!force && !next_scheduling_stats_at_.is_in_past()) {
+      return;
+    }
+    const auto& shard = owning_bus()->shard;
+    LOG(INFO) << "consensus_schedule_summary component=block_producer chain="
+              << (shard.is_masterchain() ? "masterchain" : "shardchain")
+              << " workchain=" << shard.workchain << " shard=" << shard.shard
+              << " mode=" << (work_driven_ ? "work_driven" : "target_rate_paced")
+              << " leader_windows=" << scheduling_stats_.leader_windows << " triggers=" << scheduling_stats_.triggers
+              << " full=" << scheduling_stats_.full_outcomes << " empty=" << scheduling_stats_.empty_outcomes
+              << " idle=" << scheduling_stats_.idle_outcomes << " timeout=" << scheduling_stats_.timeout_outcomes
+              << " error=" << scheduling_stats_.error_outcomes << " cancelled=" << scheduling_stats_.cancelled;
+    next_scheduling_stats_at_ = td::Timestamp::in(1.0);
+  }
+
   bool should_generate_empty_block(const ChainStateRef& state) {
     if (state->is_before_split()) {
       return true;
@@ -160,17 +196,17 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     td::actor::SharedFuture<GeneratedCandidate> block_generation;
 
     std::chrono::milliseconds hard_timeout =
-        max_tps_mode_ ? max_tps_candidate_work_timeout()
-                      : std::max(target_rate_ * 3, std::chrono::milliseconds(60'000));
+        work_driven_ ? max_tps_candidate_work_timeout()
+                     : std::max(target_rate_ * 3, std::chrono::milliseconds(60'000));
     std::chrono::milliseconds start_collate_before =
-        max_tps_mode_ || bus.shard.is_masterchain() ? std::chrono::milliseconds(0) : target_rate_;
+        work_driven_ || bus.shard.is_masterchain() ? std::chrono::milliseconds(0) : target_rate_;
     td::Timestamp slot_start = event->start_time;
 
     for (td::uint32 slot = event->start_slot;
          current_leader_window_ == window && generation_epoch_ == generation_epoch && slot < event->end_slot;
          ++slot) {
       current_slot_ = slot;
-      if (!max_tps_mode_) {
+      if (!work_driven_) {
         co_await td::actor::coro_sleep(slot_start - start_collate_before);
       }
       if (current_leader_window_ != window || generation_epoch_ != generation_epoch || slot < first_active_slot_) {
@@ -179,7 +215,9 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       bool is_first_block = !parent.has_value();
       if (!block_generation_active && (!should_generate_empty_block(state) || is_first_block)) {
         block_generation_active = true;
-        auto collate_started_at = max_tps_mode_ ? td::Timestamp::now() : slot_start;
+        ++scheduling_stats_.triggers;
+        emit_scheduling_stats();
+        auto collate_started_at = work_driven_ ? td::Timestamp::now() : slot_start;
         CollateParams params{
             .shard = bus.shard,
             .min_masterchain_block_id = state->min_mc_block_id(),
@@ -191,7 +229,7 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
             .prev_block_data = state->block_data(),
             .prev_block_state_roots = state->state(),
         };
-        if (max_tps_mode_) {
+        if (work_driven_) {
           // Keep the callback open so an idle sidechain waits for work instead
           // of spinning empty blocks.  The first block of a consensus session
           // is the exception: it must be materialized promptly to bootstrap
@@ -199,11 +237,8 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
           // Once native work is consumed, the collator uses a tiny queue-idle
           // grace and publishes immediately; this is not block-rate pacing.
           params.soft_timeout = collate_started_at + hard_timeout;
-          // Basechain native candidates wait for the first queued transfer.
-          // Masterchain candidates have no native ingress and must seal after
-          // their current shard/config work; making them wait here would hold
-          // every basechain anchor for the full safety timeout.
-          if (!is_first_block && !bus.shard.is_masterchain()) {
+          // Native shardchain candidates wait for the first queued transfer.
+          if (!is_first_block) {
             // Keep one live native-ingress waiter for essentially the entire
             // local candidate work budget.  The first item wakes it
             // immediately; an empty queue completes quietly just before the
@@ -225,23 +260,32 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
                                           cancellation_source_.get_cancellation_token());
         owning_bus().publish<TraceEvent>(stats::CollateStarted::create(slot));
       }
-      if (!max_tps_mode_) {
+      if (!work_driven_) {
         co_await td::actor::coro_sleep(slot_start);
       }
 
       std::optional<GeneratedCandidate> generated_candidate;
       if (block_generation_active) {
-        auto candidate_deadline = max_tps_mode_ ? td::Timestamp::now() + hard_timeout : slot_start + target_rate_;
+        auto candidate_deadline = work_driven_ ? td::Timestamp::now() + hard_timeout : slot_start + target_rate_;
         auto r_candidate = co_await td::actor::await_with_timeout(block_generation.get(), candidate_deadline).wrap();
-        if (r_candidate.is_error() && max_tps_mode_ && !bus.shard.is_masterchain() &&
-            is_native_collation_idle_status(r_candidate.error())) {
+        if (r_candidate.is_error() && work_driven_ && is_native_collation_idle_status(r_candidate.error())) {
           // Expected work-driven idle completion.  Do not retry this slot and
           // do not manufacture an empty candidate: Simplex's independently
           // armed failure alarm will skip/advance the window for liveness.
           LOG(INFO) << "Native ingress idle for leader window starting at slot " << *window
                     << "; waiting for Simplex failure deadline";
+          ++scheduling_stats_.idle_outcomes;
+          emit_scheduling_stats();
           block_generation_active = false;
           break;
+        }
+        if (r_candidate.is_error()) {
+          if (r_candidate.error().code() == td::actor::AWAIT_TIMEOUT_CODE) {
+            ++scheduling_stats_.timeout_outcomes;
+          } else {
+            ++scheduling_stats_.error_outcomes;
+          }
+          emit_scheduling_stats();
         }
         // The first block in the session cannot be empty
         bool allow_empty =
@@ -264,6 +308,7 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
         if (r_candidate.is_ok()) {
           generated_candidate = r_candidate.move_as_ok();
           block_generation_active = false;
+          ++scheduling_stats_.full_outcomes;
         } else if (r_candidate.error().code() == td::actor::AWAIT_TIMEOUT_CODE) {
           generated_candidate = std::nullopt;
           LOG(WARNING) << "Generating an empty block for slot " << slot << ": block collation takes too long";
@@ -307,7 +352,9 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
         block = referenced_block;
         id = CandidateHashData::create_empty(referenced_block, *parent).build_id_with(slot);
         owning_bus().publish<TraceEvent>(stats::CollatedEmpty::create(id));
+        ++scheduling_stats_.empty_outcomes;
       }
+      emit_scheduling_stats();
 
       auto id_to_sign = serialize_tl_object(id.to_tl(), true);
       auto data_to_sign = create_serialize_tl_object<tl::dataToSign>(bus.session_id, std::move(id_to_sign));
@@ -322,7 +369,7 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       owning_bus().publish<TraceEvent>(stats::CandidateReceived::create(candidate, true));
       parent = id;
 
-      slot_start = max_tps_mode_ ? td::Timestamp::now() : slot_start + target_rate_;
+      slot_start = work_driven_ ? td::Timestamp::now() : slot_start + target_rate_;
     }
 
     if (current_leader_window_ == window && generation_epoch_ == generation_epoch) {
@@ -343,7 +390,9 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
   BlockSeqno last_consensus_finalized_seqno_ = 0;
   BlockSeqno last_mc_finalized_seqno_ = 0;
   std::chrono::milliseconds target_rate_;
-  bool max_tps_mode_{false};
+  bool work_driven_{false};
+  SchedulingStats scheduling_stats_;
+  td::Timestamp next_scheduling_stats_at_;
 
   std::chrono::milliseconds no_empty_blocks_on_error_timeout_;
   td::Timestamp last_consensus_finalized_at_;

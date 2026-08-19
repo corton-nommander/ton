@@ -40,10 +40,17 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
     slots_per_leader_window_ = bus.config.slots_per_leader_window;
     params_ = bus.config.noncritical_params;
     first_block_timeout_ = params_.first_block_timeout;
-    if (max_tps_mode_enabled()) {
-      LOG(WARNING) << "Simplex work-driven candidate failure timeout: " << max_tps_candidate_timeout().count()
-                   << "ms, local work budget: " << max_tps_candidate_work_timeout().count()
-                   << "ms (successful blocks are not paced by either timeout)";
+    work_driven_ = work_driven_max_tps_mode_enabled(bus.shard);
+    next_scheduling_stats_at_ = td::Timestamp::in(1.0);
+    const char* chain = bus.shard.is_masterchain() ? "masterchain" : "shardchain";
+    if (work_driven_) {
+      LOG(WARNING) << "Simplex scheduling: chain=" << chain
+                   << " mode=work-driven candidate_failure_timeout_ms=" << max_tps_candidate_timeout().count()
+                   << " local_work_budget_ms=" << max_tps_candidate_work_timeout().count();
+    } else {
+      LOG(WARNING) << "Simplex scheduling: chain=" << chain
+                   << " mode=target-rate-paced target_rate_ms=" << params_.target_rate.count()
+                   << " process_max_tps=" << max_tps_mode_enabled();
     }
     state_.emplace(State({}));
 
@@ -97,6 +104,7 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
 
   template <>
   void handle(BusHandle, std::shared_ptr<const StopRequested>) {
+    emit_scheduling_stats(true);
     stop();
   }
 
@@ -128,6 +136,8 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
     owning_bus().publish<ConsensusSlotAdvanced>(event->start_slot);
     td::uint32 new_window = event->start_slot / slots_per_leader_window_;
     current_window_ = new_window;
+    ++scheduling_stats_.leader_windows;
+    emit_scheduling_stats();
 
     if (previous_window_had_skip_) {
       first_block_timeout_ = std::min<std::chrono::duration<double>>(
@@ -147,7 +157,7 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
 
     if (timeout_slot_ <= event->start_slot) {
       timeout_slot_ = event->start_slot + 1;
-      if (max_tps_mode_enabled()) {
+      if (work_driven_) {
         timeout_base_ = td::Timestamp::now();
         alarm_timestamp() = td::Timestamp::in(max_tps_candidate_timeout(), timeout_base_);
       } else {
@@ -161,12 +171,14 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
     td::uint32 range_start = timeout_slot_ - 1;
     td::uint32 window_start = range_start - range_start % slots_per_leader_window_;
     td::uint32 window_end = window_start + slots_per_leader_window_;
+    ++scheduling_stats_.failure_timeouts;
     for (td::uint32 i = range_start; i < window_end; ++i) {
       auto slot = state_->slot_at(i);
       if (slot && !slot->state->voted_final) {
         owning_bus().publish<BroadcastVote>(SkipVote{i}).start().detach();
         slot->state->voted_skip = true;
         previous_window_had_skip_ = true;
+        ++scheduling_stats_.skip_votes;
       }
     }
     first_active_slot_ = std::max(first_active_slot_, window_end);
@@ -174,6 +186,7 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
     ++generation_epoch_;
     owning_bus().publish<ConsensusSlotAdvanced>(window_end);
     timeout_slot_ = window_end;
+    emit_scheduling_stats();
   }
 
   template <>
@@ -214,10 +227,37 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
   }
 
  private:
+  struct SchedulingStats {
+    td::uint64 leader_windows = 0;
+    td::uint64 generation_triggers = 0;
+    td::uint64 failure_timeouts = 0;
+    td::uint64 skip_votes = 0;
+    td::uint64 stale_generation_starts = 0;
+    td::uint64 notarizations = 0;
+  };
+
+  void emit_scheduling_stats(bool force = false) {
+    if (!force && !next_scheduling_stats_at_.is_in_past()) {
+      return;
+    }
+    const auto& shard = owning_bus()->shard;
+    LOG(INFO) << "consensus_schedule_summary component=simplex chain="
+              << (shard.is_masterchain() ? "masterchain" : "shardchain")
+              << " workchain=" << shard.workchain << " shard=" << shard.shard
+              << " mode=" << (work_driven_ ? "work_driven" : "target_rate_paced")
+              << " leader_windows=" << scheduling_stats_.leader_windows
+              << " generation_triggers=" << scheduling_stats_.generation_triggers
+              << " failure_timeouts=" << scheduling_stats_.failure_timeouts
+              << " skip_votes=" << scheduling_stats_.skip_votes
+              << " stale_generation_starts=" << scheduling_stats_.stale_generation_starts
+              << " notarizations=" << scheduling_stats_.notarizations;
+    next_scheduling_stats_at_ = td::Timestamp::in(1.0);
+  }
+
   td::actor::Task<> start_generation(ParentId base, td::uint32 start_slot, td::uint64 generation_epoch) {
     auto parent = co_await owning_bus().publish<ResolveState>(base);
     td::Timestamp start_time = td::Timestamp::now();
-    if (!max_tps_mode_enabled() && parent.gen_utime_exact.has_value()) {
+    if (!work_driven_ && parent.gen_utime_exact.has_value()) {
       start_time = std::max(start_time, td::Timestamp::at_unix(*parent.gen_utime_exact) + params_.target_rate);
       start_time = std::min(start_time, td::Timestamp::in(params_.target_rate));
     }
@@ -227,13 +267,15 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
     // resolution cannot resurrect local production for an obsolete window.
     if (generation_epoch != generation_epoch_ || start_slot < first_active_slot_ ||
         current_window_ != start_slot / slots_per_leader_window_) {
+      ++scheduling_stats_.stale_generation_starts;
+      emit_scheduling_stats();
       LOG(WARNING) << "Dropping stale local generation start at slot " << start_slot
                    << "; first_active_slot=" << first_active_slot_
                    << " generation_epoch=" << generation_epoch << " current_epoch=" << generation_epoch_;
       co_return {};
     }
 
-    if (max_tps_mode_enabled()) {
+    if (work_driven_) {
       // ResolveState has its own failure coverage from LeaderWindowObserved.
       // Once it succeeds, align the protocol alarm with the producer/collator
       // budget so a valid large candidate gets the complete configured time.
@@ -241,6 +283,8 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
       alarm_timestamp() = td::Timestamp::in(max_tps_candidate_timeout(), timeout_base_);
     }
 
+    ++scheduling_stats_.generation_triggers;
+    emit_scheduling_stats();
     owning_bus().publish<OurLeaderWindowStarted>(base, parent.state, start_slot, start_slot + slots_per_leader_window_,
                                                  start_time, std::move(parent.excluded_ext_messages));
     co_return {};
@@ -281,7 +325,7 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
       co_return {};
     }
 
-    if (!max_tps_mode_enabled() && !candidate->is_empty() && parent.gen_utime_exact.has_value()) {
+    if (!work_driven_ && !candidate->is_empty() && parent.gen_utime_exact.has_value()) {
       auto earliest = td::Timestamp::at_unix(*parent.gen_utime_exact) + params_.min_block_interval;
       if (!earliest.is_in_past()) {
         co_await td::actor::coro_sleep(earliest);
@@ -339,7 +383,7 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
       // In the first case above, alarm_timestamp() is very likely to be at this position via
       // NotarCert of the previous slot but in case we missed the certificate let's give the
       // certificate as much time as protocol allows to arrive.
-      if (max_tps_mode_enabled()) {
+      if (work_driven_) {
         // Each successful notarization starts a fresh failure budget for the
         // next work-driven candidate. This timestamp is never a production
         // interval and is cancelled/rearmed by protocol progress.
@@ -352,6 +396,8 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
     }
 
     slot->state->notar_cert = event->id;
+    ++scheduling_stats_.notarizations;
+    emit_scheduling_stats();
     try_vote_final(*slot);
     co_return {};
   }
@@ -376,6 +422,9 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
   td::uint32 current_window_ = 0;
   td::uint32 first_active_slot_ = 0;
   td::uint64 generation_epoch_ = 0;
+  bool work_driven_ = false;
+  SchedulingStats scheduling_stats_;
+  td::Timestamp next_scheduling_stats_at_;
 };
 
 }  // namespace

@@ -20,6 +20,7 @@
 #include <cassert>
 #include <ctime>
 #include <set>
+#include <unordered_map>
 
 #include "adnl/utils.hpp"
 #include "block/block-auto.h"
@@ -60,6 +61,17 @@ static constexpr int HIGH_PRIORITY_EXTERNAL = 10;  // don't skip high priority e
 // committed.  Keep that deferred materialization bounded so a high-fanout
 // batch cannot jump from below the soft limit past the hard limit in one step.
 static constexpr std::size_t NATIVE_FAST_PATH_EXTERNAL_BATCH = 512;
+// Keep only two native fragments resident between the snapshot producer and
+// Collator. The logical per-candidate allowance remains independently bounded
+// by TON_NATIVE_COLLATOR_QUEUE_LIMIT.
+static constexpr std::size_t NATIVE_EXT_MSG_TRANSPORT_WINDOW = 2 * NATIVE_FAST_PATH_EXTERNAL_BATCH;
+// While a microbatch is still only an in-memory state delta, keep a
+// conservative soft-limit reservation for both its packed entry and every
+// distinct account it touches.  The exact ShardAccounts proof is still the
+// authority at commit; this reservation only bounds speculative work between
+// exact checkpoints.
+static constexpr td::uint64 NATIVE_DEFERRED_ENTRY_CHARGE_BYTES = 200;
+static constexpr td::uint64 NATIVE_DEFERRED_ACCOUNT_CHARGE_BYTES = 256;
 // After consuming nonempty native work, briefly let the bounded snapshot
 // producer refill before declaring ingress idle. This is an ingress
 // coalescing grace, not a block period or a consensus timing parameter.
@@ -225,18 +237,29 @@ void Collator::start_up() {
     const auto queue_capacity = consensus::select_collator_queue_capacity(
         consensus::work_driven_max_tps_mode_enabled(shard_),
         native_queue_limit ? std::string_view{native_queue_limit} : std::string_view{});
-    ext_msg_queue_ = ExtMsgQueue("ext_msg_queue", queue_capacity);
-    if (consensus::work_driven_max_tps_mode_enabled(shard_)) {
-      LOG(DEBUG) << "native Collator BackpressureQueue capacity=" << queue_capacity;
+    const bool native_streaming = consensus::work_driven_max_tps_mode_enabled(shard_);
+    // One extra physical slot keeps a FIFO completion marker independent from
+    // the bounded message window; it is not part of the logical transfer cap.
+    const auto transport_message_capacity =
+        native_streaming ? std::min(queue_capacity, NATIVE_EXT_MSG_TRANSPORT_WINDOW) : queue_capacity;
+    const auto physical_queue_capacity = transport_message_capacity + (native_streaming ? 1 : 0);
+    ext_msg_queue_ = ExtMsgQueue("ext_msg_queue", physical_queue_capacity);
+    ext_msg_queue_state_ = std::make_shared<ExtMsgQueueState>();
+    if (native_streaming) {
+      LOG(DEBUG) << "native Collator BackpressureQueue logical_capacity=" << queue_capacity
+                 << " transport_message_capacity=" << transport_message_capacity;
     }
     auto callback = std::make_unique<ExtMsgCallback>();
     callback->shard = shard_;
     callback->queue_capacity = queue_capacity;
+    callback->transport_message_capacity = transport_message_capacity;
+    callback->queue_state = ext_msg_queue_state_;
     callback->cancellation_token = ext_msg_cancellation_.get_cancellation_token();
     auto callback_until = params_.ext_msg_callback_until ? params_.ext_msg_callback_until
                                                          : params_.wait_externals_until;
     callback->timeout = callback_until ? callback_until : td::Timestamp::now();
     callback->sync_only = !callback_until;
+    callback->native_streaming = native_streaming;
     callback->excluded_messages = params_.excluded_ext_messages;
     callback->queue = ext_msg_queue_;
     td::actor::send_closure_later(manager, &ValidatorManager::get_external_messages, shard_, std::move(callback));
@@ -4470,23 +4493,31 @@ td::actor::Task<bool> Collator::process_inbound_external_messages() {
       co_return false;
     }
     std::pair<td::Ref<ExtMessage>, int> item;
-    if (pending_ext_msg_) {
-      item = std::move(*pending_ext_msg_);
-      pending_ext_msg_.reset();
+    if (!pending_ext_msgs_.empty()) {
+      item = std::move(pending_ext_msgs_.front());
+      pending_ext_msgs_.pop_front();
     } else {
-      td::Result<std::pair<td::Ref<ExtMessage>, int>> maybe;
+      td::Result<ExtMsgPopBatch> maybe;
       td::Timer wait_timer;
       if (params_.wait_externals_until) {
-        maybe = co_await ext_msg_queue_.try_pop().wrap();
+        maybe = co_await pop_external_message_batch(1, false).wrap();
       } else {
         // In this case queue is closed after pushing the first batch of messages
-        maybe = co_await ext_msg_queue_.pop().wrap();
+        maybe = co_await pop_external_message_batch(1, true).wrap();
       }
       wait_externals_total_time_ += wait_timer.elapsed();
       if (maybe.is_error()) {
         break;  // queue empty or closed
       }
-      item = maybe.move_as_ok();
+      auto popped = maybe.move_as_ok();
+      for (auto& message : popped.messages) {
+        pending_ext_msgs_.push_back(std::move(message));
+      }
+      if (pending_ext_msgs_.empty()) {
+        continue;  // producer completion marker
+      }
+      item = std::move(pending_ext_msgs_.front());
+      pending_ext_msgs_.pop_front();
     }
     td::ScopedRealCpuTimer timer_total{stats_.work_time.total};
     auto [ext_msg_ref, priority] = std::move(item);
@@ -4550,6 +4581,99 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   auto medium_timeout_reached = [&] {
     return !work_driven && external_msg_timeout_.is_in_past(td::Timestamp::now());
   };
+
+  // Keep the compact logical state for the complete candidate.  The queue is
+  // still consumed in small, cancellable fragments, but accepted fragments no
+  // longer install Account objects and then reload/rematerialize them in the
+  // next fragment.  The map is protocol-bounded: one transfer can introduce
+  // at most two accounts and NativeTransferBatch::max_accounts is exactly
+  // twice max_entries.
+  struct NativeAccountState {
+    block::Account* account{nullptr};
+    td::uint64 balance{0};
+    td::uint64 nonce{0};
+    td::uint8 flags{0};
+    int status{block::Account::acc_nonexist};
+    bool is_native{false};
+    bool valid_balance{false};
+    bool changed{false};
+    Ref<vm::Cell> staged_total_state;
+  };
+  struct NativeAccountSnapshot {
+    td::uint64 balance{0};
+    td::uint64 nonce{0};
+    int status{block::Account::acc_nonexist};
+    bool is_native{false};
+    bool changed{false};
+  };
+  struct NativeAddressHash {
+    NativeAddressHash() : seed_(td::Random::secure_uint64()) {
+    }
+    std::size_t operator()(const StdSmcAddress& address) const noexcept {
+      td::uint64 hash = seed_;
+      for (auto byte : address.as_array()) {
+        hash ^= byte;
+        hash *= 1099511628211ULL;
+      }
+      hash ^= hash >> 33;
+      hash *= 0xff51afd7ed558ccdULL;
+      hash ^= hash >> 33;
+      return static_cast<std::size_t>(hash);
+    }
+
+   private:
+    td::uint64 seed_;
+  };
+  std::unordered_map<StdSmcAddress, NativeAccountState, NativeAddressHash> native_states;
+  native_states.reserve(2 * NATIVE_FAST_PATH_EXTERNAL_BATCH);
+  std::optional<vm::NewCellStorageStat> pre_native_storage_stat;
+  bool fatal = false;
+  bool state_capacity_reached = false;
+  auto load_native_state = [&](const StdSmcAddress& address, bool allow_create) -> NativeAccountState* {
+    auto found = native_states.find(address);
+    if (found != native_states.end()) {
+      if (!found->second.account->transactions.empty()) {
+        LOG(DEBUG) << "deferring native transfer for account with ordinary transactions: " << address.to_hex();
+        return nullptr;
+      }
+      return &found->second;
+    }
+    if (native_states.size() >= block::NativeTransferBatch::max_accounts) {
+      state_capacity_reached = true;
+      return nullptr;
+    }
+    auto account_res = make_account(address.cbits(), allow_create);
+    if (account_res.is_error()) {
+      fatal_error(account_res.move_as_error());
+      fatal = true;
+      return nullptr;
+    }
+    auto* account = account_res.move_as_ok();
+    if (!account) {
+      return nullptr;
+    }
+    // A compact native state change cannot share an account with ordinary
+    // Transaction cells in v4.  Defer it before changing state; the final
+    // combine guard below also catches any transaction created later in the
+    // collation pipeline.
+    if (!account->transactions.empty()) {
+      LOG(DEBUG) << "deferring native transfer for account with ordinary transactions: " << address.to_hex();
+      return nullptr;
+    }
+    auto balance = account->native_balance_uint64();
+    NativeAccountState state{
+        .account = account,
+        .balance = balance ? balance.value() : 0,
+        .nonce = account->native_nonce,
+        .flags = account->native_flags,
+        .status = account->status,
+        .is_native = account->is_native,
+        .valid_balance = static_cast<bool>(balance),
+        .staged_total_state = {},
+    };
+    return &native_states.emplace(address, std::move(state)).first->second;
+  };
+
   bool full = !block_limit_status_->fits(block::ParamLimits::cl_soft);
   while (true) {
     if (native_transfer_batch_entries_.size() >= block::NativeTransferBatch::max_entries) {
@@ -4581,35 +4705,49 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     bool saw_item = false;
     while (batch.size() < batch_capacity) {
       std::pair<td::Ref<ExtMessage>, int> item;
-      if (pending_ext_msg_) {
-        item = std::move(*pending_ext_msg_);
-        pending_ext_msg_.reset();
-      } else {
-        td::Result<std::pair<td::Ref<ExtMessage>, int>> maybe;
+      if (pending_ext_msgs_.empty()) {
+        td::Result<ExtMsgPopBatch> maybe;
         td::Timer wait_timer;
-        if (work_driven && native_transfer_batch_entries_.empty() && !saw_item &&
-            params_.wait_externals_until) {
+        bool first_work_trigger = work_driven && native_transfer_batch_entries_.empty() && !saw_item &&
+                                  params_.wait_externals_until;
+        if (params_.wait_externals_until || saw_item) {
           // In work-driven mode the first item is the trigger for producing a
           // non-bootstrap block.  First consume an item that was queued while
-          // state preparation was running, even if the 25ms trigger has since
-          // expired.  Only an actually empty queue waits on that trigger.
-          maybe = co_await ext_msg_queue_.try_pop().wrap();
-          if (maybe.is_error() && !params_.wait_externals_until.is_in_past()) {
-            maybe =
-                co_await td::actor::await_with_timeout(ext_msg_queue_.pop(), params_.wait_externals_until).wrap();
+          // state preparation was running. One bulk pop replaces up to 512
+          // per-item actor asks.
+          maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), false).wrap();
+          if (maybe.is_error()) {
+            auto producer_pending = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
+            auto wait_until = producer_pending ? params_.hard_timeout : params_.wait_externals_until;
+            if ((producer_pending || first_work_trigger) && wait_until && !wait_until.is_in_past()) {
+              maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), true, wait_until).wrap();
+            }
           }
-        } else if (params_.wait_externals_until || saw_item) {
-          maybe = co_await ext_msg_queue_.try_pop().wrap();
         } else {
-          maybe = co_await ext_msg_queue_.pop().wrap();
+          maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), true).wrap();
         }
         wait_externals_total_time_ += wait_timer.elapsed();
         if (maybe.is_error()) {
           queue_exhausted = true;
           break;
         }
-        item = maybe.move_as_ok();
+        auto popped = maybe.move_as_ok();
+        for (auto& message : popped.messages) {
+          pending_ext_msgs_.push_back(std::move(message));
+        }
+        if (pending_ext_msgs_.empty()) {
+          // A completion marker proves the current producer epoch has no more
+          // messages. A newer epoch is never mistaken for completion because
+          // producer_pending compares against the observed marker epoch.
+          if (ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending()) {
+            continue;
+          }
+          queue_exhausted = true;
+          break;
+        }
       }
+      item = std::move(pending_ext_msgs_.front());
+      pending_ext_msgs_.pop_front();
       saw_item = true;
 
       td::ScopedRealCpuTimer timer_total{stats_.work_time.total};
@@ -4648,66 +4786,13 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     // admission result; every validator still independently verifies the
     // complete v4 batch before replaying any state transition.
 
-    struct NativeAccountState {
-      block::Account* account{nullptr};
-      td::uint64 balance{0};
-      td::uint64 nonce{0};
-      td::uint8 flags{0};
-      int status{block::Account::acc_nonexist};
-      bool is_native{false};
-      bool valid_balance{false};
-      bool changed{false};
-      Ref<vm::Cell> staged_total_state;
-    };
-    std::map<StdSmcAddress, NativeAccountState> native_states;
-    bool fatal = false;
-    auto load_native_state = [&](const StdSmcAddress& address, bool allow_create) -> NativeAccountState* {
-      auto found = native_states.find(address);
-      if (found != native_states.end()) {
-        if (!found->second.account->transactions.empty()) {
-          LOG(DEBUG) << "deferring native transfer for account with ordinary transactions: " << address.to_hex();
-          return nullptr;
-        }
-        return &found->second;
-      }
-      auto account_res = make_account(address.cbits(), allow_create);
-      if (account_res.is_error()) {
-        fatal_error(account_res.move_as_error());
-        fatal = true;
-        return nullptr;
-      }
-      auto* account = account_res.move_as_ok();
-      if (!account) {
-        return nullptr;
-      }
-      // A compact native state change cannot share an account with ordinary
-      // Transaction cells in v4.  Defer it before changing state; the final
-      // combine guard below also catches any transaction created later in the
-      // collation pipeline.
-      if (!account->transactions.empty()) {
-        LOG(DEBUG) << "deferring native transfer for account with ordinary transactions: " << address.to_hex();
-        return nullptr;
-      }
-      auto balance = account->native_balance_uint64();
-      NativeAccountState state{
-          .account = account,
-          .balance = balance ? balance.value() : 0,
-          .nonce = account->native_nonce,
-          .flags = account->native_flags,
-          .status = account->status,
-          .is_native = account->is_native,
-          .valid_balance = static_cast<bool>(balance),
-          .staged_total_state = {},
-      };
-      return &native_states.emplace(address, std::move(state)).first->second;
-    };
     StdSmcAddress cached_src_address, cached_dst_address;
     NativeAccountState* cached_src_state = nullptr;
     NativeAccountState* cached_dst_state = nullptr;
     auto load_cached_native_state = [&](const StdSmcAddress& address, bool allow_create) -> NativeAccountState* {
-      // The load shape commonly reuses one destination. Map nodes are stable
-      // across insertion, so retaining the two most recent pointers avoids
-      // that repeated O(log unique_accounts) lookup and also benefits any
+      // The load shape commonly reuses one destination. Unordered-map element
+      // references remain stable across rehash, so retaining the two most
+      // recent pointers avoids repeated address hashing and also benefits any
       // consecutive endpoint run without requiring one for correctness.
       if (cached_src_state && address == cached_src_address) {
         return cached_src_state;
@@ -4723,6 +4808,25 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     std::size_t permanent_in_batch = 0;
     std::vector<std::size_t> accepted_indices;
     accepted_indices.reserve(batch.size());
+    std::map<StdSmcAddress, NativeAccountSnapshot> state_journal;
+    std::set<StdSmcAddress> dirty_addresses;
+    auto journal_state = [&](const StdSmcAddress& address, const NativeAccountState& state) {
+      state_journal.try_emplace(address, NativeAccountSnapshot{
+                                             .balance = state.balance,
+                                             .nonce = state.nonce,
+                                             .status = state.status,
+                                             .is_native = state.is_native,
+                                             .changed = state.changed,
+                                         });
+    };
+    auto delay_batch_suffix = [&](std::size_t index) {
+      for (; index < batch.size(); ++index) {
+        // Keep the exact admitted-message identity.  A nonce alone is not
+        // sufficient when forks or a replacement signature are involved.
+        delay_ext_msgs_.emplace_back(batch[index].ext_msg->hash());
+        ++delayed_in_batch;
+      }
+    };
     {
       td::ScopedRealCpuTimer timer{stats_.work_time.native_execute};
       for (std::size_t index = 0; index < batch.size(); ++index) {
@@ -4731,19 +4835,13 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           co_return false;
         }
         if (medium_timeout_reached()) {
-          for (; index < batch.size(); ++index) {
-            delay_ext_msgs_.emplace_back(batch[index].ext_msg->hash());
-            ++delayed_in_batch;
-          }
+          delay_batch_suffix(index);
           stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: timeout\n";
           break;
         }
         if (full || !block_limit_status_->fits(block::ParamLimits::cl_soft)) {
           full = true;
-          for (; index < batch.size(); ++index) {
-            delay_ext_msgs_.emplace_back(batch[index].ext_msg->hash());
-            ++delayed_in_batch;
-          }
+          delay_batch_suffix(index);
           break;
         }
 
@@ -4760,6 +4858,12 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         if (fatal) {
           bad_ext_msgs_.emplace_back(item.ext_msg->hash());
           co_return false;
+        }
+        if (state_capacity_reached) {
+          full = true;
+          delay_batch_suffix(index);
+          stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: protocol account-state cap reached\n";
+          break;
         }
         if (!src || !dst || !src->valid_balance || !dst->valid_balance) {
           ++stats_.ext_msgs_rejected;
@@ -4800,9 +4904,32 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           continue;
         }
 
+        auto new_dirty_accounts = static_cast<td::uint64>(!dirty_addresses.contains(item.transfer.src));
+        if (dst != src && !dirty_addresses.contains(item.transfer.dst)) {
+          ++new_dirty_accounts;
+        }
+        auto prospective_deferred_bytes =
+            static_cast<td::uint64>(accepted_indices.size() + 1) * NATIVE_DEFERRED_ENTRY_CHARGE_BYTES +
+            static_cast<td::uint64>(dirty_addresses.size() + new_dirty_accounts) *
+                NATIVE_DEFERRED_ACCOUNT_CHARGE_BYTES;
+        if (block_limit_status_->estimate_block_size() + prospective_deferred_bytes >=
+            block_limit_status_->limits.bytes.soft()) {
+          full = true;
+          delay_batch_suffix(index);
+          stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: conservative deferred-state soft limit\n";
+          break;
+        }
+
         // Apply the ordered logical transition to compact in-memory state.  A
         // shared destination is updated here without forcing a one-transfer
-        // conflict round; each touched Account cell is materialized once below.
+        // conflict round.  The journal makes the exact hard-limit checkpoint
+        // transactional without copying the block-wide state map.
+        journal_state(item.transfer.src, *src);
+        dirty_addresses.insert(item.transfer.src);
+        if (dst != src) {
+          journal_state(item.transfer.dst, *dst);
+          dirty_addresses.insert(item.transfer.dst);
+        }
         src->balance = result.src_balance;
         src->nonce = result.src_nonce;
         src->status = block::Account::acc_uninit;
@@ -4822,19 +4949,19 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     if (!accepted_indices.empty()) {
       td::ScopedRealCpuTimer timer{stats_.work_time.native_commit};
       vm::AugmentedDictionary staged_account_dict{*account_dict_estimator_};
-      for (auto& [address, state] : native_states) {
-        if (!state.changed) {
-          continue;
-        }
+      std::map<StdSmcAddress, Ref<vm::Cell>> staged_account_cells;
+      for (const auto& address : dirty_addresses) {
+        auto& state = native_states.at(address);
+        Ref<vm::Cell> staged_total_state;
         {
           td::ScopedRealCpuTimer cell_timer{stats_.work_time.native_account_cell_build};
           vm::CellBuilder state_builder;
           if (!(state_builder.store_long_bool(1, 2) && state_builder.store_ulong_rchk_bool(state.balance, 64) &&
                 state_builder.store_ulong_rchk_bool(state.nonce, 64) &&
                 state_builder.store_ulong_rchk_bool(state.flags, 8) &&
-                state_builder.finalize_to(state.staged_total_state) &&
-                block::gen::t_Account.validate_ref(state.staged_total_state) &&
-                block::tlb::t_Account.validate_ref(state.staged_total_state))) {
+                state_builder.finalize_to(staged_total_state) &&
+                block::gen::t_Account.validate_ref(staged_total_state) &&
+                block::tlb::t_Account.validate_ref(staged_total_state))) {
             co_return fatal_error("cannot stage aggregated native account state");
           }
           ++stats_.native_account_cells_built;
@@ -4842,7 +4969,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         {
           td::ScopedRealCpuTimer dict_timer{stats_.work_time.native_staged_dict_set};
           vm::CellBuilder account_builder;
-          if (!(account_builder.store_ref_bool(state.staged_total_state) &&
+          if (!(account_builder.store_ref_bool(staged_total_state) &&
                 account_builder.store_bits_bool(state.account->last_trans_hash_) &&
                 account_builder.store_long_bool(state.account->last_trans_lt_, 64) &&
                 staged_account_dict.set_builder(address, account_builder))) {
@@ -4850,6 +4977,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           }
           ++stats_.native_staged_dict_sets;
         }
+        staged_account_cells.emplace(address, std::move(staged_total_state));
       }
 
       // Transaction bytes and all deferred account/dictionary cells are
@@ -4858,24 +4986,52 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       // candidate seals at its previous state, avoiding a deterministic retry
       // loop at saturation.
       block_limit_status_->add_transaction(static_cast<unsigned>(accepted_indices.size()));
-      // Compute only the proof delta relative to cells already charged to the
-      // candidate.  A fresh NewCellStorageStat would re-traverse and re-count
-      // every dictionary mutation from prior microbatches, causing quadratic
-      // preflight work and an increasingly large false hard-limit charge.
-      // The staged ShardAccounts root reaches every staged Account cell, while
-      // the main statistic's seen set stops at previously charged branches.
-      vm::NewCellStorageStat::Stat staged_cells;
+      // Native dictionary roots are replaceable candidate state, not additive
+      // block payload. Rebuild the trial statistic from the exact pre-native
+      // seen sets plus only the latest canonical ShardAccounts root. Keeping
+      // prior fragment roots permanently charged made an otherwise unchanged
+      // shared destination consume the soft/hard budget once per fragment.
+      unsigned provisional_new_accounts = 0;
+      for (const auto& [address, _] : staged_account_cells) {
+        if (!account_dict_estimator_added_accounts_.contains(native_states.at(address).account->addr)) {
+          ++provisional_new_accounts;
+        }
+      }
+      std::optional<block::BlockLimitStatus> trial_limit_status;
+      {
+        td::ScopedRealCpuTimer checkpoint_timer{stats_.work_time.native_stat_checkpoint_rebuild};
+        if (!pre_native_storage_stat) {
+          pre_native_storage_stat.emplace(block_limit_status_->st_stat);
+          ++stats_.native_stat_checkpoint_base_snapshots;
+        }
+        trial_limit_status.emplace(block_limit_status_->limits, block_limit_status_->cur_lt);
+        auto& trial = *trial_limit_status;
+        trial.gas_used = block_limit_status_->gas_used;
+        trial.accounts = block_limit_status_->accounts + provisional_new_accounts;
+        trial.transactions = block_limit_status_->transactions;
+        trial.extra_out_msgs = block_limit_status_->extra_out_msgs;
+        trial.collated_data_size_estimate = block_limit_status_->collated_data_size_estimate;
+        trial.public_library_diff = block_limit_status_->public_library_diff;
+        trial.st_stat = *pre_native_storage_stat;
+        trial.st_stat.add_proof(staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
+        ++stats_.native_stat_checkpoint_rebuilds;
+      }
       bool staged_fits;
       {
         td::ScopedRealCpuTimer preflight_timer{stats_.work_time.native_proof_preflight};
-        staged_cells = block_limit_status_->st_stat.tentative_add_proof(
-            staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
-        staged_fits = block_limit_status_->would_fit(block::ParamLimits::cl_hard,
-                                                      block_limit_status_->cur_lt, 0, &staged_cells);
+        staged_fits = trial_limit_status->fits(block::ParamLimits::cl_hard);
       }
       if (!staged_fits) {
         ++stats_.native_hard_preflight_failures;
         block_limit_status_->transactions -= static_cast<unsigned>(accepted_indices.size());
+        for (const auto& [address, snapshot] : state_journal) {
+          auto& state = native_states.at(address);
+          state.balance = snapshot.balance;
+          state.nonce = snapshot.nonce;
+          state.status = snapshot.status;
+          state.is_native = snapshot.is_native;
+          state.changed = snapshot.changed;
+        }
         for (auto index : accepted_indices) {
           delay_ext_msgs_.emplace_back(batch[index].ext_msg->hash());
           ++delayed_in_batch;
@@ -4885,24 +5041,18 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         full = true;
         stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: deferred microbatch by hard-limit preflight\n";
       } else {
+        // Replacing only st_stat is atomic with respect to candidate state: all
+        // other live counters already include this fragment's provisional
+        // transaction count and were copied exactly into the hard-fit trial.
+        block_limit_status_->st_stat = std::move(trial_limit_status->st_stat);
         unsigned changed_accounts = 0;
-        {
-          td::ScopedRealCpuTimer install_timer{stats_.work_time.native_state_install};
-          for (auto& [_, state] : native_states) {
-            if (!state.changed) {
-              continue;
-            }
-            bool first_update = state.account->total_state->get_hash() == state.account->orig_total_state->get_hash();
-            if (!state.account->set_prevalidated_native_state(std::move(state.staged_total_state), state.balance,
-                                                               state.nonce, state.flags)) {
-              co_return fatal_error("cannot commit preflighted native account state");
-            }
-            block_limit_status_->add_proof(state.account->total_state);
-            block_limit_status_->add_account(first_update);
-            account_dict_estimator_added_accounts_.insert(state.account->addr);
-            native_compact_accounts_.insert(state.account->addr);
-            ++changed_accounts;
-          }
+        for (auto& [address, staged_total_state] : staged_account_cells) {
+          auto& state = native_states.at(address);
+          state.staged_total_state = staged_total_state;
+          auto [_, first_update] = account_dict_estimator_added_accounts_.insert(state.account->addr);
+          block_limit_status_->add_account(first_update);
+          native_compact_accounts_.insert(state.account->addr);
+          ++changed_accounts;
         }
         // Install exactly the augmented dictionary root that was preflighted.
         // Charging intermediate roots every 16 account updates retained
@@ -4910,7 +5060,6 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         // preflight, and added avoidable work on large native batches.
         account_dict_estimator_ = std::make_unique<vm::AugmentedDictionary>(staged_account_dict);
         account_dict_ops_ += changed_accounts;
-        block_limit_status_->add_proof(account_dict_estimator_->get_root_cell());
         for (auto index : accepted_indices) {
           auto& item = batch[index];
           native_compact_transaction_fees_ += block::CurrencyCollection{td::make_refint(item.transfer.fee)};
@@ -4926,23 +5075,54 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         }
       }
     }
-    full = !block_limit_status_->fits(block::ParamLimits::cl_soft);
+    full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft);
     block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
     ++stats_.native_microbatches;
     stats_.native_microbatch_input += batch.size();
     stats_.native_microbatch_accepted += accepted_in_batch;
     stats_.native_microbatch_delayed += delayed_in_batch;
     stats_.native_microbatch_permanent += permanent_in_batch;
-    stats_.native_microbatch_unique_accounts += native_states.size();
+    stats_.native_microbatch_unique_accounts += state_journal.size();
     stats_.native_microbatch_max_input = std::max<td::uint64>(stats_.native_microbatch_max_input, batch.size());
     stats_.native_microbatch_max_unique_accounts =
-        std::max<td::uint64>(stats_.native_microbatch_max_unique_accounts, native_states.size());
+        std::max<td::uint64>(stats_.native_microbatch_max_unique_accounts, state_journal.size());
     LOG(INFO) << "native fast-path batch: input=" << batch.size() << " accepted=" << accepted_in_batch
               << " delayed=" << delayed_in_batch << " permanent=" << permanent_in_batch
-              << " unique_accounts=" << native_states.size()
+              << " dirty_accounts=" << state_journal.size()
+              << " candidate_accounts=" << native_states.size()
               << " estimated_bytes=" << block_limit_status_->estimate_block_size()
               << " soft_load=" << block_limit_status_->load_fraction(block::ParamLimits::cl_soft)
               << " work_driven=" << work_driven;
+
+    // Accounts which were only inspected for rejected messages carry no
+    // candidate state and must not consume the protocol-bounded accumulator.
+    // Erasure invalidates the erased endpoint caches, which are deliberately
+    // scoped to the fragment above.
+    for (auto it = native_states.begin(); it != native_states.end();) {
+      if (!it->second.changed) {
+        it = native_states.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  // Install each final Account value once, after the last exact dictionary
+  // checkpoint.  combine_account_transactions() can then reuse the identical
+  // preflighted ShardAccounts root without a second trie mutation pass.
+  {
+    td::ScopedRealCpuTimer install_timer{stats_.work_time.native_state_install};
+    for (auto& [_, state] : native_states) {
+      if (!state.changed) {
+        continue;
+      }
+      if (state.staged_total_state.is_null() ||
+          !state.account->set_prevalidated_native_state(std::move(state.staged_total_state), state.balance,
+                                                        state.nonce, state.flags)) {
+        co_return fatal_error("cannot install final preflighted native account state");
+      }
+      ++stats_.native_state_accounts_installed;
+    }
   }
   co_return true;
 }
@@ -7410,13 +7590,86 @@ td::Status Collator::register_external_message(Ref<ExtMessage> ext_msg, int prio
 /**
  * Wait for an external message from the backpressure queue, or timeout.
  */
-td::actor::Task<> Collator::wait_for_external_message(td::Timestamp timeout) {
-  auto result = co_await td::actor::await_with_timeout(ext_msg_queue_.pop(), timeout).wrap();
+td::actor::Task<Collator::ExtMsgPopBatch> Collator::pop_external_message_batch(std::size_t max_messages,
+                                                                               bool block,
+                                                                               std::optional<td::Timestamp> timeout) {
+  CHECK(max_messages > 0);
+  // A completion marker can share this bounded batch with messages. If the
+  // batch is all messages, the marker remains FIFO for the next call.
+  td::Result<std::vector<ExtMsgQueueEntry>> result;
+  if (block && timeout) {
+    result = co_await ext_msg_queue_.pop_many_until(max_messages, *timeout).wrap();
+  } else if (block) {
+    result = co_await ext_msg_queue_.pop_many(max_messages).wrap();
+  } else {
+    result = co_await ext_msg_queue_.try_pop_many(max_messages).wrap();
+  }
   if (result.is_error()) {
+    if (ext_msg_queue_state_) {
+      ext_msg_queue_state_->record_empty(ext_msg_queue_state_->producer_pending());
+    }
     co_return result.move_as_error();
   }
-  pending_ext_msg_ = result.move_as_ok();
-  co_return {};
+  ExtMsgPopBatch batch;
+  std::size_t native_consumed = 0;
+  for (auto& entry : result.move_as_ok()) {
+    if (entry.is_completion()) {
+      if (ext_msg_queue_state_) {
+        ext_msg_queue_state_->observe_completion(entry.completed_epoch);
+      }
+      batch.producer_completed = true;
+      continue;
+    }
+    native_consumed += entry.native;
+    batch.messages.push_back(std::move(*entry.message));
+  }
+  if (ext_msg_queue_state_) {
+    ext_msg_queue_state_->record_consumed(native_consumed);
+  }
+  co_return std::move(batch);
+}
+
+td::actor::Task<> Collator::wait_for_external_message(td::Timestamp timeout) {
+  auto deadline = timeout;
+  bool extended_for_producer = false;
+  while (true) {
+    auto result = co_await pop_external_message_batch(NATIVE_FAST_PATH_EXTERNAL_BATCH, true, deadline).wrap();
+    if (result.is_ok()) {
+      auto batch = result.move_as_ok();
+      for (auto& message : batch.messages) {
+        pending_ext_msgs_.push_back(std::move(message));
+      }
+      if (!pending_ext_msgs_.empty()) {
+        co_return {};
+      }
+      // A marker-only batch completed the current snapshot. Preserve the
+      // caller's coalescing window so live ingress can start a newer epoch.
+      auto producer_pending = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
+      if (producer_pending) {
+        deadline = params_.hard_timeout;
+        extended_for_producer = true;
+        continue;
+      }
+      if (!extended_for_producer && !deadline.is_in_past()) {
+        continue;
+      }
+    } else if (result.error().code() != td::actor::AWAIT_TIMEOUT_CODE) {
+      co_return result.move_as_error();
+    }
+    auto producer_pending = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
+    // A full transport window can leave the producer suspended when the 10ms
+    // consumer grace expires. Do not seal until its ordered completion marker,
+    // but retain the candidate's hard cancellation bound.
+    if (producer_pending && params_.hard_timeout && !params_.hard_timeout.is_in_past()) {
+      deadline = params_.hard_timeout;
+      extended_for_producer = true;
+      continue;
+    }
+    if (result.is_error()) {
+      co_return result.move_as_error();
+    }
+    co_return td::Status::Error(ErrorCode::timeout, "external-message wait expired");
+  }
 }
 
 /**

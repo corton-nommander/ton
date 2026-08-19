@@ -18,6 +18,10 @@
 */
 #pragma once
 
+#include <atomic>
+#include <memory>
+#include <mutex>
+
 #include <ton/ton-tl.hpp>
 
 #include "auto/tl/lite_api.h"
@@ -148,6 +152,7 @@ struct CollationStats {
     td::RealCpuTimer::Time native_commit;
     td::RealCpuTimer::Time native_account_cell_build;
     td::RealCpuTimer::Time native_staged_dict_set;
+    td::RealCpuTimer::Time native_stat_checkpoint_rebuild;
     td::RealCpuTimer::Time native_proof_preflight;
     td::RealCpuTimer::Time native_state_install;
     td::RealCpuTimer::Time native_canonical_dict_install;
@@ -172,6 +177,7 @@ struct CollationStats {
                        << " native_commit=" << native_commit.get(is_cpu)
                        << " native_account_cell_build=" << native_account_cell_build.get(is_cpu)
                        << " native_staged_dict_set=" << native_staged_dict_set.get(is_cpu)
+                       << " native_stat_checkpoint_rebuild=" << native_stat_checkpoint_rebuild.get(is_cpu)
                        << " native_proof_preflight=" << native_proof_preflight.get(is_cpu)
                        << " native_state_install=" << native_state_install.get(is_cpu)
                        << " native_canonical_dict_install=" << native_canonical_dict_install.get(is_cpu)
@@ -197,6 +203,9 @@ struct CollationStats {
   td::uint64 native_microbatch_max_unique_accounts = 0;
   td::uint64 native_account_cells_built = 0;
   td::uint64 native_staged_dict_sets = 0;
+  td::uint64 native_state_accounts_installed = 0;
+  td::uint64 native_stat_checkpoint_base_snapshots = 0;
+  td::uint64 native_stat_checkpoint_rebuilds = 0;
   td::uint64 native_hard_preflight_failures = 0;
   td::uint64 native_canonical_accounts_reused = 0;
   bool native_canonical_root_reused = false;
@@ -216,6 +225,9 @@ struct CollationStats {
                      << " native_microbatch_max_unique_accounts=" << native_microbatch_max_unique_accounts
                      << " native_account_cells_built=" << native_account_cells_built
                      << " native_staged_dict_sets=" << native_staged_dict_sets
+                     << " native_state_accounts_installed=" << native_state_accounts_installed
+                     << " native_stat_checkpoint_base_snapshots=" << native_stat_checkpoint_base_snapshots
+                     << " native_stat_checkpoint_rebuilds=" << native_stat_checkpoint_rebuilds
                      << " native_hard_preflight_failures=" << native_hard_preflight_failures
                      << " native_canonical_root_reused=" << native_canonical_root_reused
                      << " native_canonical_accounts_reused=" << native_canonical_accounts_reused;
@@ -270,6 +282,12 @@ struct ValidationStats {
     td::RealCpuTimer::Time trx_other;
     td::RealCpuTimer::Time check_transactions_other;
     td::RealCpuTimer::Time native_batch_replay;
+    td::RealCpuTimer::Time native_signature_verify;
+    td::RealCpuTimer::Time native_account_load;
+    td::RealCpuTimer::Time native_state_replay;
+    td::RealCpuTimer::Time native_account_materialize;
+    td::RealCpuTimer::Time native_state_dictionary_check;
+    td::RealCpuTimer::Time state_merkle_update;
     td::RealCpuTimer::Time unpack_state;
     td::RealCpuTimer::Time validate_block_tlb;
     td::RealCpuTimer::Time unpack_block_data;
@@ -291,6 +309,12 @@ struct ValidationStats {
                        << " trx_storage_stat=" << trx_storage_stat.get(is_cpu) << " trx_other=" << trx_other.get(is_cpu)
                        << " check_transactions_other=" << check_transactions_other.get(is_cpu)
                        << " native_batch_replay=" << native_batch_replay.get(is_cpu)
+                       << " native_signature_verify=" << native_signature_verify.get(is_cpu)
+                       << " native_account_load=" << native_account_load.get(is_cpu)
+                       << " native_state_replay=" << native_state_replay.get(is_cpu)
+                       << " native_account_materialize=" << native_account_materialize.get(is_cpu)
+                       << " native_state_dictionary_check=" << native_state_dictionary_check.get(is_cpu)
+                       << " state_merkle_update=" << state_merkle_update.get(is_cpu)
                        << " unpack_state=" << unpack_state.get(is_cpu)
                        << " validate_block_tlb=" << validate_block_tlb.get(is_cpu)
                        << " unpack_block_data=" << unpack_block_data.get(is_cpu)
@@ -333,15 +357,211 @@ struct CollatorNodeResponseStats {
   }
 };
 
-using ExtMsgQueue = td::actor::BackpressureQueue<std::pair<td::Ref<ExtMessage>, int>>;
+struct ExtMsgQueueTelemetry {
+  std::mutex accounting_mutex;
+  std::atomic<td::uint64> selected{0};
+  std::atomic<td::uint64> pushed{0};
+  std::atomic<td::uint64> push_reserved{0};
+  std::atomic<td::uint64> consumed{0};
+  std::atomic<td::uint64> queued_discarded{0};
+  std::atomic<td::uint64> unpushed_discarded{0};
+  std::atomic<td::uint64> high_water{0};
+  std::atomic<td::uint64> push_batches{0};
+  std::atomic<td::uint64> push_batch_items{0};
+  std::atomic<td::uint64> max_push_batch{0};
+  std::atomic<td::uint64> pop_batches{0};
+  std::atomic<td::uint64> pop_batch_items{0};
+  std::atomic<td::uint64> max_pop_batch{0};
+  std::atomic<td::uint64> producer_empty{0};
+  std::atomic<td::uint64> consumer_empty{0};
+
+  static void update_max(std::atomic<td::uint64>& value, td::uint64 candidate) {
+    auto current = value.load(std::memory_order_relaxed);
+    while (current < candidate &&
+           !value.compare_exchange_weak(current, candidate, std::memory_order_relaxed)) {
+    }
+  }
+};
+
+// Queue entries carry an ordered producer-completion marker in addition to
+// messages. Markers do not consume the logical external-message allowance and
+// are never included in transfer counters.
+struct ExtMsgQueueEntry {
+  std::optional<std::pair<td::Ref<ExtMessage>, int>> message;
+  bool native{false};
+  td::uint64 completed_epoch{0};
+
+  static ExtMsgQueueEntry make_message(std::pair<td::Ref<ExtMessage>, int> value, bool is_native) {
+    ExtMsgQueueEntry entry;
+    entry.message = std::move(value);
+    entry.native = is_native;
+    return entry;
+  }
+  static ExtMsgQueueEntry make_completion(td::uint64 epoch) {
+    ExtMsgQueueEntry entry;
+    entry.completed_epoch = epoch;
+    return entry;
+  }
+  bool is_completion() const {
+    return !message.has_value();
+  }
+};
+
+struct ExtMsgQueueState {
+  td::uint64 begin_producer_epoch() {
+    return producer_epoch_.fetch_add(1, std::memory_order_release) + 1;
+  }
+  td::uint64 producer_epoch() const {
+    return producer_epoch_.load(std::memory_order_acquire);
+  }
+  void observe_completion(td::uint64 epoch) {
+    auto current = observed_completion_epoch_.load(std::memory_order_relaxed);
+    while (current < epoch && !observed_completion_epoch_.compare_exchange_weak(
+                                  current, epoch, std::memory_order_release, std::memory_order_relaxed)) {
+    }
+  }
+  bool producer_pending() const {
+    return observed_completion_epoch_.load(std::memory_order_acquire) < producer_epoch();
+  }
+  void attach_telemetry(std::shared_ptr<ExtMsgQueueTelemetry> telemetry) {
+    std::atomic_store_explicit(&telemetry_, std::move(telemetry), std::memory_order_release);
+  }
+  void record_selected(std::size_t count) {
+    std::lock_guard lock(accounting_mutex_);
+    native_selected_ += count;
+    if (auto telemetry = load_telemetry()) {
+      std::lock_guard telemetry_lock(telemetry->accounting_mutex);
+      telemetry->selected.fetch_add(count, std::memory_order_relaxed);
+      if (cancel_recorded_) {
+        telemetry->unpushed_discarded.fetch_add(count, std::memory_order_relaxed);
+      }
+    }
+  }
+  void record_pushed(std::size_t count) {
+    record_push_started(count);
+    record_push_completed(count, count);
+  }
+  void record_push_started(std::size_t count) {
+    if (count == 0) {
+      return;
+    }
+    std::lock_guard lock(accounting_mutex_);
+    CHECK(native_pushed_ + native_push_reserved_ + count <= native_selected_);
+    native_push_reserved_ += count;
+    auto published_depth = native_pushed_ + native_push_reserved_ - native_consumed_;
+    if (auto telemetry = load_telemetry()) {
+      std::lock_guard telemetry_lock(telemetry->accounting_mutex);
+      telemetry->push_reserved.fetch_add(count, std::memory_order_relaxed);
+      // This is the safe publication high-water bound while push_many_bounded
+      // can expose queue-sized prefixes before reporting its exact result.
+      ExtMsgQueueTelemetry::update_max(telemetry->high_water, published_depth);
+      if (cancel_recorded_) {
+        telemetry->unpushed_discarded.fetch_sub(count, std::memory_order_relaxed);
+        telemetry->queued_discarded.fetch_add(count, std::memory_order_relaxed);
+      }
+    }
+  }
+  void record_push_completed(std::size_t reserved_count, std::size_t pushed_count) {
+    CHECK(pushed_count <= reserved_count);
+    if (reserved_count == 0) {
+      return;
+    }
+    std::lock_guard lock(accounting_mutex_);
+    CHECK(reserved_count <= native_push_reserved_);
+    native_push_reserved_ -= reserved_count;
+    native_pushed_ += pushed_count;
+    // Any item observed by the consumer must belong to the prefix that the
+    // queue reports as inserted. This also catches a broken partial-close
+    // implementation instead of silently publishing inconsistent totals.
+    CHECK(native_consumed_ <= native_pushed_ + native_push_reserved_);
+    auto depth = native_pushed_ > native_consumed_ ? native_pushed_ - native_consumed_ : 0;
+    if (auto telemetry = load_telemetry()) {
+      std::lock_guard telemetry_lock(telemetry->accounting_mutex);
+      telemetry->push_reserved.fetch_sub(reserved_count, std::memory_order_relaxed);
+      telemetry->pushed.fetch_add(pushed_count, std::memory_order_relaxed);
+      if (pushed_count != 0) {
+        telemetry->push_batches.fetch_add(1, std::memory_order_relaxed);
+        telemetry->push_batch_items.fetch_add(pushed_count, std::memory_order_relaxed);
+        ExtMsgQueueTelemetry::update_max(telemetry->max_push_batch, pushed_count);
+        ExtMsgQueueTelemetry::update_max(telemetry->high_water, depth);
+      }
+      if (cancel_recorded_) {
+        auto failed = reserved_count - pushed_count;
+        telemetry->queued_discarded.fetch_sub(failed, std::memory_order_relaxed);
+        telemetry->unpushed_discarded.fetch_add(failed, std::memory_order_relaxed);
+      }
+    }
+  }
+  void record_consumed(std::size_t count) {
+    if (count == 0) {
+      return;
+    }
+    std::lock_guard lock(accounting_mutex_);
+    // A queue insertion wakes its consumer before the producer coroutine can
+    // resume and publish the exact push result. The pre-await reservation is
+    // therefore part of the consumable bound.
+    CHECK(native_consumed_ + count <= native_pushed_ + native_push_reserved_);
+    native_consumed_ += count;
+    if (auto telemetry = load_telemetry()) {
+      std::lock_guard telemetry_lock(telemetry->accounting_mutex);
+      telemetry->consumed.fetch_add(count, std::memory_order_relaxed);
+      telemetry->pop_batches.fetch_add(1, std::memory_order_relaxed);
+      telemetry->pop_batch_items.fetch_add(count, std::memory_order_relaxed);
+      ExtMsgQueueTelemetry::update_max(telemetry->max_pop_batch, count);
+      if (cancel_recorded_) {
+        telemetry->queued_discarded.fetch_sub(count, std::memory_order_relaxed);
+      }
+    }
+  }
+  void record_empty(bool producer_pending) {
+    if (auto telemetry = load_telemetry()) {
+      auto& counter = producer_pending ? telemetry->producer_empty : telemetry->consumer_empty;
+      counter.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
+  void record_cancel_discarded() {
+    std::lock_guard lock(accounting_mutex_);
+    if (cancel_recorded_) {
+      return;
+    }
+    cancel_recorded_ = true;
+    if (auto telemetry = load_telemetry()) {
+      std::lock_guard telemetry_lock(telemetry->accounting_mutex);
+      telemetry->unpushed_discarded.fetch_add(native_selected_ - native_pushed_ - native_push_reserved_,
+                                               std::memory_order_relaxed);
+      telemetry->queued_discarded.fetch_add(native_pushed_ + native_push_reserved_ - native_consumed_,
+                                             std::memory_order_relaxed);
+    }
+  }
+
+ private:
+  std::shared_ptr<ExtMsgQueueTelemetry> load_telemetry() const {
+    return std::atomic_load_explicit(&telemetry_, std::memory_order_acquire);
+  }
+
+  std::atomic<td::uint64> producer_epoch_{0};
+  std::atomic<td::uint64> observed_completion_epoch_{0};
+  std::mutex accounting_mutex_;
+  td::uint64 native_selected_{0};
+  td::uint64 native_pushed_{0};
+  td::uint64 native_push_reserved_{0};
+  td::uint64 native_consumed_{0};
+  bool cancel_recorded_{false};
+  std::shared_ptr<ExtMsgQueueTelemetry> telemetry_;
+};
+
+using ExtMsgQueue = td::actor::BackpressureQueue<ExtMsgQueueEntry>;
 
 struct ExtMsgCallback {
   ShardIdFull shard;
   ExtMsgQueue queue;
+  std::shared_ptr<ExtMsgQueueState> queue_state{std::make_shared<ExtMsgQueueState>()};
   std::size_t queue_capacity{500};
+  std::size_t transport_message_capacity{500};
   td::CancellationToken cancellation_token;
   td::Timestamp timeout;
   bool sync_only = false;
+  bool native_streaming = false;
   std::vector<ExtMessage::Hash> excluded_messages;
 };
 

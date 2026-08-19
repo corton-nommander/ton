@@ -1,4 +1,5 @@
 #include "td/utils/tests.h"
+#include "td/actor/TestScheduler.h"
 #include "validator/impl/ext-message-pool.hpp"
 
 namespace ton::validator {
@@ -66,6 +67,14 @@ class ExtMessagePoolTestAccess {
     td::uint64 head_gaps{0};
     td::uint64 runs{0};
     td::uint64 max_run_size{0};
+  };
+  struct SchedulerStats {
+    td::uint64 selected{0};
+    td::uint64 builds{0};
+    td::uint64 source_scans{0};
+    td::uint64 source_refreshes{0};
+    td::uint64 source_probes{0};
+    td::uint64 runs{0};
   };
 
   static ExtMessagePool make_pool() {
@@ -148,6 +157,7 @@ class ExtMessagePoolTestAccess {
     callback->shard = {basechainId, shardIdAll};
     callback->queue_capacity = queue_capacity;
     callback->timeout = td::Timestamp::in(60.0);
+    callback->native_streaming = true;
     auto installed = std::make_shared<ExtMessagePool::InstalledCallback>(std::move(callback));
     // Model the installed callback's serialized pump already waiting. This
     // keeps the unit test actor-free while ensuring the post-commit wake appends
@@ -185,8 +195,75 @@ class ExtMessagePoolTestAccess {
 
   static bool callback_has_delivery(const ExtMessagePool &pool, const ExtMessage::Hash &hash) {
     return pool.callbacks_.size() == 1 && pool.callbacks_.front()->delivered_native.contains(hash) &&
-           pool.callbacks_.front()->pending.size() == 1 &&
-           pool.callbacks_.front()->pending.front().first->hash() == hash;
+           pool.callbacks_.front()->pending_native.size() == 1 &&
+           pool.callbacks_.front()->pending_native.front().message &&
+           pool.callbacks_.front()->pending_native.front().message->first->hash() == hash;
+  }
+
+  static bool callback_contains_delivery(const ExtMessagePool &pool, const ExtMessage::Hash &hash) {
+    if (pool.callbacks_.size() != 1 || !pool.callbacks_.front()->delivered_native.contains(hash)) {
+      return false;
+    }
+    return std::any_of(pool.callbacks_.front()->pending_native.begin(),
+                       pool.callbacks_.front()->pending_native.end(), [&](const auto &entry) {
+                         return entry.message && entry.message->first->hash() == hash;
+                       });
+  }
+
+  static std::size_t fill_once(ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    auto callback = pool.callbacks_.front();
+    pool.begin_callback_epoch(callback);
+    return pool.fill_callback_native(callback, false);
+  }
+
+  static std::size_t fill_sources(ExtMessagePool &pool, const std::set<NativeAddress> &sources) {
+    CHECK(pool.callbacks_.size() == 1);
+    auto callback = pool.callbacks_.front();
+    pool.begin_callback_epoch(callback);
+    return pool.fill_callback_native(callback, false, &sources);
+  }
+
+  static SchedulerStats scheduler_stats(const ExtMessagePool &pool) {
+    const auto &stats = pool.native_queue_counters_;
+    return SchedulerStats{.selected = stats.selected,
+                          .builds = stats.scheduler_builds,
+                          .source_scans = stats.source_scans,
+                          .source_refreshes = stats.source_refreshes,
+                          .source_probes = stats.source_probes,
+                          .runs = stats.runs};
+  }
+
+  static std::size_t callback_pending(const ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    return pool.callbacks_.front()->pending_native.size() + pool.callbacks_.front()->pending_generic.size();
+  }
+
+  static std::size_t wake_sources(ExtMessagePool &pool, const std::set<NativeAddress> &sources,
+                                  bool preserve_valid_ready_head = false) {
+    return pool.wake_native_callbacks(&sources, preserve_valid_ready_head);
+  }
+
+  static std::size_t dirty_sources(const ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    return pool.callbacks_.front()->native_dirty_sources.size();
+  }
+
+  static std::size_t resume_native_pump_refill(ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    auto callback = pool.callbacks_.front();
+    auto dirty_sources = std::move(callback->native_dirty_sources);
+    callback->native_dirty_sources.clear();
+    if (callback->native_scheduler_rebuild) {
+      callback->native_scheduler = {};
+      callback->native_scheduler_rebuild = false;
+      dirty_sources.clear();
+    }
+    return pool.fill_callback_native(callback, false, dirty_sources.empty() ? nullptr : &dirty_sources);
+  }
+
+  static constexpr std::size_t native_delivery_chunk() {
+    return ExtMessagePool::NATIVE_DELIVERY_CHUNK;
   }
 
   static constexpr std::size_t max_native_queue_limit() {
@@ -196,6 +273,7 @@ class ExtMessagePoolTestAccess {
 
 static_assert(ExtMessagePoolTestAccess::max_native_queue_limit() == 65'536);
 static_assert(ExtMessagePoolTestAccess::max_native_queue_limit() == block::NativeTransferBatch::max_entries);
+static_assert(ExtMessagePoolTestAccess::native_delivery_chunk() == 512);
 
 TEST(ExtMessagePoolScheduler, MissingHeadBlocksFutureNonces) {
   auto pool = ExtMessagePoolTestAccess::make_pool();
@@ -300,7 +378,242 @@ TEST(ExtMessagePoolScheduler, PostCommitWakesLiveWaiterWithoutNewIngress) {
 
   ASSERT_TRUE(ExtMessagePoolTestAccess::finalize_existing_native(pool, source, 0, head));
   ASSERT_TRUE(ExtMessagePoolTestAccess::reservation_committed(pool, source, 0));
+  ASSERT_EQ(ExtMessagePoolTestAccess::dirty_sources(pool), 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::resume_native_pump_refill(pool), 1u);
   ASSERT_TRUE(ExtMessagePoolTestAccess::callback_has_delivery(pool, head));
+}
+
+TEST(ExtMessagePoolScheduler, CallbackSelectionIsIncrementalAndChunkBounded) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  for (unsigned source_id = 1; source_id <= 40; ++source_id) {
+    auto source = ExtMessagePoolTestAccess::source(source_id);
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    for (td::uint64 nonce = 0; nonce < 16; ++nonce) {
+      ExtMessagePoolTestAccess::add(pool, source, nonce);
+    }
+  }
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, ExtMessagePoolTestAccess::max_native_queue_limit());
+
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), ExtMessagePoolTestAccess::native_delivery_chunk());
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending(pool), ExtMessagePoolTestAccess::native_delivery_chunk());
+}
+
+TEST(ExtMessagePoolScheduler, PersistentCallbackSchedulerScansSourcesOnlyOnceAcrossChunks) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  constexpr unsigned source_count = 64;
+  constexpr td::uint64 nonces_per_source = 32;
+  for (unsigned source_id = 1; source_id <= source_count; ++source_id) {
+    auto source = ExtMessagePoolTestAccess::source(source_id);
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    for (td::uint64 nonce = 0; nonce < nonces_per_source; ++nonce) {
+      ExtMessagePoolTestAccess::add(pool, source, nonce);
+    }
+  }
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, ExtMessagePoolTestAccess::max_native_queue_limit());
+
+  constexpr std::size_t total = source_count * nonces_per_source;
+  for (std::size_t selected = 0; selected < total;
+       selected += ExtMessagePoolTestAccess::native_delivery_chunk()) {
+    ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), ExtMessagePoolTestAccess::native_delivery_chunk());
+  }
+  auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+  ASSERT_EQ(stats.selected, total);
+  ASSERT_EQ(stats.builds, 1u);
+  ASSERT_EQ(stats.source_scans, source_count);
+  // One initial probe per source, one probe per selected nonce, plus one
+  // ready-head revalidation per 16-message source run.
+  ASSERT_TRUE(stats.source_probes <= source_count + total + stats.runs + source_count);
+}
+
+TEST(ExtMessagePoolScheduler, TargetedRefreshAddsSourceWithoutRebuildingScheduler) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source_a = ExtMessagePoolTestAccess::source(70);
+  ExtMessagePoolTestAccess::set_watermark(pool, source_a, 0);
+  ExtMessagePoolTestAccess::add(pool, source_a, 0);
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, ExtMessagePoolTestAccess::max_native_queue_limit());
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), 1u);
+
+  auto before = ExtMessagePoolTestAccess::scheduler_stats(pool);
+  auto source_b = ExtMessagePoolTestAccess::source(71);
+  ExtMessagePoolTestAccess::set_watermark(pool, source_b, 0);
+  auto source_b_hash = ExtMessagePoolTestAccess::add(pool, source_b, 0);
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_sources(pool, {source_b}), 1u);
+  ASSERT_TRUE(ExtMessagePoolTestAccess::callback_contains_delivery(pool, source_b_hash));
+
+  auto after = ExtMessagePoolTestAccess::scheduler_stats(pool);
+  ASSERT_EQ(after.builds, before.builds);
+  ASSERT_EQ(after.source_scans, before.source_scans);
+  ASSERT_EQ(after.source_refreshes, before.source_refreshes + 1);
+}
+
+TEST(ExtMessagePoolScheduler, ActivePumpCoalescesIngressWithoutGrowingPendingChunk) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto ready_source = ExtMessagePoolTestAccess::source(72);
+  ExtMessagePoolTestAccess::set_watermark(pool, ready_source, 0);
+  for (td::uint64 nonce = 0; nonce < 1024; ++nonce) {
+    ExtMessagePoolTestAccess::add(pool, ready_source, nonce);
+  }
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool,
+                                                          ExtMessagePoolTestAccess::max_native_queue_limit());
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), ExtMessagePoolTestAccess::native_delivery_chunk());
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending(pool), ExtMessagePoolTestAccess::native_delivery_chunk());
+  auto selected_before = ExtMessagePoolTestAccess::scheduler_stats(pool).selected;
+
+  // The callback models a pump suspended on a full transport window. Commits
+  // behind its already-valid head must not replace that ready token, and a new
+  // source is marked once rather than eagerly appending 512 messages per wake.
+  std::set<ExtMessagePoolTestAccess::NativeAddress> ready_sources{ready_source};
+  for (unsigned i = 0; i < 1024; ++i) {
+    ASSERT_EQ(ExtMessagePoolTestAccess::wake_sources(pool, ready_sources, true), 0u);
+  }
+  ASSERT_EQ(ExtMessagePoolTestAccess::dirty_sources(pool), 0u);
+
+  auto new_source = ExtMessagePoolTestAccess::source(73);
+  ExtMessagePoolTestAccess::set_watermark(pool, new_source, 0);
+  ExtMessagePoolTestAccess::add(pool, new_source, 0);
+  std::set<ExtMessagePoolTestAccess::NativeAddress> new_sources{new_source};
+  std::size_t woken = 0;
+  for (unsigned i = 0; i < 1024; ++i) {
+    woken += ExtMessagePoolTestAccess::wake_sources(pool, new_sources, true);
+  }
+  ASSERT_EQ(woken, 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::dirty_sources(pool), 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending(pool), ExtMessagePoolTestAccess::native_delivery_chunk());
+  ASSERT_EQ(ExtMessagePoolTestAccess::scheduler_stats(pool).selected, selected_before);
+}
+
+TEST(ExtMessagePoolScheduler, CompletionEpochCannotFinishNewerProducerWork) {
+  ExtMsgQueueState state;
+  auto first = state.begin_producer_epoch();
+  ASSERT_TRUE(state.producer_pending());
+  state.observe_completion(first);
+  ASSERT_TRUE(!state.producer_pending());
+
+  auto second = state.begin_producer_epoch();
+  ASSERT_TRUE(second > first);
+  state.observe_completion(first);
+  ASSERT_TRUE(state.producer_pending());
+  state.observe_completion(second);
+  ASSERT_TRUE(!state.producer_pending());
+}
+
+TEST(ExtMessagePoolScheduler, CompletionMarkerIsFifoAndNotCountedAsTransfer) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<td::Unit> {
+    ExtMsgQueue queue("native-transport", 3);
+    auto state = std::make_shared<ExtMsgQueueState>();
+    auto telemetry = std::make_shared<ExtMsgQueueTelemetry>();
+    state->attach_telemetry(telemetry);
+    auto epoch = state->begin_producer_epoch();
+
+    auto source = ExtMessagePoolTestAccess::source(9);
+    auto first = td::make_ref<FakeExtMessage>(source.second, make_bits(1, 109));
+    auto second = td::make_ref<FakeExtMessage>(source.second, make_bits(2, 109));
+    state->record_selected(2);
+    std::vector<ExtMsgQueueEntry> messages;
+    messages.push_back(ExtMsgQueueEntry::make_message({first, 0}, true));
+    messages.push_back(ExtMsgQueueEntry::make_message({second, 0}, true));
+    auto pushed = co_await queue.push_many_bounded(std::move(messages), 2);
+    state->record_pushed(pushed);
+    ASSERT_EQ(pushed, 2u);
+    auto marker_pushed = co_await queue.push(ExtMsgQueueEntry::make_completion(epoch));
+    ASSERT_TRUE(marker_pushed);
+
+    auto entries = co_await queue.pop_many(3);
+    ASSERT_EQ(entries.size(), 3u);
+    ASSERT_TRUE(entries[0].message);
+    ASSERT_TRUE(entries[1].message);
+    ASSERT_TRUE(entries[2].is_completion());
+    state->record_consumed(2);
+    state->observe_completion(entries[2].completed_epoch);
+    ASSERT_TRUE(!state->producer_pending());
+    ASSERT_EQ(telemetry->selected.load(), 2u);
+    ASSERT_EQ(telemetry->pushed.load(), 2u);
+    ASSERT_EQ(telemetry->consumed.load(), 2u);
+    queue.close();
+    co_return td::Unit{};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, BlockedConsumerMayDrainReservedPushBeforeProducerContinuation) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<td::Unit> {
+    ExtMsgQueue queue("native-transport-race", 1);
+    auto state = std::make_shared<ExtMsgQueueState>();
+    auto telemetry = std::make_shared<ExtMsgQueueTelemetry>();
+    state->attach_telemetry(telemetry);
+
+    bool consumer_finished = false;
+    auto consumer = [](ExtMsgQueue queue, std::shared_ptr<ExtMsgQueueState> state,
+                       bool *consumer_finished) -> td::actor::Task<td::Unit> {
+      auto entries = co_await queue.pop_many(1);
+      ASSERT_EQ(entries.size(), 1u);
+      ASSERT_TRUE(entries.front().message);
+      state->record_consumed(1);
+      *consumer_finished = true;
+      co_return td::Unit{};
+    }(queue, state, &consumer_finished);
+    auto started_consumer = std::move(consumer).start();
+    co_await scheduler.wait_sync_work();
+
+    auto source = ExtMessagePoolTestAccess::source(10);
+    auto message = td::make_ref<FakeExtMessage>(source.second, make_bits(1, 110));
+    std::vector<ExtMsgQueueEntry> batch;
+    batch.push_back(ExtMsgQueueEntry::make_message({message, 0}, true));
+    state->record_selected(1);
+    state->record_push_started(1);
+    auto push = queue.push_many_bounded(std::move(batch), 1);
+
+    // Drain all actor work without awaiting the producer result. The queue has
+    // woken the blocked pop, but producer-side exact publication has not run.
+    co_await scheduler.wait_sync_work();
+    ASSERT_TRUE(consumer_finished);
+    ASSERT_EQ(telemetry->pushed.load(), 0u);
+    ASSERT_EQ(telemetry->push_reserved.load(), 1u);
+    ASSERT_EQ(telemetry->consumed.load(), 1u);
+    ASSERT_EQ(telemetry->high_water.load(), 1u);
+
+    auto pushed = co_await std::move(push);
+    ASSERT_EQ(pushed, 1u);
+    state->record_push_completed(1, pushed);
+    ASSERT_EQ(telemetry->pushed.load(), 1u);
+    ASSERT_EQ(telemetry->push_reserved.load(), 0u);
+    ASSERT_EQ(telemetry->consumed.load(), 1u);
+    co_await std::move(started_consumer);
+    queue.close();
+    co_return td::Unit{};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, CancellationAccountingReclassifiesLatePushAndDrain) {
+  auto telemetry = std::make_shared<ExtMsgQueueTelemetry>();
+  ExtMsgQueueState state;
+  state.attach_telemetry(telemetry);
+  state.record_selected(10);
+  state.record_pushed(6);
+  state.record_consumed(2);
+  state.record_cancel_discarded();
+  ASSERT_EQ(telemetry->unpushed_discarded.load(), 4u);
+  ASSERT_EQ(telemetry->queued_discarded.load(), 4u);
+
+  // Reserve the complete pump batch before it blocks. Cancellation initially
+  // classifies the reservation as queue-owned; exact partial completion moves
+  // only the failed suffix back to unpushed-discarded.
+  state.record_push_started(4);
+  ASSERT_EQ(telemetry->push_reserved.load(), 4u);
+  ASSERT_EQ(telemetry->unpushed_discarded.load(), 0u);
+  ASSERT_EQ(telemetry->queued_discarded.load(), 8u);
+  state.record_push_completed(4, 2);
+  state.record_consumed(3);
+  ASSERT_EQ(telemetry->selected.load(), 10u);
+  ASSERT_EQ(telemetry->pushed.load(), 8u);
+  ASSERT_EQ(telemetry->push_reserved.load(), 0u);
+  ASSERT_EQ(telemetry->consumed.load(), 5u);
+  ASSERT_EQ(telemetry->unpushed_discarded.load(), 2u);
+  ASSERT_EQ(telemetry->queued_discarded.load(), 3u);
+  ASSERT_EQ(telemetry->selected.load(), telemetry->consumed.load() +
+                                                    telemetry->unpushed_discarded.load() +
+                                                    telemetry->queued_discarded.load());
 }
 
 }  // namespace ton::validator

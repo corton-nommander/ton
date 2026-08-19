@@ -100,7 +100,7 @@ class NewCellStorageStat {
   }
 
  private:
-  const CellUsageTree* usage_tree_;
+  const CellUsageTree* usage_tree_{nullptr};
   td::HashSet<vm::Cell::Hash> seen_;
   Stat stat_;
   td::HashSet<vm::Cell::Hash> proof_seen_;

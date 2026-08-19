@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <iterator>
 #include <limits>
 #include <thread>
 
@@ -185,7 +186,10 @@ td::Result<ExtMessagePool::CheckResult> ExtMessagePool::finalize_checked_message
     // wake during insertion observes committed=false and can strand the first
     // (or final) head until unrelated ingress arrives.
     std::set<NativeAddress> committed_source{{wc, addr}};
-    wake_native_callbacks(&committed_source);
+    // If this source already has a valid ready head, this commit can only make
+    // a later nonce available. Keep that token instead of accumulating a stale
+    // replacement on every high-rate ingress event.
+    wake_native_callbacks(&committed_source, true);
   }
   return std::move(result);
 }
@@ -815,26 +819,356 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
   return selection;
 }
 
+void ExtMessagePool::enqueue_callback_native_source(CallbackNativeScheduler &scheduler,
+                                                    const NativeAddress &source,
+                                                    CallbackNativeSource &state) {
+  if (!state.next || state.queued) {
+    return;
+  }
+  scheduler.ready_by_priority[state.next.value().priority].push_back(
+      CallbackNativeReadyToken{source, state.generation});
+  state.queued = true;
+}
+
+void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<InstalledCallback> &callback,
+                                                  const NativeAddress &source, CallbackNativeSource &state,
+                                                  NativeQueueCounters &counters, bool enqueue_ready) {
+  ++counters.source_probes;
+  ++state.generation;
+  state.next = {};
+  state.queued = false;
+
+  auto info_it = native_accounts_.find(source);
+  auto watermark_it = native_nonce_watermarks_.find(source);
+  if (info_it == native_accounts_.end() || watermark_it == native_nonce_watermarks_.end()) {
+    return;
+  }
+  auto first_nonce = watermark_it->second.first_unconsumed_nonce();
+  if (!first_nonce) {
+    return;
+  }
+  state.next_nonce = std::max(state.next_nonce, first_nonce.value());
+  auto advance_nonce = [&] {
+    if (state.next_nonce == std::numeric_limits<td::uint64>::max()) {
+      return false;
+    }
+    ++state.next_nonce;
+    return true;
+  };
+
+  while (true) {
+    auto reservation_it = info_it->second.messages.lower_bound(state.next_nonce);
+    if (reservation_it == info_it->second.messages.end() || reservation_it->first != state.next_nonce ||
+        !reservation_it->second.committed) {
+      ++counters.head_gaps;
+      return;
+    }
+    ++counters.scanned;
+    const auto &hash = reservation_it->second.hash;
+    auto pool_it = ext_messages_hashes_.find(hash);
+    if (pool_it == ext_messages_hashes_.end()) {
+      ++counters.head_gaps;
+      return;
+    }
+    auto priority_it = ext_msgs_.find(pool_it->second.first);
+    if (priority_it == ext_msgs_.end()) {
+      ++counters.head_gaps;
+      return;
+    }
+    auto message = priority_it->second.ext_messages_.find(pool_it->second.second);
+    if (!message || !message.value()->native_nonce ||
+        message.value()->native_nonce.value() != state.next_nonce) {
+      ++counters.head_gaps;
+      return;
+    }
+    if (std::binary_search(callback->callback->excluded_messages.begin(),
+                           callback->callback->excluded_messages.end(), hash)) {
+      ++counters.excluded;
+      if (!advance_nonce()) {
+        return;
+      }
+      continue;
+    }
+    if (callback->delivered_native.contains(hash)) {
+      ++counters.already_delivered;
+      if (!advance_nonce()) {
+        return;
+      }
+      continue;
+    }
+    auto &mempool_message = *message.value();
+    if (mempool_message.expired()) {
+      ++counters.expired;
+      return;
+    }
+    bool was_active = mempool_message.active;
+    if (!mempool_message.is_active()) {
+      ++counters.inactive;
+      alarm_timestamp().relax(mempool_message.reactivate_at);
+      return;
+    }
+    if (!was_active) {
+      ++counters.reactivated;
+    }
+    ++counters.active;
+    if (!state.ready_counted) {
+      state.ready_counted = true;
+      ++counters.ready_sources;
+    }
+    state.next = NativeQueueItem{.message = mempool_message.message,
+                                 .priority = pool_it->second.first,
+                                 .source = source,
+                                 .nonce = state.next_nonce};
+    if (enqueue_ready) {
+      enqueue_callback_native_source(callback->native_scheduler, source, state);
+    }
+    return;
+  }
+}
+
+void ExtMessagePool::refresh_callback_native_source(const std::shared_ptr<InstalledCallback> &callback,
+                                                    const NativeAddress &source, NativeQueueCounters &counters,
+                                                    bool count_refresh) {
+  if (count_refresh) {
+    ++counters.source_refreshes;
+  }
+  auto &scheduler = callback->native_scheduler;
+  if (!shard_contains(callback->callback->shard, extract_addr_prefix(source.first, source.second))) {
+    scheduler.sources.erase(source);
+    return;
+  }
+  auto info_it = native_accounts_.find(source);
+  auto watermark_it = native_nonce_watermarks_.find(source);
+  if (info_it == native_accounts_.end() || watermark_it == native_nonce_watermarks_.end()) {
+    scheduler.sources.erase(source);
+    return;
+  }
+  auto first_nonce = watermark_it->second.first_unconsumed_nonce();
+  if (!first_nonce) {
+    scheduler.sources.erase(source);
+    return;
+  }
+  auto [state_it, inserted] = scheduler.sources.try_emplace(source);
+  if (inserted) {
+    state_it->second.next_nonce = first_nonce.value();
+  } else {
+    state_it->second.next_nonce = std::max(state_it->second.next_nonce, first_nonce.value());
+  }
+  probe_callback_native_source(callback, source, state_it->second, counters, true);
+}
+
+void ExtMessagePool::initialize_callback_native_scheduler(const std::shared_ptr<InstalledCallback> &callback,
+                                                          NativeQueueCounters &counters) {
+  auto &scheduler = callback->native_scheduler;
+  if (scheduler.initialized) {
+    return;
+  }
+  scheduler.initialized = true;
+  ++counters.scheduler_builds;
+  if (callback->callback->shard.workchain == masterchainId) {
+    return;
+  }
+
+  auto split = callback->native_cursor ? native_accounts_.upper_bound(callback->native_cursor.value())
+                                       : native_accounts_.begin();
+  auto scan_range = [&](auto begin, auto end) {
+    for (auto it = begin; it != end; ++it) {
+      ++counters.source_scans;
+      refresh_callback_native_source(callback, it->first, counters, false);
+    }
+  };
+  scan_range(split, native_accounts_.end());
+  scan_range(native_accounts_.begin(), split);
+}
+
+ExtMessagePool::NativeQueueSelection ExtMessagePool::select_callback_native_messages(
+    const std::shared_ptr<InstalledCallback> &callback, std::size_t limit,
+    const std::set<NativeAddress> *source_filter) {
+  NativeQueueSelection selection;
+  selection.cursor = callback->native_cursor;
+  if (callback->callback->shard.workchain == masterchainId || limit == 0) {
+    return selection;
+  }
+  auto &scheduler = callback->native_scheduler;
+  bool initialized = scheduler.initialized;
+  initialize_callback_native_scheduler(callback, selection.counters);
+  if (initialized && source_filter) {
+    for (const auto &source : *source_filter) {
+      refresh_callback_native_source(callback, source, selection.counters, true);
+    }
+  }
+
+  while (selection.items.size() < limit && !scheduler.ready_by_priority.empty()) {
+    auto priority_it = std::prev(scheduler.ready_by_priority.end());
+    int priority = priority_it->first;
+    auto token = priority_it->second.front();
+    priority_it->second.pop_front();
+    if (priority_it->second.empty()) {
+      scheduler.ready_by_priority.erase(priority_it);
+    }
+    auto source_it = scheduler.sources.find(token.source);
+    if (source_it == scheduler.sources.end() || source_it->second.generation != token.generation ||
+        !source_it->second.queued || !source_it->second.next ||
+        source_it->second.next.value().priority != priority) {
+      ++selection.counters.stale_ready_tokens;
+      continue;
+    }
+    auto &state = source_it->second;
+    state.queued = false;
+
+    // Pool mutation can occur while the producer is suspended on queue
+    // backpressure. Revalidate only this ready source before consuming its run;
+    // no map reference survives an await.
+    probe_callback_native_source(callback, token.source, state, selection.counters, false);
+    if (!state.next) {
+      continue;
+    }
+    if (state.next.value().priority != priority) {
+      enqueue_callback_native_source(scheduler, token.source, state);
+      continue;
+    }
+
+    std::size_t run_size = 0;
+    while (selection.items.size() < limit && run_size < NATIVE_SOURCE_RUN_TARGET && state.next &&
+           state.next.value().priority == priority) {
+      selection.items.push_back(std::move(state.next.value()));
+      state.next = {};
+      ++selection.counters.selected;
+      ++run_size;
+      selection.cursor = token.source;
+      if (state.next_nonce == std::numeric_limits<td::uint64>::max()) {
+        break;
+      }
+      ++state.next_nonce;
+      probe_callback_native_source(callback, token.source, state, selection.counters, false);
+    }
+    if (run_size != 0) {
+      ++selection.counters.runs;
+      selection.counters.run_messages += run_size;
+      selection.counters.max_run_size =
+          std::max<td::uint64>(selection.counters.max_run_size, run_size);
+    }
+    enqueue_callback_native_source(scheduler, token.source, state);
+  }
+  return selection;
+}
+
 void ExtMessagePool::enqueue_callback_item(const std::shared_ptr<InstalledCallback> &callback,
-                                           std::pair<td::Ref<ExtMessage>, int> item) {
-  callback->pending.push_back(std::move(item));
+                                           std::pair<td::Ref<ExtMessage>, int> item, bool native) {
+  auto& pending = native ? callback->pending_native : callback->pending_generic;
+  pending.push_back(ExtMsgQueueEntry::make_message(std::move(item), native));
+}
+
+void ExtMessagePool::begin_callback_epoch(const std::shared_ptr<InstalledCallback> &callback) {
+  if (!callback->callback->native_streaming) {
+    return;
+  }
+  if (!callback->producer_epoch_open) {
+    callback->producer_epoch = callback->callback->queue_state->begin_producer_epoch();
+    callback->producer_epoch_open = true;
+  }
+  callback->native_snapshot_exhausted = false;
+}
+
+void ExtMessagePool::start_callback_pump(const std::shared_ptr<InstalledCallback> &callback) {
   if (!callback->pump_active) {
     callback->pump_active = true;
     pump_callback(callback).start().detach();
   }
 }
 
+void ExtMessagePool::cancel_callback_delivery(const std::shared_ptr<InstalledCallback> &callback) {
+  callback->callback->queue_state->record_cancel_discarded();
+  callback->pending_native.clear();
+  callback->pending_generic.clear();
+  callback->callback->queue.close();
+}
+
 td::actor::Task<> ExtMessagePool::pump_callback(std::shared_ptr<InstalledCallback> callback) {
-  while (!callback->pending.empty() && callback->callback->cancellation_token.check().is_ok()) {
-    auto item = std::move(callback->pending.front());
-    callback->pending.pop_front();
-    if (!co_await callback->callback->queue.push(std::move(item))) {
-      break;
+  while (callback->callback->cancellation_token.check().is_ok()) {
+    if (callback->native_scheduler_rebuild) {
+      callback->native_scheduler = {};
+      callback->native_dirty_sources.clear();
+      callback->native_scheduler_rebuild = false;
+    } else if (!callback->native_dirty_sources.empty()) {
+      NativeQueueCounters counters;
+      if (callback->native_scheduler.initialized) {
+        // No scheduler map reference crosses the queue await below. Repeated
+        // ingress for one source is coalesced by native_dirty_sources.
+        for (const auto &source : callback->native_dirty_sources) {
+          refresh_callback_native_source(callback, source, counters, true);
+        }
+      }
+      callback->native_dirty_sources.clear();
+      native_queue_counters_.add(counters);
     }
+    if (callback->pending_native.empty() && callback->callback->native_streaming &&
+        !callback->native_snapshot_exhausted) {
+      callback->native_snapshot_exhausted = fill_callback_native(callback, false) == 0;
+    }
+    auto* pending = !callback->pending_native.empty() ? &callback->pending_native : &callback->pending_generic;
+    if (!pending->empty()) {
+      std::vector<ExtMsgQueueEntry> batch;
+      std::vector<bool> native_entries;
+      batch.reserve(std::min<std::size_t>(NATIVE_DELIVERY_CHUNK, pending->size()));
+      native_entries.reserve(std::min<std::size_t>(NATIVE_DELIVERY_CHUNK, pending->size()));
+      while (batch.size() < NATIVE_DELIVERY_CHUNK && !pending->empty()) {
+        native_entries.push_back(pending->front().native);
+        batch.push_back(std::move(pending->front()));
+        pending->pop_front();
+      }
+      auto batch_size = batch.size();
+      std::size_t native_reserved = 0;
+      for (bool native : native_entries) {
+        native_reserved += native;
+      }
+      // Publish ownership of the whole native batch before the blocking push.
+      // BackpressureQueue exposes inserted prefixes to a blocked consumer as
+      // space becomes available, before this coroutine resumes with the final
+      // prefix count. The reservation is therefore the consumer's safe bound.
+      callback->callback->queue_state->record_push_started(native_reserved);
+      std::size_t pushed;
+      if (callback->callback->native_streaming) {
+        pushed = co_await callback->callback->queue.push_many_bounded(
+            std::move(batch), callback->callback->transport_message_capacity);
+      } else {
+        pushed = co_await callback->callback->queue.push_many(std::move(batch));
+      }
+      // The pump only batches message entries. Count the native prefix that
+      // actually entered the queue if cancellation closed it mid-batch.
+      std::size_t native_pushed = 0;
+      for (std::size_t i = 0; i < pushed; ++i) {
+        native_pushed += native_entries[i];
+      }
+      callback->callback->queue_state->record_push_completed(native_reserved, native_pushed);
+      if (pushed != batch_size) {
+        // push_many returns a short prefix only when the queue was closed.
+        cancel_callback_delivery(callback);
+        break;
+      }
+      continue;
+    }
+    if (callback->callback->native_streaming) {
+      auto epoch = callback->producer_epoch;
+      if (callback->completion_epoch < epoch) {
+        // Close this epoch before awaiting the marker push. If ingress arrives
+        // while suspended, it opens a newer epoch whose messages necessarily
+        // follow this marker in the same FIFO queue.
+        callback->producer_epoch_open = false;
+        if (!co_await callback->callback->queue.push(ExtMsgQueueEntry::make_completion(epoch))) {
+          cancel_callback_delivery(callback);
+          break;
+        }
+        callback->completion_epoch = epoch;
+        // Work may have arrived while the completion marker was blocked behind
+        // a full transport window. A newer epoch is therefore handled next.
+        continue;
+      }
+    }
+    break;
   }
   if (callback->callback->cancellation_token.check().is_error()) {
-    callback->pending.clear();
-    callback->callback->queue.close();
+    cancel_callback_delivery(callback);
   }
   callback->pump_active = false;
   if (callback->callback->sync_only) {
@@ -860,10 +1194,8 @@ std::size_t ExtMessagePool::fill_callback_native(const std::shared_ptr<Installed
     native_queue_counters_.add(counters);
     return 0;
   }
-  auto remaining = delivery_limit - callback->delivered_native.size();
-  auto selection = select_native_messages(callback->callback->shard, callback->callback->excluded_messages,
-                                          callback->delivered_native, remaining, callback->native_cursor,
-                                          source_filter);
+  auto remaining = std::min(delivery_limit - callback->delivered_native.size(), NATIVE_DELIVERY_CHUNK);
+  auto selection = select_callback_native_messages(callback, remaining, source_filter);
   selection.counters.add(counters);
   callback->native_cursor = selection.cursor;
   if (selection.earliest_reactivation) {
@@ -872,24 +1204,47 @@ std::size_t ExtMessagePool::fill_callback_native(const std::shared_ptr<Installed
   auto selected = selection.items.size();
   for (auto &item : selection.items) {
     callback->delivered_native.insert(item.message->hash());
-    enqueue_callback_item(callback, {std::move(item.message), item.priority});
+    enqueue_callback_item(callback, {std::move(item.message), item.priority}, true);
   }
+  callback->callback->queue_state->record_selected(selected);
   native_queue_counters_.add(selection.counters);
   return selected;
 }
 
-std::size_t ExtMessagePool::wake_native_callbacks(const std::set<NativeAddress> *source_filter) {
+std::size_t ExtMessagePool::wake_native_callbacks(const std::set<NativeAddress> *source_filter,
+                                                  bool preserve_valid_ready_head) {
   std::size_t woken = 0;
   std::erase_if(callbacks_, [&](const std::shared_ptr<InstalledCallback> &callback) {
     if (callback->callback->cancellation_token.check().is_error() ||
         (callback->callback->timeout && callback->callback->timeout.is_in_past())) {
-      callback->pending.clear();
-      callback->callback->queue.close();
+      cancel_callback_delivery(callback);
       return true;
     }
-    if (fill_callback_native(callback, false, source_filter) != 0) {
+    bool marked = false;
+    if (source_filter) {
+      for (const auto &source : *source_filter) {
+        if (preserve_valid_ready_head && callback->native_scheduler.initialized) {
+          auto state_it = callback->native_scheduler.sources.find(source);
+          if (state_it != callback->native_scheduler.sources.end() && state_it->second.queued &&
+              state_it->second.next) {
+            continue;
+          }
+        }
+        marked |= callback->native_dirty_sources.insert(source).second;
+      }
+    } else if (!callback->native_scheduler_rebuild) {
+      callback->native_scheduler_rebuild = true;
+      callback->native_dirty_sources.clear();
+      marked = true;
+    }
+    if (marked) {
+      begin_callback_epoch(callback);
       ++woken;
     }
+    // Selection is demand-driven inside the serialized pump. In particular,
+    // a live ingress wake cannot append another 512 items while the previous
+    // batch is blocked behind a full transport window.
+    start_callback_pump(callback);
     return false;
   });
   return woken;
@@ -931,6 +1286,10 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
       std::unique(callback->excluded_messages.begin(), callback->excluded_messages.end()),
       callback->excluded_messages.end());
   auto installed = std::make_shared<InstalledCallback>(std::move(callback));
+  if (installed->callback->native_streaming) {
+    installed->callback->queue_state->attach_telemetry(native_transport_telemetry_);
+    begin_callback_epoch(installed);
+  }
 
   // Native scheduling is deliberately skipped for masterchain installs. Native
   // transfers are basechain-only, and copying/scanning their large treaps while
@@ -974,7 +1333,7 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
         continue;
       }
       ++installed->generic_selected;
-      enqueue_callback_item(installed, {msg->message, it->first});
+      enqueue_callback_item(installed, {msg->message, it->first}, false);
     }
     if (installed->generic_selected >= generic_limit) {
       break;
@@ -985,10 +1344,7 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
                         << " selected_generic=" << installed->generic_selected
                         << " excluded=" << installed->callback->excluded_messages.size()
                         << " native_limit=" << native_collator_queue_limit_ << " shard=" << shard;
-  if (!installed->pump_active) {
-    installed->pump_active = true;
-    pump_callback(installed).start().detach();
-  }
+  start_callback_pump(installed);
   if (!installed->callback->sync_only) {
     alarm_timestamp().relax(installed->callback->timeout);
     callbacks_.push_back(std::move(installed));
@@ -1240,7 +1596,55 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                 << " max_run_size:" << native_queue_counters_.max_run_size
                 << " delayed:" << native_queue_counters_.delayed
                 << " reactivated:" << native_queue_counters_.reactivated
-                << " reactivation_wakes:" << native_queue_counters_.reactivation_wakes);
+                << " reactivation_wakes:" << native_queue_counters_.reactivation_wakes
+                << " scheduler_builds:" << native_queue_counters_.scheduler_builds
+                << " source_scans:" << native_queue_counters_.source_scans
+                << " source_refreshes:" << native_queue_counters_.source_refreshes
+                << " source_probes:" << native_queue_counters_.source_probes
+                << " stale_ready_tokens:" << native_queue_counters_.stale_ready_tokens);
+  std::lock_guard transport_lock(native_transport_telemetry_->accounting_mutex);
+  auto selected = native_transport_telemetry_->selected.load(std::memory_order_relaxed);
+  auto push_completed = native_transport_telemetry_->pushed.load(std::memory_order_relaxed);
+  auto push_reserved = native_transport_telemetry_->push_reserved.load(std::memory_order_relaxed);
+  // A reserved batch may already be visible to the consumer in queue-sized
+  // prefixes even though push_many_bounded has not resumed to publish its exact
+  // result. Export this publication bound as `pushed`; the monotonic exact
+  // result remains available separately as `push_completed`.
+  auto pushed = push_completed + push_reserved;
+  auto consumed = native_transport_telemetry_->consumed.load(std::memory_order_relaxed);
+  auto queued_discarded = native_transport_telemetry_->queued_discarded.load(std::memory_order_relaxed);
+  auto unpushed_discarded = native_transport_telemetry_->unpushed_discarded.load(std::memory_order_relaxed);
+  auto queued_total = pushed > consumed ? pushed - consumed : 0;
+  auto unpushed_total = selected > pushed ? selected - pushed : 0;
+  auto live_queued = queued_total > queued_discarded ? queued_total - queued_discarded : 0;
+  auto live_unpushed = unpushed_total > unpushed_discarded ? unpushed_total - unpushed_discarded : 0;
+  auto pending = live_queued + live_unpushed;
+  auto push_batches = native_transport_telemetry_->push_batches.load(std::memory_order_relaxed);
+  auto pop_batches = native_transport_telemetry_->pop_batches.load(std::memory_order_relaxed);
+  vec.emplace_back(
+      "total.ext_msg_native_transport",
+      PSTRING() << "selected:" << selected << " pushed:" << pushed << " consumed:" << consumed
+                << " push_completed:" << push_completed << " push_reserved:" << push_reserved
+                << " pending:" << pending << " live_queued:" << live_queued
+                << " live_unpushed:" << live_unpushed
+                << " queued_discarded:" << queued_discarded
+                << " unpushed_discarded:" << unpushed_discarded
+                << " cancel_discarded:" << queued_discarded + unpushed_discarded
+                << " high_water:" << native_transport_telemetry_->high_water.load(std::memory_order_relaxed)
+                << " push_batches:" << push_batches
+                << " push_batch_items:"
+                << native_transport_telemetry_->push_batch_items.load(std::memory_order_relaxed)
+                << " max_push_batch:"
+                << native_transport_telemetry_->max_push_batch.load(std::memory_order_relaxed)
+                << " pop_batches:" << pop_batches
+                << " pop_batch_items:"
+                << native_transport_telemetry_->pop_batch_items.load(std::memory_order_relaxed)
+                << " max_pop_batch:"
+                << native_transport_telemetry_->max_pop_batch.load(std::memory_order_relaxed)
+                << " producer_empty:"
+                << native_transport_telemetry_->producer_empty.load(std::memory_order_relaxed)
+                << " consumer_empty:"
+                << native_transport_telemetry_->consumer_empty.load(std::memory_order_relaxed));
   return vec;
 }
 
@@ -1257,8 +1661,7 @@ void ExtMessagePool::alarm() {
   }
   std::erase_if(callbacks_, [&](const std::shared_ptr<InstalledCallback> &callback) -> bool {
     if (callback->callback->timeout && callback->callback->timeout.is_in_past()) {
-      callback->pending.clear();
-      callback->callback->queue.close();
+      cancel_callback_delivery(callback);
       return true;
     }
     alarm_timestamp().relax(callback->callback->timeout);
@@ -1364,6 +1767,7 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
   if (!msg->native_nonce) {
     std::erase_if(callbacks_, [&](const std::shared_ptr<InstalledCallback> &callback) -> bool {
       if (callback->callback->cancellation_token.check().is_error()) {
+        cancel_callback_delivery(callback);
         return true;
       }
       if (shard_contains(callback->callback->shard, message->shard()) &&
@@ -1372,7 +1776,9 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
           (callback->callback->shard.workchain != masterchainId ||
            callback->generic_selected < STANDARD_COLLATOR_QUEUE_LIMIT)) {
         ++callback->generic_selected;
-        enqueue_callback_item(callback, std::make_pair(message, priority));
+        begin_callback_epoch(callback);
+        enqueue_callback_item(callback, std::make_pair(message, priority), false);
+        start_callback_pump(callback);
       }
       return false;
     });

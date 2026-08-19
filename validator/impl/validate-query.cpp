@@ -18,6 +18,7 @@
 */
 #include <ctime>
 #include <numeric>
+#include <unordered_map>
 
 #include "adnl/utils.hpp"
 #include "block/block-auto.h"
@@ -27,6 +28,7 @@
 #include "block/output-queue-merger.h"
 #include "block/validator-set.h"
 #include "common/errorlog.h"
+#include "td/utils/Random.h"
 #include "ton/ton-io.hpp"
 #include "ton/ton-tl.hpp"
 #include "vm/boc.h"
@@ -1434,6 +1436,7 @@ bool ValidateQuery::compute_prev_state() {
  * Computes the next shard state using the previous state and the block's Merkle update.
  */
 bool ValidateQuery::compute_next_state() {
+  td::ScopedRealCpuTimer merkle_timer{stats_.work_time.state_merkle_update};
   LOG(DEBUG) << "computing next state";
   auto res = vm::MerkleUpdate::validate(state_update_);
   if (res.is_error()) {
@@ -6704,12 +6707,35 @@ bool ValidateQuery::check_native_transfer_batch() {
     return reject_query("compact native transfer batch is only allowed in native fast path");
   }
   td::ScopedRealCpuTimer replay_timer{stats_.work_time.native_batch_replay};
-  std::map<StdSmcAddress, std::unique_ptr<block::Account>> accounts;
+  struct NativeAddressHash {
+    NativeAddressHash() : seed_(td::Random::secure_uint64()) {
+    }
+    std::size_t operator()(const StdSmcAddress& address) const noexcept {
+      td::uint64 hash = seed_;
+      for (auto byte : address.as_array()) {
+        hash ^= byte;
+        hash *= 1099511628211ULL;
+      }
+      hash ^= hash >> 33;
+      hash *= 0xff51afd7ed558ccdULL;
+      hash ^= hash >> 33;
+      return static_cast<std::size_t>(hash);
+    }
+
+   private:
+    td::uint64 seed_;
+  };
+  std::unordered_map<StdSmcAddress, std::unique_ptr<block::Account>, NativeAddressHash> accounts;
+  auto native_account_capacity =
+      std::min<std::size_t>(block::NativeTransferBatch::max_accounts,
+                            native_transfer_batch_.value().entries.size() * 2);
+  accounts.reserve(native_account_capacity);
   auto get_account = [&](const StdSmcAddress& addr, bool allow_create) -> block::Account* {
     auto it = accounts.find(addr);
     if (it != accounts.end()) {
       return it->second.get();
     }
+    td::ScopedRealCpuTimer account_load_timer{stats_.work_time.native_account_load};
     if (!addr.cbits().equals(shard_pfx_.bits(), shard_pfx_len_)) {
       reject_query("native compact transfer touches account outside this shard: "s + addr.to_hex());
       return nullptr;
@@ -6747,8 +6773,12 @@ bool ValidateQuery::check_native_transfer_batch() {
     for (const auto& entry : entries) {
       transfers.push_back(&entry.transfer);
     }
-    auto signature_status = block::verify_native_transfer_signatures_parallel(
-        transfers, config_->get_zerostate_id().root_hash);
+    td::Status signature_status;
+    {
+      td::ScopedRealCpuTimer signature_timer{stats_.work_time.native_signature_verify};
+      signature_status = block::verify_native_transfer_signatures_parallel(
+          transfers, config_->get_zerostate_id().root_hash);
+    }
     if (signature_status.is_error()) {
       return reject_query("v4 native transfer signature verification failed: "s + signature_status.to_string());
     }
@@ -6762,7 +6792,8 @@ bool ValidateQuery::check_native_transfer_batch() {
       bool is_native{false};
       bool changed{false};
     };
-    std::map<StdSmcAddress, NativeAccountState> states;
+    std::unordered_map<StdSmcAddress, NativeAccountState, NativeAddressHash> states;
+    states.reserve(native_account_capacity);
     auto get_state = [&](const StdSmcAddress& addr, bool allow_create) -> NativeAccountState* {
       auto found = states.find(addr);
       if (found != states.end()) {
@@ -6800,59 +6831,68 @@ bool ValidateQuery::check_native_transfer_batch() {
       return get_state(addr, allow_create);
     };
 
-    for (const auto& entry : entries) {
-      const auto& transfer = entry.transfer;
-      auto* src = get_cached_state(transfer.src, false);
-      if (src) {
-        cached_src_address = transfer.src;
-        cached_src_state = src;
-      }
-      auto* dst = get_cached_state(transfer.dst, true);
-      if (dst) {
-        cached_dst_address = transfer.dst;
-        cached_dst_state = dst;
-      }
-      if (!src || !dst) {
-        return false;
-      }
-      block::NativeTransferStateInput input{
-          .transfer = &transfer,
-          .src_balance = src->balance,
-          .src_nonce = src->nonce,
-          .src_flags = src->flags,
-          .src_status = src->status,
-          .src_is_native = src->is_native,
-          .dst_balance = dst->balance,
-          .dst_nonce = dst->nonce,
-          .dst_flags = dst->flags,
-          .dst_status = dst->status,
-          .dst_is_native = dst->is_native,
-          .same_account = src == dst,
-      };
-      auto result = block::execute_native_transfer_state(input, now_, /*verify_signature=*/false);
-      if (result.code != block::NativeTransferStateResult::ok) {
-        return reject_query(PSTRING() << result.message() << " for v4 native state-engine transfer "
-                                      << transfer.src.to_hex() << " -> " << transfer.dst.to_hex());
-      }
-      src->balance = result.src_balance;
-      src->nonce = result.src_nonce;
-      src->status = block::Account::acc_uninit;
-      src->is_native = true;
-      src->changed = true;
-      if (dst != src) {
-        dst->balance = result.dst_balance;
-        dst->status = block::Account::acc_uninit;
-        dst->is_native = true;
-        dst->changed = true;
-      }
-      transaction_fees_ += block::CurrencyCollection{td::make_refint(transfer.fee)};
-      if (!transaction_fees_.is_valid()) {
-        return reject_query("invalid total v4 native state-engine fees");
+    auto account_load_before_replay = stats_.work_time.native_account_load;
+    {
+      td::ScopedRealCpuTimer state_replay_timer{stats_.work_time.native_state_replay};
+      for (const auto& entry : entries) {
+        const auto& transfer = entry.transfer;
+        auto* src = get_cached_state(transfer.src, false);
+        if (src) {
+          cached_src_address = transfer.src;
+          cached_src_state = src;
+        }
+        auto* dst = get_cached_state(transfer.dst, true);
+        if (dst) {
+          cached_dst_address = transfer.dst;
+          cached_dst_state = dst;
+        }
+        if (!src || !dst) {
+          return false;
+        }
+        block::NativeTransferStateInput input{
+            .transfer = &transfer,
+            .src_balance = src->balance,
+            .src_nonce = src->nonce,
+            .src_flags = src->flags,
+            .src_status = src->status,
+            .src_is_native = src->is_native,
+            .dst_balance = dst->balance,
+            .dst_nonce = dst->nonce,
+            .dst_flags = dst->flags,
+            .dst_status = dst->status,
+            .dst_is_native = dst->is_native,
+            .same_account = src == dst,
+        };
+        auto result = block::execute_native_transfer_state(input, now_, /*verify_signature=*/false);
+        if (result.code != block::NativeTransferStateResult::ok) {
+          return reject_query(PSTRING() << result.message() << " for v4 native state-engine transfer "
+                                        << transfer.src.to_hex() << " -> " << transfer.dst.to_hex());
+        }
+        src->balance = result.src_balance;
+        src->nonce = result.src_nonce;
+        src->status = block::Account::acc_uninit;
+        src->is_native = true;
+        src->changed = true;
+        if (dst != src) {
+          dst->balance = result.dst_balance;
+          dst->status = block::Account::acc_uninit;
+          dst->is_native = true;
+          dst->changed = true;
+        }
+        transaction_fees_ += block::CurrencyCollection{td::make_refint(transfer.fee)};
+        if (!transaction_fees_.is_valid()) {
+          return reject_query("invalid total v4 native state-engine fees");
+        }
       }
     }
-    for (auto& [_, state] : states) {
-      if (state.changed && !state.account->set_native_state(state.balance, state.nonce, state.flags)) {
-        return reject_query("cannot apply aggregated v4 native account state");
+    stats_.work_time.native_state_replay -=
+        stats_.work_time.native_account_load - account_load_before_replay;
+    {
+      td::ScopedRealCpuTimer materialize_timer{stats_.work_time.native_account_materialize};
+      for (auto& [_, state] : states) {
+        if (state.changed && !state.account->set_native_state(state.balance, state.nonce, state.flags)) {
+          return reject_query("cannot apply aggregated v4 native account state");
+        }
       }
     }
     LOG(INFO) << "replayed v4 native transfer batch: transfers=" << entries.size()
@@ -6990,27 +7030,31 @@ bool ValidateQuery::check_native_transfer_batch() {
     }
   }
 
-  for (const auto& [addr, account] : accounts) {
-    bool has_account_block = account_blocks_dict_->key_exists(addr);
-    if (native_transfer_batch_.value().version >= 4) {
-      if (has_account_block) {
-        return reject_query("v4 native compact account must not have an AccountBlock: "s + addr.to_hex());
+  {
+    td::ScopedRealCpuTimer dictionary_timer{stats_.work_time.native_state_dictionary_check};
+    for (const auto& [addr, account] : accounts) {
+      bool has_account_block = account_blocks_dict_->key_exists(addr);
+      if (native_transfer_batch_.value().version >= 4) {
+        if (has_account_block) {
+          return reject_query("v4 native compact account must not have an AccountBlock: "s + addr.to_hex());
+        }
+      } else if (!has_account_block) {
+        return reject_query("native compact account has no AccountBlock: "s + addr.to_hex());
       }
-    } else if (!has_account_block) {
-      return reject_query("native compact account has no AccountBlock: "s + addr.to_hex());
-    }
-    block::tlb::ShardAccount::Record new_state;
-    if (!new_state.unpack(ns_.account_dict_->lookup(addr.cbits(), 256)) || new_state.is_zero) {
-      return reject_query("cannot unpack new native compact account state "s + addr.to_hex());
-    }
-    if (new_state.account->get_hash() != account->total_state->get_hash()) {
-      return reject_query("native compact account state hash mismatch for "s + addr.to_hex());
-    }
-    if (new_state.last_trans_lt != account->last_trans_lt_ || new_state.last_trans_hash != account->last_trans_hash_) {
-      return reject_query(PSTRING() << "native compact last transaction mismatch for " << addr.to_hex()
-                                    << ": replayed " << account->last_trans_lt_ << ":"
-                                    << account->last_trans_hash_.to_hex() << ", block has "
-                                    << new_state.last_trans_lt << ":" << new_state.last_trans_hash.to_hex());
+      block::tlb::ShardAccount::Record new_state;
+      if (!new_state.unpack(ns_.account_dict_->lookup(addr.cbits(), 256)) || new_state.is_zero) {
+        return reject_query("cannot unpack new native compact account state "s + addr.to_hex());
+      }
+      if (new_state.account->get_hash() != account->total_state->get_hash()) {
+        return reject_query("native compact account state hash mismatch for "s + addr.to_hex());
+      }
+      if (new_state.last_trans_lt != account->last_trans_lt_ ||
+          new_state.last_trans_hash != account->last_trans_hash_) {
+        return reject_query(PSTRING() << "native compact last transaction mismatch for " << addr.to_hex()
+                                      << ": replayed " << account->last_trans_lt_ << ":"
+                                      << account->last_trans_hash_.to_hex() << ", block has "
+                                      << new_state.last_trans_lt << ":" << new_state.last_trans_hash.to_hex());
+      }
     }
   }
   return true;

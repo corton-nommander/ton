@@ -57,6 +57,66 @@ TEST(BackpressureQueue, NonBlockingPushPop) {
   });
 }
 
+TEST(BackpressureQueue, BulkPushPopPreservesFifoAndCapacity) {
+  TestScheduler ts;
+  ts.run([&]() -> Task<Unit> {
+    BackpressureQueue<int> q("q", 4);
+
+    EXPECT_EQ(4u, co_await q.push_many({0, 1, 2, 3}));
+    EXPECT_EQ(0u, co_await q.try_push_many({4, 5}));
+
+    auto first = co_await q.pop_many(3);
+    EXPECT_EQ((std::vector<int>{0, 1, 2}), first);
+    EXPECT_EQ(2u, co_await q.try_push_many({4, 5}));
+    auto second = co_await q.pop_many(8);
+    EXPECT_EQ((std::vector<int>{3, 4, 5}), second);
+
+    q.close();
+    co_return {};
+  });
+}
+
+TEST(BackpressureQueue, BulkPushBlocksAndCloseReturnsExactPrefix) {
+  TestScheduler ts;
+  ts.run([&]() -> Task<Unit> {
+    BackpressureQueue<int> q("q", 2);
+    auto push = q.push_many({10, 11, 12, 13});
+    co_await ts.wait_sync_work();
+
+    auto first = co_await q.pop_many(2);
+    EXPECT_EQ((std::vector<int>{10, 11}), first);
+    EXPECT_EQ(4u, co_await std::move(push));
+    auto second = co_await q.pop_many(2);
+    EXPECT_EQ((std::vector<int>{12, 13}), second);
+
+    BackpressureQueue<int> closed("closed", 2);
+    auto partial_push = closed.push_many({20, 21, 22, 23});
+    co_await ts.wait_sync_work();
+    closed.close();
+    co_await ts.wait_sync_work();
+    EXPECT_EQ(2u, co_await std::move(partial_push));
+    auto retained = co_await closed.pop_many(4);
+    EXPECT_EQ((std::vector<int>{20, 21}), retained);
+    EXPECT((co_await closed.pop_many(1).wrap()).is_error());
+    co_return {};
+  });
+}
+
+TEST(BackpressureQueue, TimedBulkPopDoesNotStealLateItem) {
+  TestScheduler ts;
+  ts.run([&]() -> Task<Unit> {
+    BackpressureQueue<int> q("q", 2);
+    auto timed_out = co_await q.pop_many_until(2, td::Timestamp::now()).wrap();
+    EXPECT(timed_out.is_error());
+
+    EXPECT(co_await q.push(42));
+    auto retained = co_await q.pop_many(2);
+    EXPECT_EQ((std::vector<int>{42}), retained);
+    q.close();
+    co_return {};
+  });
+}
+
 TEST(BackpressureQueue, BackpressureBlocksProducer) {
   TestScheduler ts;
   ts.run([&]() -> Task<Unit> {

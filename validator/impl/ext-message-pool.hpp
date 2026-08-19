@@ -374,6 +374,11 @@ class ExtMessagePool : public td::actor::Actor {
     td::uint64 delayed{0};
     td::uint64 reactivated{0};
     td::uint64 reactivation_wakes{0};
+    td::uint64 scheduler_builds{0};
+    td::uint64 source_scans{0};
+    td::uint64 source_refreshes{0};
+    td::uint64 source_probes{0};
+    td::uint64 stale_ready_tokens{0};
 
     void add(const NativeQueueCounters &other) {
       installs += other.installs;
@@ -393,6 +398,11 @@ class ExtMessagePool : public td::actor::Actor {
       delayed += other.delayed;
       reactivated += other.reactivated;
       reactivation_wakes += other.reactivation_wakes;
+      scheduler_builds += other.scheduler_builds;
+      source_scans += other.source_scans;
+      source_refreshes += other.source_refreshes;
+      source_probes += other.source_probes;
+      stale_ready_tokens += other.stale_ready_tokens;
     }
   } native_queue_counters_;
 
@@ -408,32 +418,77 @@ class ExtMessagePool : public td::actor::Actor {
     td::Timestamp earliest_reactivation;
     NativeQueueCounters counters;
   };
+  struct CallbackNativeSource {
+    td::uint64 next_nonce{0};
+    td::uint64 generation{0};
+    td::optional<NativeQueueItem> next;
+    bool queued{false};
+    bool ready_counted{false};
+  };
+  struct CallbackNativeReadyToken {
+    NativeAddress source;
+    td::uint64 generation{0};
+  };
+  struct CallbackNativeScheduler {
+    bool initialized{false};
+    std::map<NativeAddress, CallbackNativeSource> sources;
+    std::map<int, std::deque<CallbackNativeReadyToken>> ready_by_priority;
+  };
   struct InstalledCallback {
     explicit InstalledCallback(std::unique_ptr<ExtMsgCallback> value) : callback(std::move(value)) {
     }
 
     std::unique_ptr<ExtMsgCallback> callback;
-    std::deque<std::pair<td::Ref<ExtMessage>, int>> pending;
+    std::deque<ExtMsgQueueEntry> pending_native;
+    std::deque<ExtMsgQueueEntry> pending_generic;
+    CallbackNativeScheduler native_scheduler;
+    // Live ingress coalesces source-local scheduler invalidations here while
+    // the serialized pump is suspended on queue backpressure. The pump applies
+    // them immediately before its next demand-driven refill.
+    std::set<NativeAddress> native_dirty_sources;
+    bool native_scheduler_rebuild{false};
     std::set<ExtMessage::Hash> delivered_native;
     td::optional<NativeAddress> native_cursor;
     std::size_t generic_selected{0};
+    td::uint64 completion_epoch{0};
+    td::uint64 producer_epoch{0};
     bool pump_active{false};
+    bool producer_epoch_open{false};
+    bool native_snapshot_exhausted{false};
   };
 
   td::optional<NativeAddress> native_scheduler_cursor_;
   std::multimap<td::Timestamp, std::pair<int, MessageId>> native_reactivations_;
+  std::shared_ptr<ExtMsgQueueTelemetry> native_transport_telemetry_{std::make_shared<ExtMsgQueueTelemetry>()};
 
   NativeQueueSelection select_native_messages(
       ShardIdFull shard, const std::vector<ExtMessage::Hash> &excluded_messages,
       const std::set<ExtMessage::Hash> &already_delivered, std::size_t limit,
       td::optional<NativeAddress> cursor, const std::set<NativeAddress> *source_filter = nullptr);
+  NativeQueueSelection select_callback_native_messages(
+      const std::shared_ptr<InstalledCallback> &callback, std::size_t limit,
+      const std::set<NativeAddress> *source_filter = nullptr);
+  void initialize_callback_native_scheduler(const std::shared_ptr<InstalledCallback> &callback,
+                                            NativeQueueCounters &counters);
+  void refresh_callback_native_source(const std::shared_ptr<InstalledCallback> &callback,
+                                      const NativeAddress &source, NativeQueueCounters &counters,
+                                      bool count_refresh);
+  void probe_callback_native_source(const std::shared_ptr<InstalledCallback> &callback,
+                                    const NativeAddress &source, CallbackNativeSource &state,
+                                    NativeQueueCounters &counters, bool enqueue_ready);
+  void enqueue_callback_native_source(CallbackNativeScheduler &scheduler, const NativeAddress &source,
+                                      CallbackNativeSource &state);
   std::size_t fill_callback_native(const std::shared_ptr<InstalledCallback> &callback,
                                    bool count_install = false,
                                    const std::set<NativeAddress> *source_filter = nullptr);
-  std::size_t wake_native_callbacks(const std::set<NativeAddress> *source_filter = nullptr);
+  std::size_t wake_native_callbacks(const std::set<NativeAddress> *source_filter = nullptr,
+                                    bool preserve_valid_ready_head = false);
   std::size_t reactivate_due_native_messages(td::Timestamp now);
   void enqueue_callback_item(const std::shared_ptr<InstalledCallback> &callback,
-                             std::pair<td::Ref<ExtMessage>, int> item);
+                             std::pair<td::Ref<ExtMessage>, int> item, bool native);
+  void begin_callback_epoch(const std::shared_ptr<InstalledCallback> &callback);
+  void start_callback_pump(const std::shared_ptr<InstalledCallback> &callback);
+  void cancel_callback_delivery(const std::shared_ptr<InstalledCallback> &callback);
   td::actor::Task<> pump_callback(std::shared_ptr<InstalledCallback> callback);
 
   td::actor::Task<CheckResult> check_message(td::Ref<ExtMessage> message,
@@ -468,6 +523,7 @@ class ExtMessagePool : public td::actor::Actor {
   // additional references only leaves a large callback backlog that the
   // candidate can never consume.
   static constexpr size_t MAX_NATIVE_COLLATOR_QUEUE_LIMIT = 65536;
+  static constexpr size_t NATIVE_DELIVERY_CHUNK = 512;
   static constexpr size_t NATIVE_SOURCE_RUN_TARGET = 16;
   static constexpr size_t STANDARD_COLLATOR_QUEUE_LIMIT = 500;
   static constexpr td::uint32 MAX_NATIVE_MEMPOOL_TTL = 86400;

@@ -48,6 +48,29 @@ volatile std::sig_atomic_t stop_requested = 0;
 std::atomic<int> process_exit_code{0};
 constexpr td::uint64 max_native_nonce_diff = 4096;
 
+constexpr td::int64 whole_second_bucket_begin(td::int64 unix_milliseconds) {
+  return (unix_milliseconds + 999) / 1000;
+}
+
+constexpr td::int64 whole_second_bucket_end(td::int64 unix_milliseconds) {
+  return unix_milliseconds / 1000;
+}
+
+constexpr bool in_whole_second_window(td::uint32 gen_utime, td::int64 begin_ms,
+                                      td::int64 end_ms) {
+  return static_cast<td::int64>(gen_utime) >= whole_second_bucket_begin(begin_ms) &&
+         static_cast<td::int64>(gen_utime) < whole_second_bucket_end(end_ms);
+}
+
+constexpr bool source_task_can_seed_batch(td::uint64 candidate_nonce,
+                                          td::uint64 lowest_unresolved_nonce) {
+  return candidate_nonce == lowest_unresolved_nonce;
+}
+
+td::int64 unix_milliseconds(double seconds) {
+  return static_cast<td::int64>(std::llround(seconds * 1000.0));
+}
+
 constexpr bool nonce_in_half_open_cohort(td::uint64 nonce, td::uint64 begin,
                                          td::uint64 end) {
   return nonce >= begin && nonce < end;
@@ -88,6 +111,13 @@ static_assert(!canonical_follower_retry_available(6, 5));
 static_assert(canonical_follower_retry_backoff(0.25, 1, 10.0) == 0.25);
 static_assert(canonical_follower_retry_backoff(0.25, 5, 10.0) == 4.0);
 static_assert(canonical_follower_retry_backoff(0.25, 8, 10.0) == 10.0);
+static_assert(whole_second_bucket_begin(120001) == 121);
+static_assert(whole_second_bucket_end(180999) == 180);
+static_assert(in_whole_second_window(121, 120001, 180999));
+static_assert(!in_whole_second_window(120, 120001, 180999));
+static_assert(!in_whole_second_window(180, 120001, 180999));
+static_assert(source_task_can_seed_batch(9, 9));
+static_assert(!source_task_can_seed_batch(10, 9));
 
 void request_stop(int) {
   stop_requested = 1;
@@ -104,6 +134,7 @@ struct Options {
   td::uint32 max_inflight{8192};
   td::uint32 submit_batch_size{1};
   td::uint32 submit_source_run_size{1};
+  td::uint32 submit_coalesce_ms{2};
   td::uint64 max_canonical_backlog{262144};
   td::uint32 max_source_canonical_backlog{64};
   td::uint32 duration_seconds{600};
@@ -208,9 +239,11 @@ td::Result<td::uint64> parse_native_account_nonce(td::BufferSlice data, const to
 }
 
 struct LatencyHistogram {
-  static constexpr std::array<double, 20> upper_ms = {
+  static constexpr std::array<double, 32> upper_ms = {
       0.1,  0.25, 0.5,   1.0,   2.0,    5.0,    10.0,   20.0,   50.0,   100.0,
-      200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0, 30000.0, 60000.0, 120000.0};
+      200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0, 30000.0, 60000.0,
+      120000.0, 180000.0, 240000.0, 300000.0, 450000.0, 600000.0, 900000.0,
+      1200000.0, 1800000.0, 2700000.0, 3600000.0, 7200000.0, 86400000.0};
   std::array<td::uint64, upper_ms.size() + 1> buckets{};
   td::uint64 count{0};
   double max_ms{0.0};
@@ -245,6 +278,91 @@ struct LatencyHistogram {
       }
     }
     return max_ms;
+  }
+
+  td::uint64 overflow_count() const {
+    return buckets.back();
+  }
+
+  bool percentile_in_overflow(double quantile) const {
+    if (!count) {
+      return false;
+    }
+    auto wanted = static_cast<td::uint64>(std::ceil(quantile * static_cast<double>(count)));
+    wanted = std::max<td::uint64>(wanted, 1);
+    return wanted > count - overflow_count();
+  }
+};
+
+enum class TaskErrorReason {
+  timeout,
+  transport,
+  parse,
+  full,
+  rate_limit,
+  duplicate,
+  too_old,
+  too_new,
+  expired,
+  not_ready,
+  balance,
+  invalid,
+  signing,
+  server_other
+};
+
+struct TaskErrorReasonCounters {
+  td::uint64 timeout{0};
+  td::uint64 transport{0};
+  td::uint64 parse{0};
+  td::uint64 full{0};
+  td::uint64 rate_limit{0};
+  td::uint64 duplicate{0};
+  td::uint64 too_old{0};
+  td::uint64 too_new{0};
+  td::uint64 expired{0};
+  td::uint64 not_ready{0};
+  td::uint64 balance{0};
+  td::uint64 invalid{0};
+  td::uint64 signing{0};
+  td::uint64 server_other{0};
+
+  void add(TaskErrorReason reason) {
+    switch (reason) {
+      case TaskErrorReason::timeout: ++timeout; break;
+      case TaskErrorReason::transport: ++transport; break;
+      case TaskErrorReason::parse: ++parse; break;
+      case TaskErrorReason::full: ++full; break;
+      case TaskErrorReason::rate_limit: ++rate_limit; break;
+      case TaskErrorReason::duplicate: ++duplicate; break;
+      case TaskErrorReason::too_old: ++too_old; break;
+      case TaskErrorReason::too_new: ++too_new; break;
+      case TaskErrorReason::expired: ++expired; break;
+      case TaskErrorReason::not_ready: ++not_ready; break;
+      case TaskErrorReason::balance: ++balance; break;
+      case TaskErrorReason::invalid: ++invalid; break;
+      case TaskErrorReason::signing: ++signing; break;
+      case TaskErrorReason::server_other: ++server_other; break;
+    }
+  }
+
+  void merge(const TaskErrorReasonCounters& other) {
+#define ADD_REASON(name) name += other.name
+    ADD_REASON(timeout);
+    ADD_REASON(transport);
+    ADD_REASON(parse);
+    ADD_REASON(full);
+    ADD_REASON(rate_limit);
+    ADD_REASON(duplicate);
+    ADD_REASON(too_old);
+    ADD_REASON(too_new);
+    ADD_REASON(expired);
+    ADD_REASON(not_ready);
+    ADD_REASON(balance);
+    ADD_REASON(invalid);
+    ADD_REASON(signing);
+    ADD_REASON(server_other);
+#undef ADD_REASON
   }
 };
 
@@ -301,6 +419,13 @@ struct WorkerStats {
   td::uint64 canonical_backpressure_events{0};
   td::uint64 measure_canonical_backpressure_events{0};
   td::uint64 source_backpressure_stalls{0};
+  td::uint64 source_issue_bursts{0};
+  td::uint64 source_issue_burst_messages{0};
+  td::uint64 max_source_issue_burst{0};
+  td::uint64 head_blocked_ready_scans{0};
+  td::uint64 sources_at_canonical_backlog_cap{0};
+  td::uint64 max_source_canonical_backlog_current{0};
+  td::uint64 max_active_tasks_per_source{0};
   td::uint64 inflight{0};
   td::uint64 signing{0};
   td::uint64 ready{0};
@@ -324,6 +449,8 @@ struct WorkerStats {
   LatencyHistogram signing_latency;
   LatencyHistogram request_latency;
   LatencyHistogram sampled_anchor_latency;
+  TaskErrorReasonCounters task_errors_by_reason;
+  TaskErrorReasonCounters retries_by_reason;
 };
 
 struct CanonicalTransferObservation {
@@ -584,7 +711,8 @@ class NativeLoadWorker final : public td::actor::Actor {
                        td::Result<td::BufferSlice> result);
   void handle_task_error(std::shared_ptr<TransferTask> task, std::size_t client_idx, td::Status error,
                          ErrorOrigin origin);
-  void schedule_retry(std::shared_ptr<TransferTask> task, double delay_seconds);
+  void schedule_retry(std::shared_ptr<TransferTask> task, double delay_seconds,
+                      TaskErrorReason reason);
   void accept_task(std::shared_ptr<TransferTask> task, TaskResolution resolution);
   void reject_task(std::shared_ptr<TransferTask> task, td::Slice reason);
   void disable_wallet_for_conflict(std::size_t wallet_idx, td::Slice reason);
@@ -947,6 +1075,10 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(canonical_backpressure_events);
       ADD_FIELD(measure_canonical_backpressure_events);
       ADD_FIELD(source_backpressure_stalls);
+      ADD_FIELD(source_issue_bursts);
+      ADD_FIELD(source_issue_burst_messages);
+      ADD_FIELD(head_blocked_ready_scans);
+      ADD_FIELD(sources_at_canonical_backlog_cap);
       ADD_FIELD(inflight);
       ADD_FIELD(signing);
       ADD_FIELD(ready);
@@ -959,6 +1091,13 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       total.max_wire_batch_size = std::max(total.max_wire_batch_size, value.max_wire_batch_size);
       total.max_wire_batch_source_run =
           std::max(total.max_wire_batch_source_run, value.max_wire_batch_source_run);
+      total.max_source_issue_burst =
+          std::max(total.max_source_issue_burst, value.max_source_issue_burst);
+      total.max_source_canonical_backlog_current =
+          std::max(total.max_source_canonical_backlog_current,
+                   value.max_source_canonical_backlog_current);
+      total.max_active_tasks_per_source =
+          std::max(total.max_active_tasks_per_source, value.max_active_tasks_per_source);
       total.pacing_tokens += value.pacing_tokens;
       total.measure_elapsed_seconds = std::max(total.measure_elapsed_seconds, value.measure_elapsed_seconds);
       total.drain_to_anchor_seconds = std::max(total.drain_to_anchor_seconds, value.drain_to_anchor_seconds);
@@ -978,6 +1117,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       total.signing_latency.merge(value.signing_latency);
       total.request_latency.merge(value.request_latency);
       total.sampled_anchor_latency.merge(value.sampled_anchor_latency);
+      total.task_errors_by_reason.merge(value.task_errors_by_reason);
+      total.retries_by_reason.merge(value.retries_by_reason);
     }
     return total;
   }
@@ -1018,9 +1159,15 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     td::uint64 canonical_measure_blocks_peak_1s = 0;
     auto measure_begin_system = start_system_at_ + options_.ramp_seconds + options_.warmup_seconds;
     auto measure_end_system = measure_begin_system + options_.duration_seconds;
+    auto measure_begin_ms = unix_milliseconds(measure_begin_system);
+    auto measure_end_ms = unix_milliseconds(measure_end_system);
+    auto canonical_bucket_begin = whole_second_bucket_begin(measure_begin_ms);
+    auto canonical_bucket_end = whole_second_bucket_end(measure_end_ms);
+    auto canonical_bucket_seconds =
+        std::max<td::int64>(0, canonical_bucket_end - canonical_bucket_begin);
     for (const auto& [second, blocks] : follower_block_second_counts_) {
       canonical_blocks_peak_1s = std::max(canonical_blocks_peak_1s, blocks);
-      if (second >= measure_begin_system && second < measure_end_system) {
+      if (in_whole_second_window(second, measure_begin_ms, measure_end_ms)) {
         canonical_measure_blocks_peak_1s = std::max(canonical_measure_blocks_peak_1s, blocks);
       }
     }
@@ -1047,7 +1194,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         static_cast<double>(total.steady_offered) / std::max(0.000001, total.measure_elapsed_seconds);
     auto measured_canonical_avg_tps =
         static_cast<double>(follower_stats_.measured_native_transfers) /
-        std::max(0.000001, total.measure_elapsed_seconds);
+        static_cast<double>(std::max<td::int64>(1, canonical_bucket_seconds));
     auto offer_target_attainment_ratio =
         options_.target_tps > 0.0 ? measured_offered_avg_tps / options_.target_tps : 1.0;
     bool offer_target_attained = options_.target_tps <= 0.0 || offer_target_attainment_ratio >= 0.95;
@@ -1058,20 +1205,101 @@ class NativeLoadCoordinator final : public td::actor::Actor {
                                          ? measured_offered_avg_tps / measured_canonical_avg_tps
                                          : 0.0;
     bool chain_capacity_valid = final && benchmark_result_valid && total.measure_elapsed_seconds > 0.0 &&
+                                canonical_bucket_seconds > 0 &&
                                 measure_backpressure_fraction <= 0.01 && total.retry_exhausted == 0 &&
                                 total.sign_errors == 0 && total.transport_errors == 0 &&
                                 (offer_target_attained || canonical_overdrive_ratio >= 1.05);
-    auto unix_ms = [](double seconds) {
-      return static_cast<td::int64>(std::llround(seconds * 1000.0));
+    std::vector<const char*> correctness_reasons;
+    std::vector<const char*> completion_reasons;
+    std::vector<const char*> ingress_capacity_reasons;
+    std::vector<const char*> chain_capacity_reasons;
+    auto append_reason = [](std::vector<const char*>& reasons, bool condition,
+                            const char* reason) {
+      if (condition) {
+        reasons.push_back(reason);
+      }
+    };
+    if (final) {
+      append_reason(correctness_reasons, !options_.canonical_block_follower,
+                    "canonical_follower_disabled");
+      append_reason(correctness_reasons, !final_follower_catchup_complete_,
+                    "canonical_final_catchup_incomplete");
+      append_reason(correctness_reasons, follower_stats_.errors != 0,
+                    "canonical_follower_errors");
+      append_reason(correctness_reasons, follower_stats_.retry_exhausted != 0,
+                    "canonical_follower_retry_exhausted");
+      append_reason(correctness_reasons, follower_stats_.reorgs != 0,
+                    "canonical_reorg_observed");
+      append_reason(correctness_reasons, total.canonical_hash_conflicts != 0,
+                    "canonical_hash_conflict");
+      append_reason(correctness_reasons, total.duplicate_nonce_conflicts != 0,
+                    "duplicate_nonce_conflict");
+      append_reason(correctness_reasons, total.external_nonce_conflicts != 0,
+                    "external_nonce_conflict");
+      append_reason(completion_reasons, !benchmark_result_valid, "benchmark_result_invalid");
+      append_reason(completion_reasons, total.interrupted, "interrupted");
+      append_reason(completion_reasons, total.drain_timed_out, "drain_timed_out");
+      append_reason(completion_reasons, !total.end_snapshot_complete,
+                    "end_snapshot_incomplete");
+      append_reason(completion_reasons, !total.drain_snapshot_complete,
+                    "drain_snapshot_incomplete");
+      append_reason(completion_reasons, follower_stats_.lag_blocks != 0,
+                    "canonical_follower_lag");
+      append_reason(completion_reasons,
+                    !canonical_cohorts_complete(total.anchored_after_drain,
+                                                total.steady_offered,
+                                                total.total_anchored_after_drain,
+                                                total.offered),
+                    "canonical_cohorts_incomplete");
+      ingress_capacity_reasons = completion_reasons;
+      append_reason(ingress_capacity_reasons, total.measure_elapsed_seconds <= 0.0,
+                    "empty_measurement_window");
+      append_reason(ingress_capacity_reasons, measure_backpressure_fraction > 0.01,
+                    "canonical_backpressure_above_one_percent");
+      append_reason(ingress_capacity_reasons, total.retry_exhausted != 0,
+                    "generator_retry_exhausted");
+      append_reason(ingress_capacity_reasons, total.sign_errors != 0, "signing_errors");
+      append_reason(ingress_capacity_reasons, total.transport_errors != 0,
+                    "transport_errors");
+      append_reason(ingress_capacity_reasons, !offer_target_attained,
+                    "offer_target_not_attained");
+      chain_capacity_reasons = completion_reasons;
+      append_reason(chain_capacity_reasons, total.measure_elapsed_seconds <= 0.0,
+                    "empty_measurement_window");
+      append_reason(chain_capacity_reasons, canonical_bucket_seconds <= 0,
+                    "empty_canonical_gen_utime_window");
+      append_reason(chain_capacity_reasons, measure_backpressure_fraction > 0.01,
+                    "canonical_backpressure_above_one_percent");
+      append_reason(chain_capacity_reasons, total.retry_exhausted != 0,
+                    "generator_retry_exhausted");
+      append_reason(chain_capacity_reasons, total.sign_errors != 0, "signing_errors");
+      append_reason(chain_capacity_reasons, total.transport_errors != 0,
+                    "transport_errors");
+      append_reason(chain_capacity_reasons,
+                    !offer_target_attained && canonical_overdrive_ratio < 1.05,
+                    "insufficient_load_over_canonical_throughput");
+    }
+    auto write_reason_array = [](const std::vector<const char*>& reasons) {
+      std::cout << '[';
+      for (std::size_t i = 0; i < reasons.size(); ++i) {
+        if (i) {
+          std::cout << ',';
+        }
+        std::cout << '\"' << reasons[i] << '\"';
+      }
+      std::cout << ']';
     };
     std::cout << "{\"schema\":\"native-load-v2\",\"final\":" << (final ? "true" : "false")
               << ",\"phase\":\"" << (final ? "finished" : phase(now, total)) << "\",\"elapsed_s\":"
               << std::max(0.0, now - start_at_) << ",\"load_start_unix_s\":" << start_system_at_
               << ",\"measure_start_unix_s\":" << measure_begin_system
               << ",\"measure_end_unix_s\":" << measure_end_system
-              << ",\"load_start_unix_ms\":" << unix_ms(start_system_at_)
-              << ",\"measure_start_unix_ms\":" << unix_ms(measure_begin_system)
-              << ",\"measure_end_unix_ms\":" << unix_ms(measure_end_system)
+              << ",\"load_start_unix_ms\":" << unix_milliseconds(start_system_at_)
+              << ",\"measure_start_unix_ms\":" << measure_begin_ms
+              << ",\"measure_end_unix_ms\":" << measure_end_ms
+              << ",\"canonical_gen_utime_bucket_start_unix_s\":" << canonical_bucket_begin
+              << ",\"canonical_gen_utime_bucket_end_unix_s\":" << canonical_bucket_end
+              << ",\"canonical_gen_utime_bucket_duration_s\":" << canonical_bucket_seconds
               << ",\"target_tps\":" << options_.target_tps
               << ",\"offered\":" << total.offered << ",\"steady_offered\":" << total.steady_offered
               << ",\"offered_tps\":" << rate(total.offered, previous_.offered)
@@ -1095,6 +1323,13 @@ class NativeLoadCoordinator final : public td::actor::Actor {
                      static_cast<double>(std::max<td::uint64>(1, total.wire_batch_source_runs))
               << ",\"wire_batch_source_run_max_size\":"
               << total.max_wire_batch_source_run
+              << ",\"submit_coalesce_ms\":" << options_.submit_coalesce_ms
+              << ",\"source_issue_bursts\":" << total.source_issue_bursts
+              << ",\"source_issue_burst_messages\":" << total.source_issue_burst_messages
+              << ",\"source_issue_burst_avg_size\":"
+              << static_cast<double>(total.source_issue_burst_messages) /
+                     static_cast<double>(std::max<td::uint64>(1, total.source_issue_bursts))
+              << ",\"source_issue_burst_max_size\":" << total.max_source_issue_burst
               << ",\"retries\":" << total.retries << ",\"retry_exhausted\":" << total.retry_exhausted
               << ",\"resigned\":" << total.resigned << ",\"repair_offered\":" << total.repair_offered
               << ",\"mempool_accepted\":"
@@ -1127,6 +1362,34 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << total.rejected_invalid << ",\"other\":" << total.rejected_other << "}"
               << ",\"timeouts\":" << total.timeouts << ",\"transport_errors\":" << total.transport_errors
               << ",\"server_errors\":" << total.server_errors << ",\"parse_errors\":" << total.parse_errors
+              << ",\"task_errors_by_reason\":{\"timeout\":" << total.task_errors_by_reason.timeout
+              << ",\"transport\":" << total.task_errors_by_reason.transport
+              << ",\"parse\":" << total.task_errors_by_reason.parse
+              << ",\"full\":" << total.task_errors_by_reason.full
+              << ",\"rate_limit\":" << total.task_errors_by_reason.rate_limit
+              << ",\"duplicate\":" << total.task_errors_by_reason.duplicate
+              << ",\"too_old\":" << total.task_errors_by_reason.too_old
+              << ",\"too_new\":" << total.task_errors_by_reason.too_new
+              << ",\"expired\":" << total.task_errors_by_reason.expired
+              << ",\"not_ready\":" << total.task_errors_by_reason.not_ready
+              << ",\"balance\":" << total.task_errors_by_reason.balance
+              << ",\"invalid\":" << total.task_errors_by_reason.invalid
+              << ",\"signing\":" << total.task_errors_by_reason.signing
+              << ",\"server_other\":" << total.task_errors_by_reason.server_other << "}"
+              << ",\"retries_by_reason\":{\"timeout\":" << total.retries_by_reason.timeout
+              << ",\"transport\":" << total.retries_by_reason.transport
+              << ",\"parse\":" << total.retries_by_reason.parse
+              << ",\"full\":" << total.retries_by_reason.full
+              << ",\"rate_limit\":" << total.retries_by_reason.rate_limit
+              << ",\"duplicate\":" << total.retries_by_reason.duplicate
+              << ",\"too_old\":" << total.retries_by_reason.too_old
+              << ",\"too_new\":" << total.retries_by_reason.too_new
+              << ",\"expired\":" << total.retries_by_reason.expired
+              << ",\"not_ready\":" << total.retries_by_reason.not_ready
+              << ",\"balance\":" << total.retries_by_reason.balance
+              << ",\"invalid\":" << total.retries_by_reason.invalid
+              << ",\"signing\":" << total.retries_by_reason.signing
+              << ",\"server_other\":" << total.retries_by_reason.server_other << "}"
               << ",\"nonce_gaps\":" << total.nonce_gaps << ",\"external_nonce_conflicts\":"
               << total.external_nonce_conflicts << ",\"inflight\":" << total.inflight
               << ",\"canonical_backlog\":" << total.canonical_backlog
@@ -1142,6 +1405,19 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"measure_canonical_backpressure_fraction\":"
               << measure_backpressure_fraction
               << ",\"source_backpressure_stalls\":" << total.source_backpressure_stalls
+              << ",\"head_blocked_ready_scans\":" << total.head_blocked_ready_scans
+              << ",\"max_source_canonical_backlog_configured\":"
+              << options_.max_source_canonical_backlog
+              << ",\"max_source_canonical_backlog_effective\":"
+              << (options_.max_source_canonical_backlog
+                      ? std::min<td::uint64>(options_.max_source_canonical_backlog,
+                                             max_native_nonce_diff)
+                      : max_native_nonce_diff)
+              << ",\"sources_at_canonical_backlog_cap\":"
+              << total.sources_at_canonical_backlog_cap
+              << ",\"max_source_canonical_backlog_current\":"
+              << total.max_source_canonical_backlog_current
+              << ",\"max_active_tasks_per_source\":" << total.max_active_tasks_per_source
               << ",\"signing\":" << total.signing << ",\"ready\":" << total.ready
               << ",\"retry_wait\":" << total.retry_wait << ",\"active_tasks\":"
               << total.active_tasks << ",\"active_sources\":" << total.active_sources
@@ -1154,15 +1430,41 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << total.pacing_tokens << ",\"rtt_ms\":{\"p50\":" << total.request_latency.percentile(0.50)
               << ",\"p95\":" << total.request_latency.percentile(0.95) << ",\"p99\":"
               << total.request_latency.percentile(0.99) << ",\"max\":" << total.request_latency.max_ms
-              << ",\"samples\":" << total.request_latency.count << "},\"sign_ms\":{\"p50\":"
+              << ",\"samples\":" << total.request_latency.count
+              << ",\"overflow\":" << total.request_latency.overflow_count()
+              << ",\"overflow_lower_bound_ms\":" << LatencyHistogram::upper_ms.back()
+              << ",\"p50_in_overflow\":"
+              << (total.request_latency.percentile_in_overflow(0.50) ? "true" : "false")
+              << ",\"p95_in_overflow\":"
+              << (total.request_latency.percentile_in_overflow(0.95) ? "true" : "false")
+              << ",\"p99_in_overflow\":"
+              << (total.request_latency.percentile_in_overflow(0.99) ? "true" : "false")
+              << "},\"sign_ms\":{\"p50\":"
               << total.signing_latency.percentile(0.50) << ",\"p95\":"
               << total.signing_latency.percentile(0.95) << ",\"p99\":"
               << total.signing_latency.percentile(0.99) << ",\"max\":" << total.signing_latency.max_ms
-              << ",\"samples\":" << total.signing_latency.count << "},\"anchor_latency_sample_ms\":{\"p50\":"
+              << ",\"samples\":" << total.signing_latency.count
+              << ",\"overflow\":" << total.signing_latency.overflow_count()
+              << ",\"overflow_lower_bound_ms\":" << LatencyHistogram::upper_ms.back()
+              << ",\"p50_in_overflow\":"
+              << (total.signing_latency.percentile_in_overflow(0.50) ? "true" : "false")
+              << ",\"p95_in_overflow\":"
+              << (total.signing_latency.percentile_in_overflow(0.95) ? "true" : "false")
+              << ",\"p99_in_overflow\":"
+              << (total.signing_latency.percentile_in_overflow(0.99) ? "true" : "false")
+              << "},\"anchor_latency_sample_ms\":{\"p50\":"
               << total.sampled_anchor_latency.percentile(0.50) << ",\"p95\":"
               << total.sampled_anchor_latency.percentile(0.95) << ",\"p99\":"
               << total.sampled_anchor_latency.percentile(0.99) << ",\"max\":"
               << total.sampled_anchor_latency.max_ms << ",\"samples\":" << total.sampled_anchor_latency.count
+              << ",\"overflow\":" << total.sampled_anchor_latency.overflow_count()
+              << ",\"overflow_lower_bound_ms\":" << LatencyHistogram::upper_ms.back()
+              << ",\"p50_in_overflow\":"
+              << (total.sampled_anchor_latency.percentile_in_overflow(0.50) ? "true" : "false")
+              << ",\"p95_in_overflow\":"
+              << (total.sampled_anchor_latency.percentile_in_overflow(0.95) ? "true" : "false")
+              << ",\"p99_in_overflow\":"
+              << (total.sampled_anchor_latency.percentile_in_overflow(0.99) ? "true" : "false")
               << ",\"poll_resolution_s\":" << options_.finality_poll_seconds << "},\"anchor_scan_errors\":"
               << total.anchor_scan_errors << ",\"canonical_chain_blocks\":" << follower_stats_.blocks
               << ",\"canonical_follower_block_discovery_rate\":"
@@ -1191,7 +1493,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << follower_stats_.measured_native_transfers
               << ",\"canonical_chain_measure_avg_tps\":"
               << static_cast<double>(follower_stats_.measured_native_transfers) /
-                     std::max(0.000001, total.measure_elapsed_seconds)
+                     static_cast<double>(std::max<td::int64>(1, canonical_bucket_seconds))
               << ",\"canonical_chain_measure_peak_1s_tps\":" << canonical_measure_peak_1s
               << ",\"canonical_follower_errors\":" << follower_stats_.errors
               << ",\"canonical_follower_fatal_errors\":" << follower_stats_.fatal_errors
@@ -1229,7 +1531,21 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << (final ? (ingress_capacity_valid ? "true" : "false") : "null")
               << ",\"chain_capacity_valid\":"
               << (final ? (chain_capacity_valid ? "true" : "false") : "null")
-              << ",\"canonical_at_measure_end\":";
+              << ",\"correctness_invalid_reasons\":";
+    if (final) {
+      write_reason_array(correctness_reasons);
+      std::cout << ",\"run_incomplete_reasons\":";
+      write_reason_array(completion_reasons);
+      std::cout << ",\"ingress_capacity_invalid_reasons\":";
+      write_reason_array(ingress_capacity_reasons);
+      std::cout << ",\"chain_capacity_invalid_reasons\":";
+      write_reason_array(chain_capacity_reasons);
+    } else {
+      std::cout << "null,\"run_incomplete_reasons\":null"
+                   ",\"ingress_capacity_invalid_reasons\":null"
+                   ",\"chain_capacity_invalid_reasons\":null";
+    }
+    std::cout << ",\"canonical_at_measure_end\":";
     if (total.end_snapshot_complete) {
       std::cout << total.anchored_at_end << ",\"canonical_measured_offers_at_measure_end\":"
                 << total.anchored_at_end
@@ -1268,6 +1584,11 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     std::cout << ",\"finalized\":null,\"finalized_semantics\":\"not_independently_observed\""
               << ",\"admission_semantics\":\"liteServer.sendMessage status=1; not block inclusion\""
               << ",\"wire_batch_source_run_semantics\":\"adjacent ascending nonces from one source in a sendMessageBatch; each source appears in at most one bounded run per batch and seed selection remains globally fair\""
+              << ",\"source_issue_burst_semantics\":\"fair round-robin sources issue up to submit_source_run_size contiguous nonces per turn, bounded by pacing, worker inflight, and canonical backlog limits\""
+              << ",\"head_blocked_ready_scans_semantics\":\"ready tasks held because a lower same-source task still awaits its first successful or terminal admission outcome; already-admitted nonces are removed and do not block pipelining\""
+              << ",\"task_errors_by_reason_semantics\":\"one mutually exclusive typed classification per failed admission result before retry or permanent resolution\""
+              << ",\"retries_by_reason_semantics\":\"retry schedules by the typed error that caused them; counts schedules, not distinct transfers\""
+              << ",\"latency_histogram_overflow_semantics\":\"overflow counts samples above overflow_lower_bound_ms; percentile_in_overflow flags a percentile that cannot be resolved within finite histogram buckets\""
               << ",\"benchmark_result_valid_semantics\":\"final proof-consistent run with complete measured and total cohorts, zero drain timeout, no fatal or retry-exhausted follower failure, and a final contiguous catch-up to the anchored shard tip\""
               << ",\"chain_correctness_valid_semantics\":\"proof-consistent canonical follower result; independent from whether generator or node scheduling limited the offered load\""
               << ",\"ingress_capacity_valid_semantics\":\"correct final run reaching at least 95 percent of the configured offered-TPS target, with at most one percent of the measured window stopped by canonical-backlog pressure and no generator retry exhaustion, signing failure, or transport failure\""
@@ -1286,8 +1607,10 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"canonical_hash_match_semantics\":\"decoded canonical source, nonce, and external-cell hash exactly match a transfer signed by this run\""
               << ",\"canonical_chain_semantics\":\"verified basechain blocks referenced by ShardHashes proven against the configured liteserver masterchain tip\""
               << ",\"canonical_follower_discovery_tps_semantics\":\"observer catch-up throughput; not chain production TPS\""
-              << ",\"canonical_chain_measure_peak_1s_tps_semantics\":\"maximum transfers assigned to one integer block gen_utime second inside the measurement window\""
-              << ",\"canonical_chain_block_packing_semantics\":\"native transfer batch entries decoded from proof-checked canonical blocks; gen_utime peaks use one-second buckets\""
+              << ",\"canonical_gen_utime_bucket_semantics\":\"only integer gen_utime seconds whose complete [second,second+1) interval lies inside the millisecond measurement window; start is ceil(measure_start_ms/1000), end is floor(measure_end_ms/1000) and exclusive\""
+              << ",\"canonical_chain_measure_peak_1s_tps_semantics\":\"maximum transfers assigned to one fully contained integer block gen_utime second; see canonical_gen_utime_bucket_* boundaries\""
+              << ",\"canonical_chain_block_packing_semantics\":\"native transfer batch entries decoded from proof-checked canonical blocks; measured gen_utime metrics exclude partial boundary seconds\""
+              << ",\"capacity_invalid_reasons_semantics\":\"stable machine-readable reason codes keep proof correctness, run completion, ingress capacity, and chain capacity failures distinct\""
               << ",\"canonical_backlog_sampled_peak_semantics\":\"maximum summed latest-worker backlog gauge at report samples; not an exact instantaneous peak\""
               << ",\"congestion_window_sampled_peak_semantics\":\"maximum summed latest-worker AIMD window gauge at report samples\""
               << ",\"canonical_at_measure_end_semantics\":\"legacy cohort alias sampled by the first fully verified follower poll whose masterchain query began after offering ended\""
@@ -1331,7 +1654,8 @@ void NativeLoadCoordinator::maybe_begin() {
                << " sources=" << options_.sources << " connections=" << options_.connections
                << " signers=" << options_.signers << " max_inflight=" << options_.max_inflight
                << " submit_batch=" << options_.submit_batch_size << " source_run="
-               << options_.submit_source_run_size
+               << options_.submit_source_run_size << " submit_coalesce_ms="
+               << options_.submit_coalesce_ms
                << " target_tps=" << options_.target_tps << " ramp=" << options_.ramp_seconds
                << "s warmup=" << options_.warmup_seconds << "s duration=" << options_.duration_seconds
                << "s drain_timeout=" << options_.drain_timeout_seconds << "s canonical_backlog="
@@ -1602,7 +1926,8 @@ void NativeLoadCoordinator::on_follower_block(ton::BlockIdExt requested,
     follower_poll_delta_.native_transfers += native_batch.entries.size();
     auto measure_begin = start_system_at_ + options_.ramp_seconds + options_.warmup_seconds;
     auto measure_end = measure_begin + options_.duration_seconds;
-    if (block_info.gen_utime >= measure_begin && block_info.gen_utime < measure_end) {
+    if (in_whole_second_window(block_info.gen_utime, unix_milliseconds(measure_begin),
+                               unix_milliseconds(measure_end))) {
       ++follower_poll_delta_.measured_native_blocks;
       follower_poll_delta_.measured_native_transfers += native_batch.entries.size();
       follower_poll_delta_.measured_max_native_transfers_per_block =
@@ -2177,27 +2502,40 @@ void NativeLoadWorker::pump() {
     if (!wallet_idx) {
       break;
     }
-    // `find_available_wallet()` and callback traffic can straddle the exact
-    // end timestamp. Re-read time before consuming a nonce so no post-window
-    // offer is classified from the previous loop iteration's timestamp.
+    auto& wallet = wallets_[wallet_idx.value()];
+    td::uint64 burst_size = 0;
+    while (burst_size < options_.submit_source_run_size &&
+           active_tasks_ < options_.max_inflight && !source_backlog_full(wallet)) {
+      // `find_available_wallet()` and callback traffic can straddle the exact
+      // end timestamp. Re-read time before consuming every nonce so a burst
+      // cannot leak offers past the half-open measurement boundary.
+      now = td::Time::now();
+      update_phase(now);
+      update_tokens(now);
+      if (!can_issue(now)) {
+        break;
+      }
+      bool measured = is_measure_phase(now);
+      auto nonce = wallet.next_nonce++;
+      ++canonical_backlog_;
+      create_transfer(wallet_idx.value(), nonce, measured, false);
+      ++burst_size;
+      if (options_.target_tps > 0.0) {
+        pacing_tokens_ -= 1.0;
+      }
+    }
+    if (burst_size) {
+      ++stats_.source_issue_bursts;
+      stats_.source_issue_burst_messages += burst_size;
+      stats_.max_source_issue_burst = std::max(stats_.max_source_issue_burst, burst_size);
+    }
+    enqueue_available_wallet(wallet_idx.value());
     now = td::Time::now();
     update_phase(now);
     update_tokens(now);
-    if (!can_issue(now)) {
-      enqueue_available_wallet(wallet_idx.value());
+    if (!burst_size) {
       break;
     }
-    bool measured = is_measure_phase(now);
-    auto nonce = wallets_[wallet_idx.value()].next_nonce++;
-    ++canonical_backlog_;
-    create_transfer(wallet_idx.value(), nonce, measured, false);
-    enqueue_available_wallet(wallet_idx.value());
-    if (options_.target_tps > 0.0) {
-      pacing_tokens_ -= 1.0;
-    }
-    now = td::Time::now();
-    update_phase(now);
-    update_tokens(now);
   }
   update_backpressure_state(td::Time::now());
   dispatch_ready();
@@ -2289,7 +2627,7 @@ void NativeLoadWorker::on_signed(std::shared_ptr<TransferTask> task, td::Result<
     if (options_.submit_batch_size == 1) {
       pump();
     } else {
-      alarm_timestamp().relax(td::Timestamp::in(0.001));
+      alarm_timestamp().relax(td::Timestamp::in(options_.submit_coalesce_ms / 1000.0));
     }
     return;
   }
@@ -2297,7 +2635,9 @@ void NativeLoadWorker::on_signed(std::shared_ptr<TransferTask> task, td::Result<
     ++stats_.sign_errors;
     LOG(ERROR) << "worker " << worker_id_ << " signing failed for nonce " << task->transfer.nonce << ": "
                << message.error();
-    schedule_retry(std::move(task), std::max(0.001, options_.retry_backoff_ms / 1000.0));
+    stats_.task_errors_by_reason.add(TaskErrorReason::signing);
+    schedule_retry(std::move(task), std::max(0.001, options_.retry_backoff_ms / 1000.0),
+                   TaskErrorReason::signing);
   } else {
     auto signed_transfer = message.move_as_ok();
     task->boc = std::move(signed_transfer.boc);
@@ -2314,7 +2654,7 @@ void NativeLoadWorker::on_signed(std::shared_ptr<TransferTask> task, td::Result<
   if (options_.submit_batch_size == 1) {
     pump();
   } else {
-    alarm_timestamp().relax(td::Timestamp::in(0.001));
+    alarm_timestamp().relax(td::Timestamp::in(options_.submit_coalesce_ms / 1000.0));
   }
   maybe_finish();
 }
@@ -2349,16 +2689,9 @@ td::uint32 NativeLoadWorker::client_available_capacity(std::size_t client_idx) c
 
 bool NativeLoadWorker::ready_for_first_submission(
     const std::shared_ptr<TransferTask>& task) const {
-  if (task->ever_submitted) {
-    return true;
-  }
   const auto& tasks = wallets_[task->wallet_idx].tasks;
-  for (auto it = tasks.begin(); it != tasks.end() && it->first < task->transfer.nonce; ++it) {
-    if (!it->second->ever_submitted) {
-      return false;
-    }
-  }
-  return true;
+  return !tasks.empty() &&
+         source_task_can_seed_batch(task->transfer.nonce, tasks.begin()->first);
 }
 
 std::shared_ptr<NativeLoadWorker::TransferTask>
@@ -2380,6 +2713,7 @@ NativeLoadWorker::take_dispatchable_ready_task(
     if (ready_for_first_submission(task)) {
       return task;
     }
+    ++stats_.head_blocked_ready_scans;
     ready_tasks_.push_back(std::move(task));
   }
   return {};
@@ -2592,6 +2926,7 @@ void NativeLoadWorker::on_result(std::shared_ptr<TransferTask> task, std::size_t
       accept_task(std::move(task), TaskResolution::admitted);
     } else {
       ++stats_.rejected_other;
+      stats_.task_errors_by_reason.add(TaskErrorReason::server_other);
       reject_task(std::move(task), "sendMessage returned a non-success status");
     }
   }
@@ -2674,6 +3009,7 @@ void NativeLoadWorker::on_batch_result(std::vector<std::shared_ptr<TransferTask>
                         td::Status::Error(status->code_, status->message_), ErrorOrigin::server);
     } else {
       ++stats_.rejected_other;
+      stats_.task_errors_by_reason.add(TaskErrorReason::server_other);
       reject_task(std::move(task), "sendMessageBatch returned an invalid per-message status");
     }
   }
@@ -2705,6 +3041,20 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
   bool balance = !not_ready && (contains("insufficient") || contains("balance"));
   bool invalid = !not_ready && (contains("signature") || contains("wrong source") ||
                                 contains("must be balance-only") || contains("overflow"));
+  auto reason = timeout                ? TaskErrorReason::timeout
+                : origin == ErrorOrigin::transport ? TaskErrorReason::transport
+                : origin == ErrorOrigin::parse     ? TaskErrorReason::parse
+                : full                              ? TaskErrorReason::full
+                : rate_limit                        ? TaskErrorReason::rate_limit
+                : duplicate                         ? TaskErrorReason::duplicate
+                : too_old                           ? TaskErrorReason::too_old
+                : too_new                           ? TaskErrorReason::too_new
+                : expired                           ? TaskErrorReason::expired
+                : not_ready                         ? TaskErrorReason::not_ready
+                : balance                           ? TaskErrorReason::balance
+                : invalid                           ? TaskErrorReason::invalid
+                                                    : TaskErrorReason::server_other;
+  stats_.task_errors_by_reason.add(reason);
   if (timeout) {
     ++stats_.timeouts;
   } else if (origin == ErrorOrigin::server) {
@@ -2728,7 +3078,8 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
       // its expiry and removes it. This duplicate is an expected handover
       // race between two hashes signed by this run; retain both expected
       // hashes and retry the replacement without claiming admission.
-      schedule_retry(std::move(task), std::max(0.25, options_.repair_cooldown_seconds));
+      schedule_retry(std::move(task), std::max(0.25, options_.repair_cooldown_seconds),
+                     TaskErrorReason::duplicate);
       return;
     }
     ++stats_.duplicate_nonce_conflicts;
@@ -2752,7 +3103,8 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
     // A too-old response is only a hint that some transfer advanced the
     // account. Keep this exact task unresolved until the proof follower sees
     // the canonical external hash; never turn the hint into canonical TPS.
-    schedule_retry(std::move(task), std::max(0.25, options_.repair_cooldown_seconds));
+    schedule_retry(std::move(task), std::max(0.25, options_.repair_cooldown_seconds),
+                   TaskErrorReason::too_old);
     return;
   }
   if (expired) {
@@ -2788,14 +3140,16 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
     task->attempts = 0;
     delay = std::max(delay, options_.finality_poll_seconds);
   }
-  schedule_retry(std::move(task), std::max(0.001, delay));
+  schedule_retry(std::move(task), std::max(0.001, delay), reason);
 }
 
-void NativeLoadWorker::schedule_retry(std::shared_ptr<TransferTask> task, double delay_seconds) {
+void NativeLoadWorker::schedule_retry(std::shared_ptr<TransferTask> task, double delay_seconds,
+                                      TaskErrorReason reason) {
   task->state = TaskState::retry_wait;
   task->retry_at = td::Time::now() + delay_seconds;
   retry_tasks_.emplace(task->retry_at, std::move(task));
   ++stats_.retries;
+  stats_.retries_by_reason.add(reason);
 }
 
 void NativeLoadWorker::accept_task(std::shared_ptr<TransferTask> task, TaskResolution resolution) {
@@ -2994,8 +3348,25 @@ void NativeLoadWorker::refresh_stats() {
   stats_.retry_wait = 0;
   stats_.active_tasks = active_tasks_;
   stats_.active_sources = 0;
+  stats_.sources_at_canonical_backlog_cap = 0;
+  stats_.max_source_canonical_backlog_current = 0;
+  stats_.max_active_tasks_per_source = 0;
   stats_.congestion_window = 0.0;
   for (const auto& wallet : wallets_) {
+    auto source_backlog = wallet.next_nonce >= wallet.anchored_nonce
+                              ? wallet.next_nonce - wallet.anchored_nonce
+                              : 0;
+    auto source_limit = options_.max_source_canonical_backlog
+                            ? std::min<td::uint64>(options_.max_source_canonical_backlog,
+                                                   max_native_nonce_diff)
+                            : max_native_nonce_diff;
+    if (source_backlog >= source_limit) {
+      ++stats_.sources_at_canonical_backlog_cap;
+    }
+    stats_.max_source_canonical_backlog_current =
+        std::max(stats_.max_source_canonical_backlog_current, source_backlog);
+    stats_.max_active_tasks_per_source =
+        std::max<td::uint64>(stats_.max_active_tasks_per_source, wallet.tasks.size());
     if (wallet.tasks.empty()) {
       continue;
     }
@@ -3566,6 +3937,16 @@ int main(int argc, char* argv[]) {
                                          ? td::Status::OK()
                                          : td::Status::Error(
                                                "submit-source-run-size must be 1..1024");
+                            });
+  parser.add_checked_option(0, "submit-coalesce-ms",
+                            "bounded signer-completion coalescing delay in milliseconds",
+                            [&](td::Slice value) {
+                              options.submit_coalesce_ms = td::to_integer<td::uint32>(value);
+                              return options.submit_coalesce_ms >= 1 &&
+                                             options.submit_coalesce_ms <= 100
+                                         ? td::Status::OK()
+                                         : td::Status::Error(
+                                               "submit-coalesce-ms must be 1..100");
                             });
   parser.add_option(0, "max-canonical-backlog",
                     "proof-observed global outstanding transfer limit; zero disables",

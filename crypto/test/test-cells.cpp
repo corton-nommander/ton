@@ -801,6 +801,90 @@ TEST(NativeStateEngine, preflighted_shard_accounts_root_is_canonical_after_ordin
   ASSERT_EQ(estimator.get_root_cell()->get_hash(), direct.get_root_cell()->get_hash());
 }
 
+TEST(NativeStateEngine, repeated_shard_accounts_checkpoint_rollback_preserves_largest_prefix) {
+  auto address = [](unsigned char suffix) {
+    ton::StdSmcAddress result;
+    std::string bytes(32, '\0');
+    bytes.back() = static_cast<char>(suffix);
+    result.as_slice().copy_from(bytes);
+    return result;
+  };
+  auto shard_account = [](td::uint64 balance, td::uint64 nonce) {
+    vm::CellBuilder state_builder;
+    ASSERT_TRUE(state_builder.store_long_bool(1, 2));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(balance, 64));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(nonce, 64));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(0, 8));
+    auto state = state_builder.finalize();
+    vm::CellBuilder account_builder;
+    ASSERT_TRUE(account_builder.store_ref_bool(std::move(state)));
+    ASSERT_TRUE(account_builder.store_bits_bool(ton::Bits256{}));
+    ASSERT_TRUE(account_builder.store_ulong_rchk_bool(0, 64));
+    return vm::load_cell_slice_ref(account_builder.finalize());
+  };
+
+  auto source = address(1);
+  auto destination = address(2);
+  vm::AugmentedDictionary initial{256, block::tlb::aug_ShardAccounts};
+  ASSERT_TRUE(initial.set(source, shard_account(100, 0)));
+  ASSERT_TRUE(initial.set(destination, shard_account(0, 0)));
+
+  // The first exact checkpoint is the largest fitting prefix.
+  vm::AugmentedDictionary accepted_prefix{initial};
+  ASSERT_TRUE(accepted_prefix.set(source, shard_account(89, 1)));
+  ASSERT_TRUE(accepted_prefix.set(destination, shard_account(10, 0)));
+  auto accepted_prefix_hash = accepted_prefix.get_root_cell()->get_hash();
+
+  // A later fragment is staged against a copy. Rejecting its exact hard-limit
+  // preflight must leave the accepted prefix root untouched.
+  vm::AugmentedDictionary rejected_trial{accepted_prefix};
+  ASSERT_TRUE(rejected_trial.set(source, shard_account(78, 2)));
+  ASSERT_TRUE(rejected_trial.set(destination, shard_account(20, 0)));
+  ASSERT_TRUE(rejected_trial.get_root_cell()->get_hash() != accepted_prefix_hash);
+  ASSERT_EQ(accepted_prefix.get_root_cell()->get_hash(), accepted_prefix_hash);
+
+  // Committing that fragment in a candidate with room produces exactly the
+  // same canonical root as applying the final values once to the initial
+  // dictionary. This is the deferred Account-install invariant.
+  vm::AugmentedDictionary committed{accepted_prefix};
+  ASSERT_TRUE(committed.set(source, shard_account(78, 2)));
+  ASSERT_TRUE(committed.set(destination, shard_account(20, 0)));
+  vm::AugmentedDictionary direct{initial};
+  ASSERT_TRUE(direct.set(source, shard_account(78, 2)));
+  ASSERT_TRUE(direct.set(destination, shard_account(20, 0)));
+  ASSERT_EQ(committed.get_root_cell()->get_hash(), direct.get_root_cell()->get_hash());
+
+  // Storage accounting follows the same replaceable-checkpoint rule. Every
+  // trial starts with proofs that existed before native processing and adds
+  // only its current final ShardAccounts root.
+  auto usage_tree = std::make_shared<vm::CellUsageTree>();
+  vm::CellBuilder pre_native_builder;
+  ASSERT_TRUE(pre_native_builder.store_ulong_rchk_bool(0xabc, 12));
+  auto pre_native_root = pre_native_builder.finalize();
+  vm::NewCellStorageStat pre_native_stat;
+  pre_native_stat.add_proof(pre_native_root, usage_tree.get());
+
+  vm::NewCellStorageStat accepted_stat = pre_native_stat;
+  accepted_stat.add_proof(accepted_prefix.get_root_cell(), usage_tree.get());
+  auto accepted_stat_before_rejected_trial = accepted_stat.get_total_stat();
+  vm::NewCellStorageStat rejected_stat = pre_native_stat;
+  rejected_stat.add_proof(rejected_trial.get_root_cell(), usage_tree.get());
+  ASSERT_EQ(accepted_stat.get_total_stat(), accepted_stat_before_rejected_trial);
+
+  vm::NewCellStorageStat replacement_stat = pre_native_stat;
+  replacement_stat.add_proof(committed.get_root_cell(), usage_tree.get());
+  vm::NewCellStorageStat direct_stat = pre_native_stat;
+  direct_stat.add_proof(direct.get_root_cell(), usage_tree.get());
+  ASSERT_EQ(replacement_stat.get_total_stat(), direct_stat.get_total_stat());
+  ASSERT_TRUE(replacement_stat.get_total_stat().cells > pre_native_stat.get_total_stat().cells);
+
+  // Additive accounting retains cells that existed only in the previous
+  // checkpoint; replacement accounting must not charge them to the block.
+  vm::NewCellStorageStat cumulative_stat = accepted_stat;
+  cumulative_stat.add_proof(committed.get_root_cell(), usage_tree.get());
+  ASSERT_TRUE(cumulative_stat.get_total_stat().cells > replacement_stat.get_total_stat().cells);
+}
+
 TEST(NativeStateEngine, native_signature_is_bound_to_zerostate_domain) {
   auto source_key = td::Ed25519::generate_private_key().move_as_ok();
   auto destination_key = td::Ed25519::generate_private_key().move_as_ok();

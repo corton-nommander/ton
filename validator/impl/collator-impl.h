@@ -17,6 +17,7 @@
     Copyright 2017-2020 Telegram Systems LLP
 */
 #pragma once
+#include <deque>
 #include <map>
 #include <queue>
 
@@ -204,7 +205,8 @@ class Collator final : public td::actor::Actor {
 
   std::set<td::Bits256> registered_ext_msgs_;
   ExtMsgQueue ext_msg_queue_;
-  std::optional<std::pair<td::Ref<ExtMessage>, int>> pending_ext_msg_;
+  std::shared_ptr<ExtMsgQueueState> ext_msg_queue_state_;
+  std::deque<std::pair<td::Ref<ExtMessage>, int>> pending_ext_msgs_;
   td::CancellationTokenSource ext_msg_cancellation_;
 
   std::priority_queue<NewOutMsg, std::vector<NewOutMsg>, std::greater<NewOutMsg>> new_msgs;
@@ -356,6 +358,12 @@ class Collator final : public td::actor::Actor {
   bool is_our_address(ton::AccountIdPrefixFull addr_prefix) const;
   bool is_our_address(const ton::StdSmcAddress& addr) const;
   td::Status register_external_message(Ref<ExtMessage> ext_msg, int priority);
+  struct ExtMsgPopBatch {
+    std::vector<std::pair<td::Ref<ExtMessage>, int>> messages;
+    bool producer_completed{false};
+  };
+  td::actor::Task<ExtMsgPopBatch> pop_external_message_batch(
+      std::size_t max_messages, bool block, std::optional<td::Timestamp> timeout = std::nullopt);
   td::actor::Task<> wait_for_external_message(td::Timestamp timeout);
 
   void register_new_msg(block::NewOutMsg msg);

@@ -89,8 +89,8 @@ class ExtMessagePoolTestAccess {
     ExtMessagePool::MessageId id{message->shard(), hash};
     auto &messages = pool.ext_msgs_[priority];
     messages.ext_messages_ = messages.ext_messages_.insert(id, mempool_message);
-    messages.native_messages_ = messages.native_messages_.insert(
-        ExtMessagePool::NativeMessageId{nonce, id.dst, id.hash}, mempool_message);
+    messages.native_messages_ =
+        messages.native_messages_.insert(ExtMessagePool::NativeMessageId{nonce, id.dst, id.hash}, mempool_message);
     messages.ext_addr_messages_[source].emplace(hash, id);
     pool.ext_messages_hashes_[hash] = {priority, id};
     pool.ext_messages_hashes_norm_[hash].insert(ExtMessagePool::NormalizedMessageId{priority, id});
@@ -110,8 +110,7 @@ class ExtMessagePoolTestAccess {
   }
 
   static Selection select(ExtMessagePool &pool, ShardIdFull shard, std::size_t limit,
-                          td::optional<NativeAddress> cursor = {},
-                          std::vector<ExtMessage::Hash> excluded = {}) {
+                          td::optional<NativeAddress> cursor = {}, std::vector<ExtMessage::Hash> excluded = {}) {
     std::sort(excluded.begin(), excluded.end());
     auto selected = pool.select_native_messages(shard, excluded, {}, limit, cursor);
     Selection result;
@@ -297,8 +296,7 @@ TEST(ExtMessagePoolScheduler, PostCommitWakesLiveWaiterWithoutNewIngress) {
   auto before_commit = ExtMessagePoolTestAccess::select(pool, {basechainId, shardIdAll}, 1);
   ASSERT_TRUE(before_commit.nonces.empty());
   ASSERT_EQ(before_commit.head_gaps, 1u);
-  ExtMessagePoolTestAccess::install_live_waiting_callback(
-      pool, ExtMessagePoolTestAccess::max_native_queue_limit());
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, ExtMessagePoolTestAccess::max_native_queue_limit());
 
   ASSERT_TRUE(ExtMessagePoolTestAccess::finalize_existing_native(pool, source, 0, head));
   ASSERT_TRUE(ExtMessagePoolTestAccess::reservation_committed(pool, source, 0));

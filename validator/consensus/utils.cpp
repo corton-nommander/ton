@@ -54,6 +54,32 @@ std::chrono::milliseconds max_tps_candidate_work_timeout() {
   return std::chrono::milliseconds{std::min(eighty_percent, with_consensus_margin)};
 }
 
+std::chrono::milliseconds max_tps_candidate_finalize_reserve() {
+  static const auto reserve = [] {
+    const auto work_budget = max_tps_candidate_work_timeout();
+    auto requested = max_tps_candidate_finalize_reserve_default;
+    const char* value = std::getenv("TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS");
+    if (value) {
+      errno = 0;
+      char* end = nullptr;
+      long long parsed = std::strtoll(value, &end, 10);
+      if (errno || end == value || *end) {
+        LOG(WARNING) << "Ignoring invalid TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS='" << value
+                     << "'; using " << requested.count() << "ms";
+      } else {
+        requested = std::chrono::milliseconds{parsed};
+      }
+    }
+    auto bounded = bound_max_tps_candidate_finalize_reserve(work_budget, requested);
+    if (bounded != requested) {
+      LOG(WARNING) << "Clamping TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS=" << requested.count() << " to "
+                   << bounded.count() << "ms for local work budget " << work_budget.count() << "ms";
+    }
+    return bounded;
+  }();
+  return reserve;
+}
+
 td::Result<double> get_candidate_gen_utime_exact(const BlockCandidate& candidate) {
   TRY_RESULT(cdata_roots, vm::std_boc_deserialize_multi(candidate.collated_data));
   for (const td::Ref<vm::Cell>& root : cdata_roots) {

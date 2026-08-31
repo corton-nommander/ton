@@ -25,4 +25,4 @@ set_tests_properties(consensus-max-tps-shardchain-work-driven PROPERTIES
 add_test(NAME consensus-max-tps-shardchain-idle
   COMMAND test-consensus --n-nodes 1 --duration 4.6 --target-rate-ms 1000 --idle-after-first)
 set_tests_properties(consensus-max-tps-shardchain-idle PROPERTIES
-  ENVIRONMENT "TON_SIMPLEX_MAX_TPS=1;TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=2000")
+  ENVIRONMENT "TON_SIMPLEX_MAX_TPS=1;TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=2000;TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS=250")

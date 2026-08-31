@@ -109,6 +109,65 @@ std::chrono::milliseconds max_tps_candidate_timeout();
 // validation, votes, and notarization.
 std::chrono::milliseconds max_tps_candidate_work_timeout();
 
+// Bound the configured sealing reserve without allowing it to consume more
+// than half of the local work budget.  Even the minimum 2s outer timeout then
+// retains 500ms for finding and processing the first native fragment.
+inline constexpr std::chrono::milliseconds max_tps_candidate_finalize_reserve_default{1'000};
+inline constexpr std::chrono::milliseconds max_tps_candidate_finalize_reserve_min{100};
+inline constexpr std::chrono::milliseconds max_tps_candidate_finalize_reserve_max{5'000};
+// A fragment which begins immediately before the intake boundary still needs
+// time to execute and reach the rollback/checkpoint decision.  The observed
+// 512-transfer fragment cost is well below this conservative start guard.
+inline constexpr std::chrono::milliseconds max_tps_candidate_fragment_start_guard{100};
+
+constexpr std::chrono::milliseconds bound_max_tps_candidate_finalize_reserve(
+    std::chrono::milliseconds work_budget, std::chrono::milliseconds requested) {
+  if (work_budget <= std::chrono::milliseconds::zero()) {
+    return std::chrono::milliseconds::zero();
+  }
+  auto budget_cap = work_budget / 2;
+  auto upper = std::min(max_tps_candidate_finalize_reserve_max, budget_cap);
+  auto lower = std::min(max_tps_candidate_finalize_reserve_min, upper);
+  return std::clamp(requested, lower, upper);
+}
+
+constexpr std::chrono::milliseconds max_tps_candidate_intake_timeout(
+    std::chrono::milliseconds work_budget, std::chrono::milliseconds finalize_reserve) {
+  auto reserve = bound_max_tps_candidate_finalize_reserve(work_budget, finalize_reserve);
+  auto remaining = work_budget - reserve;
+  auto start_guard = std::min(max_tps_candidate_fragment_start_guard, remaining / 4);
+  return remaining - start_guard;
+}
+
+enum class NativeIntakeDeadlineAction { continue_work, idle, seal_committed, commit_first_fragment };
+
+// Deadline policy is kept pure so the safety-critical boundary cases are
+// compile-time tested independently from actor scheduling.
+constexpr NativeIntakeDeadlineAction select_native_intake_deadline_action(bool deadline_reached,
+                                                                           bool has_committed_fragment,
+                                                                           bool has_staged_fragment) {
+  if (!deadline_reached) {
+    return NativeIntakeDeadlineAction::continue_work;
+  }
+  if (has_committed_fragment) {
+    return NativeIntakeDeadlineAction::seal_committed;
+  }
+  if (has_staged_fragment) {
+    return NativeIntakeDeadlineAction::commit_first_fragment;
+  }
+  return NativeIntakeDeadlineAction::idle;
+}
+
+constexpr bool should_extend_native_producer_wait(bool work_driven, bool producer_pending) {
+  return !work_driven && producer_pending;
+}
+
+// Nominal interval targeted inside the local collation budget for installing
+// final native state, building the block/state update and serializing the
+// candidate.  A non-preemptible fragment may consume the separate start guard.
+// Configurable with TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS; defaults to 1s.
+std::chrono::milliseconds max_tps_candidate_finalize_reserve();
+
 // Expected control result for a work-driven native collator whose ingress
 // queue stayed empty for the whole local work window.  It is deliberately
 // distinct from generic notready failures so BlockProducer can leave the

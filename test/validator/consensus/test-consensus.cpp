@@ -43,6 +43,34 @@ static_assert(!select_work_driven_max_tps_mode(false, false));
 static_assert(select_work_driven_max_tps_mode(true, false));
 static_assert(!select_work_driven_max_tps_mode(false, true));
 static_assert(!select_work_driven_max_tps_mode(true, true));
+static_assert(bound_max_tps_candidate_finalize_reserve(std::chrono::milliseconds{4'000},
+                                                       std::chrono::milliseconds{1'000}) ==
+              std::chrono::milliseconds{1'000});
+static_assert(bound_max_tps_candidate_finalize_reserve(std::chrono::milliseconds{1'000},
+                                                       std::chrono::milliseconds{1'000}) ==
+              std::chrono::milliseconds{500});
+static_assert(bound_max_tps_candidate_finalize_reserve(std::chrono::milliseconds{4'000},
+                                                       std::chrono::milliseconds{10}) ==
+              std::chrono::milliseconds{100});
+static_assert(bound_max_tps_candidate_finalize_reserve(std::chrono::milliseconds{20'000},
+                                                       std::chrono::milliseconds{9'000}) ==
+              std::chrono::milliseconds{5'000});
+static_assert(max_tps_candidate_intake_timeout(std::chrono::milliseconds{4'000},
+                                               std::chrono::milliseconds{1'000}) ==
+              std::chrono::milliseconds{2'900});
+static_assert(max_tps_candidate_intake_timeout(std::chrono::milliseconds{1'000},
+                                               std::chrono::milliseconds{1'000}) ==
+              std::chrono::milliseconds{400});
+static_assert(select_native_intake_deadline_action(false, true, true) ==
+              NativeIntakeDeadlineAction::continue_work);
+static_assert(select_native_intake_deadline_action(true, false, false) == NativeIntakeDeadlineAction::idle);
+static_assert(select_native_intake_deadline_action(true, true, true) ==
+              NativeIntakeDeadlineAction::seal_committed);
+static_assert(select_native_intake_deadline_action(true, false, true) ==
+              NativeIntakeDeadlineAction::commit_first_fragment);
+static_assert(should_extend_native_producer_wait(false, true));
+static_assert(!should_extend_native_producer_wait(true, true));
+static_assert(!should_extend_native_producer_wait(false, false));
 
 namespace {
 td::Bits256 from_hex(td::Slice s) {
@@ -381,6 +409,14 @@ class TestManagerFacade : public ManagerFacade {
     CHECK(params.shard == SHARD);
     CHECK(params.min_masterchain_block_id == MIN_MC_BLOCK_ID);
 
+    if (work_driven_max_tps_mode_enabled(params.shard)) {
+      auto work_budget = max_tps_candidate_work_timeout();
+      auto intake_budget = max_tps_candidate_intake_timeout(work_budget, max_tps_candidate_finalize_reserve());
+      CHECK(params.soft_timeout);
+      CHECK(params.soft_timeout == params.hard_timeout - (work_budget - intake_budget));
+      CHECK(params.hard_timeout > params.soft_timeout);
+    }
+
     CHECK(params.prev_block_state_roots.size() == 1 &&
           params.prev_block_state_roots[0]->get_hash() == gen_shard_state(prev_seqno)->get_hash());
     if (prev_seqno != 0) {
@@ -389,8 +425,9 @@ class TestManagerFacade : public ManagerFacade {
     if (IDLE_AFTER_FIRST && prev_seqno != 0) {
       CHECK(work_driven_max_tps_mode_enabled(params.shard));
       CHECK(params.wait_externals_until);
-      CHECK(params.ext_msg_callback_until >= params.wait_externals_until);
-      CHECK(params.wait_externals_until.in() > 0.5);
+      CHECK(params.ext_msg_callback_until == params.wait_externals_until);
+      CHECK(params.wait_externals_until == params.soft_timeout);
+      CHECK(params.wait_externals_until.in() > 0.1);
       ++IDLE_COLLATION_ATTEMPTS;
       co_await td::actor::coro_sleep(params.wait_externals_until);
       co_return native_collation_idle_status();

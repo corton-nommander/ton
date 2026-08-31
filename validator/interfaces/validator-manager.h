@@ -207,6 +207,9 @@ struct CollationStats {
   td::uint64 native_stat_checkpoint_base_snapshots = 0;
   td::uint64 native_stat_checkpoint_rebuilds = 0;
   td::uint64 native_hard_preflight_failures = 0;
+  td::uint64 native_deadline_seals = 0;
+  td::uint64 native_deadline_deferred = 0;
+  td::uint64 native_deadline_first_fragment_commits = 0;
   td::uint64 native_canonical_accounts_reused = 0;
   bool native_canonical_root_reused = false;
   double wait_externals_time = 0.0;
@@ -229,6 +232,9 @@ struct CollationStats {
                      << " native_stat_checkpoint_base_snapshots=" << native_stat_checkpoint_base_snapshots
                      << " native_stat_checkpoint_rebuilds=" << native_stat_checkpoint_rebuilds
                      << " native_hard_preflight_failures=" << native_hard_preflight_failures
+                     << " native_deadline_seals=" << native_deadline_seals
+                     << " native_deadline_deferred=" << native_deadline_deferred
+                     << " native_deadline_first_fragment_commits=" << native_deadline_first_fragment_commits
                      << " native_canonical_root_reused=" << native_canonical_root_reused
                      << " native_canonical_accounts_reused=" << native_canonical_accounts_reused;
   }

@@ -42,6 +42,41 @@
 
 Main TON monorepo, which includes the code of the node/validator, lite-client, tonlib, FunC compiler, etc.
 
+## Native sidechain desktop benchmark
+
+Use the benchmark wrapper from the sibling `MyLocalTonDocker` checkout for a
+repeatable native-transfer capacity run.  First build this checkout as the
+native CPU-specific TON base image selected by `.env.physical`; the wrapper
+then builds the matching validator and load-generator images, verifies the
+effective Compose configuration, captures host/container/cgroup and validator
+telemetry, waits for canonical drain and proof catch-up, and writes a
+timestamped result bundle.
+
+```bash
+docker build \
+  --build-arg PORTABLE=0 \
+  --build-arg TON_ARCH=native \
+  --build-arg NINJA_JOBS=20 \
+  --build-arg VCS_REF="$(git describe --always --dirty)" \
+  --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t ghcr.io/corton-nommander/ton:max-tps-native .
+
+cd ../MyLocalTonDocker
+sudo ./run-native-benchmark.sh .env.physical
+```
+
+The tracked 24-vCPU profile assigns 18 logical CPUs to genesis and four to the
+generator, reflecting the measured validator saturation and sub-three-core
+generator peak.  It starts at a proof-checkable 4k TPS baseline and uses an
+early native-fragment cutoff so a valid partial candidate can be sealed before
+the hard collation alarm; raise load only through the documented staircase
+after each run is valid and fully drained.
+
+Use a fresh genesis when changing zero-state inputs such as source count,
+shard layout, or block limits.  A reported offered-TPS peak is not a benchmark
+result: only a final proof-consistent run with zero canonical backlog and valid
+correctness/capacity flags should be used as the sustained TPS figure.
+
 ## The Open Network
 
 __The Open Network (TON)__ is a fast, secure, scalable blockchain focused on handling _millions of transactions per second_ (TPS) with the goal of reaching hundreds of millions of blockchain users.

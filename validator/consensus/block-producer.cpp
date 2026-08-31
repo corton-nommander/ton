@@ -20,11 +20,6 @@ namespace ton::validator::consensus {
 
 namespace {
 
-// Leave enough local actor time to report an idle queue before the Collator's
-// hard alarm.  The remaining (larger) outer consensus margin is computed by
-// max_tps_candidate_work_timeout().  This is completion slack, not pacing.
-static constexpr std::chrono::milliseconds MAX_TPS_IDLE_COMPLETION_MARGIN{50};
-
 void merge_external_hashes(std::vector<Bits256>& target, std::vector<Bits256> added) {
   if (added.empty()) {
     return;
@@ -51,6 +46,12 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       LOG(WARNING) << "Simplex local candidate work budget: " << max_tps_candidate_work_timeout().count()
                    << "ms; remaining consensus margin="
                    << (max_tps_candidate_timeout() - max_tps_candidate_work_timeout()).count() << "ms";
+      LOG(WARNING) << "Simplex native candidate intake budget: "
+                   << max_tps_candidate_intake_timeout(max_tps_candidate_work_timeout(),
+                                                       max_tps_candidate_finalize_reserve())
+                          .count()
+                   << "ms; fragment start guard=" << max_tps_candidate_fragment_start_guard.count()
+                   << "ms; candidate finalize reserve=" << max_tps_candidate_finalize_reserve().count() << "ms";
     } else {
       LOG(WARNING) << "Simplex block producer scheduling: chain=" << chain
                    << " mode=target-rate-paced target_rate_ms=" << target_rate_.count()
@@ -198,6 +199,9 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     std::chrono::milliseconds hard_timeout =
         work_driven_ ? max_tps_candidate_work_timeout()
                      : std::max(target_rate_ * 3, std::chrono::milliseconds(60'000));
+    std::chrono::milliseconds intake_timeout =
+        work_driven_ ? max_tps_candidate_intake_timeout(hard_timeout, max_tps_candidate_finalize_reserve())
+                     : hard_timeout;
     std::chrono::milliseconds start_collate_before =
         work_driven_ || bus.shard.is_masterchain() ? std::chrono::milliseconds(0) : target_rate_;
     td::Timestamp slot_start = event->start_time;
@@ -236,17 +240,19 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
           // the session, so it drains only the initial synchronous snapshot.
           // Once native work is consumed, the collator uses a tiny queue-idle
           // grace and publishes immediately; this is not block-rate pacing.
-          params.soft_timeout = collate_started_at + hard_timeout;
+          // Stop admitting new native fragments before the Collator's hard
+          // alarm.  The remaining nominal interval is for installing the last
+          // committed state, building the state update and serializing a
+          // useful partial candidate.  A fragment already executing is not
+          // preempted; the start guard bounds that overlap in normal operation.
+          params.soft_timeout = collate_started_at + intake_timeout;
           // Native shardchain candidates wait for the first queued transfer.
           if (!is_first_block) {
-            // Keep one live native-ingress waiter for essentially the entire
-            // local candidate work budget.  The first item wakes it
-            // immediately; an empty queue completes quietly just before the
-            // Collator alarm and lets the outer Simplex failure deadline
-            // advance the idle leader window.
-            params.wait_externals_until =
-                params.hard_timeout - std::min(MAX_TPS_IDLE_COMPLETION_MARGIN, hard_timeout / 4);
-            params.ext_msg_callback_until = params.hard_timeout;
+            // The first item wakes the candidate immediately.  An idle queue
+            // completes at the intake deadline, leaving the same sealing
+            // reserve even when work arrives near the end of the window.
+            params.wait_externals_until = params.soft_timeout;
+            params.ext_msg_callback_until = params.soft_timeout;
           }
         } else if (bus.shard.is_masterchain()) {
           params.soft_timeout = slot_start + target_rate_;

@@ -88,6 +88,32 @@ constexpr bool canonical_follower_retry_available(td::uint32 consecutive_failure
   return consecutive_failures <= retry_limit;
 }
 
+// LiteQuery::alarm() serializes an ordinary server-side query deadline as a
+// liteServer.error with code -503.  Keep that wire-level convention local to
+// the follower classifier: proof/decoding errors still take the fatal path,
+// while availability failures share the existing bounded retry budget.
+constexpr int lite_server_query_timeout_error_code = -503;
+
+enum class CanonicalFollowerQueryError {
+  fatal,
+  timeout,
+  cancellation,
+  not_ready,
+};
+
+constexpr CanonicalFollowerQueryError classify_canonical_follower_query_error(int code) {
+  if (code == ton::ErrorCode::timeout || code == lite_server_query_timeout_error_code) {
+    return CanonicalFollowerQueryError::timeout;
+  }
+  if (code == ton::ErrorCode::cancelled) {
+    return CanonicalFollowerQueryError::cancellation;
+  }
+  if (code == ton::ErrorCode::notready) {
+    return CanonicalFollowerQueryError::not_ready;
+  }
+  return CanonicalFollowerQueryError::fatal;
+}
+
 constexpr double canonical_follower_retry_backoff(double initial_seconds,
                                                    td::uint32 consecutive_failures,
                                                    double maximum_seconds) {
@@ -98,9 +124,8 @@ constexpr double canonical_follower_retry_backoff(double initial_seconds,
   return delay < maximum_seconds ? delay : maximum_seconds;
 }
 
-// Regression guards for two subtle benchmark rules: extending the half-open
-// measured range makes an in-window proof count immediately, and completing
-// only the measured cohort must never declare the full run drained.
+// Compile-time regression guards keep the follower retry classifications and
+// subtle benchmark boundary/cohort rules next to their pure helpers.
 static_assert(!nonce_in_half_open_cohort(7, 5, 7));
 static_assert(nonce_in_half_open_cohort(7, 5, 8));
 static_assert(!canonical_cohorts_complete(10, 10, 11, 12));
@@ -111,6 +136,16 @@ static_assert(!canonical_follower_retry_available(6, 5));
 static_assert(canonical_follower_retry_backoff(0.25, 1, 10.0) == 0.25);
 static_assert(canonical_follower_retry_backoff(0.25, 5, 10.0) == 4.0);
 static_assert(canonical_follower_retry_backoff(0.25, 8, 10.0) == 10.0);
+static_assert(classify_canonical_follower_query_error(ton::ErrorCode::timeout) ==
+              CanonicalFollowerQueryError::timeout);
+static_assert(classify_canonical_follower_query_error(lite_server_query_timeout_error_code) ==
+              CanonicalFollowerQueryError::timeout);
+static_assert(classify_canonical_follower_query_error(ton::ErrorCode::cancelled) ==
+              CanonicalFollowerQueryError::cancellation);
+static_assert(classify_canonical_follower_query_error(ton::ErrorCode::notready) ==
+              CanonicalFollowerQueryError::not_ready);
+static_assert(classify_canonical_follower_query_error(ton::ErrorCode::protoviolation) ==
+              CanonicalFollowerQueryError::fatal);
 static_assert(whole_second_bucket_begin(120001) == 121);
 static_assert(whole_second_bucket_end(180999) == 180);
 static_assert(in_whole_second_window(121, 120001, 180999));
@@ -467,12 +502,15 @@ struct CanonicalFollowerStats {
   td::uint64 measured_native_transfers{0};
   td::uint64 max_native_transfers_per_block{0};
   td::uint64 measured_max_native_transfers_per_block{0};
-  // `errors` contains only non-transport proof/data/ancestry validity failures.
-  // Transient transport failures and exhausted retry streaks are separate.
+  // `errors` contains only proof/data/ancestry validity failures. Transient
+  // transport and liteserver-availability failures, plus exhausted retry
+  // streaks, are reported separately.
   td::uint64 errors{0};
   td::uint64 fatal_errors{0};
   td::uint64 transient_timeouts{0};
+  td::uint64 transient_liteserver_timeouts{0};
   td::uint64 transient_cancellations{0};
+  td::uint64 transient_not_ready{0};
   td::uint64 transient_retries{0};
   td::uint64 transient_recoveries{0};
   td::uint64 retry_exhausted{0};
@@ -1499,8 +1537,12 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"canonical_follower_fatal_errors\":" << follower_stats_.fatal_errors
               << ",\"canonical_follower_transient_timeouts\":"
               << follower_stats_.transient_timeouts
+              << ",\"canonical_follower_transient_liteserver_timeouts\":"
+              << follower_stats_.transient_liteserver_timeouts
               << ",\"canonical_follower_transient_cancellations\":"
               << follower_stats_.transient_cancellations
+              << ",\"canonical_follower_transient_not_ready\":"
+              << follower_stats_.transient_not_ready
               << ",\"canonical_follower_transient_retries\":"
               << follower_stats_.transient_retries
               << ",\"canonical_follower_transient_recoveries\":"
@@ -1593,11 +1635,13 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"chain_correctness_valid_semantics\":\"proof-consistent canonical follower result; independent from whether generator or node scheduling limited the offered load\""
               << ",\"ingress_capacity_valid_semantics\":\"correct final run reaching at least 95 percent of the configured offered-TPS target, with at most one percent of the measured window stopped by canonical-backlog pressure and no generator retry exhaustion, signing failure, or transport failure\""
               << ",\"chain_capacity_valid_semantics\":\"correct final run with no observer-backpressure distortion or generator failure, where load either reached the configured target or exceeded proof-observed canonical throughput by at least five percent\""
-              << ",\"canonical_follower_errors_semantics\":\"fatal proof, decoded-data, hash, or ancestry validity failures only; transient transport failures and exhausted retry streaks are reported separately\""
-              << ",\"canonical_follower_transient_timeouts_semantics\":\"ADNL/liteserver timeout responses discarded and retried from the last completely committed followed tip\""
+              << ",\"canonical_follower_errors_semantics\":\"fatal proof, decoded-data, hash, or ancestry validity failures only; transient transport or liteserver-availability failures and exhausted retry streaks are reported separately\""
+              << ",\"canonical_follower_transient_timeouts_semantics\":\"aggregate ADNL timeout (652) and liteserver query-deadline (-503) responses discarded and retried within the bounded follower retry budget from the last completely committed followed tip\""
+              << ",\"canonical_follower_transient_liteserver_timeouts_semantics\":\"subset of canonical_follower_transient_timeouts received as liteServer.error code -503\""
+              << ",\"canonical_follower_transient_not_ready_semantics\":\"liteserver availability responses (651) discarded and retried within the bounded follower retry budget from the last completely committed followed tip\""
               << ",\"canonical_follower_transient_retries_semantics\":\"retry polls actually dispatched after a forced follower-client reconnect\""
               << ",\"canonical_follower_transient_recoveries_semantics\":\"consecutive transient failure streaks ended by one complete proof-checked poll\""
-              << ",\"canonical_follower_reconnects_semantics\":\"forced resets of the dedicated follower liteserver client after timeout or cancellation\""
+              << ",\"canonical_follower_reconnects_semantics\":\"forced resets of the dedicated follower liteserver client after timeout, cancellation, or not-ready availability response\""
               << ",\"canonical_follower_retry_exhausted_semantics\":\"transient failure streaks exceeding canonical_follower_retry_limit; any exhausted streak invalidates the benchmark even if later polling recovers\""
               << ",\"canonical_follower_final_catchup_complete_semantics\":\"final poll atomically verified every basechain block back to the previously committed tip before workers were finalized\""
               << ",\"repeat_admission_successes_semantics\":\"status=1 responses for a nonce whose admission was already counted; excluded from mempool_accepted and TPS\""
@@ -2070,14 +2114,29 @@ void NativeLoadCoordinator::discard_follower_poll() {
 }
 
 void NativeLoadCoordinator::follower_query_error(bool baseline, td::Status error) {
-  if (error.code() != ton::ErrorCode::timeout && error.code() != ton::ErrorCode::cancelled) {
-    follower_fatal_error(std::move(error));
-    return;
-  }
-  if (error.code() == ton::ErrorCode::timeout) {
-    ++follower_stats_.transient_timeouts;
-  } else {
-    ++follower_stats_.transient_cancellations;
+  const auto error_kind = classify_canonical_follower_query_error(error.code());
+  const char* failure_kind = nullptr;
+  switch (error_kind) {
+    case CanonicalFollowerQueryError::timeout:
+      ++follower_stats_.transient_timeouts;
+      if (error.code() == lite_server_query_timeout_error_code) {
+        ++follower_stats_.transient_liteserver_timeouts;
+        failure_kind = "liteserver query timeout";
+      } else {
+        failure_kind = "transport timeout";
+      }
+      break;
+    case CanonicalFollowerQueryError::cancellation:
+      ++follower_stats_.transient_cancellations;
+      failure_kind = "transport cancellation";
+      break;
+    case CanonicalFollowerQueryError::not_ready:
+      ++follower_stats_.transient_not_ready;
+      failure_kind = "liteserver not ready";
+      break;
+    case CanonicalFollowerQueryError::fatal:
+      follower_fatal_error(std::move(error));
+      return;
   }
   discard_follower_poll();
   follower_transient_recovery_pending_ = true;
@@ -2092,7 +2151,7 @@ void NativeLoadCoordinator::follower_query_error(bool baseline, td::Status error
     follower_retry_pending_ = true;
     follower_retry_baseline_ = baseline;
     follower_retry_at_ = td::Time::now() + delay;
-    LOG(WARNING) << "canonical block follower transient transport failure "
+    LOG(WARNING) << "canonical block follower transient " << failure_kind << " "
                  << follower_transient_failure_streak_ << "/" << options_.canonical_retry_limit
                  << "; reconnecting and retrying from the last committed tip in " << delay
                  << "s: " << error;

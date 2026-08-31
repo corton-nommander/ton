@@ -72,6 +72,11 @@ static constexpr std::size_t NATIVE_EXT_MSG_TRANSPORT_WINDOW = 2 * NATIVE_FAST_P
 // exact checkpoints.
 static constexpr td::uint64 NATIVE_DEFERRED_ENTRY_CHARGE_BYTES = 200;
 static constexpr td::uint64 NATIVE_DEFERRED_ACCOUNT_CHARGE_BYTES = 256;
+// The desktop profile observed roughly 8k distinct accounts per full native
+// candidate. Reserving that many buckets avoids repeated unordered_map
+// rehashes in the hot path while staying far below the protocol maximum.
+static constexpr std::size_t NATIVE_ACCOUNT_STATE_RESERVE =
+    std::min<std::size_t>(16 * NATIVE_FAST_PATH_EXTERNAL_BATCH, block::NativeTransferBatch::max_accounts);
 // After consuming nonempty native work, briefly let the bounded snapshot
 // producer refill before declaring ingress idle. This is an ingress
 // coalescing grace, not a block period or a consensus timing parameter.
@@ -4577,9 +4582,32 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     }
   };
 
-  const bool work_driven = consensus::max_tps_mode_enabled();
+  const bool work_driven = consensus::work_driven_max_tps_mode_enabled(shard_);
   auto medium_timeout_reached = [&] {
     return !work_driven && external_msg_timeout_.is_in_past(td::Timestamp::now());
+  };
+  auto native_intake_timeout_reached = [&] {
+    return work_driven && params_.soft_timeout && params_.soft_timeout.is_in_past(td::Timestamp::now());
+  };
+  bool deadline_seal_recorded = false;
+  bool first_fragment_deadline_commit_recorded = false;
+  auto record_deadline_seal = [&](std::size_t deferred, std::size_t staged = 0) {
+    if (!deadline_seal_recorded) {
+      ++stats_.native_deadline_seals;
+      deadline_seal_recorded = true;
+      LOG(WARNING) << "native candidate intake deadline reached; sealing partial candidate with "
+                   << native_transfer_batch_entries_.size() << " committed and " << staged
+                   << " staged transfers";
+    }
+    stats_.native_deadline_deferred += deferred;
+  };
+  auto record_first_fragment_deadline_commit = [&] {
+    if (!first_fragment_deadline_commit_recorded) {
+      ++stats_.native_deadline_first_fragment_commits;
+      first_fragment_deadline_commit_recorded = true;
+      LOG(WARNING) << "native intake deadline crossed while processing the first fragment; committing that fragment "
+                      "so the candidate is nonempty";
+    }
   };
 
   // Keep the compact logical state for the complete candidate.  The queue is
@@ -4625,7 +4653,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     td::uint64 seed_;
   };
   std::unordered_map<StdSmcAddress, NativeAccountState, NativeAddressHash> native_states;
-  native_states.reserve(2 * NATIVE_FAST_PATH_EXTERNAL_BATCH);
+  native_states.reserve(NATIVE_ACCOUNT_STATE_RESERVE);
   std::optional<vm::NewCellStorageStat> pre_native_storage_stat;
   bool fatal = false;
   bool state_capacity_reached = false;
@@ -4676,6 +4704,14 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
 
   bool full = !block_limit_status_->fits(block::ParamLimits::cl_soft);
   while (true) {
+    auto deadline_action = consensus::select_native_intake_deadline_action(
+        native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), false);
+    if (deadline_action != consensus::NativeIntakeDeadlineAction::continue_work) {
+      if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed) {
+        record_deadline_seal(0);
+      }
+      break;
+    }
     if (native_transfer_batch_entries_.size() >= block::NativeTransferBatch::max_entries) {
       LOG(INFO) << "native transfer protocol batch cap reached: " << native_transfer_batch_entries_.size();
       stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: protocol batch cap "
@@ -4718,7 +4754,9 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), false).wrap();
           if (maybe.is_error()) {
             auto producer_pending = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
-            auto wait_until = producer_pending ? params_.hard_timeout : params_.wait_externals_until;
+            auto wait_until = producer_pending
+                                  ? (work_driven ? params_.soft_timeout : params_.hard_timeout)
+                                  : params_.wait_externals_until;
             if ((producer_pending || first_work_trigger) && wait_until && !wait_until.is_in_past()) {
               maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), true, wait_until).wrap();
             }
@@ -4806,6 +4844,8 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     std::size_t accepted_in_batch = 0;
     std::size_t delayed_in_batch = 0;
     std::size_t permanent_in_batch = 0;
+    bool first_fragment_deadline_commit_pending = false;
+    std::size_t first_fragment_deadline_deferred = 0;
     std::vector<std::size_t> accepted_indices;
     accepted_indices.reserve(batch.size());
     std::map<StdSmcAddress, NativeAccountSnapshot> state_journal;
@@ -4837,6 +4877,20 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         if (medium_timeout_reached()) {
           delay_batch_suffix(index);
           stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: timeout\n";
+          break;
+        }
+        deadline_action = consensus::select_native_intake_deadline_action(
+            native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), !accepted_indices.empty());
+        if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed ||
+            deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment) {
+          delay_batch_suffix(index);
+          if (deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment) {
+            first_fragment_deadline_commit_pending = true;
+            first_fragment_deadline_deferred += batch.size() - index;
+          } else {
+            record_deadline_seal(batch.size() - index, accepted_indices.size());
+          }
+          stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline seal\n";
           break;
         }
         if (full || !block_limit_status_->fits(block::ParamLimits::cl_soft)) {
@@ -4946,6 +5000,45 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
     }
 
+    auto rollback_accepted_fragment = [&] {
+      for (const auto& [address, snapshot] : state_journal) {
+        auto& state = native_states.at(address);
+        state.balance = snapshot.balance;
+        state.nonce = snapshot.nonce;
+        state.status = snapshot.status;
+        state.is_native = snapshot.is_native;
+        state.changed = snapshot.changed;
+      }
+      for (auto index : accepted_indices) {
+        delay_ext_msgs_.emplace_back(batch[index].ext_msg->hash());
+        ++delayed_in_batch;
+      }
+      accepted_indices.clear();
+      accepted_in_batch = 0;
+    };
+
+    // If this candidate already has a committed fragment, do not start the
+    // next dictionary/proof checkpoint after the intake deadline.  Rolling
+    // back only the current fragment leaves the previous exact checkpoint as
+    // a valid partial candidate.
+    deadline_action = consensus::select_native_intake_deadline_action(
+        native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), !accepted_indices.empty());
+    if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed && !accepted_indices.empty()) {
+      auto deferred = accepted_indices.size();
+      rollback_accepted_fragment();
+      record_deadline_seal(deferred);
+      stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline before checkpoint\n";
+    }
+
+    if (deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment &&
+        !accepted_indices.empty()) {
+      // A first-work waiter can wake immediately before the boundary.  Keep
+      // the first fragment so BlockProducer receives a useful nonempty
+      // candidate; the fragment-start guard normally absorbs this bounded
+      // exception, and telemetry makes it explicit if tuning is needed.
+      first_fragment_deadline_commit_pending = true;
+    }
+
     if (!accepted_indices.empty()) {
       td::ScopedRealCpuTimer timer{stats_.work_time.native_commit};
       vm::AugmentedDictionary staged_account_dict{*account_dict_estimator_};
@@ -5024,20 +5117,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       if (!staged_fits) {
         ++stats_.native_hard_preflight_failures;
         block_limit_status_->transactions -= static_cast<unsigned>(accepted_indices.size());
-        for (const auto& [address, snapshot] : state_journal) {
-          auto& state = native_states.at(address);
-          state.balance = snapshot.balance;
-          state.nonce = snapshot.nonce;
-          state.status = snapshot.status;
-          state.is_native = snapshot.is_native;
-          state.changed = snapshot.changed;
-        }
-        for (auto index : accepted_indices) {
-          delay_ext_msgs_.emplace_back(batch[index].ext_msg->hash());
-          ++delayed_in_batch;
-        }
-        accepted_indices.clear();
-        accepted_in_batch = 0;
+        rollback_accepted_fragment();
         full = true;
         stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: deferred microbatch by hard-limit preflight\n";
       } else {
@@ -5069,6 +5149,10 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           native_transfer_batch_entries_.push_back(block::NativeTransferBatchEntry{item.transfer, 0, 0});
           ++stats_.transactions;
           ++stats_.ext_msgs_accepted;
+        }
+        if (first_fragment_deadline_commit_pending) {
+          record_deadline_seal(first_fragment_deadline_deferred);
+          record_first_fragment_deadline_commit();
         }
         if (!block_limit_status_->fits(block::ParamLimits::cl_hard)) {
           co_return fatal_error("native hard-limit preflight invariant failed after commit");
@@ -7630,6 +7714,7 @@ td::actor::Task<Collator::ExtMsgPopBatch> Collator::pop_external_message_batch(s
 }
 
 td::actor::Task<> Collator::wait_for_external_message(td::Timestamp timeout) {
+  const bool work_driven = consensus::work_driven_max_tps_mode_enabled(shard_);
   auto deadline = timeout;
   bool extended_for_producer = false;
   while (true) {
@@ -7645,7 +7730,7 @@ td::actor::Task<> Collator::wait_for_external_message(td::Timestamp timeout) {
       // A marker-only batch completed the current snapshot. Preserve the
       // caller's coalescing window so live ingress can start a newer epoch.
       auto producer_pending = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
-      if (producer_pending) {
+      if (consensus::should_extend_native_producer_wait(work_driven, producer_pending)) {
         deadline = params_.hard_timeout;
         extended_for_producer = true;
         continue;
@@ -7657,10 +7742,11 @@ td::actor::Task<> Collator::wait_for_external_message(td::Timestamp timeout) {
       co_return result.move_as_error();
     }
     auto producer_pending = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
-    // A full transport window can leave the producer suspended when the 10ms
-    // consumer grace expires. Do not seal until its ordered completion marker,
-    // but retain the candidate's hard cancellation bound.
-    if (producer_pending && params_.hard_timeout && !params_.hard_timeout.is_in_past()) {
+    // Preserve the legacy ordered-producer completion behavior outside the
+    // work-driven max-TPS shardchain.  Only that mode has an explicit earlier
+    // intake boundary and may cancel the unconsumed producer suffix.
+    if (consensus::should_extend_native_producer_wait(work_driven, producer_pending) && params_.hard_timeout &&
+        !params_.hard_timeout.is_in_past()) {
       deadline = params_.hard_timeout;
       extended_for_producer = true;
       continue;

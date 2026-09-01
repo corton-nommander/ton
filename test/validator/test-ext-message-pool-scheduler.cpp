@@ -80,6 +80,15 @@ class ExtMessagePoolTestAccess {
     td::uint64 source_refreshes{0};
     td::uint64 source_probes{0};
     td::uint64 runs{0};
+    td::uint64 excluded{0};
+    td::uint64 head_missing_nonce{0};
+    td::uint64 head_uncommitted{0};
+    td::uint64 head_nonce_mismatch{0};
+    td::uint64 excluded_membership_builds{0};
+    td::uint64 excluded_membership_entries{0};
+    td::uint64 excluded_membership_slow_hits{0};
+    td::uint64 excluded_membership_below_threshold{0};
+    td::uint64 excluded_membership_over_limit{0};
   };
 
   static ExtMessagePool make_pool() {
@@ -224,8 +233,10 @@ class ExtMessagePoolTestAccess {
 
   static ExtMessage::Hash add(ExtMessagePool &pool, NativeAddress source, td::uint64 nonce, int priority = 0,
                               bool active = true, bool committed = true, td::uint64 amount = 1,
-                              td::uint64 fee = 0) {
-    auto hash = make_bits(static_cast<td::uint32>(nonce + 1), static_cast<unsigned>(source.second.as_array()[0] + 64));
+                              td::uint64 fee = 0, td::optional<ExtMessage::Hash> forced_hash = {}) {
+    auto hash = forced_hash ? forced_hash.value()
+                            : make_bits(static_cast<td::uint32>(nonce + 1),
+                                        static_cast<unsigned>(source.second.as_array()[0] + 64));
     auto message = td::make_ref<FakeExtMessage>(source.second, hash);
     auto mempool_message = std::make_shared<ExtMessagePool::MempoolMsg>(message);
     mempool_message->native_nonce = nonce;
@@ -294,14 +305,20 @@ class ExtMessagePoolTestAccess {
   }
 
   static void install_live_waiting_callback(ExtMessagePool &pool, std::size_t queue_capacity,
-                                            std::size_t transport_message_capacity = 500) {
+                                            std::size_t transport_message_capacity = 500,
+                                            std::vector<ExtMessage::Hash> excluded = {},
+                                            td::optional<NativeAddress> cursor = {}) {
     auto callback = std::make_unique<ExtMsgCallback>();
     callback->shard = {basechainId, shardIdAll};
     callback->queue_capacity = queue_capacity;
     callback->transport_message_capacity = transport_message_capacity;
     callback->timeout = td::Timestamp::in(60.0);
     callback->native_streaming = true;
+    std::sort(excluded.begin(), excluded.end());
+    excluded.erase(std::unique(excluded.begin(), excluded.end()), excluded.end());
+    callback->excluded_messages = std::move(excluded);
     auto installed = std::make_shared<ExtMessagePool::InstalledCallback>(std::move(callback));
+    installed->native_cursor = cursor;
     // Model the installed callback's serialized pump already waiting. This
     // keeps the unit test actor-free while ensuring the post-commit wake appends
     // work to the existing callback instead of creating another ingress event.
@@ -512,7 +529,38 @@ class ExtMessagePoolTestAccess {
     CHECK(pool.callbacks_.size() == 1);
     auto callback = pool.callbacks_.front();
     pool.begin_callback_epoch(callback);
-    return pool.prefill_callback_native(callback, true);
+    pool.prepare_callback_native_exclusion_membership(callback);
+    auto selected = pool.prefill_callback_native(callback, true);
+    pool.discard_callback_native_exclusion_membership(callback);
+    return selected;
+  }
+
+  static Selection pending_native_selection(const ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    Selection result;
+    for (const auto &entry : pool.callbacks_.front()->pending_native) {
+      CHECK(entry.message);
+      const auto &message = entry.message->first;
+      auto hash_it = pool.ext_messages_hashes_.find(message->hash());
+      CHECK(hash_it != pool.ext_messages_hashes_.end());
+      auto priority_it = pool.ext_msgs_.find(hash_it->second.first);
+      CHECK(priority_it != pool.ext_msgs_.end());
+      auto mempool_message = priority_it->second.ext_messages_.find(hash_it->second.second);
+      CHECK(mempool_message && mempool_message.value()->native_nonce);
+      result.sources.push_back({message->wc(), message->addr()});
+      result.nonces.push_back(mempool_message.value()->native_nonce.value());
+    }
+    return result;
+  }
+
+  static bool callback_exclusion_membership_active(const ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    return static_cast<bool>(pool.callbacks_.front()->native_excluded_membership);
+  }
+
+  static void discard_live_callback(ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    pool.callbacks_.clear();
   }
 
   static td::uint64 callback_selected_ahead(ExtMessagePool &pool) {
@@ -549,7 +597,16 @@ class ExtMessagePoolTestAccess {
                           .source_scans = stats.source_scans,
                           .source_refreshes = stats.source_refreshes,
                           .source_probes = stats.source_probes,
-                          .runs = stats.runs};
+                          .runs = stats.runs,
+                          .excluded = stats.excluded,
+                          .head_missing_nonce = stats.head_missing_nonce,
+                          .head_uncommitted = stats.head_uncommitted,
+                          .head_nonce_mismatch = stats.head_nonce_mismatch,
+                          .excluded_membership_builds = stats.excluded_membership_builds,
+                          .excluded_membership_entries = stats.excluded_membership_entries,
+                          .excluded_membership_slow_hits = stats.excluded_membership_slow_hits,
+                          .excluded_membership_below_threshold = stats.excluded_membership_below_threshold,
+                          .excluded_membership_over_limit = stats.excluded_membership_over_limit};
   }
 
   static std::size_t callback_pending(const ExtMessagePool &pool) {
@@ -587,11 +644,26 @@ class ExtMessagePoolTestAccess {
   static constexpr std::size_t max_native_queue_limit() {
     return ExtMessagePool::MAX_NATIVE_COLLATOR_QUEUE_LIMIT;
   }
+
+  static constexpr std::size_t min_native_excluded_membership_entries() {
+    return ExtMessagePool::MIN_NATIVE_EXCLUDED_MEMBERSHIP_ENTRIES;
+  }
+
+  static constexpr std::size_t max_native_excluded_membership_entries() {
+    return ExtMessagePool::MAX_NATIVE_EXCLUDED_MEMBERSHIP_ENTRIES;
+  }
+
+  static constexpr td::uint32 min_native_excluded_membership_slow_hits() {
+    return ExtMessagePool::MIN_NATIVE_EXCLUDED_MEMBERSHIP_SLOW_HITS;
+  }
 };
 
 static_assert(ExtMessagePoolTestAccess::max_native_queue_limit() == 65'536);
 static_assert(ExtMessagePoolTestAccess::max_native_queue_limit() == block::NativeTransferBatch::max_entries);
 static_assert(ExtMessagePoolTestAccess::native_delivery_chunk() == 512);
+static_assert(ExtMessagePoolTestAccess::min_native_excluded_membership_entries() == 256);
+static_assert(ExtMessagePoolTestAccess::max_native_excluded_membership_entries() == 65'536);
+static_assert(ExtMessagePoolTestAccess::min_native_excluded_membership_slow_hits() == 32);
 
 TEST(ExtMessagePoolScheduler, NativeAdmissionCacheUsesExactShardBlockId) {
   auto pool = ExtMessagePoolTestAccess::make_pool();
@@ -1271,6 +1343,210 @@ TEST(ExtMessagePoolScheduler, NativeTransportPrefillSeedsWindowAndBoundsProducer
   // is full, it has no credit to append another snapshot-sized backlog.
   ExtMessagePoolTestAccess::record_callback_selected(pool, ExtMessagePoolTestAccess::native_delivery_chunk());
   ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_native_transport_has_refill_credit(pool));
+}
+
+TEST(ExtMessagePoolScheduler, CallbackExcludedMembershipPrefillMatchesReferenceSelection) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source_a = ExtMessagePoolTestAccess::source(20);
+  auto source_b = ExtMessagePoolTestAccess::source(21);
+  auto source_c = ExtMessagePoolTestAccess::source(22);
+  std::vector<ExtMessage::Hash> excluded;
+  for (auto source : {source_a, source_b, source_c}) {
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    for (td::uint64 nonce = 0; nonce < 128; ++nonce) {
+      auto hash = ExtMessagePoolTestAccess::add(pool, source, nonce, source == source_b ? 1 : 0);
+      if (nonce < 86) {
+        excluded.push_back(hash);
+      }
+    }
+  }
+  // A missing exclusion must remain harmless: the cache is only exact hash
+  // membership, never a claim that every exclusion resolves in this pool.
+  excluded.push_back(make_bits(0xdecafbad, 230));
+  excluded.push_back(excluded.back());
+  std::sort(excluded.begin(), excluded.end());
+  excluded.erase(std::unique(excluded.begin(), excluded.end()), excluded.end());
+  ASSERT_TRUE(excluded.size() >= ExtMessagePoolTestAccess::min_native_excluded_membership_entries());
+
+  auto expected = ExtMessagePoolTestAccess::select(pool, {basechainId, shardIdAll}, 64, source_b, excluded);
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 64, 64, excluded, source_b);
+  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), 64u);
+
+  auto actual = ExtMessagePoolTestAccess::pending_native_selection(pool);
+  ASSERT_EQ(actual.sources, expected.sources);
+  ASSERT_EQ(actual.nonces, expected.nonces);
+  auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+  ASSERT_EQ(stats.excluded_membership_builds, 1u);
+  ASSERT_EQ(stats.excluded_membership_entries, excluded.size());
+  ASSERT_EQ(stats.excluded_membership_slow_hits,
+            ExtMessagePoolTestAccess::min_native_excluded_membership_slow_hits());
+  ASSERT_TRUE(stats.excluded >= 3 * 86u);
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_exclusion_membership_active(pool));
+}
+
+TEST(ExtMessagePoolScheduler, CallbackExcludedMembershipAcceptsZeroBits256) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(23);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  std::vector<ExtMessage::Hash> excluded;
+  auto zero = ExtMessagePoolTestAccess::add(pool, source, 0, 0, true, true, 1, 0, Bits256::zero());
+  ASSERT_EQ(zero, Bits256::zero());
+  excluded.push_back(zero);
+  for (td::uint64 nonce = 1; nonce <= 32; ++nonce) {
+    auto hash = ExtMessagePoolTestAccess::add(pool, source, nonce);
+    if (nonce < 32) {
+      excluded.push_back(hash);
+    }
+  }
+  for (td::uint32 value = 1; excluded.size() < ExtMessagePoolTestAccess::min_native_excluded_membership_entries();
+       ++value) {
+    excluded.push_back(make_bits(value, 231));
+  }
+  std::sort(excluded.begin(), excluded.end());
+  excluded.erase(std::unique(excluded.begin(), excluded.end()), excluded.end());
+  ASSERT_EQ(excluded.size(), ExtMessagePoolTestAccess::min_native_excluded_membership_entries());
+
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 1, 1, excluded);
+  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::pending_native_selection(pool).nonces, (std::vector<td::uint64>{32}));
+  auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+  ASSERT_EQ(stats.excluded, 32u);
+  ASSERT_EQ(stats.excluded_membership_builds, 1u);
+  ASSERT_EQ(stats.excluded_membership_entries, excluded.size());
+}
+
+TEST(ExtMessagePoolScheduler, CallbackExcludedMembershipFallsBackBelowThresholdAndOverLimit) {
+  {
+    auto pool = ExtMessagePoolTestAccess::make_pool();
+    auto source = ExtMessagePoolTestAccess::source(24);
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    std::vector<ExtMessage::Hash> excluded;
+    for (td::uint64 nonce = 0; nonce < ExtMessagePoolTestAccess::min_native_excluded_membership_entries(); ++nonce) {
+      auto hash = ExtMessagePoolTestAccess::add(pool, source, nonce);
+      if (nonce + 1 < ExtMessagePoolTestAccess::min_native_excluded_membership_entries()) {
+        excluded.push_back(hash);
+      }
+    }
+    ASSERT_EQ(excluded.size(), ExtMessagePoolTestAccess::min_native_excluded_membership_entries() - 1);
+    ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 1, 1, excluded);
+    ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), 1u);
+    ASSERT_EQ(ExtMessagePoolTestAccess::pending_native_selection(pool).nonces,
+              (std::vector<td::uint64>{ExtMessagePoolTestAccess::min_native_excluded_membership_entries() - 1}));
+    auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+    ASSERT_EQ(stats.excluded, ExtMessagePoolTestAccess::min_native_excluded_membership_entries() - 1);
+    ASSERT_EQ(stats.excluded_membership_builds, 0u);
+    ASSERT_EQ(stats.excluded_membership_below_threshold, 1u);
+  }
+
+  {
+    auto pool = ExtMessagePoolTestAccess::make_pool();
+    auto source = ExtMessagePoolTestAccess::source(25);
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    auto excluded_head = ExtMessagePoolTestAccess::add(pool, source, 0);
+    ExtMessagePoolTestAccess::add(pool, source, 1);
+    std::vector<ExtMessage::Hash> excluded{excluded_head};
+    for (td::uint32 value = 1;
+         excluded.size() <= ExtMessagePoolTestAccess::max_native_excluded_membership_entries(); ++value) {
+      excluded.push_back(make_bits(value, 232));
+    }
+    ASSERT_EQ(excluded.size(), ExtMessagePoolTestAccess::max_native_excluded_membership_entries() + 1);
+    ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 1, 1, excluded);
+    ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), 1u);
+    ASSERT_EQ(ExtMessagePoolTestAccess::pending_native_selection(pool).nonces, (std::vector<td::uint64>{1}));
+    auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+    ASSERT_EQ(stats.excluded, 1u);
+    ASSERT_EQ(stats.excluded_membership_builds, 0u);
+    ASSERT_EQ(stats.excluded_membership_over_limit, 1u);
+  }
+}
+
+TEST(ExtMessagePoolScheduler, CallbackExcludedMembershipKeepsNativeValidationBeforeMembership) {
+  auto padded_exclusions = [](ExtMessage::Hash hash, unsigned prefix) {
+    std::vector<ExtMessage::Hash> result{hash};
+    for (td::uint32 value = 1;
+         result.size() < ExtMessagePoolTestAccess::min_native_excluded_membership_entries(); ++value) {
+      result.push_back(make_bits(value, prefix));
+    }
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+  };
+
+  {
+    auto pool = ExtMessagePoolTestAccess::make_pool();
+    auto source = ExtMessagePoolTestAccess::source(26);
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    auto head = ExtMessagePoolTestAccess::add(pool, source, 0, 0, true, false);
+    ExtMessagePoolTestAccess::add(pool, source, 1);
+    ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 1, 1, padded_exclusions(head, 233));
+    ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), 0u);
+    auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+    ASSERT_TRUE(stats.head_uncommitted >= 1u);
+    ASSERT_EQ(stats.excluded, 0u);
+    ASSERT_EQ(stats.excluded_membership_builds, 0u);
+  }
+
+  {
+    auto pool = ExtMessagePoolTestAccess::make_pool();
+    auto source = ExtMessagePoolTestAccess::source(27);
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    auto tail = ExtMessagePoolTestAccess::add(pool, source, 1);
+    ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 1, 1, padded_exclusions(tail, 234));
+    ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), 0u);
+    auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+    ASSERT_TRUE(stats.head_missing_nonce >= 1u);
+    ASSERT_EQ(stats.excluded, 0u);
+    ASSERT_EQ(stats.excluded_membership_builds, 0u);
+  }
+
+  {
+    auto pool = ExtMessagePoolTestAccess::make_pool();
+    auto source = ExtMessagePoolTestAccess::source(28);
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    ExtMessagePoolTestAccess::add(pool, source, 0);
+    auto nonce_one = ExtMessagePoolTestAccess::add(pool, source, 1);
+    ExtMessagePoolTestAccess::set_reservation_hash(pool, source, 0, nonce_one);
+    ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 1, 1, padded_exclusions(nonce_one, 235));
+    ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), 0u);
+    auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+    ASSERT_TRUE(stats.head_nonce_mismatch >= 1u);
+    ASSERT_EQ(stats.excluded, 0u);
+    ASSERT_EQ(stats.excluded_membership_builds, 0u);
+  }
+}
+
+TEST(ExtMessagePoolScheduler, CallbackExcludedMembershipIsDiscardedBeforeLaterRefillAndLosingCallback) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(29);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  std::vector<ExtMessage::Hash> excluded;
+  for (td::uint64 nonce = 0; nonce <= 33; ++nonce) {
+    auto hash = ExtMessagePoolTestAccess::add(pool, source, nonce);
+    if (nonce < 32) {
+      excluded.push_back(hash);
+    }
+  }
+  for (td::uint32 value = 1; excluded.size() < ExtMessagePoolTestAccess::min_native_excluded_membership_entries();
+       ++value) {
+    excluded.push_back(make_bits(value, 236));
+  }
+  std::sort(excluded.begin(), excluded.end());
+  excluded.erase(std::unique(excluded.begin(), excluded.end()), excluded.end());
+
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 2, 1, excluded);
+  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::pending_native_selection(pool).nonces, (std::vector<td::uint64>{32}));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_exclusion_membership_active(pool));
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), 1u);
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_exclusion_membership_active(pool));
+  ASSERT_EQ(ExtMessagePoolTestAccess::pending_native_selection(pool).nonces, (std::vector<td::uint64>{32, 33}));
+
+  // A losing speculative callback never consumes the canonical watermark.
+  // Its discarded cache cannot influence the next branch's normal selection.
+  ExtMessagePoolTestAccess::discard_live_callback(pool);
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 1, 1);
+  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::pending_native_selection(pool).nonces, (std::vector<td::uint64>{0}));
 }
 
 TEST(ExtMessagePoolScheduler, PersistentCallbackSchedulerScansSourcesOnlyOnceAcrossChunks) {

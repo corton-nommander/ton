@@ -21,6 +21,7 @@
 #include "block/block.h"
 #include "block/mc-config.h"
 #include "td/actor/SharedFuture.h"
+#include "td/utils/Random.h"
 #include "tl/tlblib.hpp"
 #include "vm/dict.h"
 
@@ -30,12 +31,94 @@
 #include "transaction.h"
 
 #include <algorithm>
+#include <cstring>
 #include <cstdlib>
 #include <iterator>
 #include <limits>
 #include <thread>
 
 namespace ton::validator {
+namespace {
+
+td::uint64 mix_callback_excluded_hash(td::uint64 value) {
+  value ^= value >> 30;
+  value *= 0xbf58476d1ce4e5b9ULL;
+  value ^= value >> 27;
+  value *= 0x94d049bb133111ebULL;
+  return value ^ (value >> 31);
+}
+
+}  // namespace
+
+std::size_t ExtMessagePool::CallbackExcludedHash::operator()(const ExtMessage::Hash &hash) const noexcept {
+  // Hash every byte under a pool-local secret. Equality is still the full
+  // Bits256 comparison performed by the container, so collisions can only
+  // affect probing cost and can never alter exclusion semantics.
+  td::uint64 state = seed_ ^ 0x9e3779b97f4a7c15ULL;
+  const auto *data = hash.data();
+  for (std::size_t offset = 0; offset < hash.as_array().size(); offset += sizeof(td::uint64)) {
+    td::uint64 word;
+    std::memcpy(&word, data + offset, sizeof(word));
+    state ^= word + 0x9e3779b97f4a7c15ULL + (state << 6) + (state >> 2);
+    state = (state << 27) | (state >> 37);
+    state *= 0x3c79ac492ba7b653ULL;
+  }
+  return static_cast<std::size_t>(mix_callback_excluded_hash(state));
+}
+
+void ExtMessagePool::prepare_callback_native_exclusion_membership(const std::shared_ptr<InstalledCallback> &callback) {
+  discard_callback_native_exclusion_membership(callback);
+  if (!callback->callback->native_streaming || callback->callback->shard.workchain == masterchainId) {
+    return;
+  }
+  const auto excluded_count = callback->callback->excluded_messages.size();
+  if (excluded_count == 0) {
+    return;
+  }
+  if (excluded_count < MIN_NATIVE_EXCLUDED_MEMBERSHIP_ENTRIES) {
+    ++native_queue_counters_.excluded_membership_below_threshold;
+    return;
+  }
+  if (excluded_count > MAX_NATIVE_EXCLUDED_MEMBERSHIP_ENTRIES) {
+    ++native_queue_counters_.excluded_membership_over_limit;
+    return;
+  }
+  callback->native_excluded_membership_bootstrap = true;
+}
+
+void ExtMessagePool::maybe_build_callback_native_exclusion_membership(
+    const std::shared_ptr<InstalledCallback> &callback, NativeQueueCounters &counters) {
+  if (!callback->native_excluded_membership_bootstrap || callback->native_excluded_membership ||
+      callback->native_excluded_slow_hits < MIN_NATIVE_EXCLUDED_MEMBERSHIP_SLOW_HITS) {
+    return;
+  }
+
+  if (native_excluded_membership_seed_ == 0) {
+#if TD_HAVE_OPENSSL
+    native_excluded_membership_seed_ = td::Random::secure_uint64();
+#else
+    native_excluded_membership_seed_ = td::Random::fast_uint64();
+#endif
+    if (native_excluded_membership_seed_ == 0) {
+      native_excluded_membership_seed_ = 0x8f3d9baf5e7c4a11ULL;
+    }
+  }
+  CallbackExcludedMembership membership(0, CallbackExcludedHash{native_excluded_membership_seed_});
+  membership.reserve(callback->callback->excluded_messages.size());
+  membership.insert(callback->callback->excluded_messages.begin(), callback->callback->excluded_messages.end());
+  const auto entries = membership.size();
+  callback->native_excluded_membership.emplace(std::move(membership));
+  ++counters.excluded_membership_builds;
+  counters.excluded_membership_entries += entries;
+  counters.excluded_membership_slow_hits += callback->native_excluded_slow_hits;
+}
+
+void ExtMessagePool::discard_callback_native_exclusion_membership(const std::shared_ptr<InstalledCallback> &callback) {
+  callback->native_excluded_membership = td::optional<CallbackExcludedMembership>{};
+  callback->native_excluded_slow_hits = 0;
+  callback->native_excluded_membership_bootstrap = false;
+}
+
 void ExtMessagePool::start_up() {
   auto parse_bounded_env = [](const char* name, unsigned long fallback, unsigned long maximum) {
     const char* value = std::getenv(name);
@@ -1152,8 +1235,18 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
       ++counters.head_nonce_mismatch;
       return;
     }
-    if (std::binary_search(callback->callback->excluded_messages.begin(),
-                           callback->callback->excluded_messages.end(), hash)) {
+    bool excluded;
+    if (callback->native_excluded_membership) {
+      excluded = callback->native_excluded_membership.value().contains(hash);
+    } else {
+      excluded = std::binary_search(callback->callback->excluded_messages.begin(),
+                                    callback->callback->excluded_messages.end(), hash);
+      if (excluded && callback->native_excluded_membership_bootstrap) {
+        ++callback->native_excluded_slow_hits;
+        maybe_build_callback_native_exclusion_membership(callback, counters);
+      }
+    }
+    if (excluded) {
       ++counters.excluded;
       if (!advance_nonce()) {
         return;
@@ -1614,7 +1707,12 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
   // transfers are basechain-only, and copying/scanning their large treaps while
   // producing a masterchain anchor created avoidable multi-second stalls.
   installed->native_cursor = native_scheduler_cursor_;
+  prepare_callback_native_exclusion_membership(installed);
   prefill_callback_native(installed, true);
+  // The cache is valid only for the synchronous prefill above. No callback
+  // cache or pool reference may survive into the producer's asynchronous pump
+  // or the generic-external scan below.
+  discard_callback_native_exclusion_membership(installed);
   if (installed->callback->shard.workchain != masterchainId) {
     native_scheduler_cursor_ = installed->native_cursor;
   }
@@ -2470,7 +2568,13 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                 << " source_scans:" << native_queue_counters_.source_scans
                 << " source_refreshes:" << native_queue_counters_.source_refreshes
                 << " source_probes:" << native_queue_counters_.source_probes
-                << " stale_ready_tokens:" << native_queue_counters_.stale_ready_tokens);
+                << " stale_ready_tokens:" << native_queue_counters_.stale_ready_tokens
+                << " excluded_membership_builds:" << native_queue_counters_.excluded_membership_builds
+                << " excluded_membership_entries:" << native_queue_counters_.excluded_membership_entries
+                << " excluded_membership_slow_hits:" << native_queue_counters_.excluded_membership_slow_hits
+                << " excluded_membership_below_threshold:"
+                << native_queue_counters_.excluded_membership_below_threshold
+                << " excluded_membership_over_limit:" << native_queue_counters_.excluded_membership_over_limit);
   std::lock_guard transport_lock(native_transport_telemetry_->accounting_mutex);
   auto selected = native_transport_telemetry_->selected.load(std::memory_order_relaxed);
   auto push_completed = native_transport_telemetry_->pushed.load(std::memory_order_relaxed);

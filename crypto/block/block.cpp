@@ -743,35 +743,18 @@ td::uint64 BlockLimitStatus::estimate_block_size(const vm::NewCellStorageStat::S
   if (extra) {
     sum += *extra;
   }
-  return estimate_block_size_from_storage_stat(sum) + (extra ? 200 : 0);
-}
-
-td::uint64 BlockLimitStatus::estimate_block_size_from_storage_stat(
-    const vm::NewCellStorageStat::Stat& storage_stat) const {
-  return 2000 + (storage_stat.bits >> 3) + storage_stat.cells * 12 + storage_stat.internal_refs * 3 +
-         storage_stat.external_refs * 40 + transactions * 200 + extra_out_msgs * 300 + public_library_diff * 700;
+  return 2000 + (sum.bits >> 3) + sum.cells * 12 + sum.internal_refs * 3 + sum.external_refs * 40 + transactions * 200 +
+         (extra ? 200 : 0) + extra_out_msgs * 300 + public_library_diff * 700;
 }
 
 int BlockLimitStatus::classify() const {
   return limits.classify(estimate_block_size(), gas_used, cur_lt, collated_data_size_estimate);
 }
 
-int BlockLimitStatus::classify_with_storage_stat(const vm::NewCellStorageStat::Stat& storage_stat) const {
-  return limits.classify(estimate_block_size_from_storage_stat(storage_stat), gas_used, cur_lt,
-                         collated_data_size_estimate);
-}
-
 bool BlockLimitStatus::fits(unsigned cls) const {
   return cls >= ParamLimits::limits_cnt ||
          (limits.gas.fits(cls, gas_used) && limits.lt_delta.fits(cls, cur_lt - limits.start_lt) &&
           limits.bytes.fits(cls, estimate_block_size()) && limits.collated_data.fits(cls, collated_data_size_estimate));
-}
-
-bool BlockLimitStatus::fits_with_storage_stat(unsigned cls, const vm::NewCellStorageStat::Stat& storage_stat) const {
-  return cls >= ParamLimits::limits_cnt ||
-         (limits.gas.fits(cls, gas_used) && limits.lt_delta.fits(cls, cur_lt - limits.start_lt) &&
-          limits.bytes.fits(cls, estimate_block_size_from_storage_stat(storage_stat)) &&
-          limits.collated_data.fits(cls, collated_data_size_estimate));
 }
 
 bool BlockLimitStatus::would_fit(unsigned cls, ton::LogicalTime end_lt, td::uint64 more_gas,
@@ -787,16 +770,6 @@ double BlockLimitStatus::load_fraction(unsigned cls) const {
     return 0.0;
   }
   return std::max({(double)estimate_block_size() / (double)limits.bytes.limit(cls),
-                   (double)gas_used / (double)limits.gas.limit(cls),
-                   (double)collated_data_size_estimate / (double)limits.collated_data.limit(cls)});
-}
-
-double BlockLimitStatus::load_fraction_with_storage_stat(unsigned cls,
-                                                          const vm::NewCellStorageStat::Stat& storage_stat) const {
-  if (cls >= ParamLimits::limits_cnt) {
-    return 0.0;
-  }
-  return std::max({(double)estimate_block_size_from_storage_stat(storage_stat) / (double)limits.bytes.limit(cls),
                    (double)gas_used / (double)limits.gas.limit(cls),
                    (double)collated_data_size_estimate / (double)limits.collated_data.limit(cls)});
 }

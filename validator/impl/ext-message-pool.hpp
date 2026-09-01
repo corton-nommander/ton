@@ -573,13 +573,7 @@ class ExtMessagePool : public td::actor::Actor {
   void enqueue_callback_item(const std::shared_ptr<InstalledCallback> &callback,
                              std::pair<td::Ref<ExtMessage>, int> item, bool native);
   void begin_callback_epoch(const std::shared_ptr<InstalledCallback> &callback);
-  enum class CallbackPumpStart { deferred, initial_native_fast_lane };
-  // The first native delivery starts on Collator's critical path. It may run
-  // through the current idle pool actor immediately; all later refills retain
-  // deferred scheduling so admission/reconciliation work keeps its normal
-  // mailbox fairness.
-  void start_callback_pump(const std::shared_ptr<InstalledCallback> &callback,
-                           CallbackPumpStart start = CallbackPumpStart::deferred);
+  void start_callback_pump(const std::shared_ptr<InstalledCallback> &callback);
   void cancel_callback_delivery(const std::shared_ptr<InstalledCallback> &callback);
   td::actor::Task<> pump_callback(std::shared_ptr<InstalledCallback> callback);
 

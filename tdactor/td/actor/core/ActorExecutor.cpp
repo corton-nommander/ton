@@ -18,6 +18,7 @@
 */
 #include "td/actor/core/ActorExecutor.h"
 #include "td/utils/ScopeGuard.h"
+#include "td/utils/ThreadSafeCounter.h"
 
 namespace td {
 namespace actor {
@@ -148,8 +149,25 @@ void ActorExecutor::start() noexcept {
       return;
     }
   }
+  const auto mailbox_message_quantum = actor_info_.actor().mailbox_message_quantum();
+  if (mailbox_message_quantum == 0) {
+    while (flush_one_message()) {
+      if (actor_execute_context_.has_immediate_flags()) {
+        return;
+      }
+    }
+    return;
+  }
+
+  uint32 mailbox_messages = 0;
   while (flush_one_message()) {
     if (actor_execute_context_.has_immediate_flags()) {
+      return;
+    }
+    if (++mailbox_messages >= mailbox_message_quantum) {
+      TD_PERF_COUNTER(actor_mailbox_quantum_yield);
+      pending_signals_.add_signal(ActorSignals::Message);
+      actor_execute_context_.set_pause();
       return;
     }
   }

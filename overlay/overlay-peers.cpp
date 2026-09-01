@@ -28,6 +28,8 @@
 
 #include "overlay.hpp"
 
+#include "td/utils/ThreadSafeCounter.h"
+
 namespace ton {
 
 namespace overlay {
@@ -693,6 +695,7 @@ void OverlayImpl::update_throughput_out_ctr(adnl::AdnlNodeIdShort peer_id, td::u
   if (is_response) {
     total_traffic_responses_ctr.add_packet(msg_size, false);
   }
+  maybe_yield_after_traffic_update();
 }
 
 void OverlayImpl::update_throughput_in_ctr(adnl::AdnlNodeIdShort peer_id, td::uint64 msg_size, bool is_query,
@@ -711,6 +714,15 @@ void OverlayImpl::update_throughput_in_ctr(adnl::AdnlNodeIdShort peer_id, td::ui
   if (is_response) {
     total_traffic_responses_ctr.add_packet(msg_size, true);
   }
+  maybe_yield_after_traffic_update();
+}
+
+void OverlayImpl::maybe_yield_after_traffic_update() {
+  if (!traffic_update_yield_policy_.on_update()) {
+    return;
+  }
+  TD_PERF_COUNTER(overlay_traffic_fairness_yield);
+  yield();
 }
 
 void OverlayImpl::update_peer_ip_str(adnl::AdnlNodeIdShort peer_id, td::string ip_str) {

@@ -1,15 +1,8 @@
+# syntax=docker/dockerfile:1.7
 FROM ubuntu:22.04 AS builder
 ARG DEBIAN_FRONTEND=noninteractive
-ARG NINJA_JOBS=2
-ARG PORTABLE=1
-ARG TON_ARCH=
-ARG TON_BUILD_TARGETS="storage-daemon storage-daemon-cli tonlibjson fift func validator-engine validator-engine-console generate-random-id dht-server lite-client native-load-generator tolk rldp-http-proxy dht-server proxy-liteserver create-state blockchain-explorer emulator tonlibjson http-proxy dht-ping-servers dht-resolve"
-ARG VCS_REF=unknown
-ARG BUILD_DATE=unknown
-LABEL org.opencontainers.image.revision=$VCS_REF \
-      org.opencontainers.image.created=$BUILD_DATE
 RUN apt-get update && \
-        apt-get install -y --no-install-recommends build-essential cmake clang gperf wget git \
+        apt-get install -y --no-install-recommends build-essential cmake clang ccache gperf wget git \
         ninja-build pkg-config autoconf automake libtool \
         libjemalloc-dev lsb-release software-properties-common gnupg && \
         rm -rf /var/lib/apt/lists/*
@@ -21,7 +14,11 @@ RUN wget https://apt.llvm.org/llvm.sh && \
 
 ENV CC=/usr/bin/clang-22
 ENV CXX=/usr/bin/clang++-22
-ENV CCACHE_DISABLE=1
+ENV CCACHE_DIR=/root/.cache/ccache
+ENV CCACHE_BASEDIR=/ton
+ENV CCACHE_NOHASHDIR=true
+ENV CCACHE_MAXSIZE=20G
+ENV CCACHE_COMPILERCHECK=content
 
 WORKDIR /
 RUN mkdir ton
@@ -29,17 +26,28 @@ WORKDIR /ton
 
 COPY ./ ./
 
-RUN mkdir build && \
+# Build-only arguments are intentionally declared after the expensive toolchain
+# layers. Docker includes in-scope ARG values in subsequent RUN cache keys, so
+# a new source revision or architecture must not invalidate apt/LLVM setup.
+ARG NINJA_JOBS=2
+ARG PORTABLE=1
+ARG TON_ARCH=
+ARG TON_BUILD_TARGETS="storage-daemon storage-daemon-cli tonlibjson fift func validator-engine validator-engine-console generate-random-id dht-server lite-client native-load-generator tolk rldp-http-proxy dht-server proxy-liteserver create-state blockchain-explorer emulator tonlibjson http-proxy dht-ping-servers dht-resolve"
+ARG VCS_REF=unknown
+ARG VCS_DATE=unknown
+RUN --mount=type=cache,id=corton-ton-ccache,target=/root/.cache/ccache,sharing=locked \
+    export GIT_REVISION="${VCS_REF}" GIT_REVISION_DATE="${VCS_DATE}" && \
+        ccache --zero-stats && \
+        mkdir build && \
         cd build && \
-        cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DPORTABLE="${PORTABLE}" -DTON_ARCH="${TON_ARCH}" -DTON_USE_JEMALLOC=ON .. && \
-        ninja -j "${NINJA_JOBS}" ${TON_BUILD_TARGETS}
+        cmake -GNinja -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DPORTABLE="${PORTABLE}" -DTON_ARCH="${TON_ARCH}" -DTON_USE_JEMALLOC=ON .. && \
+        ninja -j "${NINJA_JOBS}" ${TON_BUILD_TARGETS} && \
+        ccache --show-stats
 
 FROM ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive
-ARG VCS_REF=unknown
-ARG BUILD_DATE=unknown
-LABEL org.opencontainers.image.revision=$VCS_REF \
-      org.opencontainers.image.created=$BUILD_DATE
 RUN apt-get update && \
     apt-get install -y wget curl libatomic1 openssl libsodium-dev libmicrohttpd-dev liblz4-dev libjemalloc-dev htop \
     net-tools netcat iptraf-ng jq tcpdump pv plzip && \
@@ -76,3 +84,10 @@ COPY ./docker/init.sh /var/ton-work/scripts/
 RUN chmod +x /var/ton-work/scripts/init.sh
 
 ENTRYPOINT ["/var/ton-work/scripts/init.sh"]
+
+# Apply provenance last for the same reason as in the builder stage: changing
+# labels must not invalidate package installation or binary-copy layers.
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.revision=$VCS_REF \
+      org.opencontainers.image.created=$BUILD_DATE

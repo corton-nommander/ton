@@ -98,6 +98,133 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_external_
                                                               deadline);
 }
 
+td::Result<td::Ref<MasterchainState>> ExtMessagePool::pin_native_admission_masterchain_state() const {
+  // The manager's liteserver view is intentionally allowed to trail the applied
+  // chain. Native nonce/balance admission must instead use the newest applied
+  // masterchain state delivered to this actor. Holding a local Ref pins the
+  // exact config/shard revision while the coroutine awaits shard-state reads.
+  auto state = last_masterchain_state_;
+  if (state.is_null()) {
+    return td::Status::Error(ErrorCode::notready, "native admission masterchain state is not ready");
+  }
+  if (!state->get_block_id().is_masterchain()) {
+    return td::Status::Error(ErrorCode::notready, "native admission masterchain state is invalid");
+  }
+  return state;
+}
+
+void ExtMessagePool::reset_native_admission_cache_generation(const BlockIdExt &masterchain_block_id) {
+  if (native_admission_shard_cache_.masterchain_block_id &&
+      native_admission_shard_cache_.masterchain_block_id.value() == masterchain_block_id) {
+    return;
+  }
+  if (native_admission_shard_cache_.masterchain_block_id) {
+    ++native_batch_shard_cache_generation_resets_;
+  }
+  native_admission_shard_cache_.masterchain_block_id = masterchain_block_id;
+  native_admission_shard_cache_.shard_views.clear();
+}
+
+ExtMessagePool::NativeAdmissionShardViewPtr ExtMessagePool::lookup_native_admission_shard_view(
+    const BlockIdExt &masterchain_block_id, const BlockIdExt &shard_block_id) {
+  ++native_batch_shard_state_requests_;
+  if (!native_admission_shard_cache_.masterchain_block_id ||
+      native_admission_shard_cache_.masterchain_block_id.value() != masterchain_block_id) {
+    return {};
+  }
+  auto it = native_admission_shard_cache_.shard_views.find(shard_block_id);
+  if (it == native_admission_shard_cache_.shard_views.end()) {
+    return {};
+  }
+  ++native_batch_shard_cache_hits_;
+  return it->second;
+}
+
+td::Result<ExtMessagePool::NativeAdmissionShardViewPtr> ExtMessagePool::make_native_admission_shard_view(
+    const BlockIdExt &shard_block_id, td::Ref<ShardState> state) {
+  if (state.is_null()) {
+    ++native_batch_shard_cache_invalid_header_;
+    return td::Status::Error("native admission shard-state lookup returned a null state");
+  }
+  if (state->get_block_id() != shard_block_id) {
+    ++native_batch_shard_cache_wrong_id_;
+    return td::Status::Error("native admission shard-state lookup returned a different block");
+  }
+  auto root = state->root_cell();
+  block::gen::ShardStateUnsplit::Record state_info;
+  if (root.is_null() || !tlb::unpack_cell(root, state_info)) {
+    ++native_batch_shard_cache_invalid_header_;
+    return td::Status::Error("cannot unpack pinned shard state header");
+  }
+  block::ShardId header_shard{state_info.shard_id};
+  if (!header_shard.is_valid() || ShardIdFull(header_shard) != shard_block_id.shard_full() ||
+      state_info.seq_no != shard_block_id.seqno()) {
+    ++native_batch_shard_cache_invalid_header_;
+    return td::Status::Error("pinned shard state header identifies a different block");
+  }
+  RootHash state_root_hash{root->get_hash().bits()};
+  if (state->root_hash() != state_root_hash || state_info.accounts.is_null()) {
+    ++native_batch_shard_cache_invalid_header_;
+    return td::Status::Error("pinned shard state header has an invalid state root");
+  }
+  NativeAdmissionShardViewPtr view = std::make_shared<const NativeAdmissionShardView>(NativeAdmissionShardView{
+      .block_id = shard_block_id,
+      .state_root_hash = state_root_hash,
+      .gen_utime = state_info.gen_utime,
+      .gen_lt = state_info.gen_lt,
+      .accounts = std::move(state_info.accounts),
+  });
+  return view;
+}
+
+td::Result<ExtMessagePool::NativeAdmissionShardViewPtr> ExtMessagePool::store_native_admission_shard_view(
+    const BlockIdExt &masterchain_block_id, NativeAdmissionShardViewPtr view) {
+  if (!view) {
+    return td::Status::Error("cannot cache a null native admission shard view");
+  }
+  // A batch may resume after a newer applied masterchain notification cleared
+  // the cache. Its exact pinned state remains valid for that batch, but it must
+  // never repopulate the newer generation with an old topology.
+  if (!native_admission_shard_cache_.masterchain_block_id ||
+      native_admission_shard_cache_.masterchain_block_id.value() != masterchain_block_id) {
+    ++native_batch_shard_cache_stale_generation_fill_skips_;
+    return view;
+  }
+  auto [it, inserted] = native_admission_shard_cache_.shard_views.emplace(view->block_id, view);
+  if (!inserted) {
+    ++native_batch_shard_cache_fill_races_;
+    if (it->second->state_root_hash != view->state_root_hash) {
+      ++native_batch_shard_cache_fill_conflicts_;
+      return td::Status::Error("conflicting native admission shard-state cache fill for the same block");
+    }
+    return it->second;
+  }
+  ++native_batch_shard_cache_fills_;
+  native_batch_shard_cache_peak_entries_ =
+      std::max<td::uint64>(native_batch_shard_cache_peak_entries_, native_admission_shard_cache_.shard_views.size());
+  return view;
+}
+
+void ExtMessagePool::record_native_admission_manager_wait_error(const td::Status &error) {
+  ++native_batch_shard_miss_errors_;
+  ++native_batch_shard_manager_wait_errors_;
+  if (error.code() == ErrorCode::timeout || error.code() == td::actor::AWAIT_TIMEOUT_CODE) {
+    ++native_batch_shard_manager_wait_timeouts_;
+  } else if (error.code() == ErrorCode::notready) {
+    ++native_batch_shard_manager_wait_notready_;
+  } else {
+    ++native_batch_shard_manager_wait_other_errors_;
+  }
+}
+
+bool ExtMessagePool::native_admission_manager_wait_finished_after_deadline(td::Timestamp deadline) {
+  if (!deadline || !deadline.is_in_past()) {
+    return false;
+  }
+  ++native_batch_shard_manager_wait_late_results_;
+  return true;
+}
+
 td::Result<td::optional<ExtMessagePool::CheckResult>> ExtMessagePool::check_existing_external_message(
     td::Ref<ExtMessage> message, int priority, bool add_to_mempool) {
   if (add_to_mempool) {
@@ -119,7 +246,22 @@ td::Result<td::optional<ExtMessagePool::CheckResult>> ExtMessagePool::check_exis
           auto reservation_it = account_it->second.messages.find(existing_message.value()->native_nonce.value());
           stale_native_admission =
               reservation_it == account_it->second.messages.end() ||
-              reservation_it->second.account_revision != watermark_it->second.revision;
+              (reservation_it != account_it->second.messages.end() &&
+               (reservation_it->second.hash != existing_message.value()->message->hash() ||
+                watermark_it->second.is_consumed(existing_message.value()->native_nonce.value()) ||
+                (!reservation_it->second.committed &&
+                 reservation_it->second.account_revision != watermark_it->second.revision)));
+          if (!stale_native_admission && reservation_it->second.committed &&
+              reservation_it->second.account_revision != watermark_it->second.revision) {
+            // A canonical account advance changes the watermark revision for
+            // every still-pending higher nonce.  A late byte-identical retry
+            // must not erase that committed head before the fresh admission
+            // check has a chance to finish: if the check then times out, every
+            // later nonce from the source is stranded. Canonical
+            // reconciliation validates balance and rebases the affordable
+            // surviving prefix atomically.
+            ++native_exact_retry_preserved_stale_revision_;
+          }
         }
       }
       if (existing_message.value()->expired() || stale_native_admission) {
@@ -360,9 +502,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
   std::set<NativeAddress> changed_native_sources;
   Bits256 chain_domain;
   if (!source_items.empty()) {
-    auto mc_result = co_await td::actor::await_with_timeout(
-                         td::actor::ask(manager_, &ValidatorManager::get_last_liteserver_state_block), deadline)
-                         .wrap();
+    auto mc_result = pin_native_admission_masterchain_state();
     if (mc_result.is_error()) {
       auto error = mc_result.move_as_error();
       for (const auto &[_, indices] : source_items) {
@@ -372,7 +512,15 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
       }
       source_items.clear();
     } else {
-      auto [mc_state, mc_block_id] = mc_result.move_as_ok();
+      auto mc_state = mc_result.move_as_ok();
+      auto mc_block_id = mc_state->get_block_id();
+      // Keep the cache generation tied to the exact state pinned by this
+      // actor turn. update_last_masterchain_state normally established it,
+      // while this idempotent reset also makes the invariant local to the
+      // admission path (including tests and future initialization paths).
+      reset_native_admission_cache_generation(mc_block_id);
+      ++native_batch_mc_state_pins_;
+      native_batch_last_pinned_mc_seqno_ = mc_block_id.seqno();
       auto config_result =
           block::ConfigInfo::extract_config(mc_state->root_cell(), mc_block_id, 0xFFFF);
       if (config_result.is_error()) {
@@ -400,53 +548,71 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
         }
 
         for (const auto &[shard_block_id, addresses] : shard_sources) {
+          auto reject_shard = [&](td::Status error) {
+            auto code = error.code();
+            auto message = error.message().str();
+            for (const auto &address : addresses) {
+              for (auto index : source_items[address]) {
+                reject(index, td::Status::Error(code, message));
+              }
+            }
+          };
           if (deadline && deadline.is_in_past()) {
-            for (const auto &address : addresses) {
-              for (auto index : source_items[address]) {
-                reject(index, td::Status::Error(ErrorCode::timeout,
-                                                "external message admission deadline expired"));
-              }
-            }
+            reject_shard(td::Status::Error(ErrorCode::timeout, "external message admission deadline expired"));
             continue;
           }
-          ++native_batch_shard_fetches_;
-          auto state_result = co_await td::actor::await_with_timeout(
-                                  td::actor::ask(manager_, &ValidatorManager::get_block_state_for_litequery,
-                                                 shard_block_id),
-                                  deadline)
-                                  .wrap();
-          if (state_result.is_error()) {
-            auto error = state_result.move_as_error();
-            for (const auto &address : addresses) {
-              for (auto index : source_items[address]) {
-                reject(index, td::Status::Error(error.code(), error.message().str()));
-              }
+          auto shard_view = lookup_native_admission_shard_view(mc_block_id, shard_block_id);
+          if (!shard_view) {
+            ++native_batch_shard_manager_waits_;
+            auto state_result = co_await td::actor::await_with_timeout(
+                                    td::actor::ask(manager_, &ValidatorManager::wait_block_state_short,
+                                                   shard_block_id, 0, deadline, false),
+                                    deadline)
+                                    .wrap();
+            if (state_result.is_error()) {
+              auto error = state_result.move_as_error();
+              record_native_admission_manager_wait_error(error);
+              reject_shard(std::move(error));
+              continue;
             }
-            continue;
-          }
-          auto state = state_result.move_as_ok();
-          block::gen::ShardStateUnsplit::Record state_info;
-          if (!tlb::unpack_cell(state->root_cell(), state_info)) {
-            for (const auto &address : addresses) {
-              for (auto index : source_items[address]) {
-                reject(index, td::Status::Error("cannot unpack pinned shard state header"));
-              }
+            // The state read can win the timeout race at the deadline. Stop
+            // before validating, caching, or changing canonical watermarks.
+            if (native_admission_manager_wait_finished_after_deadline(deadline)) {
+              reject_shard(td::Status::Error(ErrorCode::timeout, "external message admission deadline expired"));
+              continue;
             }
-            continue;
+            auto view_result = make_native_admission_shard_view(shard_block_id, state_result.move_as_ok());
+            if (view_result.is_error()) {
+              ++native_batch_shard_miss_errors_;
+              reject_shard(view_result.move_as_error());
+              continue;
+            }
+            auto stored_view = store_native_admission_shard_view(mc_block_id, view_result.move_as_ok());
+            if (stored_view.is_error()) {
+              ++native_batch_shard_miss_errors_;
+              reject_shard(stored_view.move_as_error());
+              continue;
+            }
+            shard_view = stored_view.move_as_ok();
           }
-          vm::AugmentedDictionary accounts{vm::load_cell_slice_ref(state_info.accounts), 256,
+          native_batch_last_pinned_shard_seqno_ = shard_view->block_id.seqno();
+          if (mc_state->get_unix_time() >= shard_view->gen_utime) {
+            native_batch_max_mc_shard_utime_lag_s_ = std::max<td::uint64>(
+                native_batch_max_mc_shard_utime_lag_s_, mc_state->get_unix_time() - shard_view->gen_utime);
+          }
+          vm::AugmentedDictionary accounts{vm::load_cell_slice_ref(shard_view->accounts), 256,
                                            block::tlb::aug_ShardAccounts};
           for (const auto &address : addresses) {
             ++native_batch_account_lookups_;
             block::Account account;
             auto shard_account = accounts.lookup(address.second);
-            if (!account.unpack(shard_account, state_info.gen_utime, false)) {
+            if (!account.unpack(shard_account, shard_view->gen_utime, false)) {
               for (auto index : source_items[address]) {
                 reject(index, td::Status::Error("Failed to unpack account state"));
               }
               continue;
             }
-            account.block_lt = state_info.gen_lt;
+            account.block_lt = shard_view->gen_lt;
             if (account.status != block::Account::acc_uninit || !account.is_native) {
               for (auto index : source_items[address]) {
                 reject(index, td::Status::Error("native transfer source account must be balance-only"));
@@ -461,19 +627,28 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
               }
               continue;
             }
-            auto &watermark = native_nonce_watermarks_[address];
-            auto previous_revision = watermark.revision;
-            if (!watermark.observe_account_state(account.native_nonce, available_balance.value(), state_info.gen_lt)) {
+            auto applied = apply_canonical_native_account_state(address, account.native_nonce,
+                                                                 available_balance.value(), shard_view->gen_utime,
+                                                                 shard_view->gen_lt);
+            if (applied.is_error()) {
+              ++native_batch_watermark_lag_rejections_;
+              const auto &watermark = native_nonce_watermarks_.at(address);
+              if (watermark.observed_next_nonce > account.native_nonce) {
+                native_batch_max_watermark_nonce_lag_ =
+                    std::max(native_batch_max_watermark_nonce_lag_,
+                             watermark.observed_next_nonce - account.native_nonce);
+              }
               for (auto index : source_items[address]) {
                 reject(index, td::Status::Error(
                                   ErrorCode::notready,
-                                  "canonical native account state has not caught up with finalized balance"));
+                                  "native account state predates the latest observed canonical state"));
               }
               continue;
             }
-            if (watermark.revision != previous_revision) {
+            if (applied.ok()) {
               changed_native_sources.insert(address);
             }
+            const auto &watermark = native_nonce_watermarks_.at(address);
             auto first_nonce = watermark.first_unconsumed_nonce();
             if (!first_nonce) {
               for (auto index : source_items[address]) {
@@ -481,8 +656,8 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
               }
               continue;
             }
-            source_snapshots[address] = SourceSnapshot{.utime = state_info.gen_utime,
-                                                       .lt = state_info.gen_lt,
+            source_snapshots[address] = SourceSnapshot{.utime = shard_view->gen_utime,
+                                                       .lt = shard_view->gen_lt,
                                                        .balance = available_balance.value(),
                                                        .first_nonce = first_nonce.value(),
                                                        .revision = watermark.revision};
@@ -613,9 +788,53 @@ void ExtMessagePool::log_native_batch_stats() {
   }
   LOG(INFO) << "external-message batch admission cumulative: batches=" << native_batch_count_
             << " messages=" << native_batch_messages_ << " unique=" << native_batch_unique_messages_
-            << " shard_fetches=" << native_batch_shard_fetches_
-            << " account_lookups=" << native_batch_account_lookups_ << " accepted=" << native_batch_accepted_
-            << " rejected=" << native_batch_rejected_;
+            << " shard_state_requests=" << native_batch_shard_state_requests_
+            << " shard_manager_waits=" << native_batch_shard_manager_waits_
+            << " shard_fetches=" << native_batch_shard_manager_waits_
+            << " shard_cache_hits=" << native_batch_shard_cache_hits_
+            << " shard_cache_fills=" << native_batch_shard_cache_fills_
+            << " shard_cache_fill_races=" << native_batch_shard_cache_fill_races_
+            << " shard_cache_fill_conflicts=" << native_batch_shard_cache_fill_conflicts_
+            << " shard_cache_generation_resets=" << native_batch_shard_cache_generation_resets_
+            << " shard_cache_stale_generation_fill_skips="
+            << native_batch_shard_cache_stale_generation_fill_skips_
+            << " shard_cache_wrong_id=" << native_batch_shard_cache_wrong_id_
+            << " shard_cache_invalid_header=" << native_batch_shard_cache_invalid_header_
+            << " shard_miss_errors=" << native_batch_shard_miss_errors_
+            << " shard_fetch_errors=" << native_batch_shard_miss_errors_
+            << " shard_manager_wait_errors=" << native_batch_shard_manager_wait_errors_
+            << " shard_manager_wait_timeouts=" << native_batch_shard_manager_wait_timeouts_
+            << " shard_manager_wait_notready=" << native_batch_shard_manager_wait_notready_
+            << " shard_manager_wait_other_errors=" << native_batch_shard_manager_wait_other_errors_
+            << " shard_manager_wait_late_results=" << native_batch_shard_manager_wait_late_results_
+            << " shard_cache_entries=" << native_admission_shard_cache_.shard_views.size()
+            << " shard_cache_peak_entries=" << native_batch_shard_cache_peak_entries_
+            << " account_lookups=" << native_batch_account_lookups_
+            << " accepted=" << native_batch_accepted_ << " rejected=" << native_batch_rejected_
+            << " mc_state_pins=" << native_batch_mc_state_pins_
+            << " pinned_mc_seqno=" << native_batch_last_pinned_mc_seqno_
+            << " pinned_shard_seqno=" << native_batch_last_pinned_shard_seqno_
+            << " max_mc_shard_utime_lag_s=" << native_batch_max_mc_shard_utime_lag_s_
+            << " watermark_lag_rejections=" << native_batch_watermark_lag_rejections_
+            << " max_watermark_nonce_lag=" << native_batch_max_watermark_nonce_lag_
+            << " ignored_mc_state_updates=" << native_batch_ignored_mc_state_updates_
+            << " reconciliation_tracked_candidates=" << native_reconciliation_tracked_candidates_
+            << " reconciliation_tracked_messages=" << native_reconciliation_tracked_messages_
+            << " reconciliation_runs=" << native_reconciliation_runs_
+            << " reconciliation_sources_advanced=" << native_reconciliation_sources_advanced_
+            << " reconciliation_messages_purged=" << native_reconciliation_messages_purged_
+            << " reconciliation_failures=" << native_reconciliation_failures_
+            << " reconciliation_unchanged_state_skips=" << native_reconciliation_unchanged_state_skips_
+            << " reconciliation_unchanged_top_skips=" << native_reconciliation_unchanged_top_skips_
+            << " reconciliation_unchanged_source_skips=" << native_reconciliation_unchanged_source_skips_
+            << " reconciliation_rebased_reservations=" << native_reconciliation_rebased_reservations_
+            << " reconciliation_unaffordable_tail_pruned="
+            << native_reconciliation_unaffordable_tail_pruned_
+            << " reconciliation_stale_uncommitted_tail_pruned="
+            << native_reconciliation_stale_uncommitted_tail_pruned_
+            << " expiry_suffix_events=" << native_expiry_suffix_events_
+            << " expiry_suffix_pruned=" << native_expiry_suffix_pruned_
+            << " exact_retry_preserved_stale_revision=" << native_exact_retry_preserved_stale_revision_;
   native_batch_log_at_ = td::Timestamp::in(1.0);
 }
 
@@ -632,6 +851,7 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
   struct SourceState {
     NativeAddress source;
     const NativeInfo *info{nullptr};
+    td::uint64 canonical_nonce{0};
     td::uint64 next_nonce{0};
     td::optional<NativeQueueItem> next;
     bool blocked{false};
@@ -647,6 +867,7 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
     if (watermark_it == native_nonce_watermarks_.end()) {
       if (!info.messages.empty()) {
         ++selection.counters.head_gaps;
+        ++selection.counters.head_missing_watermark;
       }
       return;
     }
@@ -656,6 +877,7 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
     }
     sources.push_back(SourceState{.source = source,
                                   .info = &info,
+                                  .canonical_nonce = first_nonce.value(),
                                   .next_nonce = first_nonce.value(),
                                   .next = {},
                                   .blocked = false,
@@ -702,11 +924,24 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
     while (!source.blocked) {
       auto reservation_it = source.info->messages.lower_bound(source.next_nonce);
       if (reservation_it == source.info->messages.end()) {
+        if (source.next_nonce > source.canonical_nonce) {
+          ++selection.counters.speculative_exhausted;
+        } else {
+          ++selection.counters.head_gaps;
+          ++selection.counters.head_missing_nonce;
+        }
         source.blocked = true;
         return;
       }
-      if (reservation_it->first != source.next_nonce || !reservation_it->second.committed) {
+      if (reservation_it->first != source.next_nonce) {
         ++selection.counters.head_gaps;
+        ++selection.counters.head_missing_nonce;
+        source.blocked = true;
+        return;
+      }
+      if (!reservation_it->second.committed) {
+        ++selection.counters.head_gaps;
+        ++selection.counters.head_uncommitted;
         source.blocked = true;
         return;
       }
@@ -715,19 +950,27 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
       auto pool_it = ext_messages_hashes_.find(hash);
       if (pool_it == ext_messages_hashes_.end()) {
         ++selection.counters.head_gaps;
+        ++selection.counters.head_missing_hash_index;
         source.blocked = true;
         return;
       }
       auto priority_it = ext_msgs_.find(pool_it->second.first);
       if (priority_it == ext_msgs_.end()) {
         ++selection.counters.head_gaps;
+        ++selection.counters.head_missing_priority;
         source.blocked = true;
         return;
       }
       auto message = priority_it->second.ext_messages_.find(pool_it->second.second);
-      if (!message || !message.value()->native_nonce ||
-          message.value()->native_nonce.value() != source.next_nonce) {
+      if (!message) {
         ++selection.counters.head_gaps;
+        ++selection.counters.head_missing_message;
+        source.blocked = true;
+        return;
+      }
+      if (!message.value()->native_nonce || message.value()->native_nonce.value() != source.next_nonce) {
+        ++selection.counters.head_gaps;
+        ++selection.counters.head_nonce_mismatch;
         source.blocked = true;
         return;
       }
@@ -840,7 +1083,14 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
 
   auto info_it = native_accounts_.find(source);
   auto watermark_it = native_nonce_watermarks_.find(source);
-  if (info_it == native_accounts_.end() || watermark_it == native_nonce_watermarks_.end()) {
+  if (info_it == native_accounts_.end()) {
+    return;
+  }
+  if (watermark_it == native_nonce_watermarks_.end()) {
+    if (!info_it->second.messages.empty()) {
+      ++counters.head_gaps;
+      ++counters.head_missing_watermark;
+    }
     return;
   }
   auto first_nonce = watermark_it->second.first_unconsumed_nonce();
@@ -858,9 +1108,23 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
 
   while (true) {
     auto reservation_it = info_it->second.messages.lower_bound(state.next_nonce);
-    if (reservation_it == info_it->second.messages.end() || reservation_it->first != state.next_nonce ||
-        !reservation_it->second.committed) {
+    if (reservation_it == info_it->second.messages.end()) {
+      if (state.next_nonce > first_nonce.value()) {
+        ++counters.speculative_exhausted;
+      } else {
+        ++counters.head_gaps;
+        ++counters.head_missing_nonce;
+      }
+      return;
+    }
+    if (reservation_it->first != state.next_nonce) {
       ++counters.head_gaps;
+      ++counters.head_missing_nonce;
+      return;
+    }
+    if (!reservation_it->second.committed) {
+      ++counters.head_gaps;
+      ++counters.head_uncommitted;
       return;
     }
     ++counters.scanned;
@@ -868,17 +1132,24 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
     auto pool_it = ext_messages_hashes_.find(hash);
     if (pool_it == ext_messages_hashes_.end()) {
       ++counters.head_gaps;
+      ++counters.head_missing_hash_index;
       return;
     }
     auto priority_it = ext_msgs_.find(pool_it->second.first);
     if (priority_it == ext_msgs_.end()) {
       ++counters.head_gaps;
+      ++counters.head_missing_priority;
       return;
     }
     auto message = priority_it->second.ext_messages_.find(pool_it->second.second);
-    if (!message || !message.value()->native_nonce ||
-        message.value()->native_nonce.value() != state.next_nonce) {
+    if (!message) {
       ++counters.head_gaps;
+      ++counters.head_missing_message;
+      return;
+    }
+    if (!message.value()->native_nonce || message.value()->native_nonce.value() != state.next_nonce) {
+      ++counters.head_gaps;
+      ++counters.head_nonce_mismatch;
       return;
     }
     if (std::binary_search(callback->callback->excluded_messages.begin(),
@@ -1401,83 +1672,486 @@ void ExtMessagePool::complete_external_messages(std::vector<ExtMessage::Hash> to
   }
 }
 
-void ExtMessagePool::finalize_native_external_messages(
-    std::vector<FinalizedNativeExternalMessage> messages) {
-  using Address = std::pair<WorkchainId, StdSmcAddress>;
-  std::map<Address, td::uint64> finalized_nonce;
-  std::set<std::pair<int, MessageId>> to_erase;
+void ExtMessagePool::track_locally_accepted_native_messages(
+    std::vector<TrackedNativeExternalMessage> messages) {
+  if (messages.empty()) {
+    return;
+  }
+  ++native_reconciliation_tracked_candidates_;
+  native_reconciliation_tracked_messages_ += messages.size();
   for (const auto &message : messages) {
-    Address address{message.workchain, message.source};
-    auto [it, inserted] = finalized_nonce.emplace(address, message.nonce);
+    NativeAddress address{message.workchain, message.source};
+    // A candidate learned from another node need not have a corresponding
+    // local reservation. There is nothing to purge in that case, and keeping a
+    // source-only hint forever would turn losing candidates into a scan leak.
+    auto account_it = native_accounts_.find(address);
+    if (account_it == native_accounts_.end() || account_it->second.messages.empty()) {
+      continue;
+    }
+    auto [it, inserted] = locally_accepted_native_nonces_.emplace(address, message.nonce);
     if (!inserted) {
       it->second = std::max(it->second, message.nonce);
     }
-    auto exact_it = ext_messages_hashes_.find(message.hash);
-    if (exact_it != ext_messages_hashes_.end()) {
-      to_erase.insert(exact_it->second);
+  }
+  // Do not rescan every pending source against an unchanged applied state for
+  // every locally accepted candidate.  At state arrival all then-pending
+  // reservations are registered below. A reservation inserted afterwards was
+  // admitted against an equally new or newer canonical watermark, so the next
+  // applied state is sufficient.
+}
+
+void ExtMessagePool::reconcile_native_external_messages(td::Ref<MasterchainState> state) {
+  if (state.is_null() || !state->get_block_id().is_masterchain()) {
+    ++native_reconciliation_failures_;
+    return;
+  }
+  const auto block_id = state->get_block_id();
+  if (applied_reconciliation_state_.not_null()) {
+    const auto current_id = applied_reconciliation_state_->get_block_id();
+    if (block_id.seqno() < current_id.seqno() ||
+        (block_id.seqno() == current_id.seqno() && block_id != current_id)) {
+      ++native_reconciliation_failures_;
+      LOG(WARNING) << "Ignoring non-monotonic applied masterchain state for native reconciliation: current="
+                   << current_id << " update=" << block_id;
+      return;
     }
   }
-
-  // Publish this monotonic watermark before touching pool indexes or
-  // reservations. Signature verification is asynchronous: a coroutine that
-  // fetched the account before finalization must observe this value when it
-  // resumes, even if cleanup removes the last NativeInfo entry.
-  for (const auto &[address, max_nonce] : finalized_nonce) {
-    auto &watermark = native_nonce_watermarks_[address];
-    watermark.observe_finalized_nonce(max_nonce);
-    CHECK(watermark.is_consumed(max_nonce));
+  auto fingerprint = native_reconciliation_state_fingerprint(state);
+  applied_reconciliation_state_ = state;
+  native_reconciliation_last_mc_seqno_ = block_id.seqno();
+  // Masterchain blocks often advance without changing any referenced basechain
+  // shard top. Once a complete walk of this exact topology succeeded, neither
+  // regrouping every source nor refetching an immutable state can discover new
+  // canonical account progress. New reservations are also safe to defer: they
+  // were admitted against this state or a newer one, so this old top cannot
+  // already contain them. Failed walks never publish the fingerprint.
+  if (should_skip_native_reconciliation_state(fingerprint)) {
+    return;
   }
+  // Correctness must not depend on a successful local BlockAccepter callback:
+  // a canonical block can be learned through shard-client sync, an observer,
+  // or an overlapping validator group. Reconcile every source for which this
+  // pool can actually have stale native reservations.
+  register_pending_native_reconciliation_targets();
+  ++native_reconciliation_generation_;
+  start_native_reconciliation();
+}
 
-  // A finalized nonce also makes a locally admitted re-signed variant
-  // obsolete even when this validator never held the winning hash. NativeInfo
-  // owns exactly one admitted hash per nonce, so walk only its finalized
-  // prefix. This avoids sources x per-address-backlog persistent-tree lookups.
-  for (const auto &[address, max_nonce] : finalized_nonce) {
-    auto account_it = native_accounts_.find(address);
-    if (account_it == native_accounts_.end()) {
+void ExtMessagePool::register_pending_native_reconciliation_targets() {
+  for (auto it = locally_accepted_native_nonces_.begin(); it != locally_accepted_native_nonces_.end();) {
+    auto account_it = native_accounts_.find(it->first);
+    if (account_it == native_accounts_.end() || account_it->second.messages.empty()) {
+      it = locally_accepted_native_nonces_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  for (const auto &[address, account] : native_accounts_) {
+    if (account.messages.empty()) {
       continue;
     }
-    for (auto it = account_it->second.messages.begin();
-         it != account_it->second.messages.end() && it->first <= max_nonce; ++it) {
-      auto pool_it = ext_messages_hashes_.find(it->second.hash);
-      if (pool_it != ext_messages_hashes_.end()) {
-        to_erase.insert(pool_it->second);
+    const auto max_pending_nonce = account.messages.rbegin()->first;
+    auto [it, inserted] = locally_accepted_native_nonces_.emplace(address, max_pending_nonce);
+    if (!inserted) {
+      it->second = std::max(it->second, max_pending_nonce);
+    }
+  }
+}
+
+void ExtMessagePool::prune_native_reconciliation_target_if_idle(const NativeAddress &address) {
+  auto account_it = native_accounts_.find(address);
+  if (account_it == native_accounts_.end() || account_it->second.messages.empty()) {
+    locally_accepted_native_nonces_.erase(address);
+  }
+}
+
+void ExtMessagePool::start_native_reconciliation() {
+  if (native_reconciliation_active_ || applied_reconciliation_state_.is_null() ||
+      locally_accepted_native_nonces_.empty()) {
+    return;
+  }
+  native_reconciliation_active_ = true;
+  run_native_reconciliation().start().detach();
+}
+
+td::actor::Task<> ExtMessagePool::run_native_reconciliation() {
+  while (applied_reconciliation_state_.not_null() && !locally_accepted_native_nonces_.empty()) {
+    const auto generation = native_reconciliation_generation_;
+    auto state = applied_reconciliation_state_;
+    std::vector<NativeAddress> sources;
+    sources.reserve(locally_accepted_native_nonces_.size());
+    for (const auto &[source, _] : locally_accepted_native_nonces_) {
+      sources.push_back(source);
+    }
+    ++native_reconciliation_runs_;
+    auto result = co_await reconcile_native_snapshot(std::move(state), std::move(sources)).wrap();
+    if (result.is_error()) {
+      ++native_reconciliation_failures_;
+      LOG(WARNING) << "Native applied-state reconciliation was incomplete: " << result.error();
+    }
+    if (generation == native_reconciliation_generation_) {
+      break;
+    }
+  }
+  native_reconciliation_active_ = false;
+  co_return {};
+}
+
+td::actor::Task<> ExtMessagePool::reconcile_native_snapshot(td::Ref<MasterchainState> state,
+                                                             std::vector<NativeAddress> sources) {
+  std::map<BlockIdExt, std::vector<NativeAddress>> shard_sources;
+  td::Status first_error;
+  for (const auto &address : sources) {
+    auto shard = state->get_shard_from_config(extract_addr_prefix(address.first, address.second).as_leaf_shard(),
+                                              false);
+    if (shard.is_null()) {
+      if (first_error.is_ok()) {
+        first_error = td::Status::Error(ErrorCode::notready,
+                                        "cannot locate tracked native source in applied shard configuration");
+      }
+      continue;
+    }
+    shard_sources[shard->top_block_id()].push_back(address);
+  }
+
+  std::set<NativeAddress> changed_sources;
+  for (const auto &[shard_block_id, addresses] : shard_sources) {
+    // Masterchain blocks commonly keep referencing the same shard top while
+    // that shard is busy. The referenced state is immutable, so rescanning
+    // every pending native source cannot discover new canonical progress and
+    // can starve the shard that would produce the next top. A source tracked
+    // after this top was scanned is also safe to defer: the old top cannot
+    // contain a message accepted after it. Failed/incomplete scans are never
+    // recorded and therefore retry on the next applied masterchain state.
+    if (!should_reconcile_native_shard_top(shard_block_id, addresses.size())) {
+      continue;
+    }
+    bool shard_complete = true;
+    ++native_reconciliation_state_fetches_;
+    auto state_result =
+        co_await td::actor::await_with_timeout(
+                     td::actor::ask(manager_, &ValidatorManager::get_block_state_for_litequery, shard_block_id),
+                     td::Timestamp::in(30.0))
+            .wrap();
+    if (state_result.is_error()) {
+      shard_complete = false;
+      if (first_error.is_ok()) {
+        first_error = state_result.move_as_error_prefix("cannot load applied shard state: ");
+      }
+      continue;
+    }
+    auto shard_state = state_result.move_as_ok();
+    if (shard_state->get_block_id() != shard_block_id) {
+      shard_complete = false;
+      if (first_error.is_ok()) {
+        first_error = td::Status::Error("applied shard-state lookup returned a different block");
+      }
+      continue;
+    }
+    native_reconciliation_last_shard_seqno_ =
+        std::max<td::uint64>(native_reconciliation_last_shard_seqno_, shard_state->get_seqno());
+    block::gen::ShardStateUnsplit::Record state_info;
+    if (!tlb::unpack_cell(shard_state->root_cell(), state_info)) {
+      shard_complete = false;
+      if (first_error.is_ok()) {
+        first_error = td::Status::Error("cannot unpack applied shard state for native reconciliation");
+      }
+      continue;
+    }
+    vm::AugmentedDictionary accounts{vm::load_cell_slice_ref(state_info.accounts), 256,
+                                     block::tlb::aug_ShardAccounts};
+    for (const auto &address : addresses) {
+      ++native_reconciliation_account_lookups_;
+      block::Account account;
+      auto shard_account = accounts.lookup(address.second);
+      if (!account.unpack(shard_account, state_info.gen_utime, false)) {
+        shard_complete = false;
+        if (first_error.is_ok()) {
+          first_error = td::Status::Error("cannot unpack tracked native account from applied shard state");
+        }
+        continue;
+      }
+      account.block_lt = state_info.gen_lt;
+      if (account.status != block::Account::acc_uninit || !account.is_native) {
+        shard_complete = false;
+        if (first_error.is_ok()) {
+          first_error = td::Status::Error("tracked native source is no longer a balance-only account");
+        }
+        continue;
+      }
+      auto balance = account.native_balance_uint64();
+      if (!balance) {
+        shard_complete = false;
+        if (first_error.is_ok()) {
+          first_error = td::Status::Error("tracked native source balance is not uint64 grams");
+        }
+        continue;
+      }
+      auto applied = apply_canonical_native_account_state(address, account.native_nonce, balance.value(),
+                                                          state_info.gen_utime, state_info.gen_lt);
+      if (applied.is_error()) {
+        shard_complete = false;
+        if (first_error.is_ok()) {
+          first_error = applied.move_as_error_prefix("cannot apply canonical native account state: ");
+        }
+        continue;
+      }
+      if (applied.ok()) {
+        changed_sources.insert(address);
+      }
+    }
+    if (shard_complete) {
+      record_successful_native_shard_reconciliation(shard_block_id);
+    }
+  }
+  if (!changed_sources.empty()) {
+    wake_native_callbacks(&changed_sources);
+  }
+  if (first_error.is_error()) {
+    co_return std::move(first_error);
+  }
+  record_successful_native_reconciliation_state(native_reconciliation_state_fingerprint(state));
+  co_return {};
+}
+
+bool ExtMessagePool::should_reconcile_native_shard_top(const BlockIdExt &shard_block_id,
+                                                        std::size_t source_count) {
+  auto it = native_reconciliation_successful_shard_tops_.find(shard_block_id.shard_full());
+  if (it == native_reconciliation_successful_shard_tops_.end() || it->second != shard_block_id) {
+    return true;
+  }
+  ++native_reconciliation_unchanged_top_skips_;
+  native_reconciliation_unchanged_source_skips_ += source_count;
+  return false;
+}
+
+void ExtMessagePool::record_successful_native_shard_reconciliation(const BlockIdExt &shard_block_id) {
+  native_reconciliation_successful_shard_tops_[shard_block_id.shard_full()] = shard_block_id;
+}
+
+ExtMessagePool::NativeShardTopFingerprint ExtMessagePool::native_reconciliation_state_fingerprint(
+    const td::Ref<MasterchainState> &state) const {
+  NativeShardTopFingerprint fingerprint;
+  if (state.is_null()) {
+    return fingerprint;
+  }
+  for (const auto &shard : state->get_shards()) {
+    auto top = shard->top_block_id();
+    if (top.shard_full().workchain == basechainId) {
+      fingerprint.emplace(top.shard_full(), std::move(top));
+    }
+  }
+  return fingerprint;
+}
+
+bool ExtMessagePool::should_skip_native_reconciliation_state(const NativeShardTopFingerprint &fingerprint) {
+  if (!native_reconciliation_successful_state_fingerprint_ ||
+      native_reconciliation_successful_state_fingerprint_.value() != fingerprint) {
+    return false;
+  }
+  ++native_reconciliation_unchanged_state_skips_;
+  return true;
+}
+
+void ExtMessagePool::record_successful_native_reconciliation_state(NativeShardTopFingerprint fingerprint) {
+  native_reconciliation_successful_state_fingerprint_ = std::move(fingerprint);
+}
+
+td::uint64 ExtMessagePool::erase_processed_native_messages(NativeMessageProcessResult processed) {
+  if (processed.expired_suffix_pruned != 0) {
+    ++native_expiry_suffix_events_;
+    native_expiry_suffix_pruned_ += processed.expired_suffix_pruned;
+  }
+  td::uint64 erased = 0;
+  for (const auto &hash : processed.obsolete_hashes) {
+    auto pool_it = ext_messages_hashes_.find(hash);
+    if (pool_it != ext_messages_hashes_.end() && erase_message(pool_it->second.first, pool_it->second.second)) {
+      ++erased;
+    }
+  }
+  return erased;
+}
+
+td::uint64 ExtMessagePool::prune_expired_native_suffix(const NativeAddress &address, td::uint64 from_nonce,
+                                                       td::Slice reason) {
+  std::vector<std::pair<td::uint64, ExtMessage::Hash>> suffix;
+  auto account = native_accounts_.find(address);
+  if (account == native_accounts_.end()) {
+    return 0;
+  }
+  for (auto it = account->second.messages.lower_bound(from_nonce); it != account->second.messages.end(); ++it) {
+    suffix.emplace_back(it->first, it->second.hash);
+  }
+
+  td::uint64 pruned = 0;
+  for (const auto &[nonce, hash] : suffix) {
+    account = native_accounts_.find(address);
+    if (account == native_accounts_.end()) {
+      break;
+    }
+    auto reservation = account->second.messages.find(nonce);
+    if (reservation == account->second.messages.end() || reservation->second.hash != hash) {
+      continue;
+    }
+    if (reservation->second.allow_broadcast_promise) {
+      reservation->second.allow_broadcast_promise.set_error(td::Status::Error(reason));
+    }
+    reservation->second.insertion_failed(reason);
+
+    bool removed = false;
+    auto pool_it = ext_messages_hashes_.find(hash);
+    if (pool_it != ext_messages_hashes_.end()) {
+      removed = erase_message(pool_it->second.first, pool_it->second.second, false);
+    }
+    if (!removed) {
+      account = native_accounts_.find(address);
+      if (account != native_accounts_.end()) {
+        reservation = account->second.messages.find(nonce);
+        if (reservation != account->second.messages.end() && reservation->second.hash == hash) {
+          account->second.messages.erase(reservation);
+          if (account->second.messages.empty()) {
+            native_accounts_.erase(account);
+          }
+          prune_native_reconciliation_target_if_idle(address);
+          removed = true;
+        }
+      }
+    }
+    if (removed) {
+      ++pruned;
+    }
+  }
+  if (pruned != 0) {
+    ++native_expiry_suffix_events_;
+    native_expiry_suffix_pruned_ += pruned;
+    std::set<NativeAddress> changed_source{address};
+    wake_native_callbacks(&changed_source);
+  }
+  return pruned;
+}
+
+td::Result<bool> ExtMessagePool::apply_canonical_native_account_state(const NativeAddress &address,
+                                                                       td::uint64 native_nonce,
+                                                                       td::uint64 balance, UnixTime utime,
+                                                                       LogicalTime lt) {
+  auto &watermark = native_nonce_watermarks_[address];
+  const auto previous_nonce = watermark.observed_next_nonce;
+  const auto previous_revision = watermark.revision;
+  if (!watermark.observe_account_state(native_nonce, balance, lt)) {
+    return td::Status::Error(ErrorCode::notready,
+                             "native account state predates the latest observed canonical state");
+  }
+  const auto canonical_nonce = watermark.observed_next_nonce;
+  const auto canonical_balance = watermark.observed_balance.value();
+
+  NativeMessageProcessResult processed;
+  auto account_it = native_accounts_.find(address);
+  if (account_it != native_accounts_.end()) {
+    processed = account_it->second.process_messages(canonical_nonce, utime);
+  }
+  auto purged = erase_processed_native_messages(std::move(processed));
+
+  // A canonical balance update changes the revision used to protect admission
+  // across signature verification. Existing pending messages are still valid
+  // when their ordered reservation prefix fits the new balance; rebase that
+  // prefix atomically. A stale in-flight (uncommitted) reservation cannot be
+  // blessed without repeating verification, so it is also a tail boundary.
+  // Once either boundary is reached, erase it and every later reservation.
+  // Keeping a suffix behind the rejected nonce would create a scheduler head
+  // hole and can permanently stall the source.
+  td::uint64 rebased = 0;
+  enum class TailReason { none, unaffordable, stale_uncommitted };
+  TailReason tail_reason = TailReason::none;
+  std::vector<std::pair<td::uint64, ExtMessage::Hash>> pruned_tail;
+  account_it = native_accounts_.find(address);
+  if (account_it != native_accounts_.end()) {
+    td::uint64 prefix_amount = 0;
+    for (auto &[nonce, message] : account_it->second.messages) {
+      const auto required = message.amount + message.fee;
+      if (tail_reason == TailReason::none && !message.committed &&
+          message.account_revision != watermark.revision) {
+        tail_reason = TailReason::stale_uncommitted;
+      }
+      if (tail_reason == TailReason::none &&
+          (required < message.amount || required > canonical_balance - prefix_amount)) {
+        tail_reason = TailReason::unaffordable;
+      }
+      if (tail_reason != TailReason::none) {
+        pruned_tail.emplace_back(nonce, message.hash);
+        continue;
+      }
+      prefix_amount += required;
+      if (message.committed && message.account_revision != watermark.revision) {
+        message.account_revision = watermark.revision;
+        ++rebased;
       }
     }
   }
-  for (const auto &[priority, id] : to_erase) {
-    erase_message(priority, id);
-  }
 
-  // Also fail reservations whose signature check completed but whose outer
-  // insertion had not yet reached the persistent mempool indexes.
-  for (const auto &[address, max_nonce] : finalized_nonce) {
-    auto account_it = native_accounts_.find(address);
-    if (account_it == native_accounts_.end()) {
+  td::uint64 tail_pruned = 0;
+  const td::Slice tail_reason_text =
+      tail_reason == TailReason::stale_uncommitted
+          ? td::Slice("native transfer verification became stale after canonical account update")
+          : td::Slice("native transfer became unaffordable after canonical balance update");
+  for (const auto &[nonce, hash] : pruned_tail) {
+    auto current_account = native_accounts_.find(address);
+    if (current_account == native_accounts_.end()) {
       continue;
     }
-    for (auto it = account_it->second.messages.begin(); it != account_it->second.messages.end() &&
-                                                        it->first <= max_nonce;) {
-      if (it->second.allow_broadcast_promise) {
-        it->second.allow_broadcast_promise.set_error(
-            td::Status::Error("native nonce was already consumed by a finalized block"));
+    auto reservation = current_account->second.messages.find(nonce);
+    if (reservation == current_account->second.messages.end() || reservation->second.hash != hash) {
+      continue;
+    }
+    if (reservation->second.allow_broadcast_promise) {
+      reservation->second.allow_broadcast_promise.set_error(td::Status::Error(tail_reason_text));
+    }
+    reservation->second.insertion_failed(tail_reason_text);
+
+    bool removed = false;
+    auto pool_it = ext_messages_hashes_.find(hash);
+    if (pool_it != ext_messages_hashes_.end()) {
+      removed = erase_message(pool_it->second.first, pool_it->second.second);
+    }
+    if (!removed) {
+      current_account = native_accounts_.find(address);
+      if (current_account != native_accounts_.end()) {
+        reservation = current_account->second.messages.find(nonce);
+        if (reservation != current_account->second.messages.end() && reservation->second.hash == hash) {
+          current_account->second.messages.erase(reservation);
+          if (current_account->second.messages.empty()) {
+            native_accounts_.erase(current_account);
+          }
+          prune_native_reconciliation_target_if_idle(address);
+          removed = true;
+        }
       }
-      it->second.insertion_failed("native nonce was already consumed by a finalized block");
-      it = account_it->second.messages.erase(it);
     }
-    if (account_it->second.messages.empty()) {
-      native_accounts_.erase(account_it);
+    if (removed) {
+      ++tail_pruned;
     }
   }
-  LOG(INFO) << "finalized native external cleanup: candidates=" << messages.size()
-            << " sources=" << finalized_nonce.size() << " pool_entries=" << to_erase.size();
-  if (!finalized_nonce.empty()) {
-    std::set<NativeAddress> finalized_sources;
-    for (const auto &[address, _] : finalized_nonce) {
-      finalized_sources.insert(address);
-    }
-    wake_native_callbacks(&finalized_sources);
+
+  account_it = native_accounts_.find(address);
+  if (account_it != native_accounts_.end() && account_it->second.messages.empty()) {
+    native_accounts_.erase(account_it);
   }
+
+  auto tracked_it = locally_accepted_native_nonces_.find(address);
+  if (tracked_it != locally_accepted_native_nonces_.end() && canonical_nonce > tracked_it->second) {
+    locally_accepted_native_nonces_.erase(tracked_it);
+  }
+  prune_native_reconciliation_target_if_idle(address);
+  native_reconciliation_messages_purged_ += purged;
+  native_reconciliation_rebased_reservations_ += rebased;
+  if (tail_reason == TailReason::unaffordable) {
+    native_reconciliation_unaffordable_tail_pruned_ += tail_pruned;
+  } else if (tail_reason == TailReason::stale_uncommitted) {
+    native_reconciliation_stale_uncommitted_tail_pruned_ += tail_pruned;
+  }
+  if (canonical_nonce > previous_nonce) {
+    ++native_reconciliation_sources_advanced_;
+  }
+  return watermark.revision != previous_revision || purged != 0 || rebased != 0 || tail_pruned != 0;
 }
 
 void ExtMessagePool::erase_external_messages(std::vector<ExtMessage::Hash> to_delete) {
@@ -1495,7 +2169,7 @@ void ExtMessagePool::erase_external_messages(std::vector<ExtMessage::Hash> to_de
   }
 }
 
-bool ExtMessagePool::erase_message(int priority, const MessageId &id) {
+bool ExtMessagePool::erase_message(int priority, const MessageId &id, bool prune_expired_suffix) {
   auto it_priority = ext_msgs_.find(priority);
   if (it_priority == ext_msgs_.end()) {
     return false;
@@ -1509,13 +2183,26 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id) {
   auto address = msg_opt.value()->address();
   auto hash_norm = msg_opt.value()->hash_norm;
   auto native_nonce = msg_opt.value()->native_nonce;
+  if (prune_expired_suffix && native_nonce && msg_opt.value()->expired()) {
+    auto native_it = native_accounts_.find(address);
+    if (native_it != native_accounts_.end()) {
+      auto reservation = native_it->second.messages.find(native_nonce.value());
+      if (reservation != native_it->second.messages.end() &&
+          reservation->second.hash == msg_opt.value()->message->hash()) {
+        return prune_expired_native_suffix(
+                   address, native_nonce.value(),
+                   "native transfer retention expired; removed this nonce and its pending suffix") != 0;
+      }
+    }
+  }
   if (native_nonce) {
     msgs.native_messages_ =
         msgs.native_messages_.erase(NativeMessageId{native_nonce.value(), id.dst, id.hash});
     auto native_it = native_accounts_.find(address);
     if (native_it != native_accounts_.end()) {
       auto reservation_it = native_it->second.messages.find(native_nonce.value());
-      if (reservation_it != native_it->second.messages.end()) {
+      if (reservation_it != native_it->second.messages.end() &&
+          reservation_it->second.hash == msg_opt.value()->message->hash()) {
         reservation_it->second.insertion_failed("native message was removed from the mempool");
         native_it->second.messages.erase(reservation_it);
       }
@@ -1523,6 +2210,7 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id) {
         native_accounts_.erase(native_it);
       }
     }
+    prune_native_reconciliation_target_if_idle(address);
   } else {
     msgs.generic_messages_ = msgs.generic_messages_.erase(id);
   }
@@ -1566,6 +2254,67 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
   for (const auto &[_, info] : native_accounts_) {
     native_pending += info.messages.size();
   }
+  td::uint64 head_ready_sources = 0;
+  td::uint64 head_missing_watermark_sources = 0;
+  td::uint64 head_missing_nonce_sources = 0;
+  td::uint64 head_uncommitted_sources = 0;
+  td::uint64 head_missing_hash_sources = 0;
+  td::uint64 head_missing_priority_sources = 0;
+  td::uint64 head_missing_message_sources = 0;
+  td::uint64 head_nonce_mismatch_sources = 0;
+  td::uint64 head_stale_revision_sources = 0;
+  td::uint64 max_nonce_gap = 0;
+  for (const auto &[address, info] : native_accounts_) {
+    if (info.messages.empty()) {
+      continue;
+    }
+    auto watermark = native_nonce_watermarks_.find(address);
+    if (watermark == native_nonce_watermarks_.end()) {
+      ++head_missing_watermark_sources;
+      continue;
+    }
+    auto first_nonce = watermark->second.first_unconsumed_nonce();
+    if (!first_nonce) {
+      ++head_missing_nonce_sources;
+      continue;
+    }
+    auto reservation = info.messages.lower_bound(first_nonce.value());
+    if (reservation == info.messages.end() || reservation->first != first_nonce.value()) {
+      ++head_missing_nonce_sources;
+      if (reservation != info.messages.end() && reservation->first > first_nonce.value()) {
+        max_nonce_gap = std::max(max_nonce_gap, reservation->first - first_nonce.value());
+      }
+      continue;
+    }
+    if (!reservation->second.committed) {
+      ++head_uncommitted_sources;
+      continue;
+    }
+    auto pool_entry = ext_messages_hashes_.find(reservation->second.hash);
+    if (pool_entry == ext_messages_hashes_.end()) {
+      ++head_missing_hash_sources;
+      continue;
+    }
+    auto priority = ext_msgs_.find(pool_entry->second.first);
+    if (priority == ext_msgs_.end()) {
+      ++head_missing_priority_sources;
+      continue;
+    }
+    auto message = priority->second.ext_messages_.find(pool_entry->second.second);
+    if (!message) {
+      ++head_missing_message_sources;
+      continue;
+    }
+    if (!message.value()->native_nonce || message.value()->native_nonce.value() != first_nonce.value()) {
+      ++head_nonce_mismatch_sources;
+      continue;
+    }
+    if (reservation->second.account_revision != watermark->second.revision) {
+      ++head_stale_revision_sources;
+      continue;
+    }
+    ++head_ready_sources;
+  }
   vec.emplace_back("total.ext_msg_mempool", PSTRING() << "messages:" << mempool_total << " active:" << mempool_active
                                                       << " native:" << mempool_native
                                                       << " priorities:" << ext_msgs_.size());
@@ -1573,15 +2322,78 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                                                              << " messages:" << native_pending
                                                              << " nonce_watermarks:"
                                                              << native_nonce_watermarks_.size());
+  vec.emplace_back(
+      "total.ext_msg_native_head_state",
+      PSTRING() << "ready_sources:" << head_ready_sources
+                << " missing_watermark_sources:" << head_missing_watermark_sources
+                << " missing_nonce_sources:" << head_missing_nonce_sources
+                << " uncommitted_sources:" << head_uncommitted_sources
+                << " missing_hash_sources:" << head_missing_hash_sources
+                << " missing_priority_sources:" << head_missing_priority_sources
+                << " missing_message_sources:" << head_missing_message_sources
+                << " nonce_mismatch_sources:" << head_nonce_mismatch_sources
+                << " stale_revision_sources:" << head_stale_revision_sources
+                << " max_nonce_gap:" << max_nonce_gap);
   vec.emplace_back("total.ext_msg_native_config", PSTRING() << "collator_queue_limit:"
                                                             << native_collator_queue_limit_ << " max_retention_s:"
                                                             << native_mempool_max_ttl_);
-  vec.emplace_back("total.ext_msg_batch_admission",
-                   PSTRING() << "batches:" << native_batch_count_ << " messages:" << native_batch_messages_
-                             << " unique:" << native_batch_unique_messages_
-                             << " shard_fetches:" << native_batch_shard_fetches_
-                             << " account_lookups:" << native_batch_account_lookups_
-                             << " accepted:" << native_batch_accepted_ << " rejected:" << native_batch_rejected_);
+  vec.emplace_back(
+      "total.ext_msg_batch_admission",
+      PSTRING() << "batches:" << native_batch_count_ << " messages:" << native_batch_messages_
+                << " unique:" << native_batch_unique_messages_
+                << " shard_state_requests:" << native_batch_shard_state_requests_
+                << " shard_manager_waits:" << native_batch_shard_manager_waits_
+                << " shard_fetches:" << native_batch_shard_manager_waits_
+                << " shard_cache_hits:" << native_batch_shard_cache_hits_
+                << " shard_cache_fills:" << native_batch_shard_cache_fills_
+                << " shard_cache_fill_races:" << native_batch_shard_cache_fill_races_
+                << " shard_cache_fill_conflicts:" << native_batch_shard_cache_fill_conflicts_
+                << " shard_cache_generation_resets:" << native_batch_shard_cache_generation_resets_
+                << " shard_cache_stale_generation_fill_skips:"
+                << native_batch_shard_cache_stale_generation_fill_skips_
+                << " shard_cache_wrong_id:" << native_batch_shard_cache_wrong_id_
+                << " shard_cache_invalid_header:" << native_batch_shard_cache_invalid_header_
+                << " shard_miss_errors:" << native_batch_shard_miss_errors_
+                << " shard_fetch_errors:" << native_batch_shard_miss_errors_
+                << " shard_manager_wait_errors:" << native_batch_shard_manager_wait_errors_
+                << " shard_manager_wait_timeouts:" << native_batch_shard_manager_wait_timeouts_
+                << " shard_manager_wait_notready:" << native_batch_shard_manager_wait_notready_
+                << " shard_manager_wait_other_errors:" << native_batch_shard_manager_wait_other_errors_
+                << " shard_manager_wait_late_results:" << native_batch_shard_manager_wait_late_results_
+                << " shard_cache_entries:" << native_admission_shard_cache_.shard_views.size()
+                << " shard_cache_peak_entries:" << native_batch_shard_cache_peak_entries_
+                << " account_lookups:" << native_batch_account_lookups_ << " accepted:" << native_batch_accepted_
+                << " rejected:" << native_batch_rejected_ << " mc_state_pins:" << native_batch_mc_state_pins_
+                << " pinned_mc_seqno:" << native_batch_last_pinned_mc_seqno_
+                << " pinned_shard_seqno:" << native_batch_last_pinned_shard_seqno_
+                << " max_mc_shard_utime_lag_s:" << native_batch_max_mc_shard_utime_lag_s_
+                << " watermark_lag_rejections:" << native_batch_watermark_lag_rejections_
+                << " max_watermark_nonce_lag:" << native_batch_max_watermark_nonce_lag_
+                << " ignored_mc_state_updates:" << native_batch_ignored_mc_state_updates_);
+  vec.emplace_back(
+      "total.ext_msg_native_reconciliation",
+      PSTRING() << "tracked_candidates:" << native_reconciliation_tracked_candidates_
+                << " tracked_messages:" << native_reconciliation_tracked_messages_
+                << " pending_sources:" << locally_accepted_native_nonces_.size()
+                << " runs:" << native_reconciliation_runs_
+                << " state_fetches:" << native_reconciliation_state_fetches_
+                << " account_lookups:" << native_reconciliation_account_lookups_
+                << " sources_advanced:" << native_reconciliation_sources_advanced_
+                << " messages_purged:" << native_reconciliation_messages_purged_
+                << " failures:" << native_reconciliation_failures_
+                << " unchanged_state_skips:" << native_reconciliation_unchanged_state_skips_
+                << " unchanged_top_skips:" << native_reconciliation_unchanged_top_skips_
+                << " unchanged_source_skips:" << native_reconciliation_unchanged_source_skips_
+                << " rebased_reservations:" << native_reconciliation_rebased_reservations_
+                << " unaffordable_tail_pruned:" << native_reconciliation_unaffordable_tail_pruned_
+                << " stale_uncommitted_tail_pruned:"
+                << native_reconciliation_stale_uncommitted_tail_pruned_
+                << " expiry_suffix_events:" << native_expiry_suffix_events_
+                << " expiry_suffix_pruned:" << native_expiry_suffix_pruned_
+                << " exact_retry_preserved_stale_revision:"
+                << native_exact_retry_preserved_stale_revision_
+                << " last_mc_seqno:" << native_reconciliation_last_mc_seqno_
+                << " last_shard_seqno:" << native_reconciliation_last_shard_seqno_);
   vec.emplace_back(
       "total.ext_msg_native_scheduler",
       PSTRING() << "installs:" << native_queue_counters_.installs
@@ -1591,7 +2403,16 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                 << " excluded:" << native_queue_counters_.excluded << " expired:" << native_queue_counters_.expired
                 << " delivered_skips:" << native_queue_counters_.already_delivered
                 << " ready_sources:" << native_queue_counters_.ready_sources
-                << " head_gaps:" << native_queue_counters_.head_gaps << " runs:" << native_queue_counters_.runs
+                << " head_gaps:" << native_queue_counters_.head_gaps
+                << " head_missing_watermark:" << native_queue_counters_.head_missing_watermark
+                << " head_missing_nonce:" << native_queue_counters_.head_missing_nonce
+                << " head_uncommitted:" << native_queue_counters_.head_uncommitted
+                << " head_missing_hash_index:" << native_queue_counters_.head_missing_hash_index
+                << " head_missing_priority:" << native_queue_counters_.head_missing_priority
+                << " head_missing_message:" << native_queue_counters_.head_missing_message
+                << " head_nonce_mismatch:" << native_queue_counters_.head_nonce_mismatch
+                << " speculative_exhausted:" << native_queue_counters_.speculative_exhausted
+                << " runs:" << native_queue_counters_.runs
                 << " run_messages:" << native_queue_counters_.run_messages
                 << " max_run_size:" << native_queue_counters_.max_run_size
                 << " delayed:" << native_queue_counters_.delayed
@@ -1818,7 +2639,15 @@ td::Status ExtMessagePool::commit_checked_message(td::Ref<ExtMessage> message,
       return td::Status::Error(ErrorCode::notready,
                                "native account changed before mempool commit; retry admission");
     }
-    CHECK(native_it->second.commit_message(native_transfer->nonce));
+    NativeMessageProcessResult processed;
+    CHECK(native_it->second.commit_message(native_transfer->nonce, processed));
+    bool committed_message_expired =
+        std::find(processed.obsolete_hashes.begin(), processed.obsolete_hashes.end(), message->hash()) !=
+        processed.obsolete_hashes.end();
+    erase_processed_native_messages(std::move(processed));
+    if (committed_message_expired) {
+      return td::Status::Error("native message expired before mempool commit");
+    }
     return td::Status::OK();
   }
   if (msg_seqno) {
@@ -1858,6 +2687,7 @@ void ExtMessagePool::rollback_checked_message(td::Ref<ExtMessage> message,
         native_accounts_.erase(native_it);
       }
     }
+    prune_native_reconciliation_target_if_idle(address);
     return;
   }
   if (msg_seqno) {
@@ -1926,15 +2756,15 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     td::optional<td::uint64> initial_native_nonce;
     td::uint64 account_revision = 0;
     {
-      auto &initial_watermark = native_nonce_watermarks_[native_address];
-      auto previous_revision = initial_watermark.revision;
-      if (!initial_watermark.observe_account_state(acc.native_nonce, available_balance.value(), lt)) {
-        co_return td::Status::Error(ErrorCode::notready,
-                                    "canonical native account state has not caught up with finalized balance");
+      auto applied = apply_canonical_native_account_state(native_address, acc.native_nonce,
+                                                           available_balance.value(), utime, lt);
+      if (applied.is_error()) {
+        co_return applied.move_as_error();
       }
+      const auto &initial_watermark = native_nonce_watermarks_.at(native_address);
       initial_native_nonce = initial_watermark.first_unconsumed_nonce();
       account_revision = initial_watermark.revision;
-      if (account_revision != previous_revision) {
+      if (applied.ok()) {
         std::set<NativeAddress> changed_source{native_address};
         wake_native_callbacks(&changed_source);
       }
@@ -2019,17 +2849,13 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
   }
   auto existing_native_info = native_accounts_.find(native_address);
   if (existing_native_info != native_accounts_.end()) {
-    auto obsolete_hashes = existing_native_info->second.process_messages(current_native_nonce.value(), utime);
-    for (const auto &hash : obsolete_hashes) {
-      auto pool_it = ext_messages_hashes_.find(hash);
-      if (pool_it != ext_messages_hashes_.end()) {
-        erase_message(pool_it->second.first, pool_it->second.second);
-      }
-    }
+    auto processed = existing_native_info->second.process_messages(current_native_nonce.value(), utime);
+    erase_processed_native_messages(std::move(processed));
     auto cleanup_it = native_accounts_.find(native_address);
     if (cleanup_it != native_accounts_.end() && cleanup_it->second.messages.empty()) {
       native_accounts_.erase(cleanup_it);
     }
+    prune_native_reconciliation_target_if_idle(native_address);
   }
 
   auto [wait_allow_broadcast, allow_broadcast_promise] = td::actor::StartedTask<>::make_bridge();
@@ -2064,12 +2890,14 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
       if (reserved_amount + required_amount < reserved_amount) {
         if (native_info.messages.empty()) {
           native_accounts_.erase(native_address);
+          prune_native_reconciliation_target_if_idle(native_address);
         }
         co_return td::Status::Error("native transfer pending amount overflow");
       }
       if (reserved_amount + required_amount > available_balance) {
         if (native_info.messages.empty()) {
           native_accounts_.erase(native_address);
+          prune_native_reconciliation_target_if_idle(native_address);
         }
         co_return td::Status::Error("native transfer has insufficient source balance");
       }
@@ -2128,6 +2956,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
         if (account_it->second.messages.empty()) {
           native_accounts_.erase(account_it);
         }
+        prune_native_reconciliation_target_if_idle(native_address);
       }
       co_return check_result;
     }
@@ -2232,17 +3061,18 @@ bool ExtMessagePool::WalletInfo::commit_message(td::uint32 msg_seqno) {
   return true;
 }
 
-std::vector<ExtMessage::Hash> ExtMessagePool::NativeInfo::process_messages(td::uint64 native_nonce,
-                                                                           UnixTime utime) {
-  std::vector<ExtMessage::Hash> obsolete_hashes;
+ExtMessagePool::NativeMessageProcessResult ExtMessagePool::NativeInfo::process_messages(td::uint64 native_nonce,
+                                                                                         UnixTime utime) {
+  NativeMessageProcessResult result;
   observed_nonce = std::max(observed_nonce, native_nonce);
   observed_utime = std::max(observed_utime, utime);
   native_nonce = observed_nonce;
   utime = observed_utime;
+  bool expired_suffix = false;
   for (auto it = messages.begin(); it != messages.end();) {
     auto &[nonce, message] = *it;
     if (nonce < native_nonce) {
-      obsolete_hashes.push_back(message.hash);
+      result.obsolete_hashes.push_back(message.hash);
       if (message.allow_broadcast_promise) {
         message.allow_broadcast_promise.set_error(
             td::Status::Error(PSTRING() << "Too old native nonce: msg_nonce=" << nonce
@@ -2252,12 +3082,17 @@ std::vector<ExtMessage::Hash> ExtMessagePool::NativeInfo::process_messages(td::u
       it = messages.erase(it);
       continue;
     }
-    if (message.valid_until <= utime) {
-      obsolete_hashes.push_back(message.hash);
+    if (!expired_suffix && message.valid_until <= utime) {
+      expired_suffix = true;
+    }
+    if (expired_suffix) {
+      result.obsolete_hashes.push_back(message.hash);
+      ++result.expired_suffix_pruned;
       if (message.allow_broadcast_promise) {
-        message.allow_broadcast_promise.set_error(td::Status::Error("native transfer valid_until is in the past"));
+        message.allow_broadcast_promise.set_error(
+            td::Status::Error("native transfer suffix removed after a nonce expired"));
       }
-      message.insertion_failed("native transfer expired before insertion");
+      message.insertion_failed("native transfer suffix removed after a nonce expired");
       it = messages.erase(it);
       continue;
     }
@@ -2275,17 +3110,21 @@ std::vector<ExtMessage::Hash> ExtMessagePool::NativeInfo::process_messages(td::u
       break;
     }
   }
-  return obsolete_hashes;
+  return result;
 }
 
-bool ExtMessagePool::NativeInfo::commit_message(td::uint64 native_nonce) {
+bool ExtMessagePool::NativeInfo::commit_message(td::uint64 native_nonce,
+                                                NativeMessageProcessResult &processed) {
   auto it = messages.find(native_nonce);
   if (it == messages.end()) {
     return false;
   }
   it->second.committed = true;
-  it->second.insertion_succeeded();
-  process_messages(observed_nonce, observed_utime);
+  processed = process_messages(observed_nonce, observed_utime);
+  it = messages.find(native_nonce);
+  if (it != messages.end()) {
+    it->second.insertion_succeeded();
+  }
   return true;
 }
 

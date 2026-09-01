@@ -26,3 +26,6 @@ add_test(NAME consensus-max-tps-shardchain-idle
   COMMAND test-consensus --n-nodes 1 --duration 4.6 --target-rate-ms 1000 --idle-after-first)
 set_tests_properties(consensus-max-tps-shardchain-idle PROPERTIES
   ENVIRONMENT "TON_SIMPLEX_MAX_TPS=1;TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=2000;TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS=250")
+
+add_test(NAME consensus-cancelled-accept-skips-external-tracking
+  COMMAND test-consensus --n-nodes 1 --duration 0.75 --target-rate-ms 100 --cancel-block-accepts)

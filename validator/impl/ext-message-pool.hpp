@@ -60,10 +60,36 @@ class ExtMessagePool : public td::actor::Actor {
   void install_collator_queue(ShardIdFull shard, std::unique_ptr<ExtMsgCallback> callback);
   void cleanup_external_messages(ShardIdFull shard);
   void complete_external_messages(std::vector<ExtMessage::Hash> to_delay, std::vector<ExtMessage::Hash> to_delete);
-  void finalize_native_external_messages(std::vector<FinalizedNativeExternalMessage> messages);
+  // Local consensus acceptance is only a hint that these sources may advance.
+  // It never changes admission watermarks or removes pool entries.
+  void track_locally_accepted_native_messages(std::vector<TrackedNativeExternalMessage> messages);
+  // The shard client calls this with a masterchain state only after every
+  // referenced shard top has been applied. Reconciliation reads those exact
+  // shard account states and is the sole authority for native prefix purges.
+  void reconcile_native_external_messages(td::Ref<MasterchainState> state);
   void erase_external_messages(std::vector<ExtMessage::Hash> to_delete);
 
   void update_last_masterchain_state(td::Ref<MasterchainState> state) {
+    if (state.is_null()) {
+      return;
+    }
+    auto block_id = state->get_block_id();
+    if (!block_id.is_masterchain()) {
+      ++native_batch_ignored_mc_state_updates_;
+      return;
+    }
+    if (last_masterchain_state_.not_null()) {
+      auto current_id = last_masterchain_state_->get_block_id();
+      if (block_id.seqno() < current_id.seqno() || (block_id.seqno() == current_id.seqno() && block_id != current_id)) {
+        ++native_batch_ignored_mc_state_updates_;
+        return;
+      }
+      if (block_id != current_id) {
+        reset_native_admission_cache_generation(block_id);
+      }
+    } else {
+      reset_native_admission_cache_generation(block_id);
+    }
     last_masterchain_state_ = std::move(state);
   }
   void update_options(td::Ref<ValidatorManagerOptions> opts) {
@@ -217,12 +243,62 @@ class ExtMessagePool : public td::actor::Actor {
   } checked_ext_msg_counter_;
   td::uint64 total_check_ext_messages_ok_{0}, total_check_ext_messages_error_{0};
   td::uint64 native_batch_count_{0}, native_batch_messages_{0}, native_batch_unique_messages_{0};
-  td::uint64 native_batch_account_lookups_{0}, native_batch_shard_fetches_{0};
+  td::uint64 native_batch_account_lookups_{0};
+  // Counts ExtMessagePool cache misses handed to ValidatorManager. The
+  // manager may satisfy one from its own exact-ID cache or join an existing
+  // exact-ID waiter, so this is deliberately not a physical DB/network count.
+  td::uint64 native_batch_shard_manager_waits_{0};
+  td::uint64 native_batch_shard_state_requests_{0}, native_batch_shard_cache_hits_{0};
+  td::uint64 native_batch_shard_cache_fills_{0}, native_batch_shard_cache_fill_races_{0};
+  td::uint64 native_batch_shard_cache_fill_conflicts_{0}, native_batch_shard_cache_generation_resets_{0};
+  td::uint64 native_batch_shard_cache_stale_generation_fill_skips_{0};
+  td::uint64 native_batch_shard_cache_wrong_id_{0}, native_batch_shard_cache_invalid_header_{0};
+  td::uint64 native_batch_shard_miss_errors_{0}, native_batch_shard_cache_peak_entries_{0};
+  td::uint64 native_batch_shard_manager_wait_errors_{0};
+  td::uint64 native_batch_shard_manager_wait_timeouts_{0}, native_batch_shard_manager_wait_notready_{0};
+  td::uint64 native_batch_shard_manager_wait_other_errors_{0};
+  td::uint64 native_batch_shard_manager_wait_late_results_{0};
   td::uint64 native_batch_accepted_{0}, native_batch_rejected_{0};
+  td::uint64 native_batch_mc_state_pins_{0}, native_batch_ignored_mc_state_updates_{0};
+  td::uint64 native_batch_last_pinned_mc_seqno_{0}, native_batch_last_pinned_shard_seqno_{0};
+  td::uint64 native_batch_max_mc_shard_utime_lag_s_{0};
+  td::uint64 native_batch_watermark_lag_rejections_{0}, native_batch_max_watermark_nonce_lag_{0};
+  td::uint64 native_reconciliation_tracked_candidates_{0}, native_reconciliation_tracked_messages_{0};
+  td::uint64 native_reconciliation_runs_{0}, native_reconciliation_state_fetches_{0};
+  td::uint64 native_reconciliation_account_lookups_{0}, native_reconciliation_sources_advanced_{0};
+  td::uint64 native_reconciliation_messages_purged_{0}, native_reconciliation_failures_{0};
+  td::uint64 native_reconciliation_unchanged_top_skips_{0};
+  td::uint64 native_reconciliation_unchanged_source_skips_{0};
+  td::uint64 native_reconciliation_unchanged_state_skips_{0};
+  td::uint64 native_reconciliation_rebased_reservations_{0};
+  td::uint64 native_reconciliation_unaffordable_tail_pruned_{0};
+  td::uint64 native_reconciliation_stale_uncommitted_tail_pruned_{0};
+  td::uint64 native_exact_retry_preserved_stale_revision_{0};
+  td::uint64 native_expiry_suffix_events_{0}, native_expiry_suffix_pruned_{0};
+  td::uint64 native_reconciliation_last_mc_seqno_{0}, native_reconciliation_last_shard_seqno_{0};
+  std::map<ShardIdFull, BlockIdExt> native_reconciliation_successful_shard_tops_;
+  using NativeShardTopFingerprint = std::map<ShardIdFull, BlockIdExt>;
+  td::optional<NativeShardTopFingerprint> native_reconciliation_successful_state_fingerprint_;
   td::Timestamp native_batch_log_at_ = td::Timestamp::now();
   td::uint64 applied_ext_msgs_delete_requests_{0}, applied_ext_msgs_deleted_{0};
   std::size_t native_collator_queue_limit_{32768};
   td::uint32 native_mempool_max_ttl_{3600};
+
+  // Admission only consumes this immutable projection of an exact shard state.
+  // The full BlockIdExt is the lookup key, while the state root detects an
+  // impossible conflicting fill for the same block identity.
+  struct NativeAdmissionShardView {
+    BlockIdExt block_id;
+    RootHash state_root_hash;
+    UnixTime gen_utime{0};
+    LogicalTime gen_lt{0};
+    td::Ref<vm::Cell> accounts;
+  };
+  using NativeAdmissionShardViewPtr = std::shared_ptr<const NativeAdmissionShardView>;
+  struct NativeAdmissionShardCache {
+    td::optional<BlockIdExt> masterchain_block_id;
+    std::map<BlockIdExt, NativeAdmissionShardViewPtr> shard_views;
+  } native_admission_shard_cache_;
 
   td::Timestamp cleanup_mempool_at_ = td::Timestamp::now();
 
@@ -233,7 +309,7 @@ class ExtMessagePool : public td::actor::Actor {
                                     const block::NativeTransfer *native_transfer = nullptr);
   void rollback_checked_message(td::Ref<ExtMessage> message, td::optional<td::uint32> msg_seqno,
                                 const block::NativeTransfer *native_transfer = nullptr);
-  bool erase_message(int priority, const MessageId &id);
+  bool erase_message(int priority, const MessageId &id, bool prune_expired_suffix = true);
 
   struct WalletMessageInfo {
     td::uint32 valid_until;
@@ -279,6 +355,10 @@ class ExtMessagePool : public td::actor::Actor {
       insertion_waiters.clear();
     }
   };
+  struct NativeMessageProcessResult {
+    std::vector<ExtMessage::Hash> obsolete_hashes;
+    td::uint64 expired_suffix_pruned{0};
+  };
   struct NativeInfo {
     std::map<td::uint64, NativeMessageInfo> messages;
     td::uint64 observed_nonce{0};
@@ -291,28 +371,21 @@ class ExtMessagePool : public td::actor::Actor {
         message.insertion_failed("native account is no longer valid");
       }
     }
-    std::vector<ExtMessage::Hash> process_messages(td::uint64 native_nonce, UnixTime utime);
-    bool commit_message(td::uint64 native_nonce);
+    NativeMessageProcessResult process_messages(td::uint64 native_nonce, UnixTime utime);
+    bool commit_message(td::uint64 native_nonce, NativeMessageProcessResult &processed);
     td::uint64 reserved_amount_before(td::uint64 native_nonce, td::uint64 before_nonce) const;
   };
   using NativeAddress = std::pair<WorkchainId, StdSmcAddress>;
   struct NativeNonceWatermark {
-    // Account nonce is the first nonce not consumed by the observed canonical
-    // state. A separately recorded finalized nonce closes the window in which
-    // an asynchronous verifier can resume with an older account fetch.
+    // Account nonce is the first nonce not consumed by observed canonical
+    // state. Only account states referenced by an applied masterchain state
+    // may advance it; local consensus acceptance is never authoritative.
     td::uint64 observed_next_nonce{0};
-    td::optional<td::uint64> highest_finalized_nonce;
     td::optional<td::uint64> observed_balance;
     LogicalTime observed_lt{0};
     td::uint64 revision{0};
 
     bool observe_account_state(td::uint64 nonce, td::uint64 balance, LogicalTime lt) {
-      // A finalized debit is known before ValidatorManager necessarily exposes
-      // the corresponding account state. Never bless balance from that older
-      // snapshot; the caller retries after state catch-up.
-      if (highest_finalized_nonce && nonce <= highest_finalized_nonce.value()) {
-        return false;
-      }
       if (observed_balance && lt < observed_lt) {
         return false;
       }
@@ -328,33 +401,26 @@ class ExtMessagePool : public td::actor::Actor {
       }
       return true;
     }
-    void observe_finalized_nonce(td::uint64 nonce) {
-      if (!highest_finalized_nonce || nonce > highest_finalized_nonce.value()) {
-        highest_finalized_nonce = nonce;
-        // Finalization consumed source balance, but this callback does not
-        // carry the new balance. Invalidate it and force a canonical refetch.
-        observed_balance = {};
-        ++revision;
-      }
-    }
     bool is_consumed(td::uint64 nonce) const {
-      return nonce < observed_next_nonce ||
-             (highest_finalized_nonce && nonce <= highest_finalized_nonce.value());
+      return nonce < observed_next_nonce;
     }
     td::optional<td::uint64> first_unconsumed_nonce() const {
-      if (!highest_finalized_nonce) {
-        return observed_next_nonce;
-      }
-      if (highest_finalized_nonce.value() == std::numeric_limits<td::uint64>::max()) {
-        return {};
-      }
-      return std::max(observed_next_nonce, highest_finalized_nonce.value() + 1);
+      return observed_next_nonce;
     }
   };
   std::map<NativeAddress, NativeInfo> native_accounts_;
   // Do not discard a watermark when an account has no pending messages: an
   // older account-state fetch can still be suspended in a signature worker.
   std::map<NativeAddress, NativeNonceWatermark> native_nonce_watermarks_;
+  // Sources that need comparison with the next applied canonical shard state.
+  // Local accepts add an early hint, while every applied masterchain update
+  // also adds all sources that still have native reservations.  The latter is
+  // the correctness fallback for blocks learned through sync or another
+  // validator group rather than accepted by this process.
+  std::map<NativeAddress, td::uint64> locally_accepted_native_nonces_;
+  td::Ref<MasterchainState> applied_reconciliation_state_;
+  td::uint64 native_reconciliation_generation_{0};
+  bool native_reconciliation_active_{false};
 
   struct NativeQueueCounters {
     td::uint64 installs{0};
@@ -368,6 +434,14 @@ class ExtMessagePool : public td::actor::Actor {
     td::uint64 already_delivered{0};
     td::uint64 ready_sources{0};
     td::uint64 head_gaps{0};
+    td::uint64 head_missing_watermark{0};
+    td::uint64 head_missing_nonce{0};
+    td::uint64 head_uncommitted{0};
+    td::uint64 head_missing_hash_index{0};
+    td::uint64 head_missing_priority{0};
+    td::uint64 head_missing_message{0};
+    td::uint64 head_nonce_mismatch{0};
+    td::uint64 speculative_exhausted{0};
     td::uint64 runs{0};
     td::uint64 run_messages{0};
     td::uint64 max_run_size{0};
@@ -392,6 +466,14 @@ class ExtMessagePool : public td::actor::Actor {
       already_delivered += other.already_delivered;
       ready_sources += other.ready_sources;
       head_gaps += other.head_gaps;
+      head_missing_watermark += other.head_missing_watermark;
+      head_missing_nonce += other.head_missing_nonce;
+      head_uncommitted += other.head_uncommitted;
+      head_missing_hash_index += other.head_missing_hash_index;
+      head_missing_priority += other.head_missing_priority;
+      head_missing_message += other.head_missing_message;
+      head_nonce_mismatch += other.head_nonce_mismatch;
+      speculative_exhausted += other.speculative_exhausted;
       runs += other.runs;
       run_messages += other.run_messages;
       max_run_size = std::max(max_run_size, other.max_run_size);
@@ -505,6 +587,32 @@ class ExtMessagePool : public td::actor::Actor {
                                                                td::uint64 available_balance,
                                                                td::uint64 account_revision, UnixTime utime,
                                                                td::Timestamp deadline);
+  td::Result<td::Ref<MasterchainState>> pin_native_admission_masterchain_state() const;
+  void reset_native_admission_cache_generation(const BlockIdExt &masterchain_block_id);
+  NativeAdmissionShardViewPtr lookup_native_admission_shard_view(
+      const BlockIdExt &masterchain_block_id, const BlockIdExt &shard_block_id);
+  td::Result<NativeAdmissionShardViewPtr> make_native_admission_shard_view(
+      const BlockIdExt &shard_block_id, td::Ref<ShardState> state);
+  td::Result<NativeAdmissionShardViewPtr> store_native_admission_shard_view(
+      const BlockIdExt &masterchain_block_id, NativeAdmissionShardViewPtr view);
+  void record_native_admission_manager_wait_error(const td::Status &error);
+  bool native_admission_manager_wait_finished_after_deadline(td::Timestamp deadline);
+  void register_pending_native_reconciliation_targets();
+  void prune_native_reconciliation_target_if_idle(const NativeAddress &address);
+  void start_native_reconciliation();
+  td::actor::Task<> run_native_reconciliation();
+  td::actor::Task<> reconcile_native_snapshot(td::Ref<MasterchainState> state,
+                                              std::vector<NativeAddress> sources);
+  bool should_reconcile_native_shard_top(const BlockIdExt &shard_block_id, std::size_t source_count);
+  void record_successful_native_shard_reconciliation(const BlockIdExt &shard_block_id);
+  NativeShardTopFingerprint native_reconciliation_state_fingerprint(const td::Ref<MasterchainState> &state) const;
+  bool should_skip_native_reconciliation_state(const NativeShardTopFingerprint &fingerprint);
+  void record_successful_native_reconciliation_state(NativeShardTopFingerprint fingerprint);
+  td::Result<bool> apply_canonical_native_account_state(const NativeAddress &address, td::uint64 native_nonce,
+                                                        td::uint64 balance, UnixTime utime, LogicalTime lt);
+  td::uint64 erase_processed_native_messages(NativeMessageProcessResult processed);
+  td::uint64 prune_expired_native_suffix(const NativeAddress &address, td::uint64 from_nonce,
+                                         td::Slice reason);
   void log_native_batch_stats();
   td::Result<td::uint32> check_message_to_wallet(td::Ref<ExtMessage> message, const WalletMessageProcessor *wallet,
                                                  block::Account acc, UnixTime utime, LogicalTime lt,

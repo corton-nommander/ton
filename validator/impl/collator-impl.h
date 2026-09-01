@@ -19,6 +19,7 @@
 #pragma once
 #include <deque>
 #include <map>
+#include <optional>
 #include <queue>
 
 #include "block/block-db.h"
@@ -29,6 +30,7 @@
 #include "common/global-version.h"
 #include "common/refcnt.hpp"
 #include "interfaces/validator-manager.h"
+#include "vm/boc.h"
 #include "vm/cells.h"
 #include "vm/cells/MerkleProof.h"
 #include "vm/cells/MerkleUpdate.h"
@@ -256,6 +258,9 @@ class Collator final : public td::actor::Actor {
 
   std::unique_ptr<vm::AugmentedDictionary> account_dict_estimator_;
   std::set<td::Bits256> account_dict_estimator_added_accounts_;
+  // Exact storage accounting for every native checkpoint is rebuilt from the
+  // one candidate state which existed before the first native mutation.
+  std::optional<vm::NewCellStorageStat> native_pre_storage_stat_;
   unsigned account_dict_ops_{0};
 
   bool msg_metadata_enabled_ = false;
@@ -362,9 +367,11 @@ class Collator final : public td::actor::Actor {
     std::vector<std::pair<td::Ref<ExtMessage>, int>> messages;
     bool producer_completed{false};
   };
-  td::actor::Task<ExtMsgPopBatch> pop_external_message_batch(
-      std::size_t max_messages, bool block, std::optional<td::Timestamp> timeout = std::nullopt);
+  td::actor::Task<ExtMsgPopBatch> pop_external_message_batch(std::size_t max_messages, bool block,
+                                                             std::optional<td::Timestamp> timeout = std::nullopt);
   td::actor::Task<> wait_for_external_message(td::Timestamp timeout);
+  using ExternalWaitKind = CollationStats::ExternalWaitStats::Kind;
+  void record_external_wait(ExternalWaitKind kind, double seconds);
 
   void register_new_msg(block::NewOutMsg msg);
   void register_new_msgs(block::transaction::Transaction& trans, td::optional<block::MsgMetadata> msg_metadata);

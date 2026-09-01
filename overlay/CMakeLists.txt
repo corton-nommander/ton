@@ -13,6 +13,7 @@ set(OVERLAY_SOURCE
   overlay.h
   overlay.hpp
   overlays.h
+  traffic-update-yield-policy.h
 )
 
 add_library(overlay STATIC ${OVERLAY_SOURCE})
@@ -23,4 +24,3 @@ target_include_directories(overlay PUBLIC
   ${OPENSSL_INCLUDE_DIR}
 )
 target_link_libraries(overlay PRIVATE tdutils tdactor adnl tl_api dht fec)
-

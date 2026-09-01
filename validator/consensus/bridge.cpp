@@ -57,23 +57,33 @@ class ManagerFacadeImpl : public ManagerFacade {
       run_accept_block_query(id, data, {}, validator_set_, signatures, send_broadcast_mode, apply, manager_,
                              std::move(promise));
       auto result = co_await std::move(task).wrap();
-      if (result.is_ok() || result.error().code() == ErrorCode::cancelled) {
-        break;
+      const auto decision = classify_accept_block_attempt(result.is_ok(), result.is_ok() ? 0 : result.error().code());
+      if (decision == AcceptBlockAttemptDecision::applied) {
+        co_return {};
       }
-      LOG_CHECK(result.error().code() == ErrorCode::timeout || result.error().code() == ErrorCode::notready)
+      if (decision == AcceptBlockAttemptDecision::cancelled) {
+        // Cancellation is an outcome, not a successful idempotent accept.  A
+        // common cause is a catchain rotation where another candidate with the
+        // same seqno has already become canonical. Propagate it so the block
+        // accepter does not register metadata for a candidate it did not
+        // accept locally.
+        LOG(WARNING) << "Cancelled accept for finalized block " << id
+                     << "; skipping candidate-owned external-message tracking: " << result.error();
+        co_return result.move_as_error();
+      }
+      LOG_CHECK(decision == AcceptBlockAttemptDecision::retry)
           << "Failed to accept finalized block " << id << " : " << result.error();
       LOG(WARNING) << "Failed to accept finalized block " << id << ", retrying : " << result.error();
       send_broadcast_mode = 0;
       co_await td::actor::coro_sleep(td::Timestamp::in(1.0));
     }
-    co_return {};
   }
 
-  td::actor::Task<> finalize_external_messages(std::vector<FinalizedNativeExternalMessage> messages) override {
+  td::actor::Task<> track_external_messages(std::vector<TrackedNativeExternalMessage> messages) override {
     if (messages.empty()) {
       co_return {};
     }
-    co_await td::actor::ask(manager_, &ValidatorManager::finalize_external_messages, std::move(messages));
+    co_await td::actor::ask(manager_, &ValidatorManager::track_external_messages, std::move(messages));
     co_return {};
   }
 

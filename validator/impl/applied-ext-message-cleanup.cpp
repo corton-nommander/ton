@@ -80,9 +80,10 @@ td::Result<std::vector<ExtMessage::Hash>> get_applied_external_messages_hashes(t
     // Compact native transfers are deliberately not erased here.  ApplyBlock
     // may run for a validated fork which loses consensus, so treating it as
     // final would lose the nonce required by every later transfer from that
-    // source. Native messages stay in the pool across competing candidates;
-    // the Simplex finalization path erases their exact external hashes only
-    // after accept_block succeeds.
+    // source. Native messages stay in the pool across competing candidates.
+    // Local accept_block success is not a canonical-chain authority; the pool
+    // purges only prefixes proven consumed by account states referenced from
+    // the shard-client-confirmed masterchain state.
 
     std::sort(hashes.begin(), hashes.end());
     hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());

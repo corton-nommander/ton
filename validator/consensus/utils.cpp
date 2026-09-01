@@ -93,9 +93,9 @@ td::Result<double> get_candidate_gen_utime_exact(const BlockCandidate& candidate
   return td::Status::Error("no ConsensusExtraData in candidate");
 }
 
-td::Result<std::vector<FinalizedNativeExternalMessage>> get_candidate_native_external_messages(
+td::Result<std::vector<TrackedNativeExternalMessage>> get_candidate_native_external_messages(
     const BlockCandidate& candidate) {
-  std::vector<FinalizedNativeExternalMessage> messages;
+  std::vector<TrackedNativeExternalMessage> messages;
   if (candidate.id.is_masterchain()) {
     return messages;
   }
@@ -127,7 +127,7 @@ td::Result<std::vector<FinalizedNativeExternalMessage>> get_candidate_native_ext
   messages.reserve(batch.entries.size());
   for (const auto& entry : batch.entries) {
     TRY_RESULT(hash, entry.transfer.external_hash());
-    messages.push_back(FinalizedNativeExternalMessage{.hash = hash,
+    messages.push_back(TrackedNativeExternalMessage{.hash = hash,
                                                       .workchain = basechainId,
                                                       .source = entry.transfer.src,
                                                       .nonce = entry.transfer.nonce});

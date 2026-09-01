@@ -6,6 +6,13 @@
 
 #pragma once
 
+#include <algorithm>
+#include <chrono>
+#include <cstddef>
+#include <cstdlib>
+#include <string_view>
+#include <vector>
+
 #include "common/errorcode.h"
 #include "interfaces/block.h"
 #include "interfaces/external-message.h"
@@ -13,13 +20,6 @@
 #include "td/actor/coro_task.h"
 #include "td/utils/Status.h"
 #include "ton/ton-types.h"
-
-#include <algorithm>
-#include <chrono>
-#include <cstddef>
-#include <cstdlib>
-#include <string_view>
-#include <vector>
 
 namespace ton::validator::consensus {
 
@@ -30,7 +30,7 @@ td::Result<double> get_candidate_gen_utime_exact(const BlockCandidate& candidate
 // can be merged directly into a speculative-branch exclusion vector.
 td::Result<std::vector<Bits256>> get_candidate_native_external_hashes(const BlockCandidate& candidate);
 
-td::Result<std::vector<FinalizedNativeExternalMessage>> get_candidate_native_external_messages(
+td::Result<std::vector<TrackedNativeExternalMessage>> get_candidate_native_external_messages(
     const BlockCandidate& candidate);
 
 // Explicit sidechain-only throughput mode.  The environment switch is kept
@@ -98,6 +98,36 @@ constexpr std::size_t select_collator_queue_capacity(bool max_tps_mode, std::str
   return max_tps_mode ? parse_native_collator_queue_capacity(native_limit) : standard_collator_queue_capacity;
 }
 
+// Native candidates are serialized as indexed mode-31 BOCs.  The generic
+// BlockLimitStatus estimate intentionally stays cheap and does not account
+// exactly for the index, internal hashes, and the structures created while
+// the final state update and block envelope are assembled.  Reserve one
+// seventh of the consensus wire-size limit before accepting another native
+// state checkpoint.  At the sidechain's 10 MiB limit this is 1,497,965 bytes,
+// covering the largest 1,396,041-byte estimator gap observed in the saturated
+// desktop runs with 101,924 bytes left over.  The estimator retains 85.7% of
+// the configured budget; measured mode-31 expansion turns that into higher
+// wire utilization instead of wasting the full reserve.
+inline constexpr td::uint64 native_candidate_size_reserve_divisor = 7;
+
+constexpr td::uint64 native_candidate_size_reserve(td::uint64 consensus_max_block_size) {
+  return consensus_max_block_size / native_candidate_size_reserve_divisor;
+}
+
+constexpr td::uint64 native_candidate_estimate_budget(td::uint64 consensus_max_block_size) {
+  return consensus_max_block_size - native_candidate_size_reserve(consensus_max_block_size);
+}
+
+constexpr bool native_candidate_estimate_fits(td::uint64 estimated_bytes, td::uint64 consensus_max_block_size) {
+  // Keep the boundary itself reserved: the final structures added after the
+  // native checkpoint are non-empty even for the smallest useful candidate.
+  return estimated_bytes < native_candidate_estimate_budget(consensus_max_block_size);
+}
+
+constexpr bool candidate_serialized_size_fits(td::uint64 serialized_bytes, td::uint64 consensus_max_block_size) {
+  return serialized_bytes <= consensus_max_block_size;
+}
+
 // Failure budget for one work-driven candidate. It does not delay a
 // successful block: Simplex only consults it when deciding that local
 // production has failed and the remaining leader window must be skipped.
@@ -120,8 +150,8 @@ inline constexpr std::chrono::milliseconds max_tps_candidate_finalize_reserve_ma
 // 512-transfer fragment cost is well below this conservative start guard.
 inline constexpr std::chrono::milliseconds max_tps_candidate_fragment_start_guard{100};
 
-constexpr std::chrono::milliseconds bound_max_tps_candidate_finalize_reserve(
-    std::chrono::milliseconds work_budget, std::chrono::milliseconds requested) {
+constexpr std::chrono::milliseconds bound_max_tps_candidate_finalize_reserve(std::chrono::milliseconds work_budget,
+                                                                             std::chrono::milliseconds requested) {
   if (work_budget <= std::chrono::milliseconds::zero()) {
     return std::chrono::milliseconds::zero();
   }
@@ -131,8 +161,8 @@ constexpr std::chrono::milliseconds bound_max_tps_candidate_finalize_reserve(
   return std::clamp(requested, lower, upper);
 }
 
-constexpr std::chrono::milliseconds max_tps_candidate_intake_timeout(
-    std::chrono::milliseconds work_budget, std::chrono::milliseconds finalize_reserve) {
+constexpr std::chrono::milliseconds max_tps_candidate_intake_timeout(std::chrono::milliseconds work_budget,
+                                                                     std::chrono::milliseconds finalize_reserve) {
   auto reserve = bound_max_tps_candidate_finalize_reserve(work_budget, finalize_reserve);
   auto remaining = work_budget - reserve;
   auto start_guard = std::min(max_tps_candidate_fragment_start_guard, remaining / 4);
@@ -144,8 +174,8 @@ enum class NativeIntakeDeadlineAction { continue_work, idle, seal_committed, com
 // Deadline policy is kept pure so the safety-critical boundary cases are
 // compile-time tested independently from actor scheduling.
 constexpr NativeIntakeDeadlineAction select_native_intake_deadline_action(bool deadline_reached,
-                                                                           bool has_committed_fragment,
-                                                                           bool has_staged_fragment) {
+                                                                          bool has_committed_fragment,
+                                                                          bool has_staged_fragment) {
   if (!deadline_reached) {
     return NativeIntakeDeadlineAction::continue_work;
   }
@@ -156,6 +186,42 @@ constexpr NativeIntakeDeadlineAction select_native_intake_deadline_action(bool d
     return NativeIntakeDeadlineAction::commit_first_fragment;
   }
   return NativeIntakeDeadlineAction::idle;
+}
+
+enum class NativeQueueRefillAction { stop, wait_first_work, wait_fragment, wait_post_commit_idle };
+
+struct NativeQueueRefillState {
+  bool work_driven{false};
+  bool cancelled{false};
+  bool intake_deadline_reached{false};
+  bool fragment_full{false};
+  bool has_staged_fragment{false};
+  bool has_committed_fragment{false};
+  bool first_work_window_open{false};
+  bool fragment_window_open{false};
+  bool post_commit_idle_window_open{false};
+  bool producer_pending{false};
+};
+
+// Work-driven native collation owns its queue waits inside one invocation.
+// In particular, producer progress never extends a fixed fragment or
+// post-commit idle window.  A marker-only pop leaves this state unchanged, so
+// the caller waits again until the original window expires or work arrives.
+constexpr NativeQueueRefillAction select_native_queue_refill_action(const NativeQueueRefillState& state) {
+  if (!state.work_driven || state.cancelled || state.intake_deadline_reached || state.fragment_full) {
+    return NativeQueueRefillAction::stop;
+  }
+  if (state.has_staged_fragment) {
+    return state.fragment_window_open ? NativeQueueRefillAction::wait_fragment : NativeQueueRefillAction::stop;
+  }
+  if (state.has_committed_fragment) {
+    return state.post_commit_idle_window_open ? NativeQueueRefillAction::wait_post_commit_idle
+                                              : NativeQueueRefillAction::stop;
+  }
+  if (state.first_work_window_open || state.producer_pending) {
+    return NativeQueueRefillAction::wait_first_work;
+  }
+  return NativeQueueRefillAction::stop;
 }
 
 constexpr bool should_extend_native_producer_wait(bool work_driven, bool producer_pending) {

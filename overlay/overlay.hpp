@@ -50,6 +50,7 @@
 #include "overlay-id.hpp"
 #include "overlay-manager.h"
 #include "overlay.h"
+#include "traffic-update-yield-policy.h"
 
 namespace ton {
 
@@ -282,6 +283,7 @@ class OverlayImpl : public Overlay {
   void send_new_fec_broadcast_part(PublicKeyHash local_id, Overlay::BroadcastDataHash data_hash, td::uint32 size,
                                    td::uint32 flags, td::BufferSlice part, td::uint32 seqno, fec::FecType fec_type,
                                    td::uint32 date);
+  void maybe_yield_after_fec_callback();
 
   void broadcast_twostep_signed_simple(BroadcastTwostepDataSimple &&data,
                                        td::Result<std::pair<td::BufferSlice, PublicKey>> &&R);
@@ -315,6 +317,8 @@ class OverlayImpl : public Overlay {
 
   void update_throughput_in_ctr(adnl::AdnlNodeIdShort peer_id, td::uint64 msg_size, bool is_query,
                                 bool is_response) override;
+
+  void maybe_yield_after_traffic_update();
 
   void update_peer_ip_str(adnl::AdnlNodeIdShort peer_id, td::string ip_str) override;
 
@@ -369,6 +373,10 @@ class OverlayImpl : public Overlay {
   BroadcastsLimiter &get_broadcasts_limiter(PublicKeyHash source, const Certificate *certificate);
 
  private:
+  td::uint32 mailbox_message_quantum() const override {
+    return 64;
+  }
+
   template <class T>
   void process_query(adnl::AdnlNodeIdShort src, T &query, td::Promise<td::BufferSlice> promise) {
     callback_->receive_query(src, overlay_id_, serialize_tl_object(&query, true), std::move(promise));
@@ -520,6 +528,8 @@ class OverlayImpl : public Overlay {
   } peer_list_;
   TrafficStats total_traffic, total_traffic_ctr;
   TrafficStats total_traffic_responses, total_traffic_responses_ctr;
+  detail::TrafficUpdateYieldPolicy traffic_update_yield_policy_;
+  detail::FecCallbackYieldPolicy fec_callback_yield_policy_;
 
   OverlayOptions opts_;
   adnl::PeersMtuGuard peers_mtu_guard_;

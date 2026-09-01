@@ -4,11 +4,15 @@
  * SPDX-License-Identifier: LGPL-2.0-or-later
  */
 
+#include <atomic>
+#include <mutex>
+
 #include "adnl/utils.hpp"
 #include "auto/tl/ton_api.h"
 #include "block/block.h"
 #include "block/validator-set.h"
 #include "consensus/simplex/bus.h"
+#include "consensus/simplex/state-resolver-policy.h"
 #include "consensus/utils.h"
 #include "td/actor/BusRuntime.h"
 #include "td/actor/coro_utils.h"
@@ -19,12 +23,23 @@
 
 #include "block-auto.h"
 
-#include <atomic>
-#include <mutex>
-
 using namespace ton;
 using namespace ton::validator;
 using namespace ton::validator::consensus;
+
+using simplex::NativeFinalizationRelation;
+using simplex::classify_native_finalization;
+
+static_assert(classify_native_finalization(11, 10, false) ==
+              NativeFinalizationRelation::after_canonical_top);
+static_assert(classify_native_finalization(10, 10, true) == NativeFinalizationRelation::canonical_top);
+static_assert(classify_native_finalization(10, 10, false) ==
+              NativeFinalizationRelation::canonically_decided);
+// Regression: a masterchain shard top may advance while accept_block is
+// suspended. A later callback for an ancestor must not recreate an exclusion
+// that can never receive an exact-root acknowledgement.
+static_assert(classify_native_finalization(9, 10, false) ==
+              NativeFinalizationRelation::canonically_decided);
 
 static_assert(parse_native_collator_queue_capacity("") == native_collator_queue_default_capacity);
 static_assert(parse_native_collator_queue_capacity("0") == native_collator_queue_default_capacity);
@@ -34,11 +49,25 @@ static_assert(parse_native_collator_queue_capacity("1") == 1);
 static_assert(parse_native_collator_queue_capacity("32768") == 32'768);
 static_assert(parse_native_collator_queue_capacity("65536") == native_collator_queue_max_capacity);
 static_assert(parse_native_collator_queue_capacity("262144") == native_collator_queue_max_capacity);
-static_assert(parse_native_collator_queue_capacity("999999999999999999999999") ==
-              native_collator_queue_max_capacity);
+static_assert(parse_native_collator_queue_capacity("999999999999999999999999") == native_collator_queue_max_capacity);
 static_assert(select_collator_queue_capacity(false, "262144") == standard_collator_queue_capacity);
 static_assert(select_collator_queue_capacity(true, "") == native_collator_queue_default_capacity);
 static_assert(select_collator_queue_capacity(true, "262144") == native_collator_queue_max_capacity);
+inline constexpr td::uint64 native_candidate_test_max_bytes = 10'485'760;
+inline constexpr td::uint64 native_candidate_test_estimate_budget = 8'987'795;
+static_assert(native_candidate_size_reserve(native_candidate_test_max_bytes) == 1'497'965);
+static_assert(native_candidate_estimate_budget(native_candidate_test_max_bytes) ==
+              native_candidate_test_estimate_budget);
+static_assert(native_candidate_estimate_fits(native_candidate_test_estimate_budget - 1,
+                                             native_candidate_test_max_bytes));
+static_assert(!native_candidate_estimate_fits(native_candidate_test_estimate_budget, native_candidate_test_max_bytes));
+// Saturated blocks in the benchmark estimated about 9.44 MiB before their
+// mode-31 BOC was assembled, so they must seal at the preceding checkpoint.
+static_assert(!native_candidate_estimate_fits(9'445'432, native_candidate_test_max_bytes));
+// Regression: this exact native candidate was previously constructed and
+// only rejected after serialization (10,585,196 > 10,485,760).
+static_assert(!candidate_serialized_size_fits(10'585'196, native_candidate_test_max_bytes));
+static_assert(candidate_serialized_size_fits(native_candidate_test_max_bytes, native_candidate_test_max_bytes));
 static_assert(!select_work_driven_max_tps_mode(false, false));
 static_assert(select_work_driven_max_tps_mode(true, false));
 static_assert(!select_work_driven_max_tps_mode(false, true));
@@ -55,19 +84,53 @@ static_assert(bound_max_tps_candidate_finalize_reserve(std::chrono::milliseconds
 static_assert(bound_max_tps_candidate_finalize_reserve(std::chrono::milliseconds{20'000},
                                                        std::chrono::milliseconds{9'000}) ==
               std::chrono::milliseconds{5'000});
-static_assert(max_tps_candidate_intake_timeout(std::chrono::milliseconds{4'000},
-                                               std::chrono::milliseconds{1'000}) ==
+static_assert(max_tps_candidate_intake_timeout(std::chrono::milliseconds{4'000}, std::chrono::milliseconds{1'000}) ==
               std::chrono::milliseconds{2'900});
-static_assert(max_tps_candidate_intake_timeout(std::chrono::milliseconds{1'000},
-                                               std::chrono::milliseconds{1'000}) ==
+static_assert(max_tps_candidate_intake_timeout(std::chrono::milliseconds{1'000}, std::chrono::milliseconds{1'000}) ==
               std::chrono::milliseconds{400});
-static_assert(select_native_intake_deadline_action(false, true, true) ==
-              NativeIntakeDeadlineAction::continue_work);
+static_assert(select_native_intake_deadline_action(false, true, true) == NativeIntakeDeadlineAction::continue_work);
 static_assert(select_native_intake_deadline_action(true, false, false) == NativeIntakeDeadlineAction::idle);
-static_assert(select_native_intake_deadline_action(true, true, true) ==
-              NativeIntakeDeadlineAction::seal_committed);
+static_assert(select_native_intake_deadline_action(true, true, true) == NativeIntakeDeadlineAction::seal_committed);
 static_assert(select_native_intake_deadline_action(true, false, true) ==
               NativeIntakeDeadlineAction::commit_first_fragment);
+static_assert(select_native_queue_refill_action(
+                  {.work_driven = true, .has_staged_fragment = true, .fragment_window_open = true}) ==
+              NativeQueueRefillAction::wait_fragment);
+// A producer marker does not close or reset a partial fragment's fixed wait.
+static_assert(select_native_queue_refill_action({.work_driven = true,
+                                                 .has_staged_fragment = true,
+                                                 .fragment_window_open = true,
+                                                 .producer_pending = true}) == NativeQueueRefillAction::wait_fragment);
+static_assert(select_native_queue_refill_action({.work_driven = true,
+                                                 .has_staged_fragment = true,
+                                                 .fragment_window_open = false,
+                                                 .producer_pending = true}) == NativeQueueRefillAction::stop);
+static_assert(select_native_queue_refill_action({.work_driven = true,
+                                                 .fragment_full = true,
+                                                 .has_staged_fragment = true,
+                                                 .fragment_window_open = true}) == NativeQueueRefillAction::stop);
+static_assert(select_native_queue_refill_action(
+                  {.work_driven = true, .has_committed_fragment = true, .post_commit_idle_window_open = true}) ==
+              NativeQueueRefillAction::wait_post_commit_idle);
+static_assert(select_native_queue_refill_action({.work_driven = true,
+                                                 .has_committed_fragment = true,
+                                                 .post_commit_idle_window_open = false,
+                                                 .producer_pending = true}) == NativeQueueRefillAction::stop);
+static_assert(select_native_queue_refill_action({.work_driven = true, .first_work_window_open = true}) ==
+              NativeQueueRefillAction::wait_first_work);
+static_assert(select_native_queue_refill_action({.work_driven = true, .producer_pending = true}) ==
+              NativeQueueRefillAction::wait_first_work);
+static_assert(select_native_queue_refill_action({.work_driven = true,
+                                                 .cancelled = true,
+                                                 .has_staged_fragment = true,
+                                                 .fragment_window_open = true}) == NativeQueueRefillAction::stop);
+static_assert(select_native_queue_refill_action({.work_driven = true,
+                                                 .intake_deadline_reached = true,
+                                                 .has_staged_fragment = true,
+                                                 .fragment_window_open = true}) == NativeQueueRefillAction::stop);
+static_assert(select_native_queue_refill_action({.work_driven = false,
+                                                 .has_staged_fragment = true,
+                                                 .fragment_window_open = true}) == NativeQueueRefillAction::stop);
 static_assert(should_extend_native_producer_wait(false, true));
 static_assert(!should_extend_native_producer_wait(true, true));
 static_assert(!should_extend_native_producer_wait(false, false));
@@ -159,8 +222,11 @@ std::pair<double, double> VALIDATION_TIME = {0.0, 0.0};
 bool IDLE_AFTER_FIRST = false;
 bool EXPECT_PACED = false;
 bool EXPECT_WORK_DRIVEN = false;
+bool CANCEL_BLOCK_ACCEPTS = false;
 std::atomic<size_t> IDLE_COLLATION_ATTEMPTS{0};
 std::atomic<size_t> GENERATED_CANDIDATES{0};
+std::atomic<size_t> CANCELLED_ACCEPT_ATTEMPTS{0};
+std::atomic<size_t> EXTERNAL_TRACK_CALLS{0};
 std::mutex GENERATED_AT_MUTEX;
 std::vector<double> GENERATED_AT;
 
@@ -516,6 +582,11 @@ class TestManagerFacade : public ManagerFacade {
   td::actor::Task<> accept_block(BlockIdExt id, td::Ref<BlockData> data, size_t creator_idx,
                                  td::Ref<block::BlockSignatureSet> signatures, int send_broadcast_mode,
                                  bool apply) override;
+
+  td::actor::Task<> track_external_messages(std::vector<TrackedNativeExternalMessage>) override {
+    ++EXTERNAL_TRACK_CALLS;
+    co_return {};
+  }
 
   td::actor::Task<td::Ref<vm::Cell>> wait_block_state_root(BlockIdExt block_id, td::Timestamp timeout) override;
   td::actor::Task<td::Ref<BlockData>> wait_block_data(BlockIdExt block_id, td::Timestamp timeout) override;
@@ -924,6 +995,13 @@ class TestConsensus : public td::actor::Actor {
       CHECK(IDLE_COLLATION_ATTEMPTS.load() >= 2);
       CHECK(IDLE_COLLATION_ATTEMPTS.load() <= 4);
     }
+    if (CANCEL_BLOCK_ACCEPTS) {
+      // This exercises the real BlockAccepter coroutine with a fake facade:
+      // cancellation must unwind the accept await and skip even reversible
+      // candidate-source tracking.
+      CHECK(CANCELLED_ACCEPT_ATTEMPTS.load() >= 1);
+      CHECK(EXTERNAL_TRACK_CALLS.load() == 0);
+    }
     if (EXPECT_PACED || EXPECT_WORK_DRIVEN) {
       std::vector<double> generated_at;
       {
@@ -994,6 +1072,10 @@ td::actor::Task<> TestManagerFacade::accept_block(BlockIdExt id, td::Ref<BlockDa
   LOG(WARNING) << "Accept block #" << id.seqno() << " (" << (signatures->is_final() ? "final" : "notarize")
                << " signatures), creator_idx=" << creator_idx;
   CHECK(id == data->block_id());
+  if (CANCEL_BLOCK_ACCEPTS) {
+    ++CANCELLED_ACCEPT_ATTEMPTS;
+    co_return td::Status::Error(ErrorCode::cancelled, "simulated losing candidate after catchain rotation");
+  }
   td::actor::ask(test_consensus_, &TestConsensus::on_block_accepted, node_idx_, instance_idx_, data, creator_idx,
                  signatures)
       .detach();
@@ -1151,9 +1233,10 @@ int main(int argc, char *argv[]) {
                          return td::Status::OK();
                        });
   p.add_option('\0', "idle-after-first",
-               "after the bootstrap candidate, model a work-driven native queue that stays idle", [&]() {
-                 IDLE_AFTER_FIRST = true;
-               });
+               "after the bootstrap candidate, model a work-driven native queue that stays idle",
+               [&]() { IDLE_AFTER_FIRST = true; });
+  p.add_option('\0', "cancel-block-accepts", "simulate a losing candidate whose block accept is cancelled",
+               [&]() { CANCEL_BLOCK_ACCEPTS = true; });
   p.add_option('\0', "expect-paced",
                "assert target-rate pacing and masterchain liveness under process-wide max-TPS mode",
                [&]() { EXPECT_PACED = true; });
@@ -1164,6 +1247,7 @@ int main(int argc, char *argv[]) {
   p.run(argc, argv).ensure();
   CHECK(N_DOUBLE_NODES <= N_NODES);
   CHECK(!(EXPECT_PACED && EXPECT_WORK_DRIVEN));
+  CHECK(!(CANCEL_BLOCK_ACCEPTS && (IDLE_AFTER_FIRST || EXPECT_PACED || EXPECT_WORK_DRIVEN)));
   CHECK(!work_driven_max_tps_mode_enabled(ShardIdFull{masterchainId}));
   CHECK(work_driven_max_tps_mode_enabled(ShardIdFull{basechainId, shardIdAll}) == max_tps_mode_enabled());
   if (EXPECT_PACED || EXPECT_WORK_DRIVEN) {

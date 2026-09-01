@@ -9,6 +9,7 @@
 #include "td/actor/coro_utils.h"
 
 #include "bus.h"
+#include "state-resolver-policy.h"
 
 #include <algorithm>
 #include <iterator>
@@ -31,16 +32,6 @@ void merge_external_hashes(std::vector<Bits256>& target, std::vector<Bits256> ad
   target.insert(target.end(), std::make_move_iterator(added.begin()), std::make_move_iterator(added.end()));
   std::sort(target.begin(), target.end());
   target.erase(std::unique(target.begin(), target.end()), target.end());
-}
-
-void remove_external_hashes(std::vector<Bits256>& target, const std::vector<Bits256>& removed) {
-  if (target.empty() || removed.empty()) {
-    return;
-  }
-  std::vector<Bits256> retained;
-  retained.reserve(target.size());
-  std::set_difference(target.begin(), target.end(), removed.begin(), removed.end(), std::back_inserter(retained));
-  target = std::move(retained);
 }
 
 class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::ConnectsTo<Bus> {
@@ -92,6 +83,11 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
   }
 
   template <>
+  void handle(BusHandle, std::shared_ptr<const BlockFinalizedInMasterchain> event) {
+    on_block_finalized_in_masterchain(event->block);
+  }
+
+  template <>
   td::actor::Task<ResolvedState> process(BusHandle, std::shared_ptr<ResolveState> request) {
     co_return co_await resolve_state(request->id);
   }
@@ -101,6 +97,7 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
   struct CachedState {
     std::optional<ResolvedState> result;
     bool started = false;
+    td::uint64 exclusion_epoch = 0;
     std::vector<td::Promise<ResolvedState>> promises;
   };
 
@@ -118,10 +115,17 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     entry.promises.push_back(std::move(promise));
     if (!entry.started) {
       entry.started = true;
-      auto result = co_await resolve_state_inner(id).wrap();
-      if (result.is_ok()) {
-        remove_external_hashes(result.ok_ref().excluded_ext_messages, finalized_native_hashes_);
-      }
+      td::Result<ResolvedState> result;
+      do {
+        entry.exclusion_epoch = native_exclusion_epoch_;
+        result = co_await resolve_state_inner(id).wrap();
+        if (result.is_ok()) {
+          merge_external_hashes(result.ok_ref().excluded_ext_messages, unanchored_finalized_native_hashes_);
+        }
+        // A masterchain notification can release hashes while this recursive
+        // resolution is suspended. Re-resolve instead of caching (or returning)
+        // a mixture of the old and new canonical branches.
+      } while (result.is_ok() && entry.exclusion_epoch != native_exclusion_epoch_);
       for (auto& p : entry.promises) {
         p.set_result(result.clone());
       }
@@ -131,7 +135,6 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       } else {
         state_cache_.erase(id);
       }
-      maybe_clear_finalized_native_hashes();
     }
     co_return co_await std::move(task);
   }
@@ -161,12 +164,15 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       auto genesis = co_await genesis_.get();
       auto state = co_await ChainState::from_manager(owning_bus()->manager, owning_bus()->shard,
                                                      {candidate->block_id()}, genesis->state->min_mc_block_id());
-      co_return ResolvedState{state, gen_utime_exact, {}};
+      // The external-message pool still contains native messages until the
+      // exact block is anchored in masterchain. A locally finalized state must
+      // therefore carry exclusions just like a speculative parent chain.
+      merge_external_hashes(native_hashes, unanchored_finalized_native_hashes_);
+      co_return ResolvedState{state, gen_utime_exact, std::move(native_hashes)};
     }
 
     auto prev_data_state = co_await resolve_state(candidate->parent_id);
     merge_external_hashes(prev_data_state.excluded_ext_messages, std::move(native_hashes));
-    remove_external_hashes(prev_data_state.excluded_ext_messages, finalized_native_hashes_);
     co_return ResolvedState{
         .state = prev_data_state.state->apply(std::get<BlockCandidate>(candidate->block)),
         .gen_utime_exact = gen_utime_exact,
@@ -183,40 +189,109 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
 
   std::map<CandidateId, FinalizedBlock> finalized_blocks_;
 
-  // Normally finalized hashes are scrubbed from every cached result
-  // immediately. Keep this temporary set only while state resolutions that
-  // started before finalization are still in flight.
-  std::vector<Bits256> finalized_native_hashes_;
+  struct UnanchoredFinalizedBlock {
+    BlockIdExt block_id;
+    std::vector<Bits256> native_hashes;
+  };
 
-  void record_finalized_native_hashes(std::vector<Bits256> hashes) {
+  // FinalizeBlock means that this validator accepted the candidate locally;
+  // it does not yet prove which candidate at this seqno was anchored by the
+  // masterchain. Keep all such messages excluded until the exact canonical top
+  // arrives. The per-block ledger lets that notification release old/orphaned
+  // hashes without releasing later, still-unanchored candidates.
+  std::vector<UnanchoredFinalizedBlock> unanchored_finalized_blocks_;
+  std::vector<Bits256> unanchored_finalized_native_hashes_;
+  std::optional<BlockIdExt> last_masterchain_finalized_block_;
+  td::uint64 native_exclusion_epoch_ = 0;
+
+  void release_unanchored_native_hashes_through(const BlockIdExt& block_id) {
+    auto first_retained = std::stable_partition(
+        unanchored_finalized_blocks_.begin(), unanchored_finalized_blocks_.end(),
+        [&](const auto& entry) { return entry.block_id.seqno() > block_id.seqno(); });
+    if (first_retained == unanchored_finalized_blocks_.end()) {
+      return;
+    }
+
+    auto released_blocks = static_cast<std::size_t>(unanchored_finalized_blocks_.end() - first_retained);
+    unanchored_finalized_blocks_.erase(first_retained, unanchored_finalized_blocks_.end());
+    unanchored_finalized_native_hashes_.clear();
+    for (const auto& entry : unanchored_finalized_blocks_) {
+      merge_external_hashes(unanchored_finalized_native_hashes_, entry.native_hashes);
+    }
+
+    ++native_exclusion_epoch_;
+    for (auto it = state_cache_.begin(); it != state_cache_.end();) {
+      if (it->second.result) {
+        it = state_cache_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    LOG(INFO) << "Released locally-finalized native exclusions at canonical top " << block_id.to_str()
+              << ": blocks=" << released_blocks
+              << " retained_blocks=" << unanchored_finalized_blocks_.size()
+              << " retained_hashes=" << unanchored_finalized_native_hashes_.size();
+  }
+
+  void record_unanchored_finalized_native_hashes(BlockIdExt block_id, std::vector<Bits256> hashes) {
+    if (last_masterchain_finalized_block_) {
+      auto relation = classify_native_finalization(block_id.seqno(), last_masterchain_finalized_block_->seqno(),
+                                                   block_id == *last_masterchain_finalized_block_);
+      if (relation != NativeFinalizationRelation::after_canonical_top) {
+        // The shard-top notification can race ahead while accept_block is
+        // suspended, and it may advance past several locally finalized blocks.
+        // Every height at or below that top is already decided: the exact root
+        // is canonical and every other root is losing work. None may become a
+        // new exclusion after the canonical release.
+        return;
+      }
+    }
     if (hashes.empty()) {
       return;
     }
-    merge_external_hashes(finalized_native_hashes_, std::move(hashes));
+    std::sort(hashes.begin(), hashes.end());
+    hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());
+
+    auto entry = std::find_if(unanchored_finalized_blocks_.begin(), unanchored_finalized_blocks_.end(),
+                              [&](const auto& item) { return item.block_id == block_id; });
+    if (entry == unanchored_finalized_blocks_.end()) {
+      unanchored_finalized_blocks_.push_back({block_id, hashes});
+    } else {
+      merge_external_hashes(entry->native_hashes, hashes);
+    }
     for (auto& [_, cached] : state_cache_) {
       if (cached.result) {
-        remove_external_hashes(cached.result->excluded_ext_messages, finalized_native_hashes_);
+        merge_external_hashes(cached.result->excluded_ext_messages, hashes);
       }
     }
-    maybe_clear_finalized_native_hashes();
+    merge_external_hashes(unanchored_finalized_native_hashes_, std::move(hashes));
   }
 
-  void maybe_clear_finalized_native_hashes() {
-    // finalize_blocks_inner records hashes after accept_block, but the outer
-    // coroutine marks the candidate done only after its finalized DB marker is
-    // durable.  Keep the scrub set across that await so a concurrently started
-    // ResolveState cannot recache the just-finalized ancestor exclusions.
-    for (const auto& [_, finalized] : finalized_blocks_) {
-      if (finalized.started && !finalized.done) {
+  void on_block_finalized_in_masterchain(BlockIdExt block_id) {
+    if (block_id.shard_full() != owning_bus()->shard || block_id.seqno() == 0) {
+      return;
+    }
+
+    if (last_masterchain_finalized_block_) {
+      if (block_id.seqno() < last_masterchain_finalized_block_->seqno()) {
+        return;
+      }
+      if (block_id.seqno() == last_masterchain_finalized_block_->seqno()) {
+        if (block_id != *last_masterchain_finalized_block_) {
+          LOG(ERROR) << "Ignoring conflicting masterchain-finalized block at seqno " << block_id.seqno()
+                     << ": current=" << last_masterchain_finalized_block_->to_str()
+                     << " received=" << block_id.to_str();
+        }
         return;
       }
     }
-    for (const auto& [_, cached] : state_cache_) {
-      if (cached.started && !cached.result) {
-        return;
-      }
-    }
-    finalized_native_hashes_.clear();
+    last_masterchain_finalized_block_ = block_id;
+
+    // The canonical top decides the whole prefix, including losing roots at
+    // its own height and ancestors finalized late by an overlapping session.
+    // Canonical messages are independently purged by ExtMessagePool account
+    // reconciliation; losing messages must be allowed back into descendants.
+    release_unanchored_native_hashes_through(block_id);
   }
 
   td::actor::Task<> finalize_blocks(CandidateId id, std::optional<FinalCertRef> final_cert,
@@ -239,7 +314,6 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       } else {
         finalized_blocks_.erase(id);
       }
-      maybe_clear_finalized_native_hashes();
     }
     co_return co_await std::move(task);
   }
@@ -273,7 +347,7 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
         sig_set = notar_cert->to_signature_set(candidate, bus);
       }
       co_await owning_bus().publish<FinalizeBlock>(candidate, sig_set);
-      record_finalized_native_hashes(std::move(finalized_native_hashes));
+      record_unanchored_finalized_native_hashes(candidate->block_id(), std::move(finalized_native_hashes));
     } else {
       if (auto parent = candidate->parent_id) {
         co_await finalize_blocks(*parent, final_cert, final_candidate);

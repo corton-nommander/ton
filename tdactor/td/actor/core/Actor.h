@@ -68,6 +68,13 @@ class Actor {
     //noop
   }
 
+  // Maximum number of queued messages handled in one executor turn. Zero keeps the
+  // historical unbounded mailbox-drain behavior. Actors with high-rate mailboxes can
+  // opt in to bounded turns without changing scheduling for every actor.
+  virtual uint32 mailbox_message_quantum() const {
+    return 0;
+  }
+
   // Useful functions
   void yield() {  // send wakeup signal to itself
     ActorExecuteContext::get().set_yield();

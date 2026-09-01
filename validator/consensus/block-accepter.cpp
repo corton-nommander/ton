@@ -38,13 +38,16 @@ class BlockAccepterImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     if (sent_candidate_broadcasts_.contains(block.id)) {
       broadcast_mode &= ~(fullnode::FullNode::broadcast_mode_fast_sync | fullnode::FullNode::broadcast_mode_custom);
     }
+    // A failed/cancelled accept must not register this candidate as a possible
+    // source of native nonce progress. Tracking after success is reversible;
+    // only the central applied-state reconciliation may purge the pool.
     co_await td::actor::ask(owning_bus()->manager, &ManagerFacade::accept_block, block.id, block_data,
                             event->candidate->leader.value(), event->signatures, broadcast_mode, true);
     auto native_messages = get_candidate_native_external_messages(block);
     if (native_messages.is_error()) {
-      co_return native_messages.move_as_error_prefix("cannot finalize native external messages: ");
+      co_return native_messages.move_as_error_prefix("cannot track native external messages: ");
     }
-    co_await td::actor::ask(owning_bus()->manager, &ManagerFacade::finalize_external_messages,
+    co_await td::actor::ask(owning_bus()->manager, &ManagerFacade::track_external_messages,
                             native_messages.move_as_ok());
     owning_bus().publish<TraceEvent>(stats::BlockAccepted::create(event->candidate->id));
     co_return {};

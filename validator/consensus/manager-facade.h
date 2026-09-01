@@ -10,6 +10,29 @@
 
 namespace ton::validator::consensus {
 
+// A cancelled accept is not a locally accepted candidate.  In particular, an
+// overlapping validator group may already have accepted another block at the
+// same seqno, so candidate metadata must only be tracked after success.
+enum class AcceptBlockAttemptDecision { applied, retry, cancelled, fatal };
+
+constexpr AcceptBlockAttemptDecision classify_accept_block_attempt(bool succeeded, int error_code) {
+  if (succeeded) {
+    return AcceptBlockAttemptDecision::applied;
+  }
+  if (error_code == ErrorCode::timeout || error_code == ErrorCode::notready) {
+    return AcceptBlockAttemptDecision::retry;
+  }
+  if (error_code == ErrorCode::cancelled) {
+    return AcceptBlockAttemptDecision::cancelled;
+  }
+  return AcceptBlockAttemptDecision::fatal;
+}
+
+static_assert(classify_accept_block_attempt(true, 0) == AcceptBlockAttemptDecision::applied);
+static_assert(classify_accept_block_attempt(false, ErrorCode::timeout) == AcceptBlockAttemptDecision::retry);
+static_assert(classify_accept_block_attempt(false, ErrorCode::notready) == AcceptBlockAttemptDecision::retry);
+static_assert(classify_accept_block_attempt(false, ErrorCode::cancelled) == AcceptBlockAttemptDecision::cancelled);
+
 class ManagerFacade : public td::actor::Actor {
  public:
   virtual td::actor::Task<GeneratedCandidate> collate_block(CollateParams params,
@@ -23,9 +46,11 @@ class ManagerFacade : public td::actor::Actor {
                                          td::Ref<block::BlockSignatureSet> signatures, int send_broadcast_mode,
                                          bool apply) = 0;
 
-  // Permanently erase exact external messages only after their block has won
-  // consensus and was accepted. Speculative candidates must never call this.
-  virtual td::actor::Task<> finalize_external_messages(std::vector<FinalizedNativeExternalMessage> messages) {
+  // Record sources touched by a locally accepted candidate. This operation is
+  // deliberately reversible: it must not advance nonce watermarks or erase
+  // messages. The global pool reconciles these sources only from shard states
+  // referenced by the shard-client-confirmed masterchain state.
+  virtual td::actor::Task<> track_external_messages(std::vector<TrackedNativeExternalMessage> messages) {
     co_return {};
   }
 

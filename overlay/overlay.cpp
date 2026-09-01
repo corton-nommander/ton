@@ -28,6 +28,7 @@
 #include "td/utils/Random.h"
 #include "td/utils/Status.h"
 #include "td/utils/StringBuilder.h"
+#include "td/utils/ThreadSafeCounter.h"
 
 #include "overlay.hpp"
 
@@ -652,7 +653,9 @@ void OverlayImpl::get_self_node(td::Promise<OverlayNode> promise) {
 void OverlayImpl::send_new_fec_broadcast_part(PublicKeyHash local_id, Overlay::BroadcastDataHash data_hash,
                                               td::uint32 size, td::uint32 flags, td::BufferSlice part, td::uint32 seqno,
                                               fec::FecType fec_type, td::uint32 date) {
+  TD_PERF_COUNTER(overlay_fec_generated_callback);
   broadcasts_fec_.send_part(this, local_id, data_hash, size, flags, std::move(part), seqno, std::move(fec_type), date);
+  maybe_yield_after_fec_callback();
 }
 
 void OverlayImpl::broadcast_twostep_signed_simple(BroadcastTwostepDataSimple &&data,
@@ -739,7 +742,17 @@ void OverlayImpl::broadcast_simple_checked(Overlay::BroadcastHash &&hash, td::Re
 
 void OverlayImpl::broadcast_fec_signed(std::unique_ptr<BroadcastFecPart> &&part,
                                        td::Result<std::pair<td::BufferSlice, PublicKey>> &&R) {
+  TD_PERF_COUNTER(overlay_fec_signed_callback);
   broadcasts_fec_.signed_(this, std::move(part), std::move(R));
+  maybe_yield_after_fec_callback();
+}
+
+void OverlayImpl::maybe_yield_after_fec_callback() {
+  if (!fec_callback_yield_policy_.on_callback()) {
+    return;
+  }
+  TD_PERF_COUNTER(overlay_fec_fairness_yield);
+  yield();
 }
 
 void OverlayImpl::broadcast_fec_checked(Overlay::BroadcastHash &&hash, td::Result<td::Unit> &&R) {

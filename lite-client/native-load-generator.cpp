@@ -27,6 +27,7 @@
 #include "vm/vm.h"
 
 #include "ext-client.h"
+#include "native-load-generator-policy.hpp"
 
 #include <algorithm>
 #include <array>
@@ -167,6 +168,7 @@ struct Options {
   td::uint32 signers{4};
   td::uint32 workers{1};
   td::uint32 max_inflight{8192};
+  td::uint32 adaptive_max_cwnd{0};
   td::uint32 submit_batch_size{1};
   td::uint32 submit_source_run_size{1};
   td::uint32 submit_coalesce_ms{2};
@@ -179,6 +181,9 @@ struct Options {
   td::uint32 valid_for_seconds{120};
   td::uint32 max_retries{3};
   td::uint32 retry_backoff_ms{10};
+  double retry_horizon_seconds{30.0};
+  td::uint32 canonical_state_lag_retry_backoff_ms{250};
+  td::uint32 canonical_state_lag_retry_max_backoff_ms{2000};
   td::uint32 finality_sample_sources{256};
   td::uint64 amount{1};
   td::uint64 fee{0};
@@ -339,6 +344,7 @@ enum class TaskErrorReason {
   too_old,
   too_new,
   expired,
+  canonical_state_lag,
   not_ready,
   balance,
   invalid,
@@ -356,6 +362,7 @@ struct TaskErrorReasonCounters {
   td::uint64 too_old{0};
   td::uint64 too_new{0};
   td::uint64 expired{0};
+  td::uint64 canonical_state_lag{0};
   td::uint64 not_ready{0};
   td::uint64 balance{0};
   td::uint64 invalid{0};
@@ -373,6 +380,9 @@ struct TaskErrorReasonCounters {
       case TaskErrorReason::too_old: ++too_old; break;
       case TaskErrorReason::too_new: ++too_new; break;
       case TaskErrorReason::expired: ++expired; break;
+      case TaskErrorReason::canonical_state_lag:
+        ++canonical_state_lag;
+        break;
       case TaskErrorReason::not_ready: ++not_ready; break;
       case TaskErrorReason::balance: ++balance; break;
       case TaskErrorReason::invalid: ++invalid; break;
@@ -392,6 +402,7 @@ struct TaskErrorReasonCounters {
     ADD_REASON(too_old);
     ADD_REASON(too_new);
     ADD_REASON(expired);
+    ADD_REASON(canonical_state_lag);
     ADD_REASON(not_ready);
     ADD_REASON(balance);
     ADD_REASON(invalid);
@@ -416,8 +427,15 @@ struct WorkerStats {
   td::uint64 max_wire_batch_size{0};
   td::uint64 wire_batch_source_runs{0};
   td::uint64 max_wire_batch_source_run{0};
+  td::uint64 submit_coalesce_windows{0};
+  td::uint64 submit_coalesce_blocked_pumps{0};
+  td::uint64 submit_coalesce_deadline_dispatches{0};
+  td::uint64 submit_coalesce_full_batch_dispatches{0};
   td::uint64 retries{0};
   td::uint64 retry_exhausted{0};
+  td::uint64 retry_horizon_exhausted{0};
+  td::uint64 retry_exhausted_sources{0};
+  td::uint64 canonical_state_lag_retry_exhausted{0};
   td::uint64 resigned{0};
   td::uint64 repair_offered{0};
   td::uint64 mempool_accepted{0};
@@ -457,7 +475,12 @@ struct WorkerStats {
   td::uint64 source_issue_bursts{0};
   td::uint64 source_issue_burst_messages{0};
   td::uint64 max_source_issue_burst{0};
+  td::uint64 head_blocked_ready_notifications{0};
   td::uint64 head_blocked_ready_scans{0};
+  td::uint64 ready_source_queue_pushes{0};
+  td::uint64 ready_source_queue_stale_entries{0};
+  td::uint64 ready_source_queue_excluded_rotations{0};
+  td::uint64 max_ready_source_queue_depth{0};
   td::uint64 sources_at_canonical_backlog_cap{0};
   td::uint64 max_source_canonical_backlog_current{0};
   td::uint64 max_active_tasks_per_source{0};
@@ -467,8 +490,11 @@ struct WorkerStats {
   td::uint64 retry_wait{0};
   td::uint64 active_tasks{0};
   td::uint64 active_sources{0};
+  td::uint64 clients_at_cwnd_cap{0};
+  td::uint64 cwnd_cap_limited_acks{0};
   double congestion_window{0.0};
   double initial_congestion_window{0.0};
+  double effective_cwnd_cap{0.0};
   double pacing_tokens{0.0};
   double measure_elapsed_seconds{0.0};
   double drain_to_anchor_seconds{0.0};
@@ -597,8 +623,11 @@ class NativeLoadWorker final : public td::actor::Actor {
     block::NativeTransfer transfer;
     td::BufferSlice boc;
     TaskState state{TaskState::signing};
+    TaskErrorReason retry_reason{TaskErrorReason::server_other};
     td::uint32 attempts{0};
+    td::uint32 canonical_state_lag_attempts{0};
     double first_issued_at{0.0};
+    double first_retry_at{-1.0};
     double sign_started_at{0.0};
     double last_sent_at{0.0};
     double retry_at{0.0};
@@ -656,6 +685,7 @@ class NativeLoadWorker final : public td::actor::Actor {
     td::uint32 inflight{0};
     td::uint32 hard_limit{1};
     double cwnd{1.0};
+    double cwnd_limit{1.0};
     double last_decrease_at{0.0};
   };
 
@@ -675,7 +705,8 @@ class NativeLoadWorker final : public td::actor::Actor {
   std::vector<ClientSlot> clients_;
   std::vector<td::actor::ActorOwn<Signer>> signers_;
   std::deque<AvailableWallet> available_wallets_;
-  std::deque<std::shared_ptr<TransferTask>> ready_tasks_;
+  native_load::ReadySourceQueue ready_wallets_;
+  native_load::SubmitCoalescer submit_coalescer_;
   std::multimap<double, std::shared_ptr<TransferTask>> retry_tasks_;
   std::size_t signer_cursor_{0};
   std::size_t scan_client_cursor_{0};
@@ -723,23 +754,31 @@ class NativeLoadWorker final : public td::actor::Actor {
   bool can_issue(double now) const;
   bool source_backlog_full(const Wallet& wallet) const;
   bool task_is_active(const std::shared_ptr<TransferTask>& task) const;
+  bool is_fresh_normal_submission(const std::shared_ptr<TransferTask>& task) const;
+  bool has_dispatchable_fresh_tasks() const;
   double measure_backpressure_overlap(double begin, double end) const;
   void update_backpressure_state(double now);
   void pump();
   td::optional<std::size_t> find_available_wallet();
   void enqueue_available_wallet(std::size_t wallet_idx);
   void invalidate_available_wallet(std::size_t wallet_idx);
+  void mark_task_ready(const std::shared_ptr<TransferTask>& task);
+  void enqueue_ready_wallet(std::size_t wallet_idx);
+  void invalidate_ready_wallet(std::size_t wallet_idx);
   void create_transfer(std::size_t wallet_idx, td::uint64 nonce, bool measured, bool repair);
   void sign_task(std::shared_ptr<TransferTask> task, bool resign);
   void on_signed(std::shared_ptr<TransferTask> task, td::Result<SignedTransfer> message);
   td::optional<std::size_t> select_client() const;
   td::uint32 client_available_capacity(std::size_t client_idx) const;
-  bool ready_for_first_submission(const std::shared_ptr<TransferTask>& task) const;
+  td::optional<std::size_t> select_full_batch_client() const;
+  std::size_t count_dispatchable_fresh_heads(std::size_t limit) const;
   std::shared_ptr<TransferTask>
-  take_dispatchable_ready_task(const std::vector<std::size_t>* excluded_wallets = nullptr);
-  void append_ready_source_run(std::shared_ptr<TransferTask> first,
-                               std::vector<std::shared_ptr<TransferTask>>& tasks,
-                               std::size_t batch_limit);
+  take_dispatchable_ready_task(bool allow_fresh,
+                               const std::vector<std::size_t>* excluded_wallets = nullptr);
+  std::size_t append_ready_source_run(
+      std::shared_ptr<TransferTask> first,
+      std::vector<std::shared_ptr<TransferTask>>& tasks,
+      std::size_t batch_limit, bool allow_fresh);
   void dispatch_ready();
   void send_task(std::shared_ptr<TransferTask> task, std::size_t client_idx);
   void send_batch(std::vector<std::shared_ptr<TransferTask>> tasks, std::size_t client_idx);
@@ -747,10 +786,12 @@ class NativeLoadWorker final : public td::actor::Actor {
                  td::Result<td::BufferSlice> result);
   void on_batch_result(std::vector<std::shared_ptr<TransferTask>> tasks, std::size_t client_idx,
                        td::Result<td::BufferSlice> result);
+  void increase_client_cwnd(std::size_t client_idx);
   void handle_task_error(std::shared_ptr<TransferTask> task, std::size_t client_idx, td::Status error,
                          ErrorOrigin origin);
   void schedule_retry(std::shared_ptr<TransferTask> task, double delay_seconds,
                       TaskErrorReason reason);
+  void abandon_wallet_after_retry_horizon(std::shared_ptr<TransferTask> task, TaskErrorReason reason);
   void accept_task(std::shared_ptr<TransferTask> task, TaskResolution resolution);
   void reject_task(std::shared_ptr<TransferTask> task, td::Slice reason);
   void disable_wallet_for_conflict(std::size_t wallet_idx, td::Slice reason);
@@ -983,7 +1024,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     td::uint32 source_cursor = 0;
     for (td::uint32 i = 0; i < options_.workers; ++i) {
       auto distribute = [i, count = options_.workers](td::uint32 total) {
-        return total / count + (i < total % count ? 1u : 0u);
+        return native_load::distributed_share(total, i, count);
       };
       Options worker_options = options_;
       worker_options.source_offset = options_.source_offset + source_cursor;
@@ -991,6 +1032,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       worker_options.connections = distribute(options_.connections);
       worker_options.signers = distribute(options_.signers);
       worker_options.max_inflight = distribute(options_.max_inflight);
+      worker_options.adaptive_max_cwnd =
+          options_.adaptive_max_cwnd ? distribute(options_.adaptive_max_cwnd) : 0;
       if (options_.max_canonical_backlog) {
         worker_options.max_canonical_backlog =
             options_.max_canonical_backlog / options_.workers +
@@ -1075,8 +1118,15 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(wire_batches);
       ADD_FIELD(wire_batch_messages);
       ADD_FIELD(wire_batch_source_runs);
+      ADD_FIELD(submit_coalesce_windows);
+      ADD_FIELD(submit_coalesce_blocked_pumps);
+      ADD_FIELD(submit_coalesce_deadline_dispatches);
+      ADD_FIELD(submit_coalesce_full_batch_dispatches);
       ADD_FIELD(retries);
       ADD_FIELD(retry_exhausted);
+      ADD_FIELD(retry_horizon_exhausted);
+      ADD_FIELD(retry_exhausted_sources);
+      ADD_FIELD(canonical_state_lag_retry_exhausted);
       ADD_FIELD(resigned);
       ADD_FIELD(repair_offered);
       ADD_FIELD(mempool_accepted);
@@ -1115,7 +1165,11 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(source_backpressure_stalls);
       ADD_FIELD(source_issue_bursts);
       ADD_FIELD(source_issue_burst_messages);
+      ADD_FIELD(head_blocked_ready_notifications);
       ADD_FIELD(head_blocked_ready_scans);
+      ADD_FIELD(ready_source_queue_pushes);
+      ADD_FIELD(ready_source_queue_stale_entries);
+      ADD_FIELD(ready_source_queue_excluded_rotations);
       ADD_FIELD(sources_at_canonical_backlog_cap);
       ADD_FIELD(inflight);
       ADD_FIELD(signing);
@@ -1123,14 +1177,19 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(retry_wait);
       ADD_FIELD(active_tasks);
       ADD_FIELD(active_sources);
+      ADD_FIELD(clients_at_cwnd_cap);
+      ADD_FIELD(cwnd_cap_limited_acks);
 #undef ADD_FIELD
       total.congestion_window += value.congestion_window;
       total.initial_congestion_window += value.initial_congestion_window;
+      total.effective_cwnd_cap += value.effective_cwnd_cap;
       total.max_wire_batch_size = std::max(total.max_wire_batch_size, value.max_wire_batch_size);
       total.max_wire_batch_source_run =
           std::max(total.max_wire_batch_source_run, value.max_wire_batch_source_run);
       total.max_source_issue_burst =
           std::max(total.max_source_issue_burst, value.max_source_issue_burst);
+      total.max_ready_source_queue_depth =
+          std::max(total.max_ready_source_queue_depth, value.max_ready_source_queue_depth);
       total.max_source_canonical_backlog_current =
           std::max(total.max_source_canonical_backlog_current,
                    value.max_source_canonical_backlog_current);
@@ -1327,253 +1386,219 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       }
       std::cout << ']';
     };
-    std::cout << "{\"schema\":\"native-load-v2\",\"final\":" << (final ? "true" : "false")
-              << ",\"phase\":\"" << (final ? "finished" : phase(now, total)) << "\",\"elapsed_s\":"
-              << std::max(0.0, now - start_at_) << ",\"load_start_unix_s\":" << start_system_at_
-              << ",\"measure_start_unix_s\":" << measure_begin_system
-              << ",\"measure_end_unix_s\":" << measure_end_system
-              << ",\"load_start_unix_ms\":" << unix_milliseconds(start_system_at_)
-              << ",\"measure_start_unix_ms\":" << measure_begin_ms
-              << ",\"measure_end_unix_ms\":" << measure_end_ms
-              << ",\"canonical_gen_utime_bucket_start_unix_s\":" << canonical_bucket_begin
-              << ",\"canonical_gen_utime_bucket_end_unix_s\":" << canonical_bucket_end
-              << ",\"canonical_gen_utime_bucket_duration_s\":" << canonical_bucket_seconds
-              << ",\"target_tps\":" << options_.target_tps
-              << ",\"offered\":" << total.offered << ",\"steady_offered\":" << total.steady_offered
-              << ",\"offered_tps\":" << rate(total.offered, previous_.offered)
-              << ",\"submitted\":" << total.submitted << ",\"steady_submitted\":"
-              << total.steady_submitted << ",\"repair_submitted\":" << total.repair_submitted
-              << ",\"sign_operations\":" << total.sign_operations
-              << ",\"sign_tps\":" << rate(total.sign_operations, previous_.sign_operations)
-              << ",\"sign_errors\":" << total.sign_errors << ",\"wire_attempts\":" << total.wire_attempts
-              << ",\"wire_tps\":" << rate(total.wire_attempts, previous_.wire_attempts)
-              << ",\"wire_queries\":" << total.wire_queries << ",\"wire_query_tps\":"
-              << rate(total.wire_queries, previous_.wire_queries) << ",\"wire_batches\":"
-              << total.wire_batches << ",\"wire_batch_messages\":" << total.wire_batch_messages
-              << ",\"wire_batch_avg_size\":"
-              << static_cast<double>(total.wire_batch_messages) /
-                     static_cast<double>(std::max<td::uint64>(1, total.wire_batches))
-              << ",\"wire_batch_max_size\":" << total.max_wire_batch_size
-              << ",\"wire_batch_source_run_target\":" << options_.submit_source_run_size
-              << ",\"wire_batch_source_runs\":" << total.wire_batch_source_runs
-              << ",\"wire_batch_source_run_avg_size\":"
-              << static_cast<double>(total.wire_batch_messages) /
-                     static_cast<double>(std::max<td::uint64>(1, total.wire_batch_source_runs))
-              << ",\"wire_batch_source_run_max_size\":"
-              << total.max_wire_batch_source_run
-              << ",\"submit_coalesce_ms\":" << options_.submit_coalesce_ms
-              << ",\"source_issue_bursts\":" << total.source_issue_bursts
-              << ",\"source_issue_burst_messages\":" << total.source_issue_burst_messages
-              << ",\"source_issue_burst_avg_size\":"
-              << static_cast<double>(total.source_issue_burst_messages) /
-                     static_cast<double>(std::max<td::uint64>(1, total.source_issue_bursts))
-              << ",\"source_issue_burst_max_size\":" << total.max_source_issue_burst
-              << ",\"retries\":" << total.retries << ",\"retry_exhausted\":" << total.retry_exhausted
-              << ",\"resigned\":" << total.resigned << ",\"repair_offered\":" << total.repair_offered
-              << ",\"mempool_accepted\":"
-              << total.mempool_accepted << ",\"stored\":" << total.mempool_accepted
-              << ",\"admitted\":" << total.mempool_accepted << ",\"mempool_accept_tps\":"
-              << rate(total.mempool_accepted, previous_.mempool_accepted)
-              << ",\"steady_mempool_accepted\":" << total.steady_mempool_accepted
-              << ",\"repair_accepted\":" << total.repair_accepted
-              << ",\"repeat_admission_successes\":" << total.repeat_admission_successes
-              << ",\"accepted_inferred\":" << total.accepted_inferred
-              << ",\"duplicate_nonce_conflicts\":" << total.duplicate_nonce_conflicts
-              << ",\"canonical_inferred_too_old\":" << total.canonical_inferred_too_old
-              << ",\"proof_observed_resolved\":" << total.proof_observed_resolved
-              << ",\"canonical_hash_matched\":" << total.canonical_hash_matched
-              << ",\"canonical_hash_conflicts\":" << total.canonical_hash_conflicts
-              << ",\"repair_suppressed\":" << total.repair_suppressed
-              << ",\"measure_elapsed_s\":" << total.measure_elapsed_seconds
-              << ",\"steady_offered_avg_tps\":"
-              << measured_offered_avg_tps
-              << ",\"offer_target_attainment_ratio\":" << offer_target_attainment_ratio
-              << ",\"offer_target_attained\":" << (offer_target_attained ? "true" : "false")
-              << ",\"canonical_overdrive_ratio\":" << canonical_overdrive_ratio
-              << ",\"steady_mempool_accept_avg_tps\":"
-              << static_cast<double>(total.steady_mempool_accepted) /
-                     std::max(0.000001, total.measure_elapsed_seconds)
-              << ",\"rejected\":" << total.rejected
-              << ",\"submission_errors_by_reason\":{\"full\":" << total.rejected_full << ",\"rate_limit\":"
-              << total.rejected_rate_limit << ",\"nonce\":" << total.rejected_nonce << ",\"expired\":"
-              << total.rejected_expired << ",\"balance\":" << total.rejected_balance << ",\"invalid\":"
-              << total.rejected_invalid << ",\"other\":" << total.rejected_other << "}"
-              << ",\"timeouts\":" << total.timeouts << ",\"transport_errors\":" << total.transport_errors
-              << ",\"server_errors\":" << total.server_errors << ",\"parse_errors\":" << total.parse_errors
-              << ",\"task_errors_by_reason\":{\"timeout\":" << total.task_errors_by_reason.timeout
-              << ",\"transport\":" << total.task_errors_by_reason.transport
-              << ",\"parse\":" << total.task_errors_by_reason.parse
-              << ",\"full\":" << total.task_errors_by_reason.full
-              << ",\"rate_limit\":" << total.task_errors_by_reason.rate_limit
-              << ",\"duplicate\":" << total.task_errors_by_reason.duplicate
-              << ",\"too_old\":" << total.task_errors_by_reason.too_old
-              << ",\"too_new\":" << total.task_errors_by_reason.too_new
-              << ",\"expired\":" << total.task_errors_by_reason.expired
-              << ",\"not_ready\":" << total.task_errors_by_reason.not_ready
-              << ",\"balance\":" << total.task_errors_by_reason.balance
-              << ",\"invalid\":" << total.task_errors_by_reason.invalid
-              << ",\"signing\":" << total.task_errors_by_reason.signing
-              << ",\"server_other\":" << total.task_errors_by_reason.server_other << "}"
-              << ",\"retries_by_reason\":{\"timeout\":" << total.retries_by_reason.timeout
-              << ",\"transport\":" << total.retries_by_reason.transport
-              << ",\"parse\":" << total.retries_by_reason.parse
-              << ",\"full\":" << total.retries_by_reason.full
-              << ",\"rate_limit\":" << total.retries_by_reason.rate_limit
-              << ",\"duplicate\":" << total.retries_by_reason.duplicate
-              << ",\"too_old\":" << total.retries_by_reason.too_old
-              << ",\"too_new\":" << total.retries_by_reason.too_new
-              << ",\"expired\":" << total.retries_by_reason.expired
-              << ",\"not_ready\":" << total.retries_by_reason.not_ready
-              << ",\"balance\":" << total.retries_by_reason.balance
-              << ",\"invalid\":" << total.retries_by_reason.invalid
-              << ",\"signing\":" << total.retries_by_reason.signing
-              << ",\"server_other\":" << total.retries_by_reason.server_other << "}"
-              << ",\"nonce_gaps\":" << total.nonce_gaps << ",\"external_nonce_conflicts\":"
-              << total.external_nonce_conflicts << ",\"inflight\":" << total.inflight
-              << ",\"canonical_backlog\":" << total.canonical_backlog
-              << ",\"canonical_backlog_sampled_peak\":" << canonical_backlog_sampled_peak_
-              << ",\"canonical_backpressure_paused\":"
-              << (total.canonical_backpressure_paused ? "true" : "false")
-              << ",\"canonical_backpressure_events\":" << total.canonical_backpressure_events
-              << ",\"canonical_backpressure_s\":" << total.canonical_backpressure_seconds
-              << ",\"measure_canonical_backpressure_events\":"
-              << total.measure_canonical_backpressure_events
-              << ",\"measure_canonical_backpressure_s\":"
-              << total.measure_canonical_backpressure_seconds
-              << ",\"measure_canonical_backpressure_fraction\":"
-              << measure_backpressure_fraction
-              << ",\"source_backpressure_stalls\":" << total.source_backpressure_stalls
-              << ",\"head_blocked_ready_scans\":" << total.head_blocked_ready_scans
-              << ",\"max_source_canonical_backlog_configured\":"
-              << options_.max_source_canonical_backlog
-              << ",\"max_source_canonical_backlog_effective\":"
-              << (options_.max_source_canonical_backlog
-                      ? std::min<td::uint64>(options_.max_source_canonical_backlog,
-                                             max_native_nonce_diff)
-                      : max_native_nonce_diff)
-              << ",\"sources_at_canonical_backlog_cap\":"
-              << total.sources_at_canonical_backlog_cap
-              << ",\"max_source_canonical_backlog_current\":"
-              << total.max_source_canonical_backlog_current
-              << ",\"max_active_tasks_per_source\":" << total.max_active_tasks_per_source
-              << ",\"signing\":" << total.signing << ",\"ready\":" << total.ready
-              << ",\"retry_wait\":" << total.retry_wait << ",\"active_tasks\":"
-              << total.active_tasks << ",\"active_sources\":" << total.active_sources
-              << ",\"interrupted\":" << (total.interrupted ? "true" : "false")
-              << ",\"drain_timed_out\":" << (total.drain_timed_out ? "true" : "false")
-              << ",\"congestion_window\":" << total.congestion_window
-              << ",\"initial_congestion_window\":" << total.initial_congestion_window
-              << ",\"congestion_window_sampled_peak\":" << congestion_window_sampled_peak_
-              << ",\"pacing_tokens\":"
-              << total.pacing_tokens << ",\"rtt_ms\":{\"p50\":" << total.request_latency.percentile(0.50)
-              << ",\"p95\":" << total.request_latency.percentile(0.95) << ",\"p99\":"
-              << total.request_latency.percentile(0.99) << ",\"max\":" << total.request_latency.max_ms
-              << ",\"samples\":" << total.request_latency.count
-              << ",\"overflow\":" << total.request_latency.overflow_count()
-              << ",\"overflow_lower_bound_ms\":" << LatencyHistogram::upper_ms.back()
-              << ",\"p50_in_overflow\":"
-              << (total.request_latency.percentile_in_overflow(0.50) ? "true" : "false")
-              << ",\"p95_in_overflow\":"
-              << (total.request_latency.percentile_in_overflow(0.95) ? "true" : "false")
-              << ",\"p99_in_overflow\":"
-              << (total.request_latency.percentile_in_overflow(0.99) ? "true" : "false")
-              << "},\"sign_ms\":{\"p50\":"
-              << total.signing_latency.percentile(0.50) << ",\"p95\":"
-              << total.signing_latency.percentile(0.95) << ",\"p99\":"
-              << total.signing_latency.percentile(0.99) << ",\"max\":" << total.signing_latency.max_ms
-              << ",\"samples\":" << total.signing_latency.count
-              << ",\"overflow\":" << total.signing_latency.overflow_count()
-              << ",\"overflow_lower_bound_ms\":" << LatencyHistogram::upper_ms.back()
-              << ",\"p50_in_overflow\":"
-              << (total.signing_latency.percentile_in_overflow(0.50) ? "true" : "false")
-              << ",\"p95_in_overflow\":"
-              << (total.signing_latency.percentile_in_overflow(0.95) ? "true" : "false")
-              << ",\"p99_in_overflow\":"
-              << (total.signing_latency.percentile_in_overflow(0.99) ? "true" : "false")
-              << "},\"anchor_latency_sample_ms\":{\"p50\":"
-              << total.sampled_anchor_latency.percentile(0.50) << ",\"p95\":"
-              << total.sampled_anchor_latency.percentile(0.95) << ",\"p99\":"
-              << total.sampled_anchor_latency.percentile(0.99) << ",\"max\":"
-              << total.sampled_anchor_latency.max_ms << ",\"samples\":" << total.sampled_anchor_latency.count
-              << ",\"overflow\":" << total.sampled_anchor_latency.overflow_count()
-              << ",\"overflow_lower_bound_ms\":" << LatencyHistogram::upper_ms.back()
-              << ",\"p50_in_overflow\":"
-              << (total.sampled_anchor_latency.percentile_in_overflow(0.50) ? "true" : "false")
-              << ",\"p95_in_overflow\":"
-              << (total.sampled_anchor_latency.percentile_in_overflow(0.95) ? "true" : "false")
-              << ",\"p99_in_overflow\":"
-              << (total.sampled_anchor_latency.percentile_in_overflow(0.99) ? "true" : "false")
-              << ",\"poll_resolution_s\":" << options_.finality_poll_seconds << "},\"anchor_scan_errors\":"
-              << total.anchor_scan_errors << ",\"canonical_chain_blocks\":" << follower_stats_.blocks
-              << ",\"canonical_follower_block_discovery_rate\":"
-              << rate(follower_stats_.blocks, previous_follower_stats_.blocks)
-              << ",\"canonical_chain_native_blocks\":" << follower_stats_.native_blocks
-              << ",\"canonical_chain_measure_native_blocks\":"
-              << follower_stats_.measured_native_blocks
-              << ",\"canonical_chain_native_transfers\":" << follower_stats_.native_transfers
-              << ",\"canonical_chain_avg_native_transfers_per_block\":"
-              << static_cast<double>(follower_stats_.native_transfers) /
-                     static_cast<double>(std::max<td::uint64>(1, follower_stats_.native_blocks))
-              << ",\"canonical_chain_measure_avg_native_transfers_per_block\":"
-              << static_cast<double>(follower_stats_.measured_native_transfers) /
-                     static_cast<double>(std::max<td::uint64>(1, follower_stats_.measured_native_blocks))
-              << ",\"canonical_chain_max_native_transfers_per_block\":"
-              << follower_stats_.max_native_transfers_per_block
-              << ",\"canonical_chain_measure_max_native_transfers_per_block\":"
-              << follower_stats_.measured_max_native_transfers_per_block
-              << ",\"canonical_chain_max_blocks_per_gen_utime_second\":"
-              << canonical_blocks_peak_1s
-              << ",\"canonical_chain_measure_max_blocks_per_gen_utime_second\":"
-              << canonical_measure_blocks_peak_1s
-              << ",\"canonical_follower_discovery_tps\":"
-              << rate(follower_stats_.native_transfers, previous_follower_stats_.native_transfers)
-              << ",\"canonical_chain_measure_transfers\":"
-              << follower_stats_.measured_native_transfers
-              << ",\"canonical_chain_measure_avg_tps\":"
-              << static_cast<double>(follower_stats_.measured_native_transfers) /
-                     static_cast<double>(std::max<td::int64>(1, canonical_bucket_seconds))
-              << ",\"canonical_chain_measure_peak_1s_tps\":" << canonical_measure_peak_1s
-              << ",\"canonical_follower_errors\":" << follower_stats_.errors
-              << ",\"canonical_follower_fatal_errors\":" << follower_stats_.fatal_errors
-              << ",\"canonical_follower_transient_timeouts\":"
-              << follower_stats_.transient_timeouts
-              << ",\"canonical_follower_transient_liteserver_timeouts\":"
-              << follower_stats_.transient_liteserver_timeouts
-              << ",\"canonical_follower_transient_cancellations\":"
-              << follower_stats_.transient_cancellations
-              << ",\"canonical_follower_transient_not_ready\":"
-              << follower_stats_.transient_not_ready
-              << ",\"canonical_follower_transient_retries\":"
-              << follower_stats_.transient_retries
-              << ",\"canonical_follower_transient_recoveries\":"
-              << follower_stats_.transient_recoveries
-              << ",\"canonical_follower_retry_exhausted\":" << follower_stats_.retry_exhausted
-              << ",\"canonical_follower_reconnects\":" << follower_stats_.reconnects
-              << ",\"canonical_follower_retry_streak\":" << follower_transient_failure_streak_
-              << ",\"canonical_follower_retry_limit\":" << options_.canonical_retry_limit
-              << ",\"canonical_follower_retry_backoff_s\":"
-              << options_.canonical_retry_backoff_seconds
-              << ",\"canonical_follower_retry_max_backoff_s\":"
-              << options_.canonical_retry_max_backoff_seconds
-              << ",\"canonical_follower_query_timeout_s\":"
-              << options_.canonical_query_timeout
-              << ",\"canonical_follower_reorgs\":" << follower_stats_.reorgs
-              << ",\"canonical_follower_lag_blocks\":" << follower_stats_.lag_blocks
-              << ",\"canonical_follower_max_lag_blocks\":" << follower_stats_.max_lag_blocks
-              << ",\"canonical_follower_enabled\":"
-              << (options_.canonical_block_follower ? "true" : "false")
-              << ",\"canonical_follower_final_catchup_complete\":"
-              << (final ? (final_follower_catchup_complete_ ? "true" : "false") : "null")
-              << ",\"canonical_result_valid\":" << (canonical_result_valid ? "true" : "false")
-              << ",\"benchmark_result_valid\":"
-              << (final ? (benchmark_result_valid ? "true" : "false") : "null")
-              << ",\"chain_correctness_valid\":"
-              << (final ? (canonical_result_valid ? "true" : "false") : "null")
-              << ",\"ingress_capacity_valid\":"
-              << (final ? (ingress_capacity_valid ? "true" : "false") : "null")
-              << ",\"chain_capacity_valid\":"
-              << (final ? (chain_capacity_valid ? "true" : "false") : "null")
-              << ",\"correctness_invalid_reasons\":";
+    std::cout
+        << "{\"schema\":\"native-load-v2\",\"final\":" << (final ? "true" : "false") << ",\"phase\":\""
+        << (final ? "finished" : phase(now, total)) << "\",\"elapsed_s\":" << std::max(0.0, now - start_at_)
+        << ",\"load_start_unix_s\":" << start_system_at_ << ",\"measure_start_unix_s\":" << measure_begin_system
+        << ",\"measure_end_unix_s\":" << measure_end_system
+        << ",\"load_start_unix_ms\":" << unix_milliseconds(start_system_at_)
+        << ",\"measure_start_unix_ms\":" << measure_begin_ms << ",\"measure_end_unix_ms\":" << measure_end_ms
+        << ",\"canonical_gen_utime_bucket_start_unix_s\":" << canonical_bucket_begin
+        << ",\"canonical_gen_utime_bucket_end_unix_s\":" << canonical_bucket_end
+        << ",\"canonical_gen_utime_bucket_duration_s\":" << canonical_bucket_seconds
+        << ",\"target_tps\":" << options_.target_tps << ",\"offered\":" << total.offered
+        << ",\"steady_offered\":" << total.steady_offered
+        << ",\"offered_tps\":" << rate(total.offered, previous_.offered) << ",\"submitted\":" << total.submitted
+        << ",\"steady_submitted\":" << total.steady_submitted << ",\"repair_submitted\":" << total.repair_submitted
+        << ",\"sign_operations\":" << total.sign_operations
+        << ",\"sign_tps\":" << rate(total.sign_operations, previous_.sign_operations)
+        << ",\"sign_errors\":" << total.sign_errors << ",\"wire_attempts\":" << total.wire_attempts
+        << ",\"wire_tps\":" << rate(total.wire_attempts, previous_.wire_attempts)
+        << ",\"wire_queries\":" << total.wire_queries
+        << ",\"wire_query_tps\":" << rate(total.wire_queries, previous_.wire_queries)
+        << ",\"wire_batches\":" << total.wire_batches << ",\"wire_batch_messages\":" << total.wire_batch_messages
+        << ",\"wire_batch_avg_size\":"
+        << static_cast<double>(total.wire_batch_messages) /
+               static_cast<double>(std::max<td::uint64>(1, total.wire_batches))
+        << ",\"wire_batch_max_size\":" << total.max_wire_batch_size
+        << ",\"wire_batch_source_run_target\":" << options_.submit_source_run_size
+        << ",\"wire_batch_source_runs\":" << total.wire_batch_source_runs << ",\"wire_batch_source_run_avg_size\":"
+        << static_cast<double>(total.wire_batch_messages) /
+               static_cast<double>(std::max<td::uint64>(1, total.wire_batch_source_runs))
+        << ",\"wire_batch_source_run_max_size\":" << total.max_wire_batch_source_run
+        << ",\"submit_coalesce_ms\":" << options_.submit_coalesce_ms
+        << ",\"submit_coalesce_windows\":" << total.submit_coalesce_windows
+        << ",\"submit_coalesce_blocked_pumps\":"
+        << total.submit_coalesce_blocked_pumps
+        << ",\"submit_coalesce_deadline_dispatches\":"
+        << total.submit_coalesce_deadline_dispatches
+        << ",\"submit_coalesce_full_batch_dispatches\":"
+        << total.submit_coalesce_full_batch_dispatches
+        << ",\"source_issue_bursts\":" << total.source_issue_bursts
+        << ",\"source_issue_burst_messages\":" << total.source_issue_burst_messages
+        << ",\"source_issue_burst_avg_size\":"
+        << static_cast<double>(total.source_issue_burst_messages) /
+               static_cast<double>(std::max<td::uint64>(1, total.source_issue_bursts))
+        << ",\"source_issue_burst_max_size\":" << total.max_source_issue_burst << ",\"retries\":" << total.retries
+        << ",\"retry_exhausted\":" << total.retry_exhausted
+        << ",\"retry_horizon_exhausted\":" << total.retry_horizon_exhausted
+        << ",\"retry_exhausted_sources\":" << total.retry_exhausted_sources
+        << ",\"canonical_state_lag_retry_exhausted\":" << total.canonical_state_lag_retry_exhausted
+        << ",\"retry_horizon_s\":" << options_.retry_horizon_seconds
+        << ",\"canonical_state_lag_retry_backoff_ms\":" << options_.canonical_state_lag_retry_backoff_ms
+        << ",\"canonical_state_lag_retry_max_backoff_ms\":" << options_.canonical_state_lag_retry_max_backoff_ms
+        << ",\"resigned\":" << total.resigned << ",\"repair_offered\":" << total.repair_offered
+        << ",\"mempool_accepted\":" << total.mempool_accepted << ",\"stored\":" << total.mempool_accepted
+        << ",\"admitted\":" << total.mempool_accepted
+        << ",\"mempool_accept_tps\":" << rate(total.mempool_accepted, previous_.mempool_accepted)
+        << ",\"steady_mempool_accepted\":" << total.steady_mempool_accepted
+        << ",\"repair_accepted\":" << total.repair_accepted
+        << ",\"repeat_admission_successes\":" << total.repeat_admission_successes
+        << ",\"accepted_inferred\":" << total.accepted_inferred
+        << ",\"duplicate_nonce_conflicts\":" << total.duplicate_nonce_conflicts
+        << ",\"canonical_inferred_too_old\":" << total.canonical_inferred_too_old
+        << ",\"proof_observed_resolved\":" << total.proof_observed_resolved
+        << ",\"canonical_hash_matched\":" << total.canonical_hash_matched
+        << ",\"canonical_hash_conflicts\":" << total.canonical_hash_conflicts
+        << ",\"repair_suppressed\":" << total.repair_suppressed
+        << ",\"measure_elapsed_s\":" << total.measure_elapsed_seconds
+        << ",\"steady_offered_avg_tps\":" << measured_offered_avg_tps
+        << ",\"offer_target_attainment_ratio\":" << offer_target_attainment_ratio
+        << ",\"offer_target_attained\":" << (offer_target_attained ? "true" : "false")
+        << ",\"canonical_overdrive_ratio\":" << canonical_overdrive_ratio << ",\"steady_mempool_accept_avg_tps\":"
+        << static_cast<double>(total.steady_mempool_accepted) / std::max(0.000001, total.measure_elapsed_seconds)
+        << ",\"rejected\":" << total.rejected << ",\"submission_errors_by_reason\":{\"full\":" << total.rejected_full
+        << ",\"rate_limit\":" << total.rejected_rate_limit << ",\"nonce\":" << total.rejected_nonce
+        << ",\"expired\":" << total.rejected_expired << ",\"balance\":" << total.rejected_balance
+        << ",\"invalid\":" << total.rejected_invalid << ",\"other\":" << total.rejected_other << "}"
+        << ",\"timeouts\":" << total.timeouts << ",\"transport_errors\":" << total.transport_errors
+        << ",\"server_errors\":" << total.server_errors << ",\"parse_errors\":" << total.parse_errors
+        << ",\"task_errors_by_reason\":{\"timeout\":" << total.task_errors_by_reason.timeout
+        << ",\"transport\":" << total.task_errors_by_reason.transport
+        << ",\"parse\":" << total.task_errors_by_reason.parse << ",\"full\":" << total.task_errors_by_reason.full
+        << ",\"rate_limit\":" << total.task_errors_by_reason.rate_limit
+        << ",\"duplicate\":" << total.task_errors_by_reason.duplicate
+        << ",\"too_old\":" << total.task_errors_by_reason.too_old
+        << ",\"too_new\":" << total.task_errors_by_reason.too_new
+        << ",\"expired\":" << total.task_errors_by_reason.expired
+        << ",\"canonical_state_lag\":" << total.task_errors_by_reason.canonical_state_lag
+        << ",\"not_ready\":" << total.task_errors_by_reason.not_ready
+        << ",\"balance\":" << total.task_errors_by_reason.balance
+        << ",\"invalid\":" << total.task_errors_by_reason.invalid
+        << ",\"signing\":" << total.task_errors_by_reason.signing
+        << ",\"server_other\":" << total.task_errors_by_reason.server_other << "}"
+        << ",\"retries_by_reason\":{\"timeout\":" << total.retries_by_reason.timeout
+        << ",\"transport\":" << total.retries_by_reason.transport << ",\"parse\":" << total.retries_by_reason.parse
+        << ",\"full\":" << total.retries_by_reason.full << ",\"rate_limit\":" << total.retries_by_reason.rate_limit
+        << ",\"duplicate\":" << total.retries_by_reason.duplicate << ",\"too_old\":" << total.retries_by_reason.too_old
+        << ",\"too_new\":" << total.retries_by_reason.too_new << ",\"expired\":" << total.retries_by_reason.expired
+        << ",\"canonical_state_lag\":" << total.retries_by_reason.canonical_state_lag
+        << ",\"not_ready\":" << total.retries_by_reason.not_ready << ",\"balance\":" << total.retries_by_reason.balance
+        << ",\"invalid\":" << total.retries_by_reason.invalid << ",\"signing\":" << total.retries_by_reason.signing
+        << ",\"server_other\":" << total.retries_by_reason.server_other << "}"
+        << ",\"nonce_gaps\":" << total.nonce_gaps << ",\"external_nonce_conflicts\":" << total.external_nonce_conflicts
+        << ",\"inflight\":" << total.inflight << ",\"canonical_backlog\":" << total.canonical_backlog
+        << ",\"canonical_backlog_sampled_peak\":" << canonical_backlog_sampled_peak_
+        << ",\"canonical_backpressure_paused\":" << (total.canonical_backpressure_paused ? "true" : "false")
+        << ",\"canonical_backpressure_events\":" << total.canonical_backpressure_events
+        << ",\"canonical_backpressure_s\":" << total.canonical_backpressure_seconds
+        << ",\"measure_canonical_backpressure_events\":" << total.measure_canonical_backpressure_events
+        << ",\"measure_canonical_backpressure_s\":" << total.measure_canonical_backpressure_seconds
+        << ",\"measure_canonical_backpressure_fraction\":" << measure_backpressure_fraction
+        << ",\"source_backpressure_stalls\":" << total.source_backpressure_stalls
+        << ",\"head_blocked_ready_notifications\":" << total.head_blocked_ready_notifications
+        << ",\"head_blocked_ready_scans\":" << total.head_blocked_ready_scans
+        << ",\"ready_source_queue_pushes\":" << total.ready_source_queue_pushes
+        << ",\"ready_source_queue_stale_entries\":" << total.ready_source_queue_stale_entries
+        << ",\"ready_source_queue_excluded_rotations\":" << total.ready_source_queue_excluded_rotations
+        << ",\"ready_source_queue_max_depth\":" << total.max_ready_source_queue_depth
+        << ",\"max_source_canonical_backlog_configured\":" << options_.max_source_canonical_backlog
+        << ",\"max_source_canonical_backlog_effective\":"
+        << (options_.max_source_canonical_backlog
+                ? std::min<td::uint64>(options_.max_source_canonical_backlog, max_native_nonce_diff)
+                : max_native_nonce_diff)
+        << ",\"sources_at_canonical_backlog_cap\":" << total.sources_at_canonical_backlog_cap
+        << ",\"max_source_canonical_backlog_current\":" << total.max_source_canonical_backlog_current
+        << ",\"max_active_tasks_per_source\":" << total.max_active_tasks_per_source << ",\"signing\":" << total.signing
+        << ",\"ready\":" << total.ready << ",\"retry_wait\":" << total.retry_wait
+        << ",\"active_tasks\":" << total.active_tasks << ",\"active_sources\":" << total.active_sources
+        << ",\"interrupted\":" << (total.interrupted ? "true" : "false")
+        << ",\"drain_timed_out\":" << (total.drain_timed_out ? "true" : "false")
+        << ",\"congestion_window\":" << total.congestion_window
+        << ",\"initial_congestion_window\":" << total.initial_congestion_window
+        << ",\"adaptive_max_cwnd\":" << options_.adaptive_max_cwnd
+        << ",\"effective_cwnd_cap\":" << total.effective_cwnd_cap
+        << ",\"clients_at_cwnd_cap\":" << total.clients_at_cwnd_cap
+        << ",\"cwnd_cap_limited_acks\":" << total.cwnd_cap_limited_acks
+        << ",\"congestion_window_sampled_peak\":" << congestion_window_sampled_peak_
+        << ",\"pacing_tokens\":" << total.pacing_tokens
+        << ",\"rtt_ms\":{\"p50\":" << total.request_latency.percentile(0.50)
+        << ",\"p95\":" << total.request_latency.percentile(0.95)
+        << ",\"p99\":" << total.request_latency.percentile(0.99) << ",\"max\":" << total.request_latency.max_ms
+        << ",\"samples\":" << total.request_latency.count << ",\"overflow\":" << total.request_latency.overflow_count()
+        << ",\"overflow_lower_bound_ms\":" << LatencyHistogram::upper_ms.back()
+        << ",\"p50_in_overflow\":" << (total.request_latency.percentile_in_overflow(0.50) ? "true" : "false")
+        << ",\"p95_in_overflow\":" << (total.request_latency.percentile_in_overflow(0.95) ? "true" : "false")
+        << ",\"p99_in_overflow\":" << (total.request_latency.percentile_in_overflow(0.99) ? "true" : "false")
+        << "},\"sign_ms\":{\"p50\":" << total.signing_latency.percentile(0.50)
+        << ",\"p95\":" << total.signing_latency.percentile(0.95)
+        << ",\"p99\":" << total.signing_latency.percentile(0.99) << ",\"max\":" << total.signing_latency.max_ms
+        << ",\"samples\":" << total.signing_latency.count << ",\"overflow\":" << total.signing_latency.overflow_count()
+        << ",\"overflow_lower_bound_ms\":" << LatencyHistogram::upper_ms.back()
+        << ",\"p50_in_overflow\":" << (total.signing_latency.percentile_in_overflow(0.50) ? "true" : "false")
+        << ",\"p95_in_overflow\":" << (total.signing_latency.percentile_in_overflow(0.95) ? "true" : "false")
+        << ",\"p99_in_overflow\":" << (total.signing_latency.percentile_in_overflow(0.99) ? "true" : "false")
+        << "},\"anchor_latency_sample_ms\":{\"p50\":" << total.sampled_anchor_latency.percentile(0.50)
+        << ",\"p95\":" << total.sampled_anchor_latency.percentile(0.95)
+        << ",\"p99\":" << total.sampled_anchor_latency.percentile(0.99)
+        << ",\"max\":" << total.sampled_anchor_latency.max_ms << ",\"samples\":" << total.sampled_anchor_latency.count
+        << ",\"overflow\":" << total.sampled_anchor_latency.overflow_count()
+        << ",\"overflow_lower_bound_ms\":" << LatencyHistogram::upper_ms.back()
+        << ",\"p50_in_overflow\":" << (total.sampled_anchor_latency.percentile_in_overflow(0.50) ? "true" : "false")
+        << ",\"p95_in_overflow\":" << (total.sampled_anchor_latency.percentile_in_overflow(0.95) ? "true" : "false")
+        << ",\"p99_in_overflow\":" << (total.sampled_anchor_latency.percentile_in_overflow(0.99) ? "true" : "false")
+        << ",\"poll_resolution_s\":" << options_.finality_poll_seconds
+        << "},\"anchor_scan_errors\":" << total.anchor_scan_errors
+        << ",\"canonical_chain_blocks\":" << follower_stats_.blocks << ",\"canonical_follower_block_discovery_rate\":"
+        << rate(follower_stats_.blocks, previous_follower_stats_.blocks)
+        << ",\"canonical_chain_native_blocks\":" << follower_stats_.native_blocks
+        << ",\"canonical_chain_measure_native_blocks\":" << follower_stats_.measured_native_blocks
+        << ",\"canonical_chain_native_transfers\":" << follower_stats_.native_transfers
+        << ",\"canonical_chain_avg_native_transfers_per_block\":"
+        << static_cast<double>(follower_stats_.native_transfers) /
+               static_cast<double>(std::max<td::uint64>(1, follower_stats_.native_blocks))
+        << ",\"canonical_chain_measure_avg_native_transfers_per_block\":"
+        << static_cast<double>(follower_stats_.measured_native_transfers) /
+               static_cast<double>(std::max<td::uint64>(1, follower_stats_.measured_native_blocks))
+        << ",\"canonical_chain_max_native_transfers_per_block\":" << follower_stats_.max_native_transfers_per_block
+        << ",\"canonical_chain_measure_max_native_transfers_per_block\":"
+        << follower_stats_.measured_max_native_transfers_per_block
+        << ",\"canonical_chain_max_blocks_per_gen_utime_second\":" << canonical_blocks_peak_1s
+        << ",\"canonical_chain_measure_max_blocks_per_gen_utime_second\":" << canonical_measure_blocks_peak_1s
+        << ",\"canonical_follower_discovery_tps\":"
+        << rate(follower_stats_.native_transfers, previous_follower_stats_.native_transfers)
+        << ",\"canonical_chain_measure_transfers\":" << follower_stats_.measured_native_transfers
+        << ",\"canonical_chain_measure_avg_tps\":"
+        << static_cast<double>(follower_stats_.measured_native_transfers) /
+               static_cast<double>(std::max<td::int64>(1, canonical_bucket_seconds))
+        << ",\"canonical_chain_measure_peak_1s_tps\":" << canonical_measure_peak_1s
+        << ",\"canonical_follower_errors\":" << follower_stats_.errors
+        << ",\"canonical_follower_fatal_errors\":" << follower_stats_.fatal_errors
+        << ",\"canonical_follower_transient_timeouts\":" << follower_stats_.transient_timeouts
+        << ",\"canonical_follower_transient_liteserver_timeouts\":" << follower_stats_.transient_liteserver_timeouts
+        << ",\"canonical_follower_transient_cancellations\":" << follower_stats_.transient_cancellations
+        << ",\"canonical_follower_transient_not_ready\":" << follower_stats_.transient_not_ready
+        << ",\"canonical_follower_transient_retries\":" << follower_stats_.transient_retries
+        << ",\"canonical_follower_transient_recoveries\":" << follower_stats_.transient_recoveries
+        << ",\"canonical_follower_retry_exhausted\":" << follower_stats_.retry_exhausted
+        << ",\"canonical_follower_reconnects\":" << follower_stats_.reconnects
+        << ",\"canonical_follower_retry_streak\":" << follower_transient_failure_streak_
+        << ",\"canonical_follower_retry_limit\":" << options_.canonical_retry_limit
+        << ",\"canonical_follower_retry_backoff_s\":" << options_.canonical_retry_backoff_seconds
+        << ",\"canonical_follower_retry_max_backoff_s\":" << options_.canonical_retry_max_backoff_seconds
+        << ",\"canonical_follower_query_timeout_s\":" << options_.canonical_query_timeout
+        << ",\"canonical_follower_reorgs\":" << follower_stats_.reorgs
+        << ",\"canonical_follower_lag_blocks\":" << follower_stats_.lag_blocks
+        << ",\"canonical_follower_max_lag_blocks\":" << follower_stats_.max_lag_blocks
+        << ",\"canonical_follower_enabled\":" << (options_.canonical_block_follower ? "true" : "false")
+        << ",\"canonical_follower_final_catchup_complete\":"
+        << (final ? (final_follower_catchup_complete_ ? "true" : "false") : "null")
+        << ",\"canonical_result_valid\":" << (canonical_result_valid ? "true" : "false")
+        << ",\"benchmark_result_valid\":" << (final ? (benchmark_result_valid ? "true" : "false") : "null")
+        << ",\"chain_correctness_valid\":" << (final ? (canonical_result_valid ? "true" : "false") : "null")
+        << ",\"ingress_capacity_valid\":" << (final ? (ingress_capacity_valid ? "true" : "false") : "null")
+        << ",\"chain_capacity_valid\":" << (final ? (chain_capacity_valid ? "true" : "false") : "null")
+        << ",\"correctness_invalid_reasons\":";
     if (final) {
       write_reason_array(correctness_reasons);
       std::cout << ",\"run_incomplete_reasons\":";
@@ -1627,9 +1652,13 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"admission_semantics\":\"liteServer.sendMessage status=1; not block inclusion\""
               << ",\"wire_batch_source_run_semantics\":\"adjacent ascending nonces from one source in a sendMessageBatch; each source appears in at most one bounded run per batch and seed selection remains globally fair\""
               << ",\"source_issue_burst_semantics\":\"fair round-robin sources issue up to submit_source_run_size contiguous nonces per turn, bounded by pacing, worker inflight, and canonical backlog limits\""
-              << ",\"head_blocked_ready_scans_semantics\":\"ready tasks held because a lower same-source task still awaits its first successful or terminal admission outcome; already-admitted nonces are removed and do not block pipelining\""
-              << ",\"task_errors_by_reason_semantics\":\"one mutually exclusive typed classification per failed admission result before retry or permanent resolution\""
+              << ",\"head_blocked_ready_notifications_semantics\":\"O(1) ready-state notifications for non-head same-source tasks; they do not enter or rotate through the dispatch queue\""
+              << ",\"head_blocked_ready_scans_semantics\":\"deprecated compatibility counter; source-head scheduling avoids blocked-task scans and leaves this at zero\""
+              << ",\"ready_source_queue_semantics\":\"at most one live dispatch entry per source; stale generation entries and bounded same-batch source exclusions are reported separately\""
+              << ",\"task_errors_by_reason_semantics\":\"one mutually exclusive typed classification per failed admission result; canonical_state_lag requires an explicit canonical-watermark snapshot-lag diagnostic\""
               << ",\"retries_by_reason_semantics\":\"retry schedules by the typed error that caused them; counts schedules, not distinct transfers\""
+              << ",\"retry_exhausted_semantics\":\"source-head retry horizon expirations, not short max_retries backoff cycles; the source is quarantined because later native nonces cannot safely skip the unresolved head\""
+              << ",\"canonical_state_lag_retry_semantics\":\"bounded exponential retry without AIMD decrease until retry_horizon_s; intended to span temporary admission snapshots older than the latest canonical watermark\""
               << ",\"latency_histogram_overflow_semantics\":\"overflow counts samples above overflow_lower_bound_ms; percentile_in_overflow flags a percentile that cannot be resolved within finite histogram buckets\""
               << ",\"benchmark_result_valid_semantics\":\"final proof-consistent run with complete measured and total cohorts, zero drain timeout, no fatal or retry-exhausted follower failure, and a final contiguous catch-up to the anchored shard tip\""
               << ",\"chain_correctness_valid_semantics\":\"proof-consistent canonical follower result; independent from whether generator or node scheduling limited the offered load\""
@@ -1657,6 +1686,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"capacity_invalid_reasons_semantics\":\"stable machine-readable reason codes keep proof correctness, run completion, ingress capacity, and chain capacity failures distinct\""
               << ",\"canonical_backlog_sampled_peak_semantics\":\"maximum summed latest-worker backlog gauge at report samples; not an exact instantaneous peak\""
               << ",\"congestion_window_sampled_peak_semantics\":\"maximum summed latest-worker AIMD window gauge at report samples\""
+              << ",\"adaptive_max_cwnd_semantics\":\"global message-count ceiling distributed exactly across workers and persistent connections; zero retains the max_inflight hard-limit behavior\""
+              << ",\"cwnd_cap_limited_acks_semantics\":\"successful admission items whose additive AIMD increase was clipped by the configured adaptive_max_cwnd ceiling\""
               << ",\"canonical_at_measure_end_semantics\":\"legacy cohort alias sampled by the first fully verified follower poll whose masterchain query began after offering ended\""
               << ",\"canonical_measured_offer_cohort_observed_avg_tps_semantics\":\"measured-offer cohort proven by the first post-measure checkpoint divided by offer-window duration; not chain-window production TPS\""
               << ",\"canonical_measured_offer_semantics\":\"measured-phase issued nonce cohort; distinct from chain progress during the measurement window\""
@@ -1694,23 +1725,25 @@ void NativeLoadCoordinator::maybe_begin() {
   for (auto& worker : workers_) {
     td::actor::send_closure(worker, &NativeLoadWorker::begin, start_at_);
   }
-  LOG(WARNING) << "native load generator ready: workers=" << workers_.size()
-               << " sources=" << options_.sources << " connections=" << options_.connections
-               << " signers=" << options_.signers << " max_inflight=" << options_.max_inflight
-               << " submit_batch=" << options_.submit_batch_size << " source_run="
-               << options_.submit_source_run_size << " submit_coalesce_ms="
-               << options_.submit_coalesce_ms
-               << " target_tps=" << options_.target_tps << " ramp=" << options_.ramp_seconds
-               << "s warmup=" << options_.warmup_seconds << "s duration=" << options_.duration_seconds
-               << "s drain_timeout=" << options_.drain_timeout_seconds << "s canonical_backlog="
-               << options_.max_canonical_backlog << " source_backlog="
-               << options_.max_source_canonical_backlog << " canonical_follow="
-               << options_.canonical_block_follower << " adaptive_initial_rtt_s="
-               << options_.adaptive_initial_rtt_seconds << " canonical_retry_limit="
-               << options_.canonical_retry_limit << " canonical_retry_backoff_s="
-               << options_.canonical_retry_backoff_seconds << " canonical_retry_max_backoff_s="
-               << options_.canonical_retry_max_backoff_seconds << " canonical_query_timeout_s="
-               << options_.canonical_query_timeout;
+  LOG(WARNING) << "native load generator ready: workers=" << workers_.size() << " sources=" << options_.sources
+               << " connections=" << options_.connections << " signers=" << options_.signers
+               << " max_inflight=" << options_.max_inflight << " submit_batch=" << options_.submit_batch_size
+               << " source_run=" << options_.submit_source_run_size
+               << " submit_coalesce_ms=" << options_.submit_coalesce_ms << " target_tps=" << options_.target_tps
+               << " ramp=" << options_.ramp_seconds << "s warmup=" << options_.warmup_seconds
+               << "s duration=" << options_.duration_seconds << "s drain_timeout=" << options_.drain_timeout_seconds
+               << "s canonical_backlog=" << options_.max_canonical_backlog
+               << " source_backlog=" << options_.max_source_canonical_backlog
+               << " canonical_follow=" << options_.canonical_block_follower
+               << " adaptive_initial_rtt_s=" << options_.adaptive_initial_rtt_seconds
+               << " adaptive_max_cwnd=" << options_.adaptive_max_cwnd
+               << " retry_horizon_s=" << options_.retry_horizon_seconds
+               << " canonical_state_lag_backoff_ms=" << options_.canonical_state_lag_retry_backoff_ms
+               << " canonical_state_lag_max_backoff_ms=" << options_.canonical_state_lag_retry_max_backoff_ms
+               << " canonical_retry_limit=" << options_.canonical_retry_limit
+               << " canonical_retry_backoff_s=" << options_.canonical_retry_backoff_seconds
+               << " canonical_retry_max_backoff_s=" << options_.canonical_retry_max_backoff_seconds
+               << " canonical_query_timeout_s=" << options_.canonical_query_timeout;
   last_report_at_ = start_at_;
   next_follower_poll_at_ = start_at_;
   alarm_timestamp() = td::Timestamp::in(std::max(0.001, start_at_ - td::Time::now()));
@@ -2281,8 +2314,6 @@ void NativeLoadWorker::discover_startup_nonces(ton::BlockIdExt ref_mc) {
 
 td::Status NativeLoadWorker::initialize() {
   clients_.reserve(options_.connections);
-  td::uint32 per_client = options_.max_inflight / options_.connections;
-  td::uint32 per_client_extra = options_.max_inflight % options_.connections;
   // Start near a configurable bandwidth-delay product.  A one-second default
   // matches the observed physical-validator admission RTT and avoids making a
   // max-TPS run spend minutes in additive growth below its offered target.
@@ -2294,8 +2325,15 @@ td::Status NativeLoadWorker::initialize() {
   for (td::uint32 i = 0; i < options_.connections; ++i) {
     ClientSlot slot;
     slot.actor = liteclient::ExtClient::create(servers_, nullptr);
-    slot.hard_limit = per_client + (i < per_client_extra ? 1u : 0u);
-    slot.cwnd = options_.adaptive_inflight ? std::min<double>(slot.hard_limit, guessed_window)
+    slot.hard_limit =
+        native_load::distributed_share(options_.max_inflight, i, options_.connections);
+    auto configured_limit = options_.adaptive_max_cwnd
+                                ? native_load::distributed_share(options_.adaptive_max_cwnd, i,
+                                                                 options_.connections)
+                                : slot.hard_limit;
+    slot.cwnd_limit = std::min<double>(slot.hard_limit, configured_limit);
+    CHECK(slot.hard_limit > 0 && slot.cwnd_limit >= 1.0);
+    slot.cwnd = options_.adaptive_inflight ? std::min<double>(slot.cwnd_limit, guessed_window)
                                            : static_cast<double>(slot.hard_limit);
     stats_.initial_congestion_window += slot.cwnd;
     clients_.push_back(std::move(slot));
@@ -2342,6 +2380,7 @@ td::Status NativeLoadWorker::initialize() {
   }
   td::actor::send_closure(coordinator_, &NativeLoadCoordinator::register_sources, worker_id_,
                           std::move(sources));
+  ready_wallets_.reset(wallets_.size());
   for (std::size_t i = 0; i < wallets_.size(); ++i) {
     enqueue_available_wallet(i);
   }
@@ -2387,6 +2426,15 @@ void NativeLoadWorker::alarm() {
   }
   if (!failed_ && !finished_) {
     alarm_timestamp() = td::Timestamp::in(0.01);
+    // The 10 ms maintenance tick must keep phase transitions, retries,
+    // canonical proof, and drain progress live, but it must not become an
+    // accidental early-submit timer.  Wake exactly at a future coalescing
+    // deadline when it is sooner; an elapsed deadline deliberately falls back
+    // to the periodic tick while client capacity is exhausted, avoiding a
+    // busy loop on a timestamp in the past.
+    if (submit_coalescer_.armed() && submit_coalescer_.deadline() > td::Time::now()) {
+      alarm_timestamp().relax(td::Timestamp::at(submit_coalescer_.deadline()));
+    }
   }
 }
 
@@ -2463,6 +2511,25 @@ bool NativeLoadWorker::task_is_active(const std::shared_ptr<TransferTask>& task)
   return it != tasks.end() && it->second == task;
 }
 
+bool NativeLoadWorker::is_fresh_normal_submission(
+    const std::shared_ptr<TransferTask>& task) const {
+  return options_.submit_batch_size > 1 && task && !task->repair &&
+         !task->ever_submitted && task->first_retry_at < 0.0;
+}
+
+bool NativeLoadWorker::has_dispatchable_fresh_tasks() const {
+  for (const auto& wallet : wallets_) {
+    if (!wallet.disabled && !wallet.tasks.empty()) {
+      const auto& head = wallet.tasks.begin()->second;
+      if (head && head->state == TaskState::ready &&
+          is_fresh_normal_submission(head)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 double NativeLoadWorker::measure_backpressure_overlap(double begin, double end) const {
   if (!started_ || end <= begin) {
     return 0.0;
@@ -2528,6 +2595,57 @@ void NativeLoadWorker::invalidate_available_wallet(std::size_t wallet_idx) {
   ++wallet.available_generation;
 }
 
+void NativeLoadWorker::mark_task_ready(const std::shared_ptr<TransferTask>& task) {
+  if (!task_is_active(task)) {
+    return;
+  }
+  task->state = TaskState::ready;
+  auto& wallet = wallets_[task->wallet_idx];
+  if (!wallet.tasks.empty() && wallet.tasks.begin()->second != task) {
+    // This is an O(1) notification, not a scheduler scan. The source will be
+    // queued when its lower unresolved nonce leaves the active task map.
+    ++stats_.head_blocked_ready_notifications;
+  }
+  enqueue_ready_wallet(task->wallet_idx);
+}
+
+void NativeLoadWorker::enqueue_ready_wallet(std::size_t wallet_idx) {
+  auto& wallet = wallets_[wallet_idx];
+  if (wallet.disabled || wallet.tasks.empty()) {
+    return;
+  }
+  const auto& head = wallet.tasks.begin()->second;
+  if (!head || head->state != TaskState::ready) {
+    return;
+  }
+  // Arm on a dispatchable source head, not on an arbitrary ready suffix.  A
+  // pre-existing queue token may already cover this source after its old head
+  // resolves, so arming must happen even when enqueue() below returns false.
+  if (is_fresh_normal_submission(head) && !submit_coalescer_.armed()) {
+    auto now = td::Time::now();
+    submit_coalescer_.note_fresh_ready(
+        now, options_.submit_coalesce_ms / 1000.0);
+    ++stats_.submit_coalesce_windows;
+    if (submit_coalescer_.deadline() > now) {
+      alarm_timestamp().relax(td::Timestamp::at(submit_coalescer_.deadline()));
+    }
+  }
+  if (!ready_wallets_.enqueue(wallet_idx)) {
+    return;
+  }
+  ++stats_.ready_source_queue_pushes;
+  stats_.max_ready_source_queue_depth =
+      std::max<td::uint64>(stats_.max_ready_source_queue_depth, ready_wallets_.size());
+}
+
+void NativeLoadWorker::invalidate_ready_wallet(std::size_t wallet_idx) {
+  if (wallets_[wallet_idx].disabled) {
+    ready_wallets_.disable(wallet_idx);
+  } else {
+    ready_wallets_.invalidate(wallet_idx);
+  }
+}
+
 void NativeLoadWorker::pump() {
   if (!started_ || failed_ || finished_) {
     return;
@@ -2540,9 +2658,18 @@ void NativeLoadWorker::pump() {
   update_tokens(now);
   update_backpressure_state(now);
   while (!retry_tasks_.empty() && retry_tasks_.begin()->first <= now) {
+    auto scheduled_at = retry_tasks_.begin()->first;
     auto task = retry_tasks_.begin()->second;
     retry_tasks_.erase(retry_tasks_.begin());
-    if (task->state != TaskState::retry_wait || !task_is_active(task)) {
+    if (!native_load::retry_entry_can_wake(task_is_active(task), task->state == TaskState::retry_wait, task->retry_at,
+                                           scheduled_at)) {
+      continue;
+    }
+    auto& wallet = wallets_[task->wallet_idx];
+    bool is_source_head = !wallet.tasks.empty() && wallet.tasks.begin()->second == task;
+    if (is_source_head &&
+        native_load::retry_horizon_elapsed(task->first_retry_at, now, options_.retry_horizon_seconds)) {
+      abandon_wallet_after_retry_horizon(task, task->retry_reason);
       continue;
     }
     if (task->boc.empty()) {
@@ -2550,8 +2677,7 @@ void NativeLoadWorker::pump() {
     } else if (task->transfer.valid_until <= static_cast<ton::UnixTime>(td::Clocks::system() + 1)) {
       sign_task(std::move(task), true);
     } else {
-      task->state = TaskState::ready;
-      ready_tasks_.push_back(std::move(task));
+      mark_task_ready(task);
     }
   }
   dispatch_ready();
@@ -2683,13 +2809,10 @@ void NativeLoadWorker::on_signed(std::shared_ptr<TransferTask> task, td::Result<
     return;
   }
   if (!task_is_active(task)) {
-    if (options_.submit_batch_size == 1) {
-      pump();
-    } else {
-      alarm_timestamp().relax(td::Timestamp::in(options_.submit_coalesce_ms / 1000.0));
-    }
+    pump();
     return;
   }
+  bool fresh_ready = false;
   if (message.is_error()) {
     ++stats_.sign_errors;
     LOG(ERROR) << "worker " << worker_id_ << " signing failed for nonce " << task->transfer.nonce << ": "
@@ -2704,16 +2827,14 @@ void NativeLoadWorker::on_signed(std::shared_ptr<TransferTask> task, td::Result<
     if (std::find(hashes.begin(), hashes.end(), signed_transfer.external_hash) == hashes.end()) {
       hashes.push_back(signed_transfer.external_hash);
     }
-    task->state = TaskState::ready;
-    ready_tasks_.push_back(std::move(task));
+    fresh_ready = is_fresh_normal_submission(task);
+    mark_task_ready(task);
   }
-  // Let signer completions coalesce until the next worker tick when batching
-  // is enabled. Dispatching on every completion degenerates nominal 64-message
-  // batches into one-message batch queries.
-  if (options_.submit_batch_size == 1) {
+  // A fresh ordinary first submission is released by the absolute leading-edge
+  // coalescing deadline armed in mark_task_ready().  Retried signatures,
+  // repairs, and other urgent work still pump immediately.
+  if (!fresh_ready) {
     pump();
-  } else {
-    alarm_timestamp().relax(td::Timestamp::in(options_.submit_coalesce_ms / 1000.0));
   }
   maybe_finish();
 }
@@ -2746,93 +2867,148 @@ td::uint32 NativeLoadWorker::client_available_capacity(std::size_t client_idx) c
   return clients_[client_idx].inflight < capacity ? capacity - clients_[client_idx].inflight : 0;
 }
 
-bool NativeLoadWorker::ready_for_first_submission(
-    const std::shared_ptr<TransferTask>& task) const {
-  const auto& tasks = wallets_[task->wallet_idx].tasks;
-  return !tasks.empty() &&
-         source_task_can_seed_batch(task->transfer.nonce, tasks.begin()->first);
+td::optional<std::size_t> NativeLoadWorker::select_full_batch_client() const {
+  if (options_.max_inflight - inflight_ < options_.submit_batch_size) {
+    return {};
+  }
+  td::optional<std::size_t> selected;
+  double best_load = std::numeric_limits<double>::infinity();
+  for (std::size_t i = 0; i < clients_.size(); ++i) {
+    auto capacity = client_available_capacity(i);
+    if (capacity < options_.submit_batch_size) {
+      continue;
+    }
+    auto load = static_cast<double>(clients_[i].inflight) /
+                (clients_[i].inflight + capacity);
+    if (!selected || load < best_load) {
+      selected = i;
+      best_load = load;
+    }
+  }
+  return selected;
+}
+
+std::size_t NativeLoadWorker::count_dispatchable_fresh_heads(
+    std::size_t limit) const {
+  std::size_t result = 0;
+  for (const auto& wallet : wallets_) {
+    if (wallet.disabled || wallet.tasks.empty()) {
+      continue;
+    }
+    const auto& head = wallet.tasks.begin()->second;
+    if (!head || head->state != TaskState::ready ||
+        !task_is_active(head) || !is_fresh_normal_submission(head)) {
+      continue;
+    }
+    ++result;
+    if (result >= limit) {
+      return result;
+    }
+  }
+  return result;
 }
 
 std::shared_ptr<NativeLoadWorker::TransferTask>
 NativeLoadWorker::take_dispatchable_ready_task(
-    const std::vector<std::size_t>* excluded_wallets) {
-  auto candidates = ready_tasks_.size();
-  while (candidates-- && !ready_tasks_.empty()) {
-    auto task = ready_tasks_.front();
-    ready_tasks_.pop_front();
-    if (task->state != TaskState::ready || !task_is_active(task)) {
+    bool allow_fresh, const std::vector<std::size_t>* excluded_wallets) {
+  auto candidates = ready_wallets_.size();
+  while (candidates-- && !ready_wallets_.empty()) {
+    auto entry = ready_wallets_.pop();
+    if (entry.kind == native_load::ReadySourceQueue::PopKind::empty) {
+      break;
+    }
+    if (entry.kind == native_load::ReadySourceQueue::PopKind::stale || entry.source_idx >= wallets_.size()) {
+      ++stats_.ready_source_queue_stale_entries;
+      continue;
+    }
+    auto& wallet = wallets_[entry.source_idx];
+    if (wallet.disabled || wallet.tasks.empty()) {
+      ++stats_.ready_source_queue_stale_entries;
+      continue;
+    }
+    auto task = wallet.tasks.begin()->second;
+    if (!task || task->state != TaskState::ready || !task_is_active(task) ||
+        !source_task_can_seed_batch(task->transfer.nonce, wallet.tasks.begin()->first)) {
+      ++stats_.ready_source_queue_stale_entries;
+      continue;
+    }
+    if (!allow_fresh && is_fresh_normal_submission(task)) {
+      enqueue_ready_wallet(task->wallet_idx);
       continue;
     }
     if (excluded_wallets &&
         std::find(excluded_wallets->begin(), excluded_wallets->end(), task->wallet_idx) !=
             excluded_wallets->end()) {
-      ready_tasks_.push_back(std::move(task));
+      ++stats_.ready_source_queue_excluded_rotations;
+      enqueue_ready_wallet(task->wallet_idx);
       continue;
     }
-    if (ready_for_first_submission(task)) {
-      return task;
-    }
-    ++stats_.head_blocked_ready_scans;
-    ready_tasks_.push_back(std::move(task));
+    return task;
   }
   return {};
 }
 
-void NativeLoadWorker::append_ready_source_run(
+std::size_t NativeLoadWorker::append_ready_source_run(
     std::shared_ptr<TransferTask> first,
-    std::vector<std::shared_ptr<TransferTask>>& tasks, std::size_t batch_limit) {
+    std::vector<std::shared_ptr<TransferTask>>& tasks, std::size_t batch_limit,
+    bool allow_fresh) {
   CHECK(first && first->state == TaskState::ready && task_is_active(first));
   auto wallet_idx = first->wallet_idx;
   auto nonce = first->transfer.nonce;
-  first->state = TaskState::dispatching;
-  tasks.push_back(std::move(first));
-
   auto& wallet = wallets_[wallet_idx];
-  auto it = wallet.tasks.upper_bound(nonce);
-  auto source_run_limit = std::min<std::size_t>(options_.submit_source_run_size, batch_limit);
-  std::size_t source_run_size = 1;
-  while (source_run_size < source_run_limit && tasks.size() < batch_limit &&
-         nonce != std::numeric_limits<td::uint64>::max() && it != wallet.tasks.end()) {
-    ++nonce;
-    if (it->first != nonce) {
-      break;
-    }
+  auto it = wallet.tasks.find(nonce);
+  CHECK(it == wallet.tasks.begin() && it->second == first && tasks.size() < batch_limit);
+  auto source_run_limit = std::min<std::size_t>(options_.submit_source_run_size, batch_limit - tasks.size());
+  auto source_run_size = native_load::bounded_contiguous_ready_run(
+      it, wallet.tasks.end(), source_run_limit,
+      [this, allow_fresh](const std::shared_ptr<TransferTask>& task) {
+        return task && task->state == TaskState::ready && task_is_active(task) &&
+               (allow_fresh || !is_fresh_normal_submission(task));
+      });
+  CHECK(source_run_size >= 1);
+  std::size_t fresh_tasks = 0;
+  for (std::size_t i = 0; i < source_run_size; ++i, ++it) {
     auto task = it->second;
-    if (!task || task->state != TaskState::ready || !task_is_active(task)) {
-      break;
-    }
-    if (!task->ever_submitted) {
-      // A retry seed may bypass ready_for_first_submission().  Do not let a
-      // later new nonce leapfrog an older never-submitted task: every earlier
-      // task must either have reached the wire before this batch or already be
-      // staged earlier in this same ascending source run.
-      bool first_wire_ordered = true;
-      for (auto previous = wallet.tasks.begin(); previous != it; ++previous) {
-        if (!previous->second->ever_submitted &&
-            previous->second->state != TaskState::dispatching) {
-          first_wire_ordered = false;
-          break;
-        }
-      }
-      if (!first_wire_ordered) {
-        break;
-      }
-    }
+    fresh_tasks += is_fresh_normal_submission(task) ? 1 : 0;
     task->state = TaskState::dispatching;
     tasks.push_back(std::move(task));
-    ++source_run_size;
-    ++it;
   }
+  return fresh_tasks;
 }
 
 void NativeLoadWorker::dispatch_ready() {
-  while (!ready_tasks_.empty() && inflight_ < options_.max_inflight) {
-    auto client_idx = select_client();
+  auto now = td::Time::now();
+  auto bypass_fresh_gate = options_.submit_batch_size == 1 || sending_done_;
+  std::size_t dispatchable_fresh = 0;
+  td::optional<std::size_t> full_batch_client;
+  // Full-batch release is useful only before the bounded deadline.  Once the
+  // deadline has elapsed, report and use the ordinary deadline release path.
+  if (!bypass_fresh_gate && submit_coalescer_.armed() &&
+      now < submit_coalescer_.deadline()) {
+    full_batch_client = select_full_batch_client();
+    if (full_batch_client) {
+      dispatchable_fresh =
+          count_dispatchable_fresh_heads(options_.submit_batch_size);
+    }
+  }
+  auto release_reason = submit_coalescer_.release_reason(
+      now, dispatchable_fresh, options_.submit_batch_size, bypass_fresh_gate);
+  auto allow_fresh =
+      release_reason != native_load::SubmitCoalescer::ReleaseReason::blocked;
+  auto blocked_fresh = submit_coalescer_.armed() && !allow_fresh;
+  std::size_t fresh_dispatched = 0;
+  bool first_dispatch = true;
+
+  while (!ready_wallets_.empty() && inflight_ < options_.max_inflight) {
+    auto use_proven_full_client =
+        first_dispatch &&
+        release_reason == native_load::SubmitCoalescer::ReleaseReason::full_batch;
+    auto client_idx = use_proven_full_client ? full_batch_client : select_client();
     if (!client_idx) {
       break;
     }
     if (options_.submit_batch_size == 1) {
-      auto task = take_dispatchable_ready_task();
+      auto task = take_dispatchable_ready_task(true);
       if (!task) {
         break;
       }
@@ -2847,18 +3023,40 @@ void NativeLoadWorker::dispatch_ready() {
     tasks.reserve(batch_limit);
     batch_wallets.reserve(batch_limit);
     while (tasks.size() < batch_limit) {
-      auto task = take_dispatchable_ready_task(&batch_wallets);
+      auto task = take_dispatchable_ready_task(allow_fresh, &batch_wallets);
       if (!task) {
         break;
       }
       batch_wallets.push_back(task->wallet_idx);
-      append_ready_source_run(std::move(task), tasks, batch_limit);
+      fresh_dispatched +=
+          append_ready_source_run(std::move(task), tasks, batch_limit, allow_fresh);
     }
     if (!tasks.empty()) {
+      if (use_proven_full_client) {
+        CHECK(tasks.size() == options_.submit_batch_size);
+      }
       send_batch(std::move(tasks), client_idx.value());
+      first_dispatch = false;
     } else {
       break;
     }
+  }
+
+  // Keep an elapsed gate open while client capacity is exhausted.  Reset only
+  // after observing that no ordinary dispatchable source head remains; the
+  // next such head then starts a new leading-edge window.
+  if (submit_coalescer_.armed() && !has_dispatchable_fresh_tasks()) {
+    submit_coalescer_.note_queue_empty();
+  }
+  if (fresh_dispatched != 0) {
+    if (release_reason == native_load::SubmitCoalescer::ReleaseReason::deadline) {
+      ++stats_.submit_coalesce_deadline_dispatches;
+    } else if (release_reason ==
+               native_load::SubmitCoalescer::ReleaseReason::full_batch) {
+      ++stats_.submit_coalesce_full_batch_dispatches;
+    }
+  } else if (blocked_fresh) {
+    ++stats_.submit_coalesce_blocked_pumps;
   }
 }
 
@@ -2978,10 +3176,7 @@ void NativeLoadWorker::on_result(std::shared_ptr<TransferTask> task, std::size_t
       ++stats_.parse_errors;
       handle_task_error(std::move(task), client_idx, parsed.move_as_error(), ErrorOrigin::parse);
     } else if (parsed.move_as_ok()->status_ == 1) {
-      if (options_.adaptive_inflight) {
-        auto& client = clients_[client_idx];
-        client.cwnd = std::min<double>(client.hard_limit, client.cwnd + 1.0 / std::max(1.0, client.cwnd));
-      }
+      increase_client_cwnd(client_idx);
       accept_task(std::move(task), TaskResolution::admitted);
     } else {
       ++stats_.rejected_other;
@@ -3057,11 +3252,7 @@ void NativeLoadWorker::on_batch_result(std::vector<std::shared_ptr<TransferTask>
     }
     auto& status = statuses->results_[i];
     if (status && status->status_ == 1) {
-      if (options_.adaptive_inflight) {
-        auto& client = clients_[client_idx];
-        client.cwnd = std::min<double>(client.hard_limit,
-                                       client.cwnd + 1.0 / std::max(1.0, client.cwnd));
-      }
+      increase_client_cwnd(client_idx);
       accept_task(std::move(task), TaskResolution::admitted);
     } else if (status && status->status_ == 0) {
       handle_task_error(std::move(task), client_idx,
@@ -3074,6 +3265,20 @@ void NativeLoadWorker::on_batch_result(std::vector<std::shared_ptr<TransferTask>
   }
   pump();
   maybe_finish();
+}
+
+void NativeLoadWorker::increase_client_cwnd(std::size_t client_idx) {
+  if (!options_.adaptive_inflight) {
+    return;
+  }
+  CHECK(client_idx < clients_.size());
+  auto& client = clients_[client_idx];
+  auto update = native_load::adaptive_cwnd_after_ack(client.cwnd, client.hard_limit,
+                                                      client.cwnd_limit);
+  client.cwnd = update.cwnd;
+  if (options_.adaptive_max_cwnd && update.limited) {
+    ++stats_.cwnd_cap_limited_acks;
+  }
 }
 
 void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std::size_t client_idx,
@@ -3091,7 +3296,8 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
   bool too_old = contains("too old native nonce");
   bool expired = contains("valid_until") || contains("expired");
   bool too_new = contains("too new native nonce");
-  bool not_ready = error.code() == ton::ErrorCode::notready || contains("not ready") ||
+  bool canonical_state_lag = native_load::is_canonical_state_lag_diagnostic(lower);
+  bool not_ready = canonical_state_lag || error.code() == ton::ErrorCode::notready || contains("not ready") ||
                    contains("still in flight");
   // ErrorCode::notready may explain that the canonical account state has not
   // caught up with a finalized balance.  It is transient state lag, not an
@@ -3100,19 +3306,20 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
   bool balance = !not_ready && (contains("insufficient") || contains("balance"));
   bool invalid = !not_ready && (contains("signature") || contains("wrong source") ||
                                 contains("must be balance-only") || contains("overflow"));
-  auto reason = timeout                ? TaskErrorReason::timeout
+  auto reason = timeout                            ? TaskErrorReason::timeout
                 : origin == ErrorOrigin::transport ? TaskErrorReason::transport
                 : origin == ErrorOrigin::parse     ? TaskErrorReason::parse
-                : full                              ? TaskErrorReason::full
-                : rate_limit                        ? TaskErrorReason::rate_limit
-                : duplicate                         ? TaskErrorReason::duplicate
-                : too_old                           ? TaskErrorReason::too_old
-                : too_new                           ? TaskErrorReason::too_new
-                : expired                           ? TaskErrorReason::expired
-                : not_ready                         ? TaskErrorReason::not_ready
-                : balance                           ? TaskErrorReason::balance
-                : invalid                           ? TaskErrorReason::invalid
-                                                    : TaskErrorReason::server_other;
+                : full                             ? TaskErrorReason::full
+                : rate_limit                       ? TaskErrorReason::rate_limit
+                : duplicate                        ? TaskErrorReason::duplicate
+                : too_old                          ? TaskErrorReason::too_old
+                : too_new                          ? TaskErrorReason::too_new
+                : expired                          ? TaskErrorReason::expired
+                : canonical_state_lag              ? TaskErrorReason::canonical_state_lag
+                : not_ready                        ? TaskErrorReason::not_ready
+                : balance                          ? TaskErrorReason::balance
+                : invalid                          ? TaskErrorReason::invalid
+                                                   : TaskErrorReason::server_other;
   stats_.task_errors_by_reason.add(reason);
   if (timeout) {
     ++stats_.timeouts;
@@ -3121,7 +3328,7 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
   } else if (origin == ErrorOrigin::transport) {
     ++stats_.transport_errors;
   }
-  if (options_.adaptive_inflight && (timeout || full || rate_limit || not_ready)) {
+  if (options_.adaptive_inflight && (timeout || full || rate_limit || (not_ready && !canonical_state_lag))) {
     auto now = td::Time::now();
     auto& client = clients_[client_idx];
     // A burst of failures from one old window is one congestion event, not
@@ -3189,13 +3396,18 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
   if (too_new) {
     ++stats_.rejected_nonce;
   }
+  if (canonical_state_lag) {
+    ++task->canonical_state_lag_attempts;
+    auto delay = native_load::canonical_state_lag_retry_delay_seconds(
+        task->canonical_state_lag_attempts, options_.canonical_state_lag_retry_backoff_ms,
+        options_.canonical_state_lag_retry_max_backoff_ms);
+    schedule_retry(std::move(task), std::max(0.001, delay), reason);
+    return;
+  }
+  task->canonical_state_lag_attempts = 0;
   auto exponent = std::min<td::uint32>(task->attempts ? task->attempts - 1 : 0, 10);
   auto delay = options_.retry_backoff_ms / 1000.0 * static_cast<double>(1u << exponent);
   if (task->attempts > options_.max_retries) {
-    if (!task->retry_exhaustion_counted) {
-      task->retry_exhaustion_counted = true;
-      ++stats_.retry_exhausted;
-    }
     task->attempts = 0;
     delay = std::max(delay, options_.finality_poll_seconds);
   }
@@ -3204,11 +3416,56 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
 
 void NativeLoadWorker::schedule_retry(std::shared_ptr<TransferTask> task, double delay_seconds,
                                       TaskErrorReason reason) {
+  auto now = td::Time::now();
+  if (task->first_retry_at < 0.0) {
+    task->first_retry_at = now;
+  }
+  task->retry_reason = reason;
+  auto& wallet = wallets_[task->wallet_idx];
+  bool is_source_head = !wallet.tasks.empty() && wallet.tasks.begin()->second == task;
+  if (is_source_head && native_load::retry_horizon_elapsed(task->first_retry_at, now, options_.retry_horizon_seconds)) {
+    abandon_wallet_after_retry_horizon(std::move(task), reason);
+    return;
+  }
+  delay_seconds = native_load::clamp_retry_delay_to_horizon(delay_seconds, task->first_retry_at, now,
+                                                            options_.retry_horizon_seconds);
   task->state = TaskState::retry_wait;
-  task->retry_at = td::Time::now() + delay_seconds;
+  task->retry_at = now + delay_seconds;
   retry_tasks_.emplace(task->retry_at, std::move(task));
   ++stats_.retries;
   stats_.retries_by_reason.add(reason);
+}
+
+void NativeLoadWorker::abandon_wallet_after_retry_horizon(std::shared_ptr<TransferTask> task, TaskErrorReason reason) {
+  if (!task_is_active(task)) {
+    return;
+  }
+  auto& wallet = wallets_[task->wallet_idx];
+  if (wallet.tasks.empty() || wallet.tasks.begin()->second != task || wallet.disabled) {
+    return;
+  }
+  task->retry_exhaustion_counted = true;
+  ++stats_.retry_exhausted;
+  ++stats_.retry_horizon_exhausted;
+  ++stats_.retry_exhausted_sources;
+  if (reason == TaskErrorReason::canonical_state_lag) {
+    ++stats_.canonical_state_lag_retry_exhausted;
+  }
+  wallet.disabled = true;
+  invalidate_available_wallet(task->wallet_idx);
+  invalidate_ready_wallet(task->wallet_idx);
+  CHECK(active_tasks_ >= wallet.tasks.size());
+  active_tasks_ = native_load::active_tasks_after_source_quarantine(active_tasks_, wallet.tasks.size());
+  for (auto& [nonce, pending] : wallet.tasks) {
+    static_cast<void>(nonce);
+    pending->state = TaskState::resolved;
+  }
+  auto elapsed = std::max(0.0, td::Time::now() - task->first_retry_at);
+  wallet.tasks.clear();
+  LOG(ERROR) << "worker " << worker_id_ << " quarantined native source " << wallet.source.to_hex()
+             << " after retry horizon elapsed at nonce " << task->transfer.nonce << ": elapsed_s=" << elapsed
+             << " canonical_state_lag=" << (reason == TaskErrorReason::canonical_state_lag);
+  update_backpressure_state(td::Time::now());
 }
 
 void NativeLoadWorker::accept_task(std::shared_ptr<TransferTask> task, TaskResolution resolution) {
@@ -3243,6 +3500,7 @@ void NativeLoadWorker::accept_task(std::shared_ptr<TransferTask> task, TaskResol
   CHECK(active_tasks_ > 0);
   --active_tasks_;
   wallet.tasks.erase(it);
+  enqueue_ready_wallet(task->wallet_idx);
   enqueue_available_wallet(task->wallet_idx);
 }
 
@@ -3256,8 +3514,9 @@ void NativeLoadWorker::disable_wallet_for_conflict(std::size_t wallet_idx, td::S
   }
   wallet.disabled = true;
   invalidate_available_wallet(wallet_idx);
+  invalidate_ready_wallet(wallet_idx);
   CHECK(active_tasks_ >= wallet.tasks.size());
-  active_tasks_ -= wallet.tasks.size();
+  active_tasks_ = native_load::active_tasks_after_source_quarantine(active_tasks_, wallet.tasks.size());
   for (auto& [nonce, pending] : wallet.tasks) {
     static_cast<void>(nonce);
     pending->state = TaskState::resolved;
@@ -3277,8 +3536,9 @@ void NativeLoadWorker::reject_task(std::shared_ptr<TransferTask> task, td::Slice
   ++stats_.rejected;
   wallet.disabled = true;
   invalidate_available_wallet(task->wallet_idx);
+  invalidate_ready_wallet(task->wallet_idx);
   CHECK(active_tasks_ >= wallet.tasks.size());
-  active_tasks_ -= wallet.tasks.size();
+  active_tasks_ = native_load::active_tasks_after_source_quarantine(active_tasks_, wallet.tasks.size());
   for (auto& [nonce, pending] : wallet.tasks) {
     static_cast<void>(nonce);
     pending->state = TaskState::resolved;
@@ -3411,6 +3671,8 @@ void NativeLoadWorker::refresh_stats() {
   stats_.max_source_canonical_backlog_current = 0;
   stats_.max_active_tasks_per_source = 0;
   stats_.congestion_window = 0.0;
+  stats_.effective_cwnd_cap = 0.0;
+  stats_.clients_at_cwnd_cap = 0;
   for (const auto& wallet : wallets_) {
     auto source_backlog = wallet.next_nonce >= wallet.anchored_nonce
                               ? wallet.next_nonce - wallet.anchored_nonce
@@ -3441,6 +3703,13 @@ void NativeLoadWorker::refresh_stats() {
   }
   for (const auto& client : clients_) {
     stats_.congestion_window += client.cwnd;
+    stats_.effective_cwnd_cap += options_.adaptive_inflight
+                                     ? client.cwnd_limit
+                                     : static_cast<double>(client.hard_limit);
+    if (options_.adaptive_inflight && options_.adaptive_max_cwnd &&
+        client.cwnd >= client.cwnd_limit - 1e-9) {
+      ++stats_.clients_at_cwnd_cap;
+    }
   }
   stats_.pacing_tokens = pacing_tokens_;
   stats_.canonical_backlog = canonical_backlog_;
@@ -3881,6 +4150,8 @@ void NativeLoadWorker::repair_gaps() {
         task->state = TaskState::ready;
         task->repair = true;
         task->attempts = 0;
+        task->canonical_state_lag_attempts = 0;
+        task->first_retry_at = -1.0;
         task->retry_exhaustion_counted = false;
         task->ever_submitted = false;
         task->first_issued_at = now;
@@ -3889,7 +4160,7 @@ void NativeLoadWorker::repair_gaps() {
         ++stats_.repair_offered;
         wallet.last_repair_nonce = wallet.anchored_nonce;
         wallet.last_repair_at = now;
-        ready_tasks_.push_back(std::move(task));
+        mark_task_ready(task);
       } else {
         // No admission was ever observed for this nonce, so there is no known
         // pending hash to preserve and a freshly signed repair is appropriate.
@@ -4048,7 +4319,7 @@ int main(int argc, char* argv[]) {
                                          ? td::Status::OK()
                                          : td::Status::Error("target TPS must be finite and non-negative");
                             });
-  parser.add_checked_option(0, "max-retries", "exact-payload retries before an unknown-outcome cycle",
+  parser.add_checked_option(0, "max-retries", "quick retries per backoff cycle; elapsed horizon governs exhaustion",
                             [&](td::Slice value) {
                               options.max_retries = td::to_integer<td::uint32>(value);
                               return options.max_retries <= 100
@@ -4061,6 +4332,28 @@ int main(int argc, char* argv[]) {
                               return options.retry_backoff_ms
                                          ? td::Status::OK()
                                          : td::Status::Error("retry-backoff-ms must be positive");
+                            });
+  parser.add_checked_option(0, "retry-horizon-seconds",
+                            "elapsed retry horizon before quarantining an unresolved source head",
+                            [&](td::Slice value) {
+                              options.retry_horizon_seconds = td::to_double(value);
+                              return std::isfinite(options.retry_horizon_seconds) && options.retry_horizon_seconds > 0.0
+                                         ? td::Status::OK()
+                                         : td::Status::Error("retry horizon must be finite and positive");
+                            });
+  parser.add_checked_option(0, "canonical-state-lag-retry-backoff-ms",
+                            "initial retry delay for exact canonical snapshot-lag responses", [&](td::Slice value) {
+                              options.canonical_state_lag_retry_backoff_ms = td::to_integer<td::uint32>(value);
+                              return options.canonical_state_lag_retry_backoff_ms
+                                         ? td::Status::OK()
+                                         : td::Status::Error("canonical state-lag retry backoff must be positive");
+                            });
+  parser.add_checked_option(0, "canonical-state-lag-retry-max-backoff-ms",
+                            "maximum retry delay for exact canonical snapshot-lag responses", [&](td::Slice value) {
+                              options.canonical_state_lag_retry_max_backoff_ms = td::to_integer<td::uint32>(value);
+                              return options.canonical_state_lag_retry_max_backoff_ms
+                                         ? td::Status::OK()
+                                         : td::Status::Error("canonical state-lag retry max backoff must be positive");
                             });
   parser.add_option(0, "auto-nonce", "discover proof-checked canonical source nonces before load",
                     [&] { options.auto_nonce = true; });
@@ -4077,6 +4370,11 @@ int main(int argc, char* argv[]) {
                                          : td::Status::Error(
                                                "adaptive initial RTT must be in (0,60] seconds");
                             });
+  parser.add_option(0, "adaptive-max-cwnd",
+                    "global adaptive message-window ceiling; zero uses the inflight hard limit",
+                    [&](td::Slice value) {
+                      options.adaptive_max_cwnd = td::to_integer<td::uint32>(value);
+                    });
   parser.add_checked_option(0, "finality-poll-seconds", "sampled account-anchor polling interval",
                             [&](td::Slice value) {
                               options.finality_poll_seconds = td::to_double(value);
@@ -4181,12 +4479,20 @@ int main(int argc, char* argv[]) {
       options.canonical_retry_backoff_seconds) {
     LOG(FATAL) << "canonical retry max backoff must be at least the initial backoff";
   }
+  if (options.canonical_state_lag_retry_max_backoff_ms < options.canonical_state_lag_retry_backoff_ms) {
+    LOG(FATAL) << "canonical state-lag retry max backoff must be at least the initial backoff";
+  }
   if (options.submit_source_run_size > options.submit_batch_size) {
     LOG(FATAL) << "submit-source-run-size must not exceed submit-batch-size";
   }
   if (options.workers > options.sources || options.workers > options.connections ||
       options.workers > options.signers || options.workers > options.max_inflight) {
     LOG(FATAL) << "workers must not exceed sources, connections, signers, or inflight";
+  }
+  if (!native_load::valid_adaptive_max_cwnd(options.adaptive_max_cwnd,
+                                             options.connections,
+                                             options.max_inflight)) {
+    LOG(FATAL) << "adaptive-max-cwnd must be zero or between connections and inflight";
   }
   if (options.max_canonical_backlog && options.max_canonical_backlog < options.workers) {
     LOG(FATAL) << "max-canonical-backlog must be zero or at least the worker count";

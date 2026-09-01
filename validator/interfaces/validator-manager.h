@@ -18,10 +18,10 @@
 */
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <mutex>
-
 #include <ton/ton-tl.hpp>
 
 #include "auto/tl/lite_api.h"
@@ -90,6 +90,93 @@ struct StorageStatCacheStats {
 };
 
 struct CollationStats {
+  struct ExternalWaitStats {
+    enum class Kind : td::uint8 {
+      round_live,
+      round_native_coalescing,
+      generic_try_pop,
+      generic_sync_snapshot,
+      native_probe,
+      native_first_work,
+      native_fragment_refill,
+      native_post_commit_idle,
+      native_producer_drain,
+      native_sync_snapshot,
+      count,
+    };
+
+    struct Bucket {
+      double seconds = 0.0;
+      td::uint64 calls = 0;
+    };
+
+    void record(Kind kind, double seconds) {
+      auto& value = buckets_[index(kind)];
+      value.seconds += seconds;
+      ++value.calls;
+    }
+
+    double seconds(Kind kind) const {
+      return buckets_[index(kind)].seconds;
+    }
+
+    td::uint64 calls(Kind kind) const {
+      return buckets_[index(kind)].calls;
+    }
+
+    double total_seconds() const {
+      double result = 0.0;
+      for (const auto& value : buckets_) {
+        result += value.seconds;
+      }
+      return result;
+    }
+
+    td::uint64 total_calls() const {
+      td::uint64 result = 0;
+      for (const auto& value : buckets_) {
+        result += value.calls;
+      }
+      return result;
+    }
+
+    std::string to_str() const {
+      return PSTRING() << "external_wait_round_live_s=" << seconds(Kind::round_live)
+                       << " external_wait_round_live_calls=" << calls(Kind::round_live)
+                       << " external_wait_round_native_coalescing_s=" << seconds(Kind::round_native_coalescing)
+                       << " external_wait_round_native_coalescing_calls=" << calls(Kind::round_native_coalescing)
+                       << " external_wait_generic_try_pop_s=" << seconds(Kind::generic_try_pop)
+                       << " external_wait_generic_try_pop_calls=" << calls(Kind::generic_try_pop)
+                       << " external_wait_generic_sync_snapshot_s=" << seconds(Kind::generic_sync_snapshot)
+                       << " external_wait_generic_sync_snapshot_calls=" << calls(Kind::generic_sync_snapshot)
+                       << " external_wait_native_probe_s=" << seconds(Kind::native_probe)
+                       << " external_wait_native_probe_calls=" << calls(Kind::native_probe)
+                       << " external_wait_native_first_work_s=" << seconds(Kind::native_first_work)
+                       << " external_wait_native_first_work_calls=" << calls(Kind::native_first_work)
+                       << " external_wait_native_fragment_refill_s=" << seconds(Kind::native_fragment_refill)
+                       << " external_wait_native_fragment_refill_calls=" << calls(Kind::native_fragment_refill)
+                       << " external_wait_native_post_commit_idle_s=" << seconds(Kind::native_post_commit_idle)
+                       << " external_wait_native_post_commit_idle_calls=" << calls(Kind::native_post_commit_idle)
+                       << " external_wait_native_producer_drain_s=" << seconds(Kind::native_producer_drain)
+                       << " external_wait_native_producer_drain_calls=" << calls(Kind::native_producer_drain)
+                       << " external_wait_native_sync_snapshot_s=" << seconds(Kind::native_sync_snapshot)
+                       << " external_wait_native_sync_snapshot_calls=" << calls(Kind::native_sync_snapshot)
+                       << " external_wait_accounted_s=" << total_seconds()
+                       << " external_wait_calls=" << total_calls();
+    }
+
+   private:
+    static constexpr std::size_t bucket_count = static_cast<std::size_t>(Kind::count);
+
+    static std::size_t index(Kind kind) {
+      auto result = static_cast<std::size_t>(kind);
+      CHECK(result < bucket_count);
+      return result;
+    }
+
+    std::array<Bucket, bucket_count> buckets_{};
+  };
+
   BlockIdExt block_id{workchainInvalid, 0, 0, RootHash::zero(), FileHash::zero()};
   td::Status status = td::Status::OK();
 
@@ -171,8 +258,7 @@ struct CollationStats {
                        << " queue_cleanup=" << queue_cleanup.get(is_cpu)
                        << " prelim_storage_stat=" << prelim_storage_stat.get(is_cpu)
                        << " trx_tvm=" << trx_tvm.get(is_cpu) << " trx_storage_stat=" << trx_storage_stat.get(is_cpu)
-                       << " trx_other=" << trx_other.get(is_cpu)
-                       << " native_prepare=" << native_prepare.get(is_cpu)
+                       << " trx_other=" << trx_other.get(is_cpu) << " native_prepare=" << native_prepare.get(is_cpu)
                        << " native_execute=" << native_execute.get(is_cpu)
                        << " native_commit=" << native_commit.get(is_cpu)
                        << " native_account_cell_build=" << native_account_cell_build.get(is_cpu)
@@ -204,39 +290,76 @@ struct CollationStats {
   td::uint64 native_account_cells_built = 0;
   td::uint64 native_staged_dict_sets = 0;
   td::uint64 native_state_accounts_installed = 0;
+  td::uint64 native_fast_path_invocations = 0;
   td::uint64 native_stat_checkpoint_base_snapshots = 0;
   td::uint64 native_stat_checkpoint_rebuilds = 0;
+  td::uint64 native_fragment_refill_waits = 0;
+  td::uint64 native_fragment_refill_timeouts = 0;
+  td::uint64 native_fragment_refill_messages = 0;
+  td::uint64 native_post_commit_idle_waits = 0;
+  td::uint64 native_post_commit_idle_timeouts = 0;
+  td::uint64 native_fragment_capacity_fills = 0;
   td::uint64 native_hard_preflight_failures = 0;
+  td::uint64 native_size_guard_deferrals = 0;
+  td::uint64 native_size_guard_reserve_bytes = 0;
+  td::uint64 native_size_guard_max_estimated_bytes = 0;
+  td::uint64 native_size_guard_estimator_gap_bytes = 0;
+  td::uint64 native_size_guard_serialized_margin_bytes = 0;
+  td::uint64 native_size_guard_serialized_oversize_bytes = 0;
   td::uint64 native_deadline_seals = 0;
   td::uint64 native_deadline_deferred = 0;
   td::uint64 native_deadline_first_fragment_commits = 0;
   td::uint64 native_canonical_accounts_reused = 0;
   bool native_canonical_root_reused = false;
+  ExternalWaitStats external_wait;
   double wait_externals_time = 0.0;
   double check_load_do_collate_time = -1.0;
   double check_load_total_time = -1.0;
   StorageStatCacheStats storage_stat_cache;
 
   std::string work_time_to_str(bool is_cpu) const {
-    return PSTRING() << work_time.to_str(is_cpu) << " native_microbatches=" << native_microbatches
-                     << " native_microbatch_input=" << native_microbatch_input
-                     << " native_microbatch_accepted=" << native_microbatch_accepted
-                     << " native_microbatch_delayed=" << native_microbatch_delayed
-                     << " native_microbatch_permanent=" << native_microbatch_permanent
-                     << " native_microbatch_unique_accounts=" << native_microbatch_unique_accounts
-                     << " native_microbatch_max_input=" << native_microbatch_max_input
-                     << " native_microbatch_max_unique_accounts=" << native_microbatch_max_unique_accounts
-                     << " native_account_cells_built=" << native_account_cells_built
-                     << " native_staged_dict_sets=" << native_staged_dict_sets
-                     << " native_state_accounts_installed=" << native_state_accounts_installed
-                     << " native_stat_checkpoint_base_snapshots=" << native_stat_checkpoint_base_snapshots
-                     << " native_stat_checkpoint_rebuilds=" << native_stat_checkpoint_rebuilds
-                     << " native_hard_preflight_failures=" << native_hard_preflight_failures
-                     << " native_deadline_seals=" << native_deadline_seals
-                     << " native_deadline_deferred=" << native_deadline_deferred
-                     << " native_deadline_first_fragment_commits=" << native_deadline_first_fragment_commits
-                     << " native_canonical_root_reused=" << native_canonical_root_reused
-                     << " native_canonical_accounts_reused=" << native_canonical_accounts_reused;
+    std::string result = PSTRING() << work_time.to_str(is_cpu) << " native_microbatches=" << native_microbatches
+                                   << " native_microbatch_input=" << native_microbatch_input
+                                   << " native_microbatch_accepted=" << native_microbatch_accepted
+                                   << " native_microbatch_delayed=" << native_microbatch_delayed
+                                   << " native_microbatch_permanent=" << native_microbatch_permanent
+                                   << " native_microbatch_unique_accounts=" << native_microbatch_unique_accounts
+                                   << " native_microbatch_max_input=" << native_microbatch_max_input
+                                   << " native_microbatch_max_unique_accounts=" << native_microbatch_max_unique_accounts
+                                   << " native_account_cells_built=" << native_account_cells_built
+                                   << " native_staged_dict_sets=" << native_staged_dict_sets
+                                   << " native_state_accounts_installed=" << native_state_accounts_installed
+                                   << " native_fast_path_invocations=" << native_fast_path_invocations
+                                   << " native_stat_checkpoint_base_snapshots="
+                                   << native_stat_checkpoint_base_snapshots
+                                   << " native_stat_checkpoint_rebuilds=" << native_stat_checkpoint_rebuilds
+                                   << " native_fragment_refill_waits=" << native_fragment_refill_waits
+                                   << " native_fragment_refill_timeouts=" << native_fragment_refill_timeouts
+                                   << " native_fragment_refill_messages=" << native_fragment_refill_messages
+                                   << " native_post_commit_idle_waits=" << native_post_commit_idle_waits
+                                   << " native_post_commit_idle_timeouts=" << native_post_commit_idle_timeouts
+                                   << " native_fragment_capacity_fills=" << native_fragment_capacity_fills
+                                   << " native_hard_preflight_failures=" << native_hard_preflight_failures
+                                   << " native_size_guard_deferrals=" << native_size_guard_deferrals
+                                   << " native_size_guard_reserve_bytes=" << native_size_guard_reserve_bytes
+                                   << " native_size_guard_max_estimated_bytes="
+                                   << native_size_guard_max_estimated_bytes
+                                   << " native_size_guard_estimator_gap_bytes="
+                                   << native_size_guard_estimator_gap_bytes
+                                   << " native_size_guard_serialized_margin_bytes="
+                                   << native_size_guard_serialized_margin_bytes
+                                   << " native_size_guard_serialized_oversize_bytes="
+                                   << native_size_guard_serialized_oversize_bytes
+                                   << " native_deadline_seals=" << native_deadline_seals
+                                   << " native_deadline_deferred=" << native_deadline_deferred
+                                   << " native_deadline_first_fragment_commits="
+                                   << native_deadline_first_fragment_commits
+                                   << " native_canonical_root_reused=" << native_canonical_root_reused
+                                   << " native_canonical_accounts_reused=" << native_canonical_accounts_reused;
+    if (!is_cpu) {
+      result += PSTRING() << " " << external_wait.to_str();
+    }
+    return result;
   }
 
   tl_object_ptr<ton_api::validatorStats_collatedBlock> tl() const {
@@ -383,8 +506,7 @@ struct ExtMsgQueueTelemetry {
 
   static void update_max(std::atomic<td::uint64>& value, td::uint64 candidate) {
     auto current = value.load(std::memory_order_relaxed);
-    while (current < candidate &&
-           !value.compare_exchange_weak(current, candidate, std::memory_order_relaxed)) {
+    while (current < candidate && !value.compare_exchange_weak(current, candidate, std::memory_order_relaxed)) {
     }
   }
 };
@@ -534,9 +656,9 @@ struct ExtMsgQueueState {
     if (auto telemetry = load_telemetry()) {
       std::lock_guard telemetry_lock(telemetry->accounting_mutex);
       telemetry->unpushed_discarded.fetch_add(native_selected_ - native_pushed_ - native_push_reserved_,
-                                               std::memory_order_relaxed);
+                                              std::memory_order_relaxed);
       telemetry->queued_discarded.fetch_add(native_pushed_ + native_push_reserved_ - native_consumed_,
-                                             std::memory_order_relaxed);
+                                            std::memory_order_relaxed);
     }
   }
 
@@ -637,17 +759,11 @@ class ValidatorManager : public ValidatorManagerInterface {
                                              td::Promise<std::vector<td::Ref<ShardTopBlockDescription>>> promise) = 0;
   virtual void complete_external_messages(std::vector<ExtMessage::Hash> to_delay,
                                           std::vector<ExtMessage::Hash> to_delete) = 0;
-  virtual void finalize_external_messages(std::vector<FinalizedNativeExternalMessage> messages,
-                                          td::Promise<td::Unit> promise) {
-    // Derived managers enqueue complete_external_messages() to their
-    // ExtMessagePool. Actor message ordering guarantees that a subsequently
-    // installed collator queue observes this deletion first.
-    std::vector<ExtMessage::Hash> hashes;
-    hashes.reserve(messages.size());
-    for (const auto &message : messages) {
-      hashes.push_back(message.hash);
-    }
-    complete_external_messages({}, std::move(hashes));
+  virtual void track_external_messages(std::vector<TrackedNativeExternalMessage> messages,
+                                       td::Promise<td::Unit> promise) {
+    // Local consensus acceptance is not a canonical-chain authority. Derived
+    // managers may retain source/nonce hints, but must not erase messages or
+    // advance nonce watermarks here.
     promise.set_value(td::Unit{});
   }
   virtual void cleanup_applied_external_messages(BlockHandle handle, td::Ref<BlockData> block) = 0;

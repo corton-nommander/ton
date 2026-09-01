@@ -34,6 +34,7 @@
 #include "td/utils/Random.h"
 #include "ton/ton-io.hpp"
 #include "ton/ton-shard.h"
+#include "validator/consensus/utils.h"
 #include "vm/boc.h"
 #include "vm/db/StaticBagOfCellsDb.h"
 #include "vm/dict.h"
@@ -43,7 +44,6 @@
 #include "fabric.h"
 #include "storage-stat-cache.hpp"
 #include "top-shard-descr.hpp"
-#include "validator/consensus/utils.h"
 
 namespace ton {
 
@@ -260,8 +260,8 @@ void Collator::start_up() {
     callback->transport_message_capacity = transport_message_capacity;
     callback->queue_state = ext_msg_queue_state_;
     callback->cancellation_token = ext_msg_cancellation_.get_cancellation_token();
-    auto callback_until = params_.ext_msg_callback_until ? params_.ext_msg_callback_until
-                                                         : params_.wait_externals_until;
+    auto callback_until =
+        params_.ext_msg_callback_until ? params_.ext_msg_callback_until : params_.wait_externals_until;
     callback->timeout = callback_until ? callback_until : td::Timestamp::now();
     callback->sync_only = !callback_until;
     callback->native_streaming = native_streaming;
@@ -415,8 +415,8 @@ bool Collator::fatal_error(td::Status error) {
     // Resolve the caller directly: retries, error counters, perf warnings and
     // session failure records would all turn an idle node into false alarms.
     if (!bad_ext_msgs_.empty() || !delay_ext_msgs_.empty()) {
-      td::actor::send_closure_later(manager, &ValidatorManager::complete_external_messages,
-                                    std::move(delay_ext_msgs_), std::move(bad_ext_msgs_));
+      td::actor::send_closure_later(manager, &ValidatorManager::complete_external_messages, std::move(delay_ext_msgs_),
+                                    std::move(bad_ext_msgs_));
     }
     if (busy_) {
       main_promise.set_error(std::move(error));
@@ -1052,13 +1052,12 @@ bool Collator::request_neighbor_msg_queues() {
         }
         auto outq_descr_res = mc_state_->message_queue();
         if (outq_descr_res.is_error()) {
-          return fatal_error(outq_descr_res.move_as_error_prefix(
-              "native fast path cannot read masterchain neighbor message queue: "));
+          return fatal_error(
+              outq_descr_res.move_as_error_prefix("native fast path cannot read masterchain neighbor message queue: "));
         }
         Ref<MessageQueue> outq_descr = outq_descr_res.move_as_ok();
         if (outq_descr->get_block_id() != descr.blk_) {
-          return fatal_error(
-              -667, "native fast path masterchain neighbor message queue has mismatched block id");
+          return fatal_error(-667, "native fast path masterchain neighbor message queue has mismatched block id");
         }
         block::gen::OutMsgQueueInfo::Record qinfo;
         if (outq_descr->root_cell().is_null() || !tlb::unpack_cell(outq_descr->root_cell(), qinfo)) {
@@ -1660,9 +1659,9 @@ bool Collator::add_trivial_neighbor() {
  */
 bool Collator::check_prev_block(const BlockIdExt& listed, const BlockIdExt& prev, bool chk_chain_len) {
   if (listed.seqno() > prev.seqno()) {
-    return stale_collation_error(PSTRING() << "cannot generate a shardchain block after previous block " << prev
-                                           << " because masterchain configuration already contains a newer block "
-                                           << listed);
+    return stale_collation_error(PSTRING()
+                                 << "cannot generate a shardchain block after previous block " << prev
+                                 << " because masterchain configuration already contains a newer block " << listed);
   }
   if (listed.seqno() == prev.seqno() && listed != prev) {
     return stale_collation_error(PSTRING() << "cannot generate a shardchain block after previous block " << prev
@@ -3176,8 +3175,7 @@ bool Collator::process_account_storage_dict(block::Account& account) {
 bool Collator::combine_account_transactions() {
   vm::AugmentedDictionary dict{256, block::tlb::aug_ShardAccountBlocks};
   bool compact_native_transactions = use_native_fast_path() && !native_transfer_batch_entries_.empty();
-  bool omit_native_account_blocks =
-      compact_native_transactions && block::NativeTransferBatch::current_version >= 4;
+  bool omit_native_account_blocks = compact_native_transactions && block::NativeTransferBatch::current_version >= 4;
   // The estimator starts from the same ShardAccounts root as account_dict and
   // v4 native commits install their exact, validated ShardAccount values into
   // it transactionally.  Reuse that root as the canonical update target and
@@ -3207,12 +3205,11 @@ bool Collator::combine_account_transactions() {
       return fatal_error(std::string{"v4 native account also acquired ordinary transactions during collation: "} +
                          acc.addr.to_hex());
     }
-    bool include_account_block = compact_native_transactions
-                                     ? (omit_this_account_block ? false
-                                                                : (omit_native_account_blocks
-                                                                       ? !acc.transactions.empty()
-                                                                       : account_changed))
-                                     : !acc.transactions.empty();
+    bool include_account_block =
+        compact_native_transactions
+            ? (omit_this_account_block ? false
+                                       : (omit_native_account_blocks ? !acc.transactions.empty() : account_changed))
+            : !acc.transactions.empty();
     if (include_account_block) {
       // have transactions or a compact native state update for this account
       vm::CellBuilder cb;
@@ -3278,8 +3275,7 @@ bool Collator::combine_account_transactions() {
       if (!(cb.store_ref_bool(acc.total_state) && cb.store_bits_bool(acc.last_trans_hash_) &&
             cb.store_long_bool(acc.last_trans_lt_, 64) &&
             account_dict_update_target->set_builder(acc.addr, cb, mode))) {
-        return fatal_error(std::string{"cannot modify existing account "} + acc.addr.to_hex() +
-                           " in ShardAccounts");
+        return fatal_error(std::string{"cannot modify existing account "} + acc.addr.to_hex() + " in ShardAccounts");
       }
     }
     if (omit_this_account_block) {
@@ -4381,6 +4377,11 @@ bool Collator::process_inbound_internal_messages() {
   return true;
 }
 
+void Collator::record_external_wait(ExternalWaitKind kind, double seconds) {
+  wait_externals_total_time_ += seconds;
+  stats_.external_wait.record(kind, seconds);
+}
+
 /**
  * Processes inbound external messages and new internal messages.
  */
@@ -4392,6 +4393,29 @@ td::actor::Task<> Collator::process_external_and_new_messages() {
               << out_msg_queue_size_ << " > " << SKIP_EXTERNALS_QUEUE_SIZE << ")";
   }
   bool enqueue_only = !inbound_queues_empty_;
+  if (use_native_fast_path() && consensus::work_driven_max_tps_mode_enabled(shard_)) {
+    // Work-driven native collation owns first-work, fragment refill, and
+    // post-commit idle waits in one processor invocation.  Re-entering from
+    // the generic external/new-message loop used to checkpoint tiny producer
+    // epochs independently and rebuilt candidate accounting from a different
+    // routine-local baseline on every pass.
+    LOG(INFO) << "process work-driven native inbound external messages";
+    timer_total.pause();
+    auto processed = co_await process_inbound_external_messages();
+    timer_total.resume();
+    if (!processed) {
+      co_return td::Status::Error("cannot process inbound external messages");
+    }
+    if (native_transfer_batch_entries_.empty() && params_.wait_externals_until &&
+        params_.wait_externals_until.is_in_past()) {
+      co_return consensus::native_collation_idle_status();
+    }
+    LOG(INFO) << "process newly-generated messages after work-driven native intake";
+    if (!process_new_messages(enqueue_only)) {
+      co_return td::Status::Error("cannot process newly-generated outbound messages");
+    }
+    co_return {};
+  }
   while (true) {
     // 5. import inbound external messages (if space&gas left)
     LOG(INFO) << "process inbound external messages";
@@ -4400,9 +4424,8 @@ td::actor::Task<> Collator::process_external_and_new_messages() {
       co_return td::Status::Error("cannot process inbound external messages");
     }
     timer_total.resume();
-    if (consensus::max_tps_mode_enabled() && use_native_fast_path() &&
-        native_transfer_batch_entries_.empty() && params_.wait_externals_until &&
-        params_.wait_externals_until.is_in_past()) {
+    if (consensus::max_tps_mode_enabled() && use_native_fast_path() && native_transfer_batch_entries_.empty() &&
+        params_.wait_externals_until && params_.wait_externals_until.is_in_past()) {
       co_return consensus::native_collation_idle_status();
     }
     // 6. process newly-generated messages (if space&gas left)
@@ -4411,10 +4434,9 @@ td::actor::Task<> Collator::process_external_and_new_messages() {
     if (!process_new_messages(enqueue_only)) {
       co_return td::Status::Error("cannot process newly-generated outbound messages");
     }
-    bool native_queue_coalescing = consensus::max_tps_mode_enabled() && use_native_fast_path() &&
-                                   !native_transfer_batch_entries_.empty();
-    if (!native_queue_coalescing &&
-        (!params_.wait_externals_until || params_.wait_externals_until.is_in_past())) {
+    bool native_queue_coalescing =
+        consensus::max_tps_mode_enabled() && use_native_fast_path() && !native_transfer_batch_entries_.empty();
+    if (!native_queue_coalescing && (!params_.wait_externals_until || params_.wait_externals_until.is_in_past())) {
       LOG(INFO) << "Don't wait for new external messages";
       break;
     }
@@ -4439,16 +4461,18 @@ td::actor::Task<> Collator::process_external_and_new_messages() {
       wait_until = td::Timestamp::in(NATIVE_QUEUE_COALESCING_GRACE_SECONDS);
     }
     LOG(INFO) << (native_queue_coalescing ? "Waiting for native queue coalescing grace ("
-                                         : "Waiting for new external messages (")
+                                          : "Waiting for new external messages (")
               << wait_until.in() << "s)";
     td::Timer wait_timer;
     auto S = co_await wait_for_external_message(wait_until).wrap();
-    wait_externals_total_time_ += wait_timer.elapsed();
+    record_external_wait(native_queue_coalescing ? ExternalWaitKind::round_native_coalescing
+                                                 : ExternalWaitKind::round_live,
+                         wait_timer.elapsed());
     timer_total.resume();
     if (S.is_error()) {
       LOG(INFO) << "No new external messages appeared before timeout";
-      if (consensus::max_tps_mode_enabled() && use_native_fast_path() &&
-          native_transfer_batch_entries_.empty() && params_.wait_externals_until) {
+      if (consensus::max_tps_mode_enabled() && use_native_fast_path() && native_transfer_batch_entries_.empty() &&
+          params_.wait_externals_until) {
         // An exhausted work window is not a request to create an empty chain
         // block.  Return the dedicated idle result so BlockProducer can leave
         // this window to Simplex's failure/skip deadline without retrying.
@@ -4510,7 +4534,9 @@ td::actor::Task<bool> Collator::process_inbound_external_messages() {
         // In this case queue is closed after pushing the first batch of messages
         maybe = co_await pop_external_message_batch(1, true).wrap();
       }
-      wait_externals_total_time_ += wait_timer.elapsed();
+      record_external_wait(params_.wait_externals_until ? ExternalWaitKind::generic_try_pop
+                                                        : ExternalWaitKind::generic_sync_snapshot,
+                           wait_timer.elapsed());
       if (maybe.is_error()) {
         break;  // queue empty or closed
       }
@@ -4564,11 +4590,25 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     block::NativeTransfer transfer;
   };
 
+  ++stats_.native_fast_path_invocations;
+  const bool work_driven = consensus::work_driven_max_tps_mode_enabled(shard_);
+  if (work_driven && stats_.native_fast_path_invocations != 1) {
+    co_return fatal_error("work-driven native processor was invoked more than once for one candidate");
+  }
+
   auto start_total = stats_.ext_msgs_total;
   auto start_filtered = stats_.ext_msgs_filtered;
   auto start_accepted = stats_.ext_msgs_accepted;
   auto start_rejected = stats_.ext_msgs_rejected;
   auto start_compact_entries = native_transfer_batch_entries_.size();
+  const auto consensus_max_block_size = static_cast<td::uint64>(config_->get_consensus_config().max_block_size);
+  const auto native_size_reserve = consensus::native_candidate_size_reserve(consensus_max_block_size);
+  const auto native_estimate_budget = consensus::native_candidate_estimate_budget(consensus_max_block_size);
+  stats_.native_size_guard_reserve_bytes = native_size_reserve;
+  auto record_native_size_estimate = [&](td::uint64 estimated_bytes) {
+    stats_.native_size_guard_max_estimated_bytes =
+        std::max(stats_.native_size_guard_max_estimated_bytes, estimated_bytes);
+  };
   SCOPE_EXIT {
     auto total = stats_.ext_msgs_total - start_total;
     auto accepted = stats_.ext_msgs_accepted - start_accepted;
@@ -4576,16 +4616,12 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     auto filtered = stats_.ext_msgs_filtered - start_filtered;
     auto compact_entries = native_transfer_batch_entries_.size() - start_compact_entries;
     if (total || accepted || rejected || filtered || compact_entries) {
-      LOG(INFO) << "native fast-path externals: total=" << total << " accepted=" << accepted
-                << " rejected=" << rejected << " filtered=" << filtered
-                << " compact_transfers=" << compact_entries;
+      LOG(INFO) << "native fast-path externals: total=" << total << " accepted=" << accepted << " rejected=" << rejected
+                << " filtered=" << filtered << " compact_transfers=" << compact_entries;
     }
   };
 
-  const bool work_driven = consensus::work_driven_max_tps_mode_enabled(shard_);
-  auto medium_timeout_reached = [&] {
-    return !work_driven && external_msg_timeout_.is_in_past(td::Timestamp::now());
-  };
+  auto medium_timeout_reached = [&] { return !work_driven && external_msg_timeout_.is_in_past(td::Timestamp::now()); };
   auto native_intake_timeout_reached = [&] {
     return work_driven && params_.soft_timeout && params_.soft_timeout.is_in_past(td::Timestamp::now());
   };
@@ -4596,8 +4632,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       ++stats_.native_deadline_seals;
       deadline_seal_recorded = true;
       LOG(WARNING) << "native candidate intake deadline reached; sealing partial candidate with "
-                   << native_transfer_batch_entries_.size() << " committed and " << staged
-                   << " staged transfers";
+                   << native_transfer_batch_entries_.size() << " committed and " << staged << " staged transfers";
     }
     stats_.native_deadline_deferred += deferred;
   };
@@ -4654,7 +4689,6 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   };
   std::unordered_map<StdSmcAddress, NativeAccountState, NativeAddressHash> native_states;
   native_states.reserve(NATIVE_ACCOUNT_STATE_RESERVE);
-  std::optional<vm::NewCellStorageStat> pre_native_storage_stat;
   bool fatal = false;
   bool state_capacity_reached = false;
   auto load_native_state = [&](const StdSmcAddress& address, bool allow_create) -> NativeAccountState* {
@@ -4739,44 +4773,142 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     batch.reserve(batch_capacity);
     bool queue_exhausted = false;
     bool saw_item = false;
+    std::optional<td::Timestamp> fragment_refill_until;
+    std::optional<td::Timestamp> post_commit_idle_until;
+    auto bounded_coalescing_deadline = [&] {
+      auto deadline = td::Timestamp::in(NATIVE_QUEUE_COALESCING_GRACE_SECONDS);
+      if (params_.soft_timeout) {
+        deadline.relax(params_.soft_timeout);
+      }
+      return deadline;
+    };
     while (batch.size() < batch_capacity) {
+      if (!check_cancelled()) {
+        co_return false;
+      }
+      if (native_intake_timeout_reached()) {
+        if (!native_transfer_batch_entries_.empty() && batch.empty()) {
+          record_deadline_seal(0);
+        }
+        queue_exhausted = true;
+        break;
+      }
       std::pair<td::Ref<ExtMessage>, int> item;
       if (pending_ext_msgs_.empty()) {
         td::Result<ExtMsgPopBatch> maybe;
         td::Timer wait_timer;
-        bool first_work_trigger = work_driven && native_transfer_batch_entries_.empty() && !saw_item &&
-                                  params_.wait_externals_until;
-        if (params_.wait_externals_until || saw_item) {
-          // In work-driven mode the first item is the trigger for producing a
-          // non-bootstrap block.  First consume an item that was queued while
-          // state preparation was running. One bulk pop replaces up to 512
-          // per-item actor asks.
+        auto wait_kind = ExternalWaitKind::native_probe;
+        auto refill_action = consensus::NativeQueueRefillAction::stop;
+        if (work_driven) {
+          // Always drain already-published work first.  Only an empty queue
+          // enters one of the bounded waits selected below.
+          maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), false).wrap();
+          if (!check_cancelled()) {
+            co_return false;
+          }
+          if (maybe.is_error()) {
+            auto producer_pending = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
+            if (batch.empty() && !native_transfer_batch_entries_.empty() && !post_commit_idle_until) {
+              post_commit_idle_until = bounded_coalescing_deadline();
+            }
+            auto first_work_window_open = params_.wait_externals_until && !params_.wait_externals_until.is_in_past();
+            refill_action = consensus::select_native_queue_refill_action({
+                .work_driven = true,
+                .cancelled = false,
+                .intake_deadline_reached = native_intake_timeout_reached(),
+                .fragment_full = batch.size() >= batch_capacity,
+                .has_staged_fragment = !batch.empty(),
+                .has_committed_fragment = !native_transfer_batch_entries_.empty(),
+                .first_work_window_open = first_work_window_open,
+                .fragment_window_open = fragment_refill_until && !fragment_refill_until->is_in_past(),
+                .post_commit_idle_window_open = post_commit_idle_until && !post_commit_idle_until->is_in_past(),
+                .producer_pending = producer_pending,
+            });
+            td::Timestamp wait_until;
+            switch (refill_action) {
+              case consensus::NativeQueueRefillAction::wait_first_work:
+                wait_until = producer_pending ? params_.soft_timeout : params_.wait_externals_until;
+                wait_until.relax(params_.soft_timeout);
+                break;
+              case consensus::NativeQueueRefillAction::wait_fragment:
+                wait_until = *fragment_refill_until;
+                break;
+              case consensus::NativeQueueRefillAction::wait_post_commit_idle:
+                wait_until = *post_commit_idle_until;
+                break;
+              case consensus::NativeQueueRefillAction::stop:
+                break;
+            }
+            if (refill_action != consensus::NativeQueueRefillAction::stop && wait_until && !wait_until.is_in_past()) {
+              switch (refill_action) {
+                case consensus::NativeQueueRefillAction::wait_first_work:
+                  wait_kind = ExternalWaitKind::native_first_work;
+                  break;
+                case consensus::NativeQueueRefillAction::wait_fragment:
+                  wait_kind = ExternalWaitKind::native_fragment_refill;
+                  break;
+                case consensus::NativeQueueRefillAction::wait_post_commit_idle:
+                  wait_kind = ExternalWaitKind::native_post_commit_idle;
+                  break;
+                case consensus::NativeQueueRefillAction::stop:
+                  UNREACHABLE();
+              }
+              if (refill_action == consensus::NativeQueueRefillAction::wait_fragment) {
+                ++stats_.native_fragment_refill_waits;
+              } else if (refill_action == consensus::NativeQueueRefillAction::wait_post_commit_idle) {
+                ++stats_.native_post_commit_idle_waits;
+              }
+              maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), true, wait_until).wrap();
+            }
+          }
+        } else if (params_.wait_externals_until || saw_item) {
+          // Preserve the paced/non-work-driven producer behavior exactly.
           maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), false).wrap();
           if (maybe.is_error()) {
             auto producer_pending = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
-            auto wait_until = producer_pending
-                                  ? (work_driven ? params_.soft_timeout : params_.hard_timeout)
-                                  : params_.wait_externals_until;
-            if ((producer_pending || first_work_trigger) && wait_until && !wait_until.is_in_past()) {
+            auto wait_until = producer_pending ? params_.hard_timeout : params_.wait_externals_until;
+            if (producer_pending && wait_until && !wait_until.is_in_past()) {
+              wait_kind = ExternalWaitKind::native_producer_drain;
               maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), true, wait_until).wrap();
             }
           }
         } else {
+          wait_kind = ExternalWaitKind::native_sync_snapshot;
           maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), true).wrap();
         }
-        wait_externals_total_time_ += wait_timer.elapsed();
+        record_external_wait(wait_kind, wait_timer.elapsed());
+        if (!check_cancelled()) {
+          co_return false;
+        }
         if (maybe.is_error()) {
+          if (maybe.error().code() == td::actor::AWAIT_TIMEOUT_CODE) {
+            if (refill_action == consensus::NativeQueueRefillAction::wait_fragment) {
+              ++stats_.native_fragment_refill_timeouts;
+            } else if (refill_action == consensus::NativeQueueRefillAction::wait_post_commit_idle) {
+              ++stats_.native_post_commit_idle_timeouts;
+            }
+          }
+          if (native_intake_timeout_reached() && !native_transfer_batch_entries_.empty() && batch.empty()) {
+            record_deadline_seal(0);
+          }
           queue_exhausted = true;
           break;
         }
         auto popped = maybe.move_as_ok();
+        if (refill_action == consensus::NativeQueueRefillAction::wait_fragment) {
+          stats_.native_fragment_refill_messages += popped.messages.size();
+        }
         for (auto& message : popped.messages) {
           pending_ext_msgs_.push_back(std::move(message));
         }
         if (pending_ext_msgs_.empty()) {
-          // A completion marker proves the current producer epoch has no more
-          // messages. A newer epoch is never mistaken for completion because
-          // producer_pending compares against the observed marker epoch.
+          if (work_driven) {
+            // A marker-only pop changes producer epoch accounting, but it does
+            // not end or reset the caller's fixed wait.  Re-evaluate the same
+            // deadline after another nonblocking drain.
+            continue;
+          }
+          // Preserve completion-marker behavior for paced collation.
           if (ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending()) {
             continue;
           }
@@ -4809,6 +4941,16 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         continue;
       }
       batch.push_back(NativeExternal{std::move(ext_msg_ref), native_transfer_res.move_as_ok()});
+      if (work_driven && batch.size() == 1) {
+        // Fixed from the first staged transfer: later arrivals and producer
+        // markers may fill the fragment, but cannot perpetually postpone its
+        // exact dictionary/proof checkpoint.
+        fragment_refill_until = bounded_coalescing_deadline();
+      }
+    }
+
+    if (work_driven && batch.size() == batch_capacity) {
+      ++stats_.native_fragment_capacity_fills;
     }
 
     if (batch.empty()) {
@@ -4964,13 +5106,22 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         }
         auto prospective_deferred_bytes =
             static_cast<td::uint64>(accepted_indices.size() + 1) * NATIVE_DEFERRED_ENTRY_CHARGE_BYTES +
-            static_cast<td::uint64>(dirty_addresses.size() + new_dirty_accounts) *
-                NATIVE_DEFERRED_ACCOUNT_CHARGE_BYTES;
-        if (block_limit_status_->estimate_block_size() + prospective_deferred_bytes >=
-            block_limit_status_->limits.bytes.soft()) {
+            static_cast<td::uint64>(dirty_addresses.size() + new_dirty_accounts) * NATIVE_DEFERRED_ACCOUNT_CHARGE_BYTES;
+        auto prospective_estimated_bytes = block_limit_status_->estimate_block_size() + prospective_deferred_bytes;
+        record_native_size_estimate(prospective_estimated_bytes);
+        auto speculative_size_limit =
+            std::min<td::uint64>(block_limit_status_->limits.bytes.soft(), native_estimate_budget);
+        if (prospective_estimated_bytes >= speculative_size_limit) {
           full = true;
           delay_batch_suffix(index);
-          stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: conservative deferred-state soft limit\n";
+          if (!consensus::native_candidate_estimate_fits(prospective_estimated_bytes, consensus_max_block_size)) {
+            ++stats_.native_size_guard_deferrals;
+            stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: candidate size reserve estimate="
+                                           << prospective_estimated_bytes << " budget=" << native_estimate_budget
+                                           << " reserve=" << native_size_reserve << "\n";
+          } else {
+            stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: conservative deferred-state soft limit\n";
+          }
           break;
         }
 
@@ -5030,8 +5181,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline before checkpoint\n";
     }
 
-    if (deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment &&
-        !accepted_indices.empty()) {
+    if (deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment && !accepted_indices.empty()) {
       // A first-work waiter can wake immediately before the boundary.  Keep
       // the first fragment so BlockProducer receives a useful nonempty
       // candidate; the fragment-start guard normally absorbs this bounded
@@ -5051,8 +5201,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           vm::CellBuilder state_builder;
           if (!(state_builder.store_long_bool(1, 2) && state_builder.store_ulong_rchk_bool(state.balance, 64) &&
                 state_builder.store_ulong_rchk_bool(state.nonce, 64) &&
-                state_builder.store_ulong_rchk_bool(state.flags, 8) &&
-                state_builder.finalize_to(staged_total_state) &&
+                state_builder.store_ulong_rchk_bool(state.flags, 8) && state_builder.finalize_to(staged_total_state) &&
                 block::gen::t_Account.validate_ref(staged_total_state) &&
                 block::tlb::t_Account.validate_ref(staged_total_state))) {
             co_return fatal_error("cannot stage aggregated native account state");
@@ -5093,8 +5242,8 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       std::optional<block::BlockLimitStatus> trial_limit_status;
       {
         td::ScopedRealCpuTimer checkpoint_timer{stats_.work_time.native_stat_checkpoint_rebuild};
-        if (!pre_native_storage_stat) {
-          pre_native_storage_stat.emplace(block_limit_status_->st_stat);
+        if (!native_pre_storage_stat_) {
+          native_pre_storage_stat_.emplace(block_limit_status_->st_stat);
           ++stats_.native_stat_checkpoint_base_snapshots;
         }
         trial_limit_status.emplace(block_limit_status_->limits, block_limit_status_->cur_lt);
@@ -5105,21 +5254,39 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         trial.extra_out_msgs = block_limit_status_->extra_out_msgs;
         trial.collated_data_size_estimate = block_limit_status_->collated_data_size_estimate;
         trial.public_library_diff = block_limit_status_->public_library_diff;
-        trial.st_stat = *pre_native_storage_stat;
+        trial.st_stat = *native_pre_storage_stat_;
         trial.st_stat.add_proof(staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
         ++stats_.native_stat_checkpoint_rebuilds;
       }
-      bool staged_fits;
+      bool staged_hard_fits;
+      bool staged_size_guard_fits;
+      td::uint64 staged_estimated_bytes;
       {
         td::ScopedRealCpuTimer preflight_timer{stats_.work_time.native_proof_preflight};
-        staged_fits = trial_limit_status->fits(block::ParamLimits::cl_hard);
+        staged_estimated_bytes = trial_limit_status->estimate_block_size();
+        record_native_size_estimate(staged_estimated_bytes);
+        staged_hard_fits = trial_limit_status->fits(block::ParamLimits::cl_hard);
+        staged_size_guard_fits =
+            consensus::native_candidate_estimate_fits(staged_estimated_bytes, consensus_max_block_size);
       }
-      if (!staged_fits) {
-        ++stats_.native_hard_preflight_failures;
+      if (!staged_hard_fits || !staged_size_guard_fits) {
+        if (!staged_hard_fits) {
+          ++stats_.native_hard_preflight_failures;
+        }
+        if (!staged_size_guard_fits) {
+          ++stats_.native_size_guard_deferrals;
+        }
         block_limit_status_->transactions -= static_cast<unsigned>(accepted_indices.size());
         rollback_accepted_fragment();
         full = true;
-        stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: deferred microbatch by hard-limit preflight\n";
+        if (!staged_size_guard_fits) {
+          stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: deferred microbatch by candidate size "
+                                            "reserve estimate="
+                                         << staged_estimated_bytes << " budget=" << native_estimate_budget
+                                         << " reserve=" << native_size_reserve << "\n";
+        } else {
+          stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: deferred microbatch by hard-limit preflight\n";
+        }
       } else {
         // Replacing only st_stat is atomic with respect to candidate state: all
         // other live counters already include this fragment's provisional
@@ -5157,9 +5324,15 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         if (!block_limit_status_->fits(block::ParamLimits::cl_hard)) {
           co_return fatal_error("native hard-limit preflight invariant failed after commit");
         }
+        if (!consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+                                                       consensus_max_block_size)) {
+          co_return fatal_error("native candidate size-reserve invariant failed after commit");
+        }
       }
     }
-    full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft);
+    full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
+           !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+                                                      consensus_max_block_size);
     block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
     ++stats_.native_microbatches;
     stats_.native_microbatch_input += batch.size();
@@ -5172,9 +5345,9 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         std::max<td::uint64>(stats_.native_microbatch_max_unique_accounts, state_journal.size());
     LOG(INFO) << "native fast-path batch: input=" << batch.size() << " accepted=" << accepted_in_batch
               << " delayed=" << delayed_in_batch << " permanent=" << permanent_in_batch
-              << " dirty_accounts=" << state_journal.size()
-              << " candidate_accounts=" << native_states.size()
+              << " dirty_accounts=" << state_journal.size() << " candidate_accounts=" << native_states.size()
               << " estimated_bytes=" << block_limit_status_->estimate_block_size()
+              << " native_estimate_budget=" << native_estimate_budget << " native_size_reserve=" << native_size_reserve
               << " soft_load=" << block_limit_status_->load_fraction(block::ParamLimits::cl_soft)
               << " work_driven=" << work_driven;
 
@@ -5191,6 +5364,11 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     }
   }
 
+  if (!native_transfer_batch_entries_.empty() &&
+      (!native_pre_storage_stat_ || stats_.native_stat_checkpoint_base_snapshots != 1)) {
+    co_return fatal_error("native candidate must have exactly one pre-native storage-stat baseline");
+  }
+
   // Install each final Account value once, after the last exact dictionary
   // checkpoint.  combine_account_transactions() can then reuse the identical
   // preflighted ShardAccounts root without a second trie mutation pass.
@@ -5201,8 +5379,8 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         continue;
       }
       if (state.staged_total_state.is_null() ||
-          !state.account->set_prevalidated_native_state(std::move(state.staged_total_state), state.balance,
-                                                        state.nonce, state.flags)) {
+          !state.account->set_prevalidated_native_state(std::move(state.staged_total_state), state.balance, state.nonce,
+                                                        state.flags)) {
         co_return fatal_error("cannot install final preflighted native account state");
       }
       ++stats_.native_state_accounts_installed;
@@ -5274,8 +5452,8 @@ int Collator::process_native_transfer(const block::NativeTransfer& transfer) {
   if (transfer.verify_signature(config_->get_zerostate_id().root_hash).is_error()) {
     return 0;
   }
-  return commit_native_transfer(
-      transfer, prepared, block::execute_native_transfer_state(prepared.input, now_, /*verify_signature=*/false));
+  return commit_native_transfer(transfer, prepared,
+                                block::execute_native_transfer_state(prepared.input, now_, /*verify_signature=*/false));
 }
 
 int Collator::prepare_native_transfer(const block::NativeTransfer& transfer, PreparedNativeTransfer& prepared) {
@@ -5332,8 +5510,7 @@ int Collator::prepare_native_transfer(const block::NativeTransfer& transfer, Pre
   return 1;
 }
 
-int Collator::commit_native_transfer(const block::NativeTransfer& transfer,
-                                     const PreparedNativeTransfer& prepared,
+int Collator::commit_native_transfer(const block::NativeTransfer& transfer, const PreparedNativeTransfer& prepared,
                                      const block::NativeTransferStateResult& result) {
   if (result.code != block::NativeTransferStateResult::ok) {
     LOG(DEBUG) << result.message() << " for " << transfer.src.to_hex() << " -> " << transfer.dst.to_hex();
@@ -5344,8 +5521,8 @@ int Collator::commit_native_transfer(const block::NativeTransfer& transfer,
   auto* dst_acc = prepared.dst_acc;
   const auto& input = prepared.input;
   bool src_first_update = src_acc->total_state->get_hash() == src_acc->orig_total_state->get_hash();
-  bool dst_first_update = dst_acc != src_acc &&
-                          dst_acc->total_state->get_hash() == dst_acc->orig_total_state->get_hash();
+  bool dst_first_update =
+      dst_acc != src_acc && dst_acc->total_state->get_hash() == dst_acc->orig_total_state->get_hash();
   if (!src_acc->set_native_state(result.src_balance, result.src_nonce, input.src_flags) ||
       (dst_acc != src_acc && !dst_acc->set_native_state(result.dst_balance, input.dst_nonce, input.dst_flags))) {
     fatal_error("cannot commit direct native account state");
@@ -7159,7 +7336,7 @@ bool Collator::create_block_extra(Ref<vm::Cell>& block_extra) {
          && cb.store_bool_bool(mc || native_compact)          // custom:(Maybe
          && ((!mc && !native_compact) ||
              ((mc ? create_mc_block_extra(custom_extra) : true) && cb.store_ref_bool(custom_extra)))  // .. ^Cell)
-         && cb.finalize_to(block_extra);                                                           // = BlockExtra;
+         && cb.finalize_to(block_extra);                                                              // = BlockExtra;
 }
 
 /**
@@ -7551,7 +7728,30 @@ bool Collator::create_block_candidate() {
   }
 
   // 3.1 check block and collated data size
-  if (block_candidate->data.size() > consensus_config.max_block_size) {
+  if (use_native_fast_path() && !native_transfer_batch_entries_.empty()) {
+    const auto serialized_bytes = static_cast<td::uint64>(block_candidate->data.size());
+    const auto estimated_bytes = block_limit_status_->estimate_block_size();
+    const auto max_block_size = static_cast<td::uint64>(consensus_config.max_block_size);
+    const auto reserve_bytes = consensus::native_candidate_size_reserve(max_block_size);
+    const auto estimate_budget = consensus::native_candidate_estimate_budget(max_block_size);
+    const auto estimator_gap = serialized_bytes > estimated_bytes ? serialized_bytes - estimated_bytes : 0;
+    const auto serialized_margin =
+        serialized_bytes <= max_block_size ? max_block_size - serialized_bytes : static_cast<td::uint64>(0);
+    const auto serialized_oversize =
+        serialized_bytes > max_block_size ? serialized_bytes - max_block_size : static_cast<td::uint64>(0);
+    stats_.native_size_guard_reserve_bytes = reserve_bytes;
+    stats_.native_size_guard_max_estimated_bytes =
+        std::max(stats_.native_size_guard_max_estimated_bytes, estimated_bytes);
+    stats_.native_size_guard_estimator_gap_bytes = estimator_gap;
+    stats_.native_size_guard_serialized_margin_bytes = serialized_margin;
+    stats_.native_size_guard_serialized_oversize_bytes = serialized_oversize;
+    LOG(INFO) << "native candidate size telemetry: serialized_bytes=" << serialized_bytes
+              << " estimated_bytes=" << estimated_bytes << " estimator_gap=" << estimator_gap
+              << " estimate_budget=" << estimate_budget << " reserve_bytes=" << reserve_bytes
+              << " consensus_max_bytes=" << max_block_size << " serialized_margin=" << serialized_margin
+              << " serialized_oversize=" << serialized_oversize;
+  }
+  if (!consensus::candidate_serialized_size_fits(block_candidate->data.size(), consensus_config.max_block_size)) {
     return fatal_error(PSTRING() << "block size (" << block_candidate->data.size()
                                  << ") exceeds the limit in consensus config (" << consensus_config.max_block_size
                                  << ")");
@@ -7674,8 +7874,7 @@ td::Status Collator::register_external_message(Ref<ExtMessage> ext_msg, int prio
 /**
  * Wait for an external message from the backpressure queue, or timeout.
  */
-td::actor::Task<Collator::ExtMsgPopBatch> Collator::pop_external_message_batch(std::size_t max_messages,
-                                                                               bool block,
+td::actor::Task<Collator::ExtMsgPopBatch> Collator::pop_external_message_batch(std::size_t max_messages, bool block,
                                                                                std::optional<td::Timestamp> timeout) {
   CHECK(max_messages > 0);
   // A completion marker can share this bounded batch with messages. If the

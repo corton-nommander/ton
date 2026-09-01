@@ -63,6 +63,10 @@ class EncryptorAsync : public td::actor::Actor {
 
 class DecryptorAsync : public td::actor::Actor {
  private:
+  td::uint32 mailbox_message_quantum() const override {
+    return 64;
+  }
+
   std::unique_ptr<Decryptor> decryptor_;
 
  public:

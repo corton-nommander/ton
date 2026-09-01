@@ -58,6 +58,7 @@ docker build \
   --build-arg TON_ARCH=native \
   --build-arg NINJA_JOBS=20 \
   --build-arg VCS_REF="$(git describe --always --dirty)" \
+  --build-arg VCS_DATE="$(git show -s --format=%cI HEAD)" \
   --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -t ghcr.io/corton-nommander/ton:max-tps-native .
 
@@ -66,16 +67,39 @@ sudo ./run-native-benchmark.sh .env.physical
 ```
 
 The tracked 24-vCPU profile assigns 18 logical CPUs to genesis and four to the
-generator, reflecting the measured validator saturation and sub-three-core
-generator peak.  It starts at a proof-checkable 4k TPS baseline and uses an
-early native-fragment cutoff so a valid partial candidate can be sealed before
-the hard collation alarm; raise load only through the documented staircase
-after each run is valid and fully drained.
+generator. Valid Cycle 1 at 4k TPS used about one generator core, and Cycle 3
+still peaked below two generator cores while genesis repeatedly reached its old
+16-vCPU allocation. Moving one complete SMT core pair to the validator addresses
+that measured imbalance while retaining generator headroom. The validator
+uses an early native-fragment cutoff plus a serialized-size reserve so it can
+seal a valid partial candidate before either the collation deadline or the
+10 MiB consensus limit. Raise load only through the documented staircase after
+each run is valid and fully drained.
 
-Use a fresh genesis when changing zero-state inputs such as source count,
-shard layout, or block limits.  A reported offered-TPS peak is not a benchmark
-result: only a final proof-consistent run with zero canonical backlog and valid
-correctness/capacity flags should be used as the sustained TPS figure.
+At the 6k stress point, Cycle 5 improved submission batching from 3.17 to 8.70
+messages per liteserver query, but the uncapped aggregate AIMD window still
+reached 1,593 messages and coincided with validator saturation and acceptance
+gaps near 65 seconds. The desktop profile now sets
+`NATIVE_LOAD_ADAPTIVE_MAX_CWND=768`, exactly one 64-message batch for each of 12
+connections. This caps admission pressure independently of the unchanged
+65,536-task proof backlog; `effective_cwnd_cap`, `clients_at_cwnd_cap`,
+`cwnd_cap_limited_acks`, and the sampled peak show whether the bound is active.
+
+Use `benchmark/run-fresh-native-cycle.sh` in the Docker checkout for iterative
+source builds and deliberately fresh runs; it refuses to remove volumes unless
+the resolved Compose project is exactly `mylocalton-desktop`. A reported
+offered-TPS peak is not a benchmark result: only a final proof-consistent run
+with zero canonical backlog and valid correctness/capacity flags should be used
+as the sustained TPS figure.
+
+Native external messages are not irreversibly removed merely because a local
+Simplex session accepted a candidate: overlapping catchain sessions can later
+replace that root at the same seqno. The validator tracks local accepts
+reversibly and advances nonce watermarks only from shard account states
+referenced by a masterchain state whose shard tops the shard client has applied.
+The benchmark records this as `validator-pool-summary.json` canonical
+reconciliation telemetry and requires admitted/proof totals plus pending-source
+and nonce-gap counts to settle before accepting a run.
 
 ## The Open Network
 

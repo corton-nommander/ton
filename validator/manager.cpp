@@ -1262,12 +1262,12 @@ void ValidatorManagerImpl::complete_external_messages(std::vector<ExtMessage::Ha
                           std::move(to_delete));
 }
 
-void ValidatorManagerImpl::finalize_external_messages(std::vector<FinalizedNativeExternalMessage> messages,
-                                                       td::Promise<td::Unit> promise) {
-  td::actor::send_closure(ext_message_pool_, &ExtMessagePool::finalize_native_external_messages,
+void ValidatorManagerImpl::track_external_messages(std::vector<TrackedNativeExternalMessage> messages,
+                                                    td::Promise<td::Unit> promise) {
+  td::actor::send_closure(ext_message_pool_, &ExtMessagePool::track_locally_accepted_native_messages,
                           std::move(messages));
-  // Subsequent messages sent by this manager to ExtMessagePool are ordered
-  // after the finalization purge.
+  // Preserve manager-to-pool ordering with a later applied-state update. This
+  // acknowledgement records metadata only; it does not imply canonicality.
   promise.set_value(td::Unit{});
 }
 
@@ -3010,8 +3010,14 @@ void ValidatorManagerImpl::update_shard_client_block_handle(BlockHandle handle, 
     shard_client_state_ = state;
     shard_client_shards_ = state->get_shards();
     if (last_liteserver_state_.is_null() || last_liteserver_state_->get_block_id().seqno() < seqno) {
-      last_liteserver_state_ = std::move(state);
+      last_liteserver_state_ = state;
     }
+    // This callback is deliberately tied to shard-client advancement, not to
+    // local consensus acceptance or mere masterchain download. At this point
+    // every shard top referenced by `state` has been applied and its exact
+    // account state is available for canonical native nonce reconciliation.
+    td::actor::send_closure(ext_message_pool_, &ExtMessagePool::reconcile_native_external_messages,
+                            std::move(state));
   }
   if (!db_event_publisher_.empty()) {
     VLOG(VALIDATOR_DEBUG) << "DB Event: blockApplied " << shard_client_handle_->id();

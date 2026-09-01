@@ -393,6 +393,100 @@ TEST(SchedulerStop, YieldingActor) {
 
 }  // namespace test_stop_with_yielding_actor
 
+namespace test_actor_mailbox_message_quantum {
+
+constexpr td::uint32 kMailboxMessageQuantum = 64;
+constexpr td::uint32 kMessageCount = 1000;
+
+td::uint32 g_processed_message_count;
+td::uint32 g_sentinel_observed_count;
+td::uint32 g_processed_after_sentinel_send;
+td::uint32 g_quantum_wakeup_count;
+
+class QuantumActor;
+
+class SentinelActor : public Actor {
+ public:
+  explicit SentinelActor(ActorId<QuantumActor> owner) : owner_(owner) {
+  }
+
+  void start_up() override;
+
+ private:
+  ActorId<QuantumActor> owner_;
+};
+
+class QuantumActor : public Actor {
+ public:
+  void start_up() override {
+    auto self = actor_id(this);
+    for (td::uint32 i = 0; i < kMessageCount; ++i) {
+      send_closure_later(self, &QuantumActor::on_message);
+    }
+  }
+
+  void on_message() {
+    ++g_processed_message_count;
+    if (g_processed_message_count == 1) {
+      create_actor<SentinelActor>("MailboxQuantumSentinel", actor_id(this)).release();
+    }
+    if (g_processed_message_count == kMessageCount) {
+      messages_complete_ = true;
+      maybe_finish();
+    }
+  }
+
+  void on_sentinel() {
+    sentinel_complete_ = true;
+    maybe_finish();
+  }
+
+  void wake_up() override {
+    ++g_quantum_wakeup_count;
+  }
+
+ private:
+  td::uint32 mailbox_message_quantum() const override {
+    return kMailboxMessageQuantum;
+  }
+
+  void maybe_finish() {
+    if (messages_complete_ && sentinel_complete_) {
+      SchedulerContext::get().stop();
+    }
+  }
+
+  bool messages_complete_{false};
+  bool sentinel_complete_{false};
+};
+
+void SentinelActor::start_up() {
+  g_sentinel_observed_count = g_processed_message_count;
+  send_closure(owner_, &QuantumActor::on_sentinel);
+  g_processed_after_sentinel_send = g_processed_message_count;
+  stop();
+}
+
+TEST(SchedulerStop, ActorMailboxMessageQuantum) {
+  g_processed_message_count = 0;
+  g_sentinel_observed_count = 0;
+  g_processed_after_sentinel_send = 0;
+  g_quantum_wakeup_count = 0;
+
+  {
+    Scheduler scheduler({1});
+    scheduler.run_in_context([&] { create_actor<QuantumActor>("MailboxQuantumActor").release(); });
+    scheduler.run();
+  }
+
+  EXPECT(g_processed_message_count == kMessageCount);
+  EXPECT(g_sentinel_observed_count == kMailboxMessageQuantum);
+  EXPECT(g_processed_after_sentinel_send == g_sentinel_observed_count);
+  EXPECT(g_quantum_wakeup_count == 0);
+}
+
+}  // namespace test_actor_mailbox_message_quantum
+
 namespace test_stop_idempotent {
 
 // Calling SchedulerContext::stop() multiple times must be safe (idempotent). The second call is a

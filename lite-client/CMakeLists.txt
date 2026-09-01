@@ -12,6 +12,11 @@ if (NOT CMAKE_CROSSCOMPILING)
   add_executable(test-lite-client-query-utils ${CMAKE_SOURCE_DIR}/test/test-td-main.cpp query-utils-test.cpp)
   target_link_libraries(test-lite-client-query-utils PRIVATE lite-client-common ton_crypto)
   ton_test(test-lite-client-query-utils)
+
+  add_executable(test-native-load-generator-policy
+    ${CMAKE_SOURCE_DIR}/test/test-td-main.cpp native-load-generator-policy-test.cpp)
+  target_link_libraries(test-native-load-generator-policy PRIVATE tdutils)
+  ton_test(test-native-load-generator-policy)
 endif()
 
 install(TARGETS lite-client native-load-generator RUNTIME DESTINATION bin)

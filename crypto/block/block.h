@@ -301,11 +301,19 @@ struct BlockLimitStatus {
     collated_data_size_estimate = 0;
   }
   td::uint64 estimate_block_size(const vm::NewCellStorageStat::Stat* extra = nullptr) const;
+  // Uses a complete, already-reconciled storage statistic.  Unlike the
+  // speculative `extra` overload above, this does not add its conservative
+  // extra-object allowance and is therefore suitable for exact replacement
+  // proof accounting.
+  td::uint64 estimate_block_size_from_storage_stat(const vm::NewCellStorageStat::Stat& storage_stat) const;
   int classify() const;
+  int classify_with_storage_stat(const vm::NewCellStorageStat::Stat& storage_stat) const;
   bool fits(unsigned cls) const;
+  bool fits_with_storage_stat(unsigned cls, const vm::NewCellStorageStat::Stat& storage_stat) const;
   bool would_fit(unsigned cls, ton::LogicalTime end_lt, td::uint64 more_gas,
                  const vm::NewCellStorageStat::Stat* extra = nullptr) const;
   double load_fraction(unsigned cls) const;
+  double load_fraction_with_storage_stat(unsigned cls, const vm::NewCellStorageStat::Stat& storage_stat) const;
   bool add_cell(Ref<vm::Cell> cell) {
     st_stat.add_cell(std::move(cell));
     return true;

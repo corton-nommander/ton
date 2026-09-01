@@ -4285,8 +4285,10 @@ bool Collator::process_inbound_message(Ref<vm::CellSlice> enq_msg, ton::LogicalT
  *
  * @returns String for collator stats.
  */
-static std::string block_full_comment(const block::BlockLimitStatus& block_limit_status, unsigned cls) {
-  auto bytes = block_limit_status.estimate_block_size();
+static std::string block_full_comment(const block::BlockLimitStatus& block_limit_status, unsigned cls,
+                                      const vm::NewCellStorageStat::Stat* exact_storage_stat = nullptr) {
+  auto bytes = exact_storage_stat ? block_limit_status.estimate_block_size_from_storage_stat(*exact_storage_stat)
+                                  : block_limit_status.estimate_block_size();
   if (!block_limit_status.limits.bytes.fits(cls, bytes)) {
     return PSTRING() << "block_full bytes " << bytes;
   }
@@ -4773,6 +4775,40 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   };
   enum class NativeCheckpointFlushReason { capacity, ingress, deadline, fanout, headroom, latency };
   PendingNativeCheckpoint pending_checkpoint;
+  // Native checkpoints replace the preceding ShardAccounts proof rather than
+  // accumulating it.  Keep the exact total stat for the latest accepted root
+  // as a scalar overlay on the immutable pre-native baseline, so every
+  // checkpoint preflight can remain exact without copying the baseline's
+  // visited-cell sets.  The final root is materialized once before generic
+  // collation resumes.
+  std::optional<vm::NewCellStorageStat::Stat> native_checkpoint_storage_stat;
+  auto native_exact_storage_stat = [&]() -> const vm::NewCellStorageStat::Stat* {
+    return native_checkpoint_storage_stat ? &*native_checkpoint_storage_stat : nullptr;
+  };
+  auto native_estimate_block_size = [&] {
+    if (auto storage_stat = native_exact_storage_stat()) {
+      return block_limit_status_->estimate_block_size_from_storage_stat(*storage_stat);
+    }
+    return block_limit_status_->estimate_block_size();
+  };
+  auto native_fits = [&](unsigned cls) {
+    if (auto storage_stat = native_exact_storage_stat()) {
+      return block_limit_status_->fits_with_storage_stat(cls, *storage_stat);
+    }
+    return block_limit_status_->fits(cls);
+  };
+  auto native_classify = [&] {
+    if (auto storage_stat = native_exact_storage_stat()) {
+      return block_limit_status_->classify_with_storage_stat(*storage_stat);
+    }
+    return block_limit_status_->classify();
+  };
+  auto native_load_fraction = [&](unsigned cls) {
+    if (auto storage_stat = native_exact_storage_stat()) {
+      return block_limit_status_->load_fraction_with_storage_stat(cls, *storage_stat);
+    }
+    return block_limit_status_->load_fraction(cls);
+  };
 
   auto discard_unchanged_native_states = [&] {
     for (auto it = native_states.begin(); it != native_states.end();) {
@@ -4889,33 +4925,21 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       stats_.native_staged_dict_sets += staged_account_updates.size();
     }
 
-    // Precharge only the trial.  The live limit status remains untouched
-    // except for its temporary transaction count until every hard and
-    // serialized-size reservation check has passed.
+    // Precharge only the trial. The live storage statistic remains at the
+    // immutable pre-native baseline until the final accepted native root is
+    // materialized; the exact replacement proof delta below supplies every
+    // native hard/size decision in the meantime.
     block_limit_status_->add_transaction(static_cast<unsigned>(pending_entries));
-    unsigned provisional_new_accounts = 0;
-    for (const auto& [address, _] : staged_account_cells) {
-      if (!account_dict_estimator_added_accounts_.contains(native_states.at(address).account->addr)) {
-        ++provisional_new_accounts;
-      }
-    }
-    std::optional<block::BlockLimitStatus> trial_limit_status;
+    vm::NewCellStorageStat::Stat staged_exact_storage_stat;
     {
       td::ScopedRealCpuTimer checkpoint_timer{stats_.work_time.native_stat_checkpoint_rebuild};
       if (!native_pre_storage_stat_) {
         native_pre_storage_stat_.emplace(block_limit_status_->st_stat);
         ++stats_.native_stat_checkpoint_base_snapshots;
       }
-      trial_limit_status.emplace(block_limit_status_->limits, block_limit_status_->cur_lt);
-      auto& trial = *trial_limit_status;
-      trial.gas_used = block_limit_status_->gas_used;
-      trial.accounts = block_limit_status_->accounts + provisional_new_accounts;
-      trial.transactions = block_limit_status_->transactions;
-      trial.extra_out_msgs = block_limit_status_->extra_out_msgs;
-      trial.collated_data_size_estimate = block_limit_status_->collated_data_size_estimate;
-      trial.public_library_diff = block_limit_status_->public_library_diff;
-      trial.st_stat = *native_pre_storage_stat_;
-      trial.st_stat.add_proof(staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
+      staged_exact_storage_stat = native_pre_storage_stat_->get_total_stat();
+      staged_exact_storage_stat += native_pre_storage_stat_->tentative_add_proof(
+          staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
       ++stats_.native_stat_checkpoint_rebuilds;
     }
     bool staged_hard_fits;
@@ -4923,9 +4947,10 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     td::uint64 staged_estimated_bytes;
     {
       td::ScopedRealCpuTimer preflight_timer{stats_.work_time.native_proof_preflight};
-      staged_estimated_bytes = trial_limit_status->estimate_block_size();
+      staged_estimated_bytes = block_limit_status_->estimate_block_size_from_storage_stat(staged_exact_storage_stat);
       record_native_size_estimate(staged_estimated_bytes);
-      staged_hard_fits = trial_limit_status->fits(block::ParamLimits::cl_hard);
+      staged_hard_fits =
+          block_limit_status_->fits_with_storage_stat(block::ParamLimits::cl_hard, staged_exact_storage_stat);
       staged_size_guard_fits =
           consensus::native_candidate_estimate_fits(staged_estimated_bytes, consensus_max_block_size);
     }
@@ -4950,7 +4975,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       return true;
     }
 
-    block_limit_status_->st_stat = std::move(trial_limit_status->st_stat);
+    native_checkpoint_storage_stat = staged_exact_storage_stat;
     unsigned changed_accounts = 0;
     for (auto& [address, staged_total_state] : staged_account_cells) {
       auto& state = native_states.at(address);
@@ -4976,11 +5001,11 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       record_deadline_seal(pending_checkpoint.first_fragment_deadline_deferred);
       record_first_fragment_deadline_commit();
     }
-    if (!block_limit_status_->fits(block::ParamLimits::cl_hard)) {
+    if (!native_fits(block::ParamLimits::cl_hard)) {
       fatal_error("native hard-limit preflight invariant failed after commit");
       return false;
     }
-    if (!consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(), consensus_max_block_size)) {
+    if (!consensus::native_candidate_estimate_fits(native_estimate_block_size(), consensus_max_block_size)) {
       fatal_error("native candidate size-reserve invariant failed after commit");
       return false;
     }
@@ -4992,6 +5017,25 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     stats_.native_checkpoint_group_max_fragments =
         std::max<td::uint64>(stats_.native_checkpoint_group_max_fragments, pending_fragments);
     pending_checkpoint.clear();
+    return true;
+  };
+  auto materialize_native_checkpoint_storage_stat = [&]() -> bool {
+    if (!native_checkpoint_storage_stat) {
+      return true;
+    }
+    if (!native_pre_storage_stat_) {
+      fatal_error("native checkpoint storage overlay lacks a pre-native baseline");
+      return false;
+    }
+    td::ScopedRealCpuTimer checkpoint_timer{stats_.work_time.native_stat_checkpoint_rebuild};
+    vm::NewCellStorageStat materialized = *native_pre_storage_stat_;
+    materialized.add_proof(account_dict_estimator_->get_root_cell(), block_limit_status_->limits.usage_tree);
+    if (materialized.get_total_stat() != *native_checkpoint_storage_stat) {
+      fatal_error("native checkpoint storage overlay disagrees with materialized proof");
+      return false;
+    }
+    block_limit_status_->st_stat = std::move(materialized);
+    native_checkpoint_storage_stat.reset();
     return true;
   };
 
@@ -5032,7 +5076,9 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
       LOG(INFO) << "BLOCK FULL, stop processing native fast-path external messages";
       stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: "
-                                     << block_full_comment(*block_limit_status_, block::ParamLimits::cl_soft) << "\n";
+                                     << block_full_comment(*block_limit_status_, block::ParamLimits::cl_soft,
+                                                           native_exact_storage_stat())
+                                     << "\n";
       break;
     }
     if (medium_timeout_reached()) {
@@ -5107,10 +5153,10 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
               if (!flush_pending_checkpoint(NativeCheckpointFlushReason::ingress)) {
                 co_return false;
               }
-              full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
-                     !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+              full = full || !native_fits(block::ParamLimits::cl_soft) ||
+                     !consensus::native_candidate_estimate_fits(native_estimate_block_size(),
                                                                 consensus_max_block_size);
-              block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+              block_limit_class_ = std::max(block_limit_class_, native_classify());
               if (batch.empty()) {
                 checkpoint_ingress_boundary = true;
                 record_external_wait(wait_kind, wait_timer.elapsed());
@@ -5274,10 +5320,10 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         if (!flush_pending_checkpoint(NativeCheckpointFlushReason::ingress)) {
           co_return false;
         }
-        full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
-               !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+        full = full || !native_fits(block::ParamLimits::cl_soft) ||
+               !consensus::native_candidate_estimate_fits(native_estimate_block_size(),
                                                           consensus_max_block_size);
-        block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+        block_limit_class_ = std::max(block_limit_class_, native_classify());
         continue;
       }
       if (intake_deadline_before_batch) {
@@ -5314,10 +5360,10 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
                                                       : NativeCheckpointFlushReason::fanout)) {
           co_return false;
         }
-        full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
-               !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+        full = full || !native_fits(block::ParamLimits::cl_soft) ||
+               !consensus::native_candidate_estimate_fits(native_estimate_block_size(),
                                                           consensus_max_block_size);
-        block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+        block_limit_class_ = std::max(block_limit_class_, native_classify());
       }
     }
 
@@ -5406,7 +5452,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline seal\n";
           break;
         }
-        if (full || !block_limit_status_->fits(block::ParamLimits::cl_soft)) {
+        if (full || !native_fits(block::ParamLimits::cl_soft)) {
           full = true;
           delay_batch_suffix(index);
           break;
@@ -5485,7 +5531,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
             static_cast<td::uint64>(pending_checkpoint.dirty_addresses.size() +
                                      local_dirty_addresses_not_in_pending + new_dirty_accounts) *
                 NATIVE_DEFERRED_ACCOUNT_CHARGE_BYTES;
-        auto prospective_estimated_bytes = block_limit_status_->estimate_block_size() + prospective_deferred_bytes;
+        auto prospective_estimated_bytes = native_estimate_block_size() + prospective_deferred_bytes;
         record_native_size_estimate(prospective_estimated_bytes);
         auto speculative_size_limit =
             std::min<td::uint64>(block_limit_status_->limits.bytes.soft(), native_estimate_budget);
@@ -5596,10 +5642,10 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           pending_checkpoint.first_fragment_deadline_commit_pending || first_fragment_deadline_commit_pending;
       pending_checkpoint.first_fragment_deadline_deferred += first_fragment_deadline_deferred;
     }
-    full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
-           !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+    full = full || !native_fits(block::ParamLimits::cl_soft) ||
+           !consensus::native_candidate_estimate_fits(native_estimate_block_size(),
                                                       consensus_max_block_size);
-    block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+    block_limit_class_ = std::max(block_limit_class_, native_classify());
     ++stats_.native_microbatches;
     stats_.native_microbatch_input += batch.size();
     stats_.native_microbatch_accepted += accepted_in_batch;
@@ -5612,9 +5658,9 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     LOG(INFO) << "native fast-path batch: input=" << batch.size() << " accepted=" << accepted_in_batch
               << " delayed=" << delayed_in_batch << " permanent=" << permanent_in_batch
               << " dirty_accounts=" << state_journal.size() << " candidate_accounts=" << native_states.size()
-              << " estimated_bytes=" << block_limit_status_->estimate_block_size()
+              << " estimated_bytes=" << native_estimate_block_size()
               << " native_estimate_budget=" << native_estimate_budget << " native_size_reserve=" << native_size_reserve
-              << " soft_load=" << block_limit_status_->load_fraction(block::ParamLimits::cl_soft)
+              << " soft_load=" << native_load_fraction(block::ParamLimits::cl_soft)
               << " work_driven=" << work_driven;
 
     discard_unchanged_native_states();
@@ -5660,10 +5706,10 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         if (!flush_pending_checkpoint(reason)) {
           co_return false;
         }
-        full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
-               !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+        full = full || !native_fits(block::ParamLimits::cl_soft) ||
+               !consensus::native_candidate_estimate_fits(native_estimate_block_size(),
                                                           consensus_max_block_size);
-        block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+        block_limit_class_ = std::max(block_limit_class_, native_classify());
       }
     }
   }
@@ -5672,6 +5718,13 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   // unpreflighted compact state behind.  Deadline exits roll it back above;
   // all other exits seal the final exact checkpoint.
   if (!pending_checkpoint.empty() && !flush_pending_checkpoint(NativeCheckpointFlushReason::ingress)) {
+    co_return false;
+  }
+
+  // Generic collation below may add further proofs and uses the owning
+  // NewCellStorageStat directly. Publish the exact final native replacement
+  // proof once, after the last checkpoint has selected its root.
+  if (!materialize_native_checkpoint_storage_stat()) {
     co_return false;
   }
 

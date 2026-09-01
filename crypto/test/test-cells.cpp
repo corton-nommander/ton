@@ -32,6 +32,7 @@
 #include "common/refcnt.hpp"
 #include "common/refint.h"
 #include "common/util.h"
+#include "block/block.h"
 #include "block/block-parse.h"
 #include "block/transaction.h"
 #include "crypto/Ed25519.h"
@@ -955,6 +956,74 @@ TEST(NativeStateEngine, repeated_shard_accounts_checkpoint_rollback_preserves_la
   direct_stat.add_proof(direct.get_root_cell(), usage_tree.get());
   ASSERT_EQ(replacement_stat.get_total_stat(), direct_stat.get_total_stat());
   ASSERT_TRUE(replacement_stat.get_total_stat().cells > pre_native_stat.get_total_stat().cells);
+
+  // The checkpoint overlay must match a fresh materialized replacement proof
+  // exactly. In particular, it must not accumulate the preceding accepted
+  // prefix or use BlockLimitStatus's deliberately conservative `extra`
+  // estimate path.
+  auto replacement_delta = pre_native_stat.tentative_add_proof(committed.get_root_cell(), usage_tree.get());
+  auto replacement_overlay_stat = pre_native_stat.get_total_stat() + replacement_delta;
+  ASSERT_EQ(replacement_overlay_stat, replacement_stat.get_total_stat());
+  auto rejected_delta = pre_native_stat.tentative_add_proof(rejected_trial.get_root_cell(), usage_tree.get());
+  auto rejected_overlay_stat = pre_native_stat.get_total_stat() + rejected_delta;
+  ASSERT_EQ(rejected_overlay_stat, rejected_stat.get_total_stat());
+
+  block::BlockLimits limits;
+  limits.bytes = block::ParamLimits(1, 1'000'000, 2'000'000);
+  limits.gas = block::ParamLimits(1, 1'000'000, 2'000'000);
+  limits.lt_delta = block::ParamLimits(1, 1'000'000, 2'000'000);
+  limits.collated_data = block::ParamLimits(1, 1'000'000, 2'000'000);
+  block::BlockLimitStatus materialized_limits{limits, 100};
+  materialized_limits.gas_used = 17;
+  materialized_limits.transactions = 23;
+  materialized_limits.extra_out_msgs = 3;
+  materialized_limits.collated_data_size_estimate = 29;
+  materialized_limits.public_library_diff = 2;
+  materialized_limits.st_stat = replacement_stat;
+  block::BlockLimitStatus overlay_limits{limits, 100};
+  overlay_limits.gas_used = materialized_limits.gas_used;
+  overlay_limits.transactions = materialized_limits.transactions;
+  overlay_limits.extra_out_msgs = materialized_limits.extra_out_msgs;
+  overlay_limits.collated_data_size_estimate = materialized_limits.collated_data_size_estimate;
+  overlay_limits.public_library_diff = materialized_limits.public_library_diff;
+  overlay_limits.st_stat = pre_native_stat;
+  ASSERT_EQ(overlay_limits.estimate_block_size_from_storage_stat(replacement_overlay_stat),
+            materialized_limits.estimate_block_size());
+  ASSERT_EQ(overlay_limits.classify_with_storage_stat(replacement_overlay_stat), materialized_limits.classify());
+  ASSERT_EQ(overlay_limits.fits_with_storage_stat(block::ParamLimits::cl_soft, replacement_overlay_stat),
+            materialized_limits.fits(block::ParamLimits::cl_soft));
+  ASSERT_EQ(overlay_limits.load_fraction_with_storage_stat(block::ParamLimits::cl_soft, replacement_overlay_stat),
+            materialized_limits.load_fraction(block::ParamLimits::cl_soft));
+  ASSERT_EQ(overlay_limits.estimate_block_size(&replacement_delta), materialized_limits.estimate_block_size() + 200);
+
+  // Exercise the decision boundary too: exact byte accounting must make the
+  // same soft/hard decision as a materialized proof, including the strict
+  // less-than limit semantics.
+  const auto exact_bytes = materialized_limits.estimate_block_size();
+  ASSERT_TRUE(exact_bytes < std::numeric_limits<td::uint32>::max());
+  block::BlockLimits tight_limits = limits;
+  tight_limits.bytes = block::ParamLimits(1, static_cast<td::uint32>(exact_bytes),
+                                          static_cast<td::uint32>(exact_bytes + 1));
+  block::BlockLimitStatus materialized_tight{tight_limits, 100};
+  materialized_tight.gas_used = materialized_limits.gas_used;
+  materialized_tight.transactions = materialized_limits.transactions;
+  materialized_tight.extra_out_msgs = materialized_limits.extra_out_msgs;
+  materialized_tight.collated_data_size_estimate = materialized_limits.collated_data_size_estimate;
+  materialized_tight.public_library_diff = materialized_limits.public_library_diff;
+  materialized_tight.st_stat = replacement_stat;
+  block::BlockLimitStatus overlay_tight{tight_limits, 100};
+  overlay_tight.gas_used = materialized_tight.gas_used;
+  overlay_tight.transactions = materialized_tight.transactions;
+  overlay_tight.extra_out_msgs = materialized_tight.extra_out_msgs;
+  overlay_tight.collated_data_size_estimate = materialized_tight.collated_data_size_estimate;
+  overlay_tight.public_library_diff = materialized_tight.public_library_diff;
+  overlay_tight.st_stat = pre_native_stat;
+  ASSERT_TRUE(!materialized_tight.fits(block::ParamLimits::cl_soft));
+  ASSERT_EQ(overlay_tight.fits_with_storage_stat(block::ParamLimits::cl_soft, replacement_overlay_stat),
+            materialized_tight.fits(block::ParamLimits::cl_soft));
+  ASSERT_TRUE(materialized_tight.fits(block::ParamLimits::cl_hard));
+  ASSERT_EQ(overlay_tight.fits_with_storage_stat(block::ParamLimits::cl_hard, replacement_overlay_stat),
+            materialized_tight.fits(block::ParamLimits::cl_hard));
 
   // Additive accounting retains cells that existed only in the previous
   // checkpoint; replacement accounting must not charge them to the block.

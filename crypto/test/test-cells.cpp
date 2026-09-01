@@ -801,6 +801,84 @@ TEST(NativeStateEngine, preflighted_shard_accounts_root_is_canonical_after_ordin
   ASSERT_EQ(estimator.get_root_cell()->get_hash(), direct.get_root_cell()->get_hash());
 }
 
+TEST(AugmentedDictionary, bulk_sorted_set_matches_sequential_and_is_atomic) {
+  auto address = [](unsigned char first, unsigned char last) {
+    ton::StdSmcAddress result;
+    std::string bytes(32, '\0');
+    bytes.front() = static_cast<char>(first);
+    bytes.back() = static_cast<char>(last);
+    result.as_slice().copy_from(bytes);
+    return result;
+  };
+  auto shard_account = [](td::uint64 balance, td::uint64 nonce, td::uint64 last_lt) {
+    vm::CellBuilder state_builder;
+    ASSERT_TRUE(state_builder.store_long_bool(1, 2));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(balance, 64));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(nonce, 64));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(0, 8));
+    auto state = state_builder.finalize();
+    vm::CellBuilder account_builder;
+    ASSERT_TRUE(account_builder.store_ref_bool(std::move(state)));
+    ASSERT_TRUE(account_builder.store_bits_bool(ton::Bits256{}));
+    ASSERT_TRUE(account_builder.store_ulong_rchk_bool(last_lt, 64));
+    return vm::load_cell_slice_ref(account_builder.finalize());
+  };
+
+  // The inputs deliberately vary both near the root and near the leaves, so
+  // the update list exercises replacements, inserts, and nested prefixes.
+  auto existing_low = address(0x10, 0x01);
+  auto existing_mid = address(0x20, 0x02);
+  auto existing_high = address(0x80, 0x03);
+  auto inserted_low = address(0x00, 0x7f);
+  auto inserted_mid_low = address(0x20, 0x01);
+  auto inserted_mid_high = address(0x20, 0xf0);
+  auto inserted_high = address(0xf0, 0x01);
+
+  vm::AugmentedDictionary initial{256, block::tlb::aug_ShardAccounts};
+  ASSERT_TRUE(initial.set(existing_low, shard_account(100, 1, 10)));
+  ASSERT_TRUE(initial.set(existing_mid, shard_account(200, 2, 20)));
+  ASSERT_TRUE(initial.set(existing_high, shard_account(300, 3, 30)));
+
+  std::vector<vm::AugmentedDictionary::SetManyEntry> updates;
+  updates.emplace_back(inserted_low.cbits(), shard_account(11, 1, 101));
+  updates.emplace_back(existing_low.cbits(), shard_account(111, 4, 102));
+  updates.emplace_back(inserted_mid_low.cbits(), shard_account(22, 2, 103));
+  updates.emplace_back(existing_mid.cbits(), shard_account(222, 5, 104));
+  updates.emplace_back(inserted_mid_high.cbits(), shard_account(33, 3, 105));
+  updates.emplace_back(existing_high.cbits(), shard_account(333, 6, 106));
+  updates.emplace_back(inserted_high.cbits(), shard_account(44, 4, 107));
+
+  vm::AugmentedDictionary sequential{initial};
+  for (const auto& [key, value] : updates) {
+    ASSERT_TRUE(sequential.set(key, 256, value));
+  }
+  ASSERT_TRUE(sequential.validate_all());
+
+  vm::AugmentedDictionary bulk{initial};
+  ASSERT_TRUE(bulk.set_many_sorted(td::as_span(updates)));
+  ASSERT_TRUE(bulk.validate_all());
+  ASSERT_EQ(bulk.get_root_cell()->get_hash(), sequential.get_root_cell()->get_hash());
+
+  const auto committed_root = bulk.get_root_cell()->get_hash();
+  std::vector<vm::AugmentedDictionary::SetManyEntry> unsorted;
+  unsorted.emplace_back(existing_low.cbits(), shard_account(500, 1, 200));
+  unsorted.emplace_back(inserted_low.cbits(), shard_account(501, 1, 201));
+  ASSERT_TRUE(!bulk.set_many_sorted(td::as_span(unsorted)));
+  ASSERT_EQ(bulk.get_root_cell()->get_hash(), committed_root);
+
+  std::vector<vm::AugmentedDictionary::SetManyEntry> duplicate;
+  duplicate.emplace_back(existing_mid.cbits(), shard_account(600, 1, 300));
+  duplicate.emplace_back(existing_mid.cbits(), shard_account(601, 1, 301));
+  ASSERT_TRUE(!bulk.set_many_sorted(td::as_span(duplicate)));
+  ASSERT_EQ(bulk.get_root_cell()->get_hash(), committed_root);
+
+  std::vector<vm::AugmentedDictionary::SetManyEntry> null_leaf;
+  null_leaf.emplace_back(inserted_high.cbits(), td::Ref<vm::CellSlice>{});
+  ASSERT_TRUE(!bulk.set_many_sorted(td::as_span(null_leaf)));
+  ASSERT_EQ(bulk.get_root_cell()->get_hash(), committed_root);
+  ASSERT_TRUE(bulk.validate_all());
+}
+
 TEST(NativeStateEngine, repeated_shard_accounts_checkpoint_rollback_preserves_largest_prefix) {
   auto address = [](unsigned char suffix) {
     ton::StdSmcAddress result;

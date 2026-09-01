@@ -18,8 +18,10 @@
 */
 #pragma once
 #include <functional>
+#include <utility>
 
 #include "common/bitstring.h"
+#include "td/utils/Span.h"
 #include "vm/cells.h"
 #include "vm/cellslice.h"
 #include "vm/stack.hpp"
@@ -562,6 +564,7 @@ class AugmentedDictionary final : public DictionaryFixed {
   const AugmentationData& aug;
 
  public:
+  using SetManyEntry = std::pair<td::ConstBitPtr, Ref<CellSlice>>;
   typedef std::function<bool(Ref<CellSlice>, Ref<CellSlice>, td::ConstBitPtr, int)> foreach_extra_func_t;
   // return value of traverse_func: < 0 = error, 0 = skip, 1 = visit only left, 2 = visit only right, 5 = visit right, then left, 6 = visit left, then right
   // for leaf nodes, all >0 values mean accept and return node as the final result, 0 = skip (continue scanning)
@@ -592,6 +595,10 @@ class AugmentedDictionary final : public DictionaryFixed {
   bool set(td::ConstBitPtr key, int key_len, Ref<CellSlice> value, SetMode mode = SetMode::Set);
   bool set_ref(td::ConstBitPtr key, int key_len, Ref<Cell> val_ref, SetMode mode = SetMode::Set);
   bool set_builder(td::ConstBitPtr key, int key_len, const CellBuilder& value, SetMode mode = SetMode::Set);
+  // Atomically applies Set-mode replacements/inserts from a strictly sorted,
+  // unique, non-null list. The receiver is not published or otherwise
+  // modified when input validation or the augmented merge fails.
+  bool set_many_sorted(td::Span<SetManyEntry> new_values);
   bool check_for_each_extra(const foreach_extra_func_t& foreach_extra_func, bool invert_first = false);
   std::pair<Ref<CellSlice>, Ref<CellSlice>> traverse_extra(td::BitPtr key_buffer, int key_len,
                                                            const traverse_func_t& traverse_node);

@@ -3130,6 +3130,48 @@ bool AugmentedDictionary::set_builder(td::ConstBitPtr key, int key_len, const Ce
   return set(key, key_len, load_cell_slice(value.finalize_copy()), mode);
 }
 
+bool AugmentedDictionary::set_many_sorted(td::Span<SetManyEntry> new_values) {
+  force_validate();
+  for (std::size_t i = 0; i < new_values.size(); ++i) {
+    const auto& [key, value] = new_values[i];
+    if (key.is_null() || value.is_null() || !value->is_valid()) {
+      return false;
+    }
+    if (i && td::bitstring::bits_memcmp(new_values[i - 1].first, key, key_bits) >= 0) {
+      return false;
+    }
+  }
+  if (new_values.empty()) {
+    return true;
+  }
+
+  // Build the update side independently so an invalid value or a failed
+  // augmentation calculation cannot affect this dictionary.  `set` and the
+  // inherited merge both route construction through AugmentedDictionary's
+  // label, leaf, and fork builders; in particular, do not use the raw
+  // Dictionary::multiset path here because it has no augmentation data.
+  AugmentedDictionary updates{key_bits, aug};
+  for (const auto& [key, value] : new_values) {
+    if (!updates.set(key, key_bits, value)) {
+      return false;
+    }
+  }
+
+  // The update trie contains already-augmented leaves.  On a key collision,
+  // retain its complete right-hand leaf payload (extra followed by value),
+  // while the augmented merge rebuilds every changed fork extra.  Returning
+  // false from a DictionaryFixed combine callback means delete, so a failed
+  // append must be an atomic merge error instead.
+  auto overwrite_with_update = [](CellBuilder& cb, Ref<CellSlice>, Ref<CellSlice> update_value, td::ConstBitPtr,
+                                  int) -> bool {
+    if (update_value.is_null() || !update_value->is_valid() || !cb.append_cellslice_bool(*update_value)) {
+      throw CombineError{};
+    }
+    return true;
+  };
+  return combine_with(updates, overwrite_with_update);
+}
+
 bool AugmentedDictionary::check_for_each_extra(const foreach_extra_func_t& foreach_extra_func, bool invert_first) {
   force_validate();
   const auto& augm = aug;

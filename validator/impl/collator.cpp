@@ -21,6 +21,7 @@
 #include <ctime>
 #include <set>
 #include <unordered_map>
+#include <vector>
 
 #include "adnl/utils.hpp"
 #include "block/block-auto.h"
@@ -4844,6 +4845,8 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     td::ScopedRealCpuTimer timer{stats_.work_time.native_commit};
     vm::AugmentedDictionary staged_account_dict{*account_dict_estimator_};
     std::map<StdSmcAddress, Ref<vm::Cell>> staged_account_cells;
+    std::vector<vm::AugmentedDictionary::SetManyEntry> staged_account_updates;
+    staged_account_updates.reserve(pending_checkpoint.dirty_addresses.size());
     for (const auto& address : pending_checkpoint.dirty_addresses) {
       auto& state = native_states.at(address);
       Ref<vm::Cell> staged_total_state;
@@ -4861,18 +4864,29 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         ++stats_.native_account_cells_built;
       }
       {
-        td::ScopedRealCpuTimer dict_timer{stats_.work_time.native_staged_dict_set};
         vm::CellBuilder account_builder;
         if (!(account_builder.store_ref_bool(staged_total_state) &&
               account_builder.store_bits_bool(state.account->last_trans_hash_) &&
-              account_builder.store_long_bool(state.account->last_trans_lt_, 64) &&
-              staged_account_dict.set_builder(address, account_builder))) {
-          fatal_error("cannot stage native account dictionary update");
+              account_builder.store_long_bool(state.account->last_trans_lt_, 64))) {
+          fatal_error("cannot build staged native account dictionary update");
           return false;
         }
-        ++stats_.native_staged_dict_sets;
+        auto staged_account_value = vm::load_cell_slice_ref(account_builder.finalize());
+        if (staged_account_value.is_null()) {
+          fatal_error("cannot materialize staged native account dictionary update");
+          return false;
+        }
+        staged_account_updates.emplace_back(address.cbits(), std::move(staged_account_value));
       }
       staged_account_cells.emplace(address, std::move(staged_total_state));
+    }
+    {
+      td::ScopedRealCpuTimer dict_timer{stats_.work_time.native_staged_dict_set};
+      if (!staged_account_dict.set_many_sorted(td::as_span(staged_account_updates))) {
+        fatal_error("cannot stage native account dictionary bulk update");
+        return false;
+      }
+      stats_.native_staged_dict_sets += staged_account_updates.size();
     }
 
     // Precharge only the trial.  The live limit status remains untouched

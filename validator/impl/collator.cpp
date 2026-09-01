@@ -78,11 +78,11 @@ static constexpr std::size_t NATIVE_ACCOUNT_STATE_RESERVE =
 // fragment before sealing it. This is an ingress coalescing grace, not a
 // block period or a consensus timing parameter.
 static constexpr double NATIVE_QUEUE_COALESCING_GRACE_SECONDS = 0.010;
-// Once a native fragment has committed its exact checkpoint, use a distinct,
+// Once a native fragment has committed its exact checkpoint, use a separate,
 // still bounded window to pack the next fragment before sealing the candidate.
-// It is deliberately longer than the partial-fragment refill grace because no
-// speculative fragment remains to delay a checkpoint.
-static constexpr double NATIVE_POST_COMMIT_PACK_GRACE_SECONDS = 0.020;
+// Keeping it equal to the partial-fragment grace favors prompt publication in
+// the three-block-per-second desktop cadence experiment.
+static constexpr double NATIVE_POST_COMMIT_PACK_GRACE_SECONDS = 0.010;
 
 static constexpr int MAX_ATTEMPTS = 5;
 

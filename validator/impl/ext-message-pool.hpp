@@ -153,6 +153,11 @@ class ExtMessagePool : public td::actor::Actor {
     ExtMessage::Hash hash_norm;
     td::uint32 generation = 0;
     bool active = true;
+    // This is distinct from `active`: it tracks whether the object is still
+    // present in the pool indices. Native reservations retain a direct shared
+    // link, so erasure must make a stale link observable before the treap
+    // releases its ownership.
+    bool in_mempool{false};
     td::Timestamp reactivate_at;
     td::Timestamp delete_at;
     td::optional<td::uint32> msg_seqno;
@@ -333,6 +338,12 @@ class ExtMessagePool : public td::actor::Actor {
   std::map<std::pair<WorkchainId, StdSmcAddress>, WalletInfo> wallets_;
 
   struct NativeMessageInfo {
+    struct MempoolLink {
+      std::shared_ptr<MempoolMsg> message;
+      int priority;
+      MessageId id;
+    };
+
     ExtMessage::Hash hash;
     td::uint64 amount;
     td::uint64 fee;
@@ -341,6 +352,20 @@ class ExtMessagePool : public td::actor::Actor {
     td::Promise<td::Unit> allow_broadcast_promise;
     std::vector<td::Promise<td::Unit>> insertion_waiters;
     bool committed{false};
+    // A committed reservation is normally probed many times while a collator
+    // callback is filled. Keep the pool object and its priority beside the
+    // nonce reservation so that the hot path does not repeat raw-hash and
+    // persistent-treap lookups. The link is only trusted after its liveness
+    // and immutable identity are checked; otherwise probing takes the legacy
+    // lookup path and repairs it.
+    td::optional<MempoolLink> mempool_link;
+
+    void set_mempool_link(std::shared_ptr<MempoolMsg> message, int priority, MessageId id) {
+      mempool_link = MempoolLink{std::move(message), priority, std::move(id)};
+    }
+    void clear_mempool_link() {
+      mempool_link = {};
+    }
 
     void insertion_succeeded() {
       for (auto &waiter : insertion_waiters) {
@@ -426,6 +451,8 @@ class ExtMessagePool : public td::actor::Actor {
     td::uint64 installs{0};
     td::uint64 masterchain_installs{0};
     td::uint64 scanned{0};
+    td::uint64 direct_link_hits{0};
+    td::uint64 direct_link_fallbacks{0};
     td::uint64 selected{0};
     td::uint64 active{0};
     td::uint64 inactive{0};
@@ -458,6 +485,8 @@ class ExtMessagePool : public td::actor::Actor {
       installs += other.installs;
       masterchain_installs += other.masterchain_installs;
       scanned += other.scanned;
+      direct_link_hits += other.direct_link_hits;
+      direct_link_fallbacks += other.direct_link_fallbacks;
       selected += other.selected;
       active += other.active;
       inactive += other.inactive;

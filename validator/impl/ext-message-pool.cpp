@@ -1128,29 +1128,54 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
       return;
     }
     ++counters.scanned;
-    const auto &hash = reservation_it->second.hash;
-    auto pool_it = ext_messages_hashes_.find(hash);
-    if (pool_it == ext_messages_hashes_.end()) {
-      ++counters.head_gaps;
-      ++counters.head_missing_hash_index;
-      return;
-    }
-    auto priority_it = ext_msgs_.find(pool_it->second.first);
-    if (priority_it == ext_msgs_.end()) {
-      ++counters.head_gaps;
-      ++counters.head_missing_priority;
-      return;
-    }
-    auto message = priority_it->second.ext_messages_.find(pool_it->second.second);
-    if (!message) {
-      ++counters.head_gaps;
-      ++counters.head_missing_message;
-      return;
-    }
-    if (!message.value()->native_nonce || message.value()->native_nonce.value() != state.next_nonce) {
-      ++counters.head_gaps;
-      ++counters.head_nonce_mismatch;
-      return;
+    auto &reservation = reservation_it->second;
+    const auto &hash = reservation.hash;
+    MempoolMsg *mempool_message = nullptr;
+    int priority = 0;
+    auto *link = reservation.mempool_link ? &reservation.mempool_link.value() : nullptr;
+    if (link && link->message && link->message->message.not_null() && link->message->in_mempool &&
+        link->id.hash == hash &&
+        link->id.dst == link->message->message->shard() && link->message->message->hash() == hash &&
+        link->message->native_nonce && link->message->native_nonce.value() == state.next_nonce &&
+        link->message->address() == source) {
+      mempool_message = link->message.get();
+      priority = link->priority;
+      ++counters.direct_link_hits;
+    } else {
+      ++counters.direct_link_fallbacks;
+      // The link is advisory only. Any stale or incomplete identity takes the
+      // same raw-hash -> priority -> persistent-treap chain as the original
+      // scheduler so its head-gap accounting remains authoritative.
+      reservation.clear_mempool_link();
+      auto pool_it = ext_messages_hashes_.find(hash);
+      if (pool_it == ext_messages_hashes_.end()) {
+        ++counters.head_gaps;
+        ++counters.head_missing_hash_index;
+        return;
+      }
+      auto priority_it = ext_msgs_.find(pool_it->second.first);
+      if (priority_it == ext_msgs_.end()) {
+        ++counters.head_gaps;
+        ++counters.head_missing_priority;
+        return;
+      }
+      auto message = priority_it->second.ext_messages_.find(pool_it->second.second);
+      if (!message) {
+        ++counters.head_gaps;
+        ++counters.head_missing_message;
+        return;
+      }
+      if (!message.value()->native_nonce || message.value()->native_nonce.value() != state.next_nonce) {
+        ++counters.head_gaps;
+        ++counters.head_nonce_mismatch;
+        return;
+      }
+      mempool_message = message.value().get();
+      priority = pool_it->second.first;
+      // A successful legacy lookup proves this is the currently indexed pool
+      // object, so future probes can take the direct path.
+      mempool_message->in_mempool = true;
+      reservation.set_mempool_link(message.value(), priority, pool_it->second.second);
     }
     if (std::binary_search(callback->callback->excluded_messages.begin(),
                            callback->callback->excluded_messages.end(), hash)) {
@@ -1167,15 +1192,14 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
       }
       continue;
     }
-    auto &mempool_message = *message.value();
-    if (mempool_message.expired()) {
+    if (mempool_message->expired()) {
       ++counters.expired;
       return;
     }
-    bool was_active = mempool_message.active;
-    if (!mempool_message.is_active()) {
+    bool was_active = mempool_message->active;
+    if (!mempool_message->is_active()) {
       ++counters.inactive;
-      alarm_timestamp().relax(mempool_message.reactivate_at);
+      alarm_timestamp().relax(mempool_message->reactivate_at);
       return;
     }
     if (!was_active) {
@@ -1186,8 +1210,8 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
       state.ready_counted = true;
       ++counters.ready_sources;
     }
-    state.next = NativeQueueItem{.message = mempool_message.message,
-                                 .priority = pool_it->second.first,
+    state.next = NativeQueueItem{.message = mempool_message->message,
+                                 .priority = priority,
                                  .source = source,
                                  .nonce = state.next_nonce};
     if (enqueue_ready) {
@@ -2056,6 +2080,7 @@ td::uint64 ExtMessagePool::prune_expired_native_suffix(const NativeAddress &addr
       if (account != native_accounts_.end()) {
         reservation = account->second.messages.find(nonce);
         if (reservation != account->second.messages.end() && reservation->second.hash == hash) {
+          reservation->second.clear_mempool_link();
           account->second.messages.erase(reservation);
           if (account->second.messages.empty()) {
             native_accounts_.erase(account);
@@ -2165,6 +2190,7 @@ td::Result<bool> ExtMessagePool::apply_canonical_native_account_state(const Nati
       if (current_account != native_accounts_.end()) {
         reservation = current_account->second.messages.find(nonce);
         if (reservation != current_account->second.messages.end() && reservation->second.hash == hash) {
+          reservation->second.clear_mempool_link();
           current_account->second.messages.erase(reservation);
           if (current_account->second.messages.empty()) {
             native_accounts_.erase(current_account);
@@ -2228,6 +2254,11 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id, bool prune
     return false;
   }
 
+  auto mempool_message = msg_opt.value();
+  // Native reservations retain a shared direct link. Flip liveness before
+  // removing any index so an unexpected stale reservation can only take the
+  // legacy head-gap path, never dereference a detached pool object.
+  mempool_message->in_mempool = false;
   auto address = msg_opt.value()->address();
   auto hash_norm = msg_opt.value()->hash_norm;
   auto native_nonce = msg_opt.value()->native_nonce;
@@ -2249,10 +2280,15 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id, bool prune
     auto native_it = native_accounts_.find(address);
     if (native_it != native_accounts_.end()) {
       auto reservation_it = native_it->second.messages.find(native_nonce.value());
-      if (reservation_it != native_it->second.messages.end() &&
-          reservation_it->second.hash == msg_opt.value()->message->hash()) {
-        reservation_it->second.insertion_failed("native message was removed from the mempool");
-        native_it->second.messages.erase(reservation_it);
+      if (reservation_it != native_it->second.messages.end()) {
+        if (reservation_it->second.mempool_link &&
+            reservation_it->second.mempool_link.value().message.get() == mempool_message.get()) {
+          reservation_it->second.clear_mempool_link();
+        }
+        if (reservation_it->second.hash == msg_opt.value()->message->hash()) {
+          reservation_it->second.insertion_failed("native message was removed from the mempool");
+          native_it->second.messages.erase(reservation_it);
+        }
       }
       if (native_it->second.messages.empty()) {
         native_accounts_.erase(native_it);
@@ -2447,6 +2483,8 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
       PSTRING() << "installs:" << native_queue_counters_.installs
                 << " masterchain_installs:" << native_queue_counters_.masterchain_installs
                 << " scanned:" << native_queue_counters_.scanned << " selected:" << native_queue_counters_.selected
+                << " direct_link_hits:" << native_queue_counters_.direct_link_hits
+                << " direct_link_fallbacks:" << native_queue_counters_.direct_link_fallbacks
                 << " active:" << native_queue_counters_.active << " inactive:" << native_queue_counters_.inactive
                 << " excluded:" << native_queue_counters_.excluded << " expired:" << native_queue_counters_.expired
                 << " delivered_skips:" << native_queue_counters_.already_delivered
@@ -2631,6 +2669,20 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
   msgs.ext_addr_messages_[address].emplace(id.hash, id);
   ext_messages_hashes_[id.hash] = {priority, id};
   ext_messages_hashes_norm_[hash_norm].insert(NormalizedMessageId{priority, id});
+  msg->in_mempool = true;
+  if (msg->native_nonce) {
+    // The reservation was created by verified native admission before this
+    // insertion. Attach the direct link only after every pool index above has
+    // accepted the object; a callback still requires committed=true before it
+    // can use it.
+    auto account_it = native_accounts_.find(address);
+    if (account_it != native_accounts_.end()) {
+      auto reservation_it = account_it->second.messages.find(msg->native_nonce.value());
+      if (reservation_it != account_it->second.messages.end() && reservation_it->second.hash == id.hash) {
+        reservation_it->second.set_mempool_link(msg, priority, id);
+      }
+    }
+  }
   VLOG(VALIDATOR_DEBUG) << "adding message addr=" << wc << ":" << addr.to_hex() << " prio=" << priority
                         << " to mempool";
   if (!msg->native_nonce) {
@@ -2729,6 +2781,7 @@ void ExtMessagePool::rollback_checked_message(td::Ref<ExtMessage> message,
               td::Status::Error("native message was not inserted into the mempool"));
         }
         message_it->second.insertion_failed("native message was not inserted into the mempool");
+        message_it->second.clear_mempool_link();
         native_it->second.messages.erase(message_it);
       }
       if (native_it->second.messages.empty()) {
@@ -3000,6 +3053,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
         }
         message_it->second.insertion_failed(
             "native transfer superseded by a lower nonce due to insufficient reserved balance");
+        message_it->second.clear_mempool_link();
         account_it->second.messages.erase(message_it);
         if (account_it->second.messages.empty()) {
           native_accounts_.erase(account_it);
@@ -3127,6 +3181,7 @@ ExtMessagePool::NativeMessageProcessResult ExtMessagePool::NativeInfo::process_m
                                         << ", account_nonce=" << native_nonce));
       }
       message.insertion_failed("native message nonce became obsolete before insertion");
+      message.clear_mempool_link();
       it = messages.erase(it);
       continue;
     }
@@ -3141,6 +3196,7 @@ ExtMessagePool::NativeMessageProcessResult ExtMessagePool::NativeInfo::process_m
             td::Status::Error("native transfer suffix removed after a nonce expired"));
       }
       message.insertion_failed("native transfer suffix removed after a nonce expired");
+      message.clear_mempool_link();
       it = messages.erase(it);
       continue;
     }

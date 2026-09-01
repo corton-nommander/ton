@@ -75,11 +75,16 @@ class ExtMessagePoolTestAccess {
   };
   struct SchedulerStats {
     td::uint64 selected{0};
+    td::uint64 direct_link_hits{0};
+    td::uint64 direct_link_fallbacks{0};
     td::uint64 builds{0};
     td::uint64 source_scans{0};
     td::uint64 source_refreshes{0};
     td::uint64 source_probes{0};
     td::uint64 runs{0};
+    td::uint64 inactive{0};
+    td::uint64 excluded{0};
+    td::uint64 head_gaps{0};
   };
 
   static ExtMessagePool make_pool() {
@@ -224,11 +229,12 @@ class ExtMessagePoolTestAccess {
 
   static ExtMessage::Hash add(ExtMessagePool &pool, NativeAddress source, td::uint64 nonce, int priority = 0,
                               bool active = true, bool committed = true, td::uint64 amount = 1,
-                              td::uint64 fee = 0) {
+                              td::uint64 fee = 0, bool link_direct = true) {
     auto hash = make_bits(static_cast<td::uint32>(nonce + 1), static_cast<unsigned>(source.second.as_array()[0] + 64));
     auto message = td::make_ref<FakeExtMessage>(source.second, hash);
     auto mempool_message = std::make_shared<ExtMessagePool::MempoolMsg>(message);
     mempool_message->native_nonce = nonce;
+    mempool_message->in_mempool = true;
     mempool_message->active = active;
     if (!active) {
       mempool_message->reactivate_at = td::Timestamp::in(60.0);
@@ -249,6 +255,9 @@ class ExtMessagePoolTestAccess {
     reservation.valid_until = std::numeric_limits<td::uint32>::max();
     reservation.account_revision = pool.native_nonce_watermarks_[source].revision;
     reservation.committed = committed;
+    if (link_direct) {
+      reservation.set_mempool_link(mempool_message, priority, id);
+    }
     return hash;
   }
 
@@ -294,13 +303,17 @@ class ExtMessagePoolTestAccess {
   }
 
   static void install_live_waiting_callback(ExtMessagePool &pool, std::size_t queue_capacity,
-                                            std::size_t transport_message_capacity = 500) {
+                                            std::size_t transport_message_capacity = 500,
+                                            std::vector<ExtMessage::Hash> excluded = {}) {
     auto callback = std::make_unique<ExtMsgCallback>();
     callback->shard = {basechainId, shardIdAll};
     callback->queue_capacity = queue_capacity;
     callback->transport_message_capacity = transport_message_capacity;
     callback->timeout = td::Timestamp::in(60.0);
     callback->native_streaming = true;
+    std::sort(excluded.begin(), excluded.end());
+    excluded.erase(std::unique(excluded.begin(), excluded.end()), excluded.end());
+    callback->excluded_messages = std::move(excluded);
     auto installed = std::make_shared<ExtMessagePool::InstalledCallback>(std::move(callback));
     // Model the installed callback's serialized pump already waiting. This
     // keeps the unit test actor-free while ensuring the post-commit wake appends
@@ -501,8 +514,53 @@ class ExtMessagePoolTestAccess {
                        });
   }
 
+  static std::vector<ExtMessage::Hash> callback_delivery_hashes(const ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    std::vector<ExtMessage::Hash> hashes;
+    for (const auto &entry : pool.callbacks_.front()->pending_native) {
+      CHECK(entry.message);
+      hashes.push_back(entry.message->first->hash());
+    }
+    return hashes;
+  }
+
+  static void clear_native_mempool_link(ExtMessagePool &pool, NativeAddress source, td::uint64 nonce) {
+    pool.native_accounts_.at(source).messages.at(nonce).clear_mempool_link();
+  }
+
+  static void mark_native_mempool_link_stale(ExtMessagePool &pool, NativeAddress source, td::uint64 nonce) {
+    auto &link = pool.native_accounts_.at(source).messages.at(nonce).mempool_link;
+    CHECK(link);
+    link.value().message->in_mempool = false;
+  }
+
+  static bool has_native_mempool_link(const ExtMessagePool &pool, NativeAddress source, td::uint64 nonce) {
+    auto account = pool.native_accounts_.find(source);
+    return account != pool.native_accounts_.end() && account->second.messages.contains(nonce) &&
+           account->second.messages.at(nonce).mempool_link;
+  }
+
+  static bool has_native_reservation(const ExtMessagePool &pool, NativeAddress source, td::uint64 nonce) {
+    auto account = pool.native_accounts_.find(source);
+    return account != pool.native_accounts_.end() && account->second.messages.contains(nonce);
+  }
+
+  static std::weak_ptr<ExtMessagePool::MempoolMsg> native_mempool_weak(ExtMessagePool &pool,
+                                                                         NativeAddress source, td::uint64 nonce) {
+    auto &link = pool.native_accounts_.at(source).messages.at(nonce).mempool_link;
+    CHECK(link);
+    return link.value().message;
+  }
+
+  static void cancel_callback(ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    pool.cancel_callback_delivery(pool.callbacks_.front());
+  }
+
   static std::size_t fill_once(ExtMessagePool &pool) {
     CHECK(pool.callbacks_.size() == 1);
+    td::actor::core::ActorExecuteContext context(&pool);
+    td::actor::core::ActorExecuteContext::Guard guard(&context);
     auto callback = pool.callbacks_.front();
     pool.begin_callback_epoch(callback);
     return pool.fill_callback_native(callback, false);
@@ -510,6 +568,8 @@ class ExtMessagePoolTestAccess {
 
   static std::size_t prefill_native_transport(ExtMessagePool &pool) {
     CHECK(pool.callbacks_.size() == 1);
+    td::actor::core::ActorExecuteContext context(&pool);
+    td::actor::core::ActorExecuteContext::Guard guard(&context);
     auto callback = pool.callbacks_.front();
     pool.begin_callback_epoch(callback);
     return pool.prefill_callback_native(callback, true);
@@ -537,6 +597,8 @@ class ExtMessagePoolTestAccess {
 
   static std::size_t fill_sources(ExtMessagePool &pool, const std::set<NativeAddress> &sources) {
     CHECK(pool.callbacks_.size() == 1);
+    td::actor::core::ActorExecuteContext context(&pool);
+    td::actor::core::ActorExecuteContext::Guard guard(&context);
     auto callback = pool.callbacks_.front();
     pool.begin_callback_epoch(callback);
     return pool.fill_callback_native(callback, false, &sources);
@@ -545,11 +607,16 @@ class ExtMessagePoolTestAccess {
   static SchedulerStats scheduler_stats(const ExtMessagePool &pool) {
     const auto &stats = pool.native_queue_counters_;
     return SchedulerStats{.selected = stats.selected,
+                          .direct_link_hits = stats.direct_link_hits,
+                          .direct_link_fallbacks = stats.direct_link_fallbacks,
                           .builds = stats.scheduler_builds,
                           .source_scans = stats.source_scans,
                           .source_refreshes = stats.source_refreshes,
                           .source_probes = stats.source_probes,
-                          .runs = stats.runs};
+                          .runs = stats.runs,
+                          .inactive = stats.inactive,
+                          .excluded = stats.excluded,
+                          .head_gaps = stats.head_gaps};
   }
 
   static std::size_t callback_pending(const ExtMessagePool &pool) {
@@ -569,6 +636,8 @@ class ExtMessagePoolTestAccess {
 
   static std::size_t resume_native_pump_refill(ExtMessagePool &pool) {
     CHECK(pool.callbacks_.size() == 1);
+    td::actor::core::ActorExecuteContext context(&pool);
+    td::actor::core::ActorExecuteContext::Guard guard(&context);
     auto callback = pool.callbacks_.front();
     auto dirty_sources = std::move(callback->native_dirty_sources);
     callback->native_dirty_sources.clear();
@@ -1224,6 +1293,161 @@ TEST(ExtMessagePoolScheduler, PostCommitWakesLiveWaiterWithoutNewIngress) {
   ASSERT_EQ(ExtMessagePoolTestAccess::dirty_sources(pool), 1u);
   ASSERT_EQ(ExtMessagePoolTestAccess::resume_native_pump_refill(pool), 1u);
   ASSERT_TRUE(ExtMessagePoolTestAccess::callback_has_delivery(pool, head));
+}
+
+TEST(ExtMessagePoolScheduler, NativeDirectLinksMatchLegacyCallbackSelection) {
+  auto configure = [](ExtMessagePool &pool, bool link_direct) {
+    auto source_a = ExtMessagePoolTestAccess::source(60);
+    auto source_b = ExtMessagePoolTestAccess::source(61);
+    ExtMessagePoolTestAccess::set_watermark(pool, source_a, 0);
+    ExtMessagePoolTestAccess::set_watermark(pool, source_b, 0);
+    auto a0 = ExtMessagePoolTestAccess::add(pool, source_a, 0, 4, true, true, 1, 0, link_direct);
+    auto a1 = ExtMessagePoolTestAccess::add(pool, source_a, 1, 1, true, true, 1, 0, link_direct);
+    auto b0 = ExtMessagePoolTestAccess::add(pool, source_b, 0, 7, true, true, 1, 0, link_direct);
+    auto b1 = ExtMessagePoolTestAccess::add(pool, source_b, 1, 0, true, true, 1, 0, link_direct);
+    return std::vector<ExtMessage::Hash>{a0, a1, b0, b1};
+  };
+
+  auto linked = ExtMessagePoolTestAccess::make_pool();
+  auto legacy = ExtMessagePoolTestAccess::make_pool();
+  auto expected = configure(linked, true);
+  configure(legacy, false);
+  ExtMessagePoolTestAccess::install_live_waiting_callback(linked,
+                                                          ExtMessagePoolTestAccess::max_native_queue_limit());
+  ExtMessagePoolTestAccess::install_live_waiting_callback(legacy,
+                                                          ExtMessagePoolTestAccess::max_native_queue_limit());
+
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(linked), expected.size());
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(legacy), expected.size());
+  const std::vector<ExtMessage::Hash> priority_order{expected[2], expected[0], expected[1], expected[3]};
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_delivery_hashes(linked), priority_order);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_delivery_hashes(legacy), priority_order);
+
+  auto linked_stats = ExtMessagePoolTestAccess::scheduler_stats(linked);
+  auto legacy_stats = ExtMessagePoolTestAccess::scheduler_stats(legacy);
+  ASSERT_TRUE(linked_stats.direct_link_hits > 0);
+  ASSERT_EQ(linked_stats.direct_link_fallbacks, 0u);
+  ASSERT_TRUE(legacy_stats.direct_link_hits > 0);
+  ASSERT_TRUE(legacy_stats.direct_link_fallbacks >= 2u);
+}
+
+TEST(ExtMessagePoolScheduler, NativeDirectLinkPreservesExclusionPriorityAndInactiveHeadSemantics) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source_a = ExtMessagePoolTestAccess::source(62);
+  auto source_b = ExtMessagePoolTestAccess::source(63);
+  ExtMessagePoolTestAccess::set_watermark(pool, source_a, 0);
+  ExtMessagePoolTestAccess::set_watermark(pool, source_b, 0);
+  auto excluded = ExtMessagePoolTestAccess::add(pool, source_a, 0, 4);
+  auto after_excluded = ExtMessagePoolTestAccess::add(pool, source_a, 1, 5);
+  auto high_priority = ExtMessagePoolTestAccess::add(pool, source_b, 0, 7);
+  auto inactive_tail = ExtMessagePoolTestAccess::add(pool, source_b, 1, 9, false);
+
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, ExtMessagePoolTestAccess::max_native_queue_limit(),
+                                                          500, {excluded});
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), 2u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_delivery_hashes(pool),
+            (std::vector<ExtMessage::Hash>{high_priority, after_excluded}));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_contains_delivery(pool, inactive_tail));
+  auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+  ASSERT_TRUE(stats.direct_link_hits > 0);
+  ASSERT_EQ(stats.direct_link_fallbacks, 0u);
+  ASSERT_EQ(stats.excluded, 1u);
+  ASSERT_EQ(stats.inactive, 1u);
+}
+
+TEST(ExtMessagePoolScheduler, NativeDirectLinkFallbackRepairsMissingAndStaleLinks) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(64);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  auto first = ExtMessagePoolTestAccess::add(pool, source, 0);
+  auto second = ExtMessagePoolTestAccess::add(pool, source, 1);
+  ExtMessagePoolTestAccess::clear_native_mempool_link(pool, source, 0);
+  ExtMessagePoolTestAccess::mark_native_mempool_link_stale(pool, source, 1);
+
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, ExtMessagePoolTestAccess::max_native_queue_limit());
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), 2u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_delivery_hashes(pool),
+            (std::vector<ExtMessage::Hash>{first, second}));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::has_native_mempool_link(pool, source, 0));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::has_native_mempool_link(pool, source, 1));
+  auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+  ASSERT_TRUE(stats.direct_link_hits > 0);
+  ASSERT_TRUE(stats.direct_link_fallbacks >= 2u);
+}
+
+TEST(ExtMessagePoolScheduler, StaleNativeDirectLinkCannotBypassLegacyHeadGap) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(65);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  auto hash = ExtMessagePoolTestAccess::add(pool, source, 0);
+  ExtMessagePoolTestAccess::set_reservation_hash(pool, source, 0, make_bits(900, 65));
+
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, ExtMessagePoolTestAccess::max_native_queue_limit());
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), 0u);
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_contains_delivery(pool, hash));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_native_mempool_link(pool, source, 0));
+  auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+  ASSERT_EQ(stats.direct_link_hits, 0u);
+  ASSERT_EQ(stats.direct_link_fallbacks, 1u);
+  ASSERT_EQ(stats.head_gaps, 1u);
+}
+
+TEST(ExtMessagePoolScheduler, CanonicalReconciliationReleasesNativeDirectLinkBeforeCallbackFill) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(67);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  auto hash = ExtMessagePoolTestAccess::add(pool, source, 0);
+  auto weak_message = ExtMessagePoolTestAccess::native_mempool_weak(pool, source, 0);
+
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reconcile_account(pool, source, 1, 100, 101, 101));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, hash));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_native_reservation(pool, source, 0));
+  ASSERT_TRUE(weak_message.expired());
+
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, ExtMessagePoolTestAccess::max_native_queue_limit());
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), 0u);
+}
+
+TEST(ExtMessagePoolScheduler, ErasingRealPoolObjectInvalidatesMismatchedNativeDirectLink) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(68);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  auto hash = ExtMessagePoolTestAccess::add(pool, source, 0);
+  auto weak_message = ExtMessagePoolTestAccess::native_mempool_weak(pool, source, 0);
+  ExtMessagePoolTestAccess::set_reservation_hash(pool, source, 0, make_bits(901, 68));
+
+  // The mismatched reservation deliberately survives the raw-hash erase so
+  // the callback has to prove it cannot follow the old direct pointer.
+  pool.complete_external_messages({}, {hash});
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, hash));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::has_native_reservation(pool, source, 0));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_native_mempool_link(pool, source, 0));
+  ASSERT_TRUE(weak_message.expired());
+
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, ExtMessagePoolTestAccess::max_native_queue_limit());
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), 0u);
+  auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
+  ASSERT_EQ(stats.direct_link_hits, 0u);
+  ASSERT_EQ(stats.direct_link_fallbacks, 1u);
+  ASSERT_EQ(stats.head_gaps, 1u);
+}
+
+TEST(ExtMessagePoolScheduler, NativeDirectLinkDoesNotRetainMempoolObjectAfterCancellationAndErase) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(66);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  auto hash = ExtMessagePoolTestAccess::add(pool, source, 0);
+  auto weak_message = ExtMessagePoolTestAccess::native_mempool_weak(pool, source, 0);
+
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, ExtMessagePoolTestAccess::max_native_queue_limit());
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), 1u);
+  ExtMessagePoolTestAccess::cancel_callback(pool);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending(pool), 0u);
+
+  pool.complete_external_messages({}, {hash});
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, hash));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_native_reservation(pool, source, 0));
+  ASSERT_TRUE(weak_message.expired());
 }
 
 TEST(ExtMessagePoolScheduler, CallbackSelectionIsIncrementalAndChunkBounded) {

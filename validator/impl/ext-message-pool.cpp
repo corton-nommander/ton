@@ -1341,10 +1341,23 @@ void ExtMessagePool::begin_callback_epoch(const std::shared_ptr<InstalledCallbac
   callback->native_snapshot_exhausted = false;
 }
 
-void ExtMessagePool::start_callback_pump(const std::shared_ptr<InstalledCallback> &callback) {
+void ExtMessagePool::start_callback_pump(const std::shared_ptr<InstalledCallback> &callback,
+                                         CallbackPumpStart start) {
   if (!callback->pump_active) {
     callback->pump_active = true;
-    pump_callback(callback).start().detach();
+    auto task = pump_callback(callback);
+    if (start == CallbackPumpStart::initial_native_fast_lane) {
+      CHECK(callback->callback->native_streaming);
+      // The callback was just installed through the guarded Collator ->
+      // Manager -> Pool fast lane. Start only its first producer turn while
+      // this pool actor is still idle, so the queued native prefix reaches the
+      // BackpressureQueue without another pool mailbox turn. The coroutine
+      // suspends on the existing deferred queue ask; live wakes and all later
+      // refills continue through the normal deferred start below.
+      std::move(task).start_immediate().detach();
+    } else {
+      std::move(task).start().detach();
+    }
   }
 }
 
@@ -1663,11 +1676,15 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
                         << " selected_generic=" << installed->generic_selected
                         << " excluded=" << installed->callback->excluded_messages.size()
                         << " native_limit=" << native_collator_queue_limit_ << " shard=" << shard;
-  start_callback_pump(installed);
   if (!installed->callback->sync_only) {
     alarm_timestamp().relax(installed->callback->timeout);
-    callbacks_.push_back(std::move(installed));
+    // The initial native producer may run in this actor turn. Register the
+    // callback first so a concurrent ingress wake always observes the same
+    // live callback that owns the queue reservation.
+    callbacks_.push_back(installed);
   }
+  start_callback_pump(installed, installed->callback->native_streaming ? CallbackPumpStart::initial_native_fast_lane
+                                                                         : CallbackPumpStart::deferred);
 }
 
 void ExtMessagePool::cleanup_external_messages(ShardIdFull shard) {

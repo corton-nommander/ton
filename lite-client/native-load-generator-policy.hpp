@@ -37,6 +37,50 @@ inline bool valid_adaptive_max_cwnd(std::uint32_t configured_limit, std::uint32_
   return configured_limit == 0 || (configured_limit >= connections && configured_limit <= max_inflight);
 }
 
+// A submission query can carry many messages, so admission-query credit is
+// deliberately independent from the message-count AIMD and hard-inflight
+// ceilings. Zero keeps the historical unlimited-per-client query behavior.
+constexpr std::uint32_t max_submit_queries_per_client = 65536;
+
+inline bool valid_submit_max_queries_per_client(std::uint32_t configured_limit) {
+  return configured_limit <= max_submit_queries_per_client;
+}
+
+inline bool admission_query_credit_available(std::uint32_t configured_limit,
+                                             std::uint32_t queries_inflight) {
+  return configured_limit == 0 || queries_inflight < configured_limit;
+}
+
+inline bool admission_query_credit_at_cap(std::uint32_t configured_limit,
+                                          std::uint32_t queries_inflight) {
+  return configured_limit != 0 && queries_inflight >= configured_limit;
+}
+
+inline bool client_can_dispatch_admission_query(std::uint32_t message_capacity,
+                                                std::uint32_t configured_query_limit,
+                                                std::uint32_t queries_inflight) {
+  return message_capacity != 0 &&
+         admission_query_credit_available(configured_query_limit, queries_inflight);
+}
+
+inline bool acquire_admission_query_credit(std::uint32_t configured_limit,
+                                           std::uint32_t& queries_inflight) {
+  if (!admission_query_credit_available(configured_limit, queries_inflight) ||
+      queries_inflight == std::numeric_limits<std::uint32_t>::max()) {
+    return false;
+  }
+  ++queries_inflight;
+  return true;
+}
+
+inline bool release_admission_query_credit(std::uint32_t& queries_inflight) {
+  if (queries_inflight == 0) {
+    return false;
+  }
+  --queries_inflight;
+  return true;
+}
+
 // The caller lower-cases the server diagnostic before classification.  Keep
 // this deliberately narrow: ErrorCode::notready is also used for real
 // admission pressure and revision races, while these exact diagnostics mean

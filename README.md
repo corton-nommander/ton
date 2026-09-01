@@ -84,6 +84,12 @@ gaps near 65 seconds. The desktop profile now sets
 connections. This caps admission pressure independently of the unchanged
 65,536-task proof backlog; `effective_cwnd_cap`, `clients_at_cwnd_cap`,
 `cwnd_cap_limited_acks`, and the sampled peak show whether the bound is active.
+For a separate bound on concurrent admission RPCs, the native generator accepts
+`--submit-max-queries-per-client=N`. It is per persistent client rather than a
+global window, so it is not divided among workers; `0` preserves the historical
+unlimited-query behavior. `clients_at_query_cap`, its sampled peak,
+`query_credit_stalls`, and `max_per_client_admission_queries` distinguish a
+query-credit limit from the message-count AIMD ceiling.
 
 Use `benchmark/run-fresh-native-cycle.sh` in the Docker checkout for iterative
 source builds and deliberately fresh runs; it refuses to remove volumes unless

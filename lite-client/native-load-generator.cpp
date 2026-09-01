@@ -172,6 +172,7 @@ struct Options {
   td::uint32 submit_batch_size{1};
   td::uint32 submit_source_run_size{1};
   td::uint32 submit_coalesce_ms{2};
+  td::uint32 submit_max_queries_per_client{0};
   td::uint64 max_canonical_backlog{262144};
   td::uint32 max_source_canonical_backlog{64};
   td::uint32 duration_seconds{600};
@@ -490,6 +491,10 @@ struct WorkerStats {
   td::uint64 retry_wait{0};
   td::uint64 active_tasks{0};
   td::uint64 active_sources{0};
+  td::uint64 admission_queries_inflight{0};
+  td::uint64 clients_at_query_cap{0};
+  td::uint64 query_credit_stalls{0};
+  td::uint64 max_per_client_admission_queries{0};
   td::uint64 clients_at_cwnd_cap{0};
   td::uint64 cwnd_cap_limited_acks{0};
   double congestion_window{0.0};
@@ -683,6 +688,8 @@ class NativeLoadWorker final : public td::actor::Actor {
   struct ClientSlot {
     td::actor::ActorOwn<liteclient::ExtClient> actor;
     td::uint32 inflight{0};
+    td::uint32 admission_queries_inflight{0};
+    td::uint32 max_admission_queries_inflight{0};
     td::uint32 hard_limit{1};
     double cwnd{1.0};
     double cwnd_limit{1.0};
@@ -771,6 +778,7 @@ class NativeLoadWorker final : public td::actor::Actor {
   td::optional<std::size_t> select_client() const;
   td::uint32 client_available_capacity(std::size_t client_idx) const;
   td::optional<std::size_t> select_full_batch_client() const;
+  bool query_credit_blocks_dispatch() const;
   std::size_t count_dispatchable_fresh_heads(std::size_t limit) const;
   std::shared_ptr<TransferTask>
   take_dispatchable_ready_task(bool allow_fresh,
@@ -955,6 +963,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
   std::map<ton::UnixTime, td::uint64> follower_block_second_counts_;
   std::map<ton::UnixTime, td::uint64> follower_poll_block_second_counts_;
   td::uint64 canonical_backlog_sampled_peak_{0};
+  td::uint64 clients_at_query_cap_sampled_peak_{0};
   double congestion_window_sampled_peak_{0.0};
 
   void maybe_begin();
@@ -1034,6 +1043,9 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       worker_options.max_inflight = distribute(options_.max_inflight);
       worker_options.adaptive_max_cwnd =
           options_.adaptive_max_cwnd ? distribute(options_.adaptive_max_cwnd) : 0;
+      // submit_max_queries_per_client is a per-connection limit, unlike the
+      // global message window, so Options copies it unchanged for every
+      // worker-local persistent client.
       if (options_.max_canonical_backlog) {
         worker_options.max_canonical_backlog =
             options_.max_canonical_backlog / options_.workers +
@@ -1177,6 +1189,9 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(retry_wait);
       ADD_FIELD(active_tasks);
       ADD_FIELD(active_sources);
+      ADD_FIELD(admission_queries_inflight);
+      ADD_FIELD(clients_at_query_cap);
+      ADD_FIELD(query_credit_stalls);
       ADD_FIELD(clients_at_cwnd_cap);
       ADD_FIELD(cwnd_cap_limited_acks);
 #undef ADD_FIELD
@@ -1195,6 +1210,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
                    value.max_source_canonical_backlog_current);
       total.max_active_tasks_per_source =
           std::max(total.max_active_tasks_per_source, value.max_active_tasks_per_source);
+      total.max_per_client_admission_queries =
+          std::max(total.max_per_client_admission_queries, value.max_per_client_admission_queries);
       total.pacing_tokens += value.pacing_tokens;
       total.measure_elapsed_seconds = std::max(total.measure_elapsed_seconds, value.measure_elapsed_seconds);
       total.drain_to_anchor_seconds = std::max(total.drain_to_anchor_seconds, value.drain_to_anchor_seconds);
@@ -1245,6 +1262,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     auto total = aggregate();
     canonical_backlog_sampled_peak_ =
         std::max(canonical_backlog_sampled_peak_, total.canonical_backlog);
+    clients_at_query_cap_sampled_peak_ =
+        std::max(clients_at_query_cap_sampled_peak_, total.clients_at_query_cap);
     congestion_window_sampled_peak_ =
         std::max(congestion_window_sampled_peak_, total.congestion_window);
     td::uint64 canonical_measure_peak_1s = 0;
@@ -1417,6 +1436,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
                static_cast<double>(std::max<td::uint64>(1, total.wire_batch_source_runs))
         << ",\"wire_batch_source_run_max_size\":" << total.max_wire_batch_source_run
         << ",\"submit_coalesce_ms\":" << options_.submit_coalesce_ms
+        << ",\"submit_max_queries_per_client\":" << options_.submit_max_queries_per_client
         << ",\"submit_coalesce_windows\":" << total.submit_coalesce_windows
         << ",\"submit_coalesce_blocked_pumps\":"
         << total.submit_coalesce_blocked_pumps
@@ -1487,7 +1507,13 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"invalid\":" << total.retries_by_reason.invalid << ",\"signing\":" << total.retries_by_reason.signing
         << ",\"server_other\":" << total.retries_by_reason.server_other << "}"
         << ",\"nonce_gaps\":" << total.nonce_gaps << ",\"external_nonce_conflicts\":" << total.external_nonce_conflicts
-        << ",\"inflight\":" << total.inflight << ",\"canonical_backlog\":" << total.canonical_backlog
+        << ",\"inflight\":" << total.inflight
+        << ",\"admission_queries_inflight\":" << total.admission_queries_inflight
+        << ",\"clients_at_query_cap\":" << total.clients_at_query_cap
+        << ",\"clients_at_query_cap_sampled_peak\":" << clients_at_query_cap_sampled_peak_
+        << ",\"query_credit_stalls\":" << total.query_credit_stalls
+        << ",\"max_per_client_admission_queries\":" << total.max_per_client_admission_queries
+        << ",\"canonical_backlog\":" << total.canonical_backlog
         << ",\"canonical_backlog_sampled_peak\":" << canonical_backlog_sampled_peak_
         << ",\"canonical_backpressure_paused\":" << (total.canonical_backpressure_paused ? "true" : "false")
         << ",\"canonical_backpressure_events\":" << total.canonical_backpressure_events
@@ -1686,6 +1712,12 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"capacity_invalid_reasons_semantics\":\"stable machine-readable reason codes keep proof correctness, run completion, ingress capacity, and chain capacity failures distinct\""
               << ",\"canonical_backlog_sampled_peak_semantics\":\"maximum summed latest-worker backlog gauge at report samples; not an exact instantaneous peak\""
               << ",\"congestion_window_sampled_peak_semantics\":\"maximum summed latest-worker AIMD window gauge at report samples\""
+              << ",\"submit_max_queries_per_client_semantics\":\"per persistent client bound on concurrent admission sendMessage or sendMessageBatch RPCs; zero preserves unlimited per-client query behavior and anchor scans do not consume this credit\""
+              << ",\"clients_at_query_cap_semantics\":\"current number of persistent clients with all configured admission-query credit consumed; zero when the cap is disabled\""
+              << ",\"clients_at_query_cap_sampled_peak_semantics\":\"maximum summed clients_at_query_cap gauge at report samples\""
+              << ",\"query_credit_stalls_semantics\":\"dispatch passes with a queued ready-source entry and message capacity but no client admission-query credit; a persistent counter across transient cap saturation\""
+              << ",\"max_per_client_admission_queries_semantics\":\"largest concurrently in-flight admission RPC count observed on any one persistent client; batch messages share one RPC credit\""
+              << ",\"rtt_ms_semantics\":\"per-admission-message callback latency; each returned batch message contributes one sample rather than one sample per RPC\""
               << ",\"adaptive_max_cwnd_semantics\":\"global message-count ceiling distributed exactly across workers and persistent connections; zero retains the max_inflight hard-limit behavior\""
               << ",\"cwnd_cap_limited_acks_semantics\":\"successful admission items whose additive AIMD increase was clipped by the configured adaptive_max_cwnd ceiling\""
               << ",\"canonical_at_measure_end_semantics\":\"legacy cohort alias sampled by the first fully verified follower poll whose masterchain query began after offering ended\""
@@ -1729,7 +1761,9 @@ void NativeLoadCoordinator::maybe_begin() {
                << " connections=" << options_.connections << " signers=" << options_.signers
                << " max_inflight=" << options_.max_inflight << " submit_batch=" << options_.submit_batch_size
                << " source_run=" << options_.submit_source_run_size
-               << " submit_coalesce_ms=" << options_.submit_coalesce_ms << " target_tps=" << options_.target_tps
+               << " submit_coalesce_ms=" << options_.submit_coalesce_ms
+               << " submit_max_queries_per_client=" << options_.submit_max_queries_per_client
+               << " target_tps=" << options_.target_tps
                << " ramp=" << options_.ramp_seconds << "s warmup=" << options_.warmup_seconds
                << "s duration=" << options_.duration_seconds << "s drain_timeout=" << options_.drain_timeout_seconds
                << "s canonical_backlog=" << options_.max_canonical_backlog
@@ -2847,7 +2881,10 @@ td::optional<std::size_t> NativeLoadWorker::select_client() const {
                         ? std::max<td::uint32>(1, static_cast<td::uint32>(std::floor(clients_[i].cwnd)))
                         : clients_[i].hard_limit;
     capacity = std::min(capacity, clients_[i].hard_limit);
-    if (clients_[i].inflight >= capacity) {
+    auto message_capacity = clients_[i].inflight < capacity ? capacity - clients_[i].inflight : 0;
+    if (!native_load::client_can_dispatch_admission_query(
+            message_capacity, options_.submit_max_queries_per_client,
+            clients_[i].admission_queries_inflight)) {
       continue;
     }
     auto load = static_cast<double>(clients_[i].inflight) / capacity;
@@ -2875,7 +2912,10 @@ td::optional<std::size_t> NativeLoadWorker::select_full_batch_client() const {
   double best_load = std::numeric_limits<double>::infinity();
   for (std::size_t i = 0; i < clients_.size(); ++i) {
     auto capacity = client_available_capacity(i);
-    if (capacity < options_.submit_batch_size) {
+    if (capacity < options_.submit_batch_size ||
+        !native_load::client_can_dispatch_admission_query(
+            capacity, options_.submit_max_queries_per_client,
+            clients_[i].admission_queries_inflight)) {
       continue;
     }
     auto load = static_cast<double>(clients_[i].inflight) /
@@ -2886,6 +2926,26 @@ td::optional<std::size_t> NativeLoadWorker::select_full_batch_client() const {
     }
   }
   return selected;
+}
+
+bool NativeLoadWorker::query_credit_blocks_dispatch() const {
+  if (options_.submit_max_queries_per_client == 0) {
+    return false;
+  }
+  bool has_message_capacity = false;
+  for (std::size_t i = 0; i < clients_.size(); ++i) {
+    auto capacity = client_available_capacity(i);
+    if (capacity == 0) {
+      continue;
+    }
+    has_message_capacity = true;
+    if (native_load::admission_query_credit_available(
+            options_.submit_max_queries_per_client,
+            clients_[i].admission_queries_inflight)) {
+      return false;
+    }
+  }
+  return has_message_capacity;
 }
 
 std::size_t NativeLoadWorker::count_dispatchable_fresh_heads(
@@ -2970,7 +3030,9 @@ std::size_t NativeLoadWorker::append_ready_source_run(
   for (std::size_t i = 0; i < source_run_size; ++i, ++it) {
     auto task = it->second;
     fresh_tasks += is_fresh_normal_submission(task) ? 1 : 0;
-    task->state = TaskState::dispatching;
+    // Dispatch is synchronous within this actor. Keep selected work ready
+    // until send_batch() has reserved the one admission-query credit, so a
+    // failed credit acquisition cannot strand a popped source head.
     tasks.push_back(std::move(task));
   }
   return fresh_tasks;
@@ -3005,6 +3067,11 @@ void NativeLoadWorker::dispatch_ready() {
         release_reason == native_load::SubmitCoalescer::ReleaseReason::full_batch;
     auto client_idx = use_proven_full_client ? full_batch_client : select_client();
     if (!client_idx) {
+      // The enclosing loop already established a queued ready-source entry;
+      // do not scan every wallet just to account for saturated query credit.
+      if (query_credit_blocks_dispatch()) {
+        ++stats_.query_credit_stalls;
+      }
       break;
     }
     if (options_.submit_batch_size == 1) {
@@ -3061,6 +3128,16 @@ void NativeLoadWorker::dispatch_ready() {
 }
 
 void NativeLoadWorker::send_task(std::shared_ptr<TransferTask> task, std::size_t client_idx) {
+  CHECK(task && task->state == TaskState::ready && task_is_active(task));
+  CHECK(client_idx < clients_.size() && client_available_capacity(client_idx) != 0);
+  auto& client = clients_[client_idx];
+  // select_client() proved the independent admission-query credit is
+  // available. Reserve it before changing task state so an invariant failure
+  // cannot strand a popped ready source head.
+  CHECK(native_load::acquire_admission_query_credit(
+      options_.submit_max_queries_per_client, client.admission_queries_inflight));
+  client.max_admission_queries_inflight =
+      std::max(client.max_admission_queries_inflight, client.admission_queries_inflight);
   auto query = ton::serialize_tl_object(
       ton::create_tl_object<ton::lite_api::liteServer_sendMessage>(task->boc.clone()), true);
   auto promise = td::PromiseCreator::lambda(
@@ -3085,8 +3162,9 @@ void NativeLoadWorker::send_task(std::shared_ptr<TransferTask> task, std::size_t
   ++stats_.wire_attempts;
   ++stats_.wire_queries;
   ++inflight_;
-  ++clients_[client_idx].inflight;
-  td::actor::send_closure(clients_[client_idx].actor, &liteclient::ExtClient::send_query, "native-load",
+  ++client.inflight;
+  CHECK(client.admission_queries_inflight <= client.inflight);
+  td::actor::send_closure(client.actor, &liteclient::ExtClient::send_query, "native-load",
                           envelope_query(std::move(query)), td::Timestamp::in(options_.query_timeout),
                           std::move(promise));
 }
@@ -3094,6 +3172,18 @@ void NativeLoadWorker::send_task(std::shared_ptr<TransferTask> task, std::size_t
 void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tasks,
                                   std::size_t client_idx) {
   CHECK(!tasks.empty() && tasks.size() <= options_.submit_batch_size);
+  CHECK(client_idx < clients_.size() && client_available_capacity(client_idx) >= tasks.size());
+  for (const auto& task : tasks) {
+    CHECK(task && task->state == TaskState::ready && task_is_active(task));
+  }
+  auto& client = clients_[client_idx];
+  // select_client()/select_full_batch_client() made this an actor-local
+  // precondition. Acquiring before moving any task out of ready state keeps a
+  // credit violation from stranding an assembled source run.
+  CHECK(native_load::acquire_admission_query_credit(
+      options_.submit_max_queries_per_client, client.admission_queries_inflight));
+  client.max_admission_queries_inflight =
+      std::max(client.max_admission_queries_inflight, client.admission_queries_inflight);
   std::vector<td::BufferSlice> bodies;
   bodies.reserve(tasks.size());
   td::uint64 source_runs = 0;
@@ -3111,7 +3201,7 @@ void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tas
   }
   auto sent_at = td::Time::now();
   for (auto& task : tasks) {
-    CHECK(task->state == TaskState::dispatching);
+    task->state = TaskState::dispatching;
     bodies.push_back(task->boc.clone());
     task->state = TaskState::inflight;
     task->last_sent_at = sent_at;
@@ -3144,17 +3234,22 @@ void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tas
   stats_.max_wire_batch_source_run =
       std::max(stats_.max_wire_batch_source_run, max_source_run);
   inflight_ += tasks.size();
-  clients_[client_idx].inflight += tasks.size();
-  td::actor::send_closure(clients_[client_idx].actor, &liteclient::ExtClient::send_query,
+  client.inflight += tasks.size();
+  CHECK(client.admission_queries_inflight <= client.inflight);
+  td::actor::send_closure(client.actor, &liteclient::ExtClient::send_query,
                           "native-load-batch", envelope_query(std::move(query)),
                           td::Timestamp::in(options_.query_timeout), std::move(promise));
 }
 
 void NativeLoadWorker::on_result(std::shared_ptr<TransferTask> task, std::size_t client_idx,
                                  td::Result<td::BufferSlice> result) {
-  CHECK(inflight_ > 0 && client_idx < clients_.size() && clients_[client_idx].inflight > 0);
+  CHECK(inflight_ > 0 && client_idx < clients_.size() && clients_[client_idx].inflight > 0 &&
+        clients_[client_idx].admission_queries_inflight > 0 &&
+        clients_[client_idx].admission_queries_inflight <= clients_[client_idx].inflight);
   --inflight_;
   --clients_[client_idx].inflight;
+  CHECK(native_load::release_admission_query_credit(
+      clients_[client_idx].admission_queries_inflight));
   stats_.request_latency.observe_seconds(td::Time::now() - task->last_sent_at);
   if (finished_) {
     return;
@@ -3191,9 +3286,13 @@ void NativeLoadWorker::on_result(std::shared_ptr<TransferTask> task, std::size_t
 void NativeLoadWorker::on_batch_result(std::vector<std::shared_ptr<TransferTask>> tasks,
                                        std::size_t client_idx, td::Result<td::BufferSlice> result) {
   CHECK(!tasks.empty() && client_idx < clients_.size() && inflight_ >= tasks.size() &&
-        clients_[client_idx].inflight >= tasks.size());
+        clients_[client_idx].inflight >= tasks.size() &&
+        clients_[client_idx].admission_queries_inflight > 0 &&
+        clients_[client_idx].admission_queries_inflight <= clients_[client_idx].inflight);
   inflight_ -= tasks.size();
   clients_[client_idx].inflight -= tasks.size();
+  CHECK(native_load::release_admission_query_credit(
+      clients_[client_idx].admission_queries_inflight));
   auto now = td::Time::now();
   for (const auto& task : tasks) {
     stats_.request_latency.observe_seconds(now - task->last_sent_at);
@@ -3644,6 +3743,9 @@ void NativeLoadWorker::finish() {
   if (finished_) {
     return;
   }
+  for (const auto& client : clients_) {
+    CHECK(client.admission_queries_inflight <= client.inflight);
+  }
   finished_ = true;
   refresh_stats();
   td::actor::send_closure(coordinator_, &NativeLoadCoordinator::worker_done, worker_id_, stats_);
@@ -3672,6 +3774,8 @@ void NativeLoadWorker::refresh_stats() {
   stats_.max_active_tasks_per_source = 0;
   stats_.congestion_window = 0.0;
   stats_.effective_cwnd_cap = 0.0;
+  stats_.admission_queries_inflight = 0;
+  stats_.clients_at_query_cap = 0;
   stats_.clients_at_cwnd_cap = 0;
   for (const auto& wallet : wallets_) {
     auto source_backlog = wallet.next_nonce >= wallet.anchored_nonce
@@ -3702,10 +3806,20 @@ void NativeLoadWorker::refresh_stats() {
     }
   }
   for (const auto& client : clients_) {
+    CHECK(client.admission_queries_inflight <= client.inflight);
     stats_.congestion_window += client.cwnd;
     stats_.effective_cwnd_cap += options_.adaptive_inflight
                                      ? client.cwnd_limit
                                      : static_cast<double>(client.hard_limit);
+    stats_.admission_queries_inflight += client.admission_queries_inflight;
+    stats_.max_per_client_admission_queries =
+        std::max<td::uint64>(stats_.max_per_client_admission_queries,
+                             client.max_admission_queries_inflight);
+    if (native_load::admission_query_credit_at_cap(
+            options_.submit_max_queries_per_client,
+            client.admission_queries_inflight)) {
+      ++stats_.clients_at_query_cap;
+    }
     if (options_.adaptive_inflight && options_.adaptive_max_cwnd &&
         client.cwnd >= client.cwnd_limit - 1e-9) {
       ++stats_.clients_at_cwnd_cap;
@@ -4277,6 +4391,16 @@ int main(int argc, char* argv[]) {
                                          ? td::Status::OK()
                                          : td::Status::Error(
                                                "submit-coalesce-ms must be 1..100");
+                            });
+  parser.add_checked_option(0, "submit-max-queries-per-client",
+                            "concurrent admission queries per persistent client; zero disables the cap",
+                            [&](td::Slice value) {
+                              options.submit_max_queries_per_client = td::to_integer<td::uint32>(value);
+                              return native_load::valid_submit_max_queries_per_client(
+                                         options.submit_max_queries_per_client)
+                                         ? td::Status::OK()
+                                         : td::Status::Error(
+                                               "submit-max-queries-per-client must be 0..65536");
                             });
   parser.add_option(0, "max-canonical-backlog",
                     "proof-observed global outstanding transfer limit; zero disables",

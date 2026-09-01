@@ -65,6 +65,85 @@ TEST(NativeLoadGeneratorPolicy, AdaptiveCwndConfigurationBoundsAreExplicit) {
   ASSERT_TRUE(!native_load::valid_adaptive_max_cwnd(65537, 12, 65536));
 }
 
+TEST(NativeLoadGeneratorPolicy, SubmitQueryCreditConfigurationAndZeroCompatibilityAreExplicit) {
+  ASSERT_TRUE(native_load::valid_submit_max_queries_per_client(0));
+  ASSERT_TRUE(native_load::valid_submit_max_queries_per_client(1));
+  ASSERT_TRUE(native_load::valid_submit_max_queries_per_client(
+      native_load::max_submit_queries_per_client));
+  ASSERT_TRUE(!native_load::valid_submit_max_queries_per_client(
+      native_load::max_submit_queries_per_client + 1));
+
+  std::uint32_t queries_inflight = 0;
+  for (std::uint32_t i = 0; i < 4; ++i) {
+    ASSERT_TRUE(native_load::client_can_dispatch_admission_query(1, 0, queries_inflight));
+    ASSERT_TRUE(native_load::acquire_admission_query_credit(0, queries_inflight));
+  }
+  ASSERT_EQ(queries_inflight, 4u);
+  ASSERT_TRUE(!native_load::admission_query_credit_at_cap(0, queries_inflight));
+}
+
+TEST(NativeLoadGeneratorPolicy, SubmitQueryCreditBlocksPartialBatchUntilOneReplyReleasesIt) {
+  constexpr std::uint32_t query_cap = 1;
+  std::uint32_t queries_inflight = 0;
+
+  // A 35-message batch consumes one admission-query credit. The remaining
+  // 29-message message window must not bypass a one-query per-client bound.
+  ASSERT_TRUE(native_load::client_can_dispatch_admission_query(64, query_cap, queries_inflight));
+  ASSERT_TRUE(native_load::acquire_admission_query_credit(query_cap, queries_inflight));
+  ASSERT_EQ(queries_inflight, 1u);
+  ASSERT_TRUE(native_load::admission_query_credit_at_cap(query_cap, queries_inflight));
+  ASSERT_TRUE(!native_load::client_can_dispatch_admission_query(29, query_cap, queries_inflight));
+  ASSERT_TRUE(!native_load::acquire_admission_query_credit(query_cap, queries_inflight));
+
+  ASSERT_TRUE(native_load::release_admission_query_credit(queries_inflight));
+  ASSERT_EQ(queries_inflight, 0u);
+  ASSERT_TRUE(native_load::client_can_dispatch_admission_query(29, query_cap, queries_inflight));
+}
+
+TEST(NativeLoadGeneratorPolicy, SubmitQueryCreditGatesSingleAndFullBatchSelection) {
+  constexpr std::uint32_t query_cap = 1;
+  std::uint32_t queries_inflight = 0;
+  ASSERT_TRUE(native_load::client_can_dispatch_admission_query(1, query_cap, queries_inflight));
+  ASSERT_TRUE(native_load::client_can_dispatch_admission_query(64, query_cap, queries_inflight));
+
+  ASSERT_TRUE(native_load::acquire_admission_query_credit(query_cap, queries_inflight));
+  ASSERT_TRUE(!native_load::client_can_dispatch_admission_query(1, query_cap, queries_inflight));
+  ASSERT_TRUE(!native_load::client_can_dispatch_admission_query(64, query_cap, queries_inflight));
+  ASSERT_TRUE(native_load::release_admission_query_credit(queries_inflight));
+}
+
+TEST(NativeLoadGeneratorPolicy, SubmitQueryCreditIsPerClientAndNeverDistributed) {
+  std::uint32_t first_client_queries = 0;
+  std::uint32_t second_client_queries = 0;
+  ASSERT_TRUE(native_load::acquire_admission_query_credit(1, first_client_queries));
+  ASSERT_TRUE(native_load::acquire_admission_query_credit(1, second_client_queries));
+  ASSERT_EQ(first_client_queries, 1u);
+  ASSERT_EQ(second_client_queries, 1u);
+}
+
+TEST(NativeLoadGeneratorPolicy, SubmitQueryCreditReleasesOnceForErrorInactiveAndFinishedCallbacks) {
+  std::uint32_t queries_inflight = 0;
+
+  // A single-message transport error returns its one RPC credit before retry
+  // handling.
+  ASSERT_TRUE(native_load::acquire_admission_query_credit(2, queries_inflight));
+  ASSERT_TRUE(native_load::release_admission_query_credit(queries_inflight));
+  ASSERT_EQ(queries_inflight, 0u);
+
+  // A post-finish single callback returns its credit before it observes the
+  // finished state and exits.
+  ASSERT_TRUE(native_load::acquire_admission_query_credit(2, queries_inflight));
+  ASSERT_TRUE(native_load::release_admission_query_credit(queries_inflight));
+  ASSERT_EQ(queries_inflight, 0u);
+
+  // One failed batch is still one admission RPC even when every contained
+  // transfer is inactive by the time the callback reaches it.
+  ASSERT_TRUE(native_load::acquire_admission_query_credit(2, queries_inflight));
+  ASSERT_TRUE(native_load::release_admission_query_credit(queries_inflight));
+  ASSERT_EQ(queries_inflight, 0u);
+  ASSERT_TRUE(!native_load::release_admission_query_credit(queries_inflight));
+}
+
 TEST(NativeLoadGeneratorPolicy, DetectsOnlyExplicitCanonicalStateLag) {
   ASSERT_TRUE(native_load::is_canonical_state_lag_diagnostic(
       "error 651: canonical native account state has not caught up with finalized balance"));

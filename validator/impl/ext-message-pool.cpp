@@ -1073,122 +1073,6 @@ void ExtMessagePool::enqueue_callback_native_source(CallbackNativeScheduler &sch
   state.queued = true;
 }
 
-void ExtMessagePool::prepare_callback_native_exclusion_bootstrap(const std::shared_ptr<InstalledCallback> &callback,
-                                                                 NativeQueueCounters &counters) {
-  discard_callback_native_exclusion_bootstrap(callback);
-  if (!callback->callback->native_streaming || callback->callback->shard.workchain == masterchainId) {
-    return;
-  }
-  const auto &excluded = callback->callback->excluded_messages;
-  if (excluded.empty()) {
-    return;
-  }
-  if (excluded.size() > MAX_NATIVE_EXCLUDED_PREFIX_INDEX_ENTRIES) {
-    ++counters.excluded_prefix_fallbacks;
-    ++counters.excluded_prefix_over_limit;
-    return;
-  }
-
-  struct ExcludedNativeLocation {
-    NativeAddress source;
-    td::uint64 nonce{0};
-  };
-  std::vector<ExcludedNativeLocation> locations;
-  locations.reserve(excluded.size());
-
-  // The index is deliberately all-or-nothing. The existing sorted hash list
-  // remains authoritative, and any entry we cannot prove against the current
-  // native reservation/mempool state leaves the callback on its normal slow
-  // path rather than risking a speculative nonce advance.
-  auto fallback = [&] {
-    discard_callback_native_exclusion_bootstrap(callback);
-    ++counters.excluded_prefix_fallbacks;
-  };
-  for (const auto &hash : excluded) {
-    auto hash_it = ext_messages_hashes_.find(hash);
-    if (hash_it == ext_messages_hashes_.end()) {
-      fallback();
-      return;
-    }
-    auto priority_it = ext_msgs_.find(hash_it->second.first);
-    if (priority_it == ext_msgs_.end()) {
-      fallback();
-      return;
-    }
-    auto message = priority_it->second.ext_messages_.find(hash_it->second.second);
-    if (!message || !message.value()->native_nonce || message.value()->message->hash() != hash) {
-      fallback();
-      return;
-    }
-    const auto source = message.value()->address();
-    const auto nonce = message.value()->native_nonce.value();
-    if (!shard_contains(callback->callback->shard, extract_addr_prefix(source.first, source.second))) {
-      fallback();
-      return;
-    }
-    auto watermark_it = native_nonce_watermarks_.find(source);
-    if (watermark_it == native_nonce_watermarks_.end()) {
-      fallback();
-      return;
-    }
-    auto first_nonce = watermark_it->second.first_unconsumed_nonce();
-    if (!first_nonce || nonce < first_nonce.value()) {
-      fallback();
-      return;
-    }
-    auto native_it = native_accounts_.find(source);
-    if (native_it == native_accounts_.end()) {
-      fallback();
-      return;
-    }
-    auto reservation_it = native_it->second.messages.find(nonce);
-    if (reservation_it == native_it->second.messages.end() || !reservation_it->second.committed ||
-        reservation_it->second.hash != hash) {
-      fallback();
-      return;
-    }
-    locations.push_back({source, nonce});
-  }
-
-  std::sort(locations.begin(), locations.end(), [](const auto &lhs, const auto &rhs) {
-    if (lhs.source < rhs.source) {
-      return true;
-    }
-    if (rhs.source < lhs.source) {
-      return false;
-    }
-    return lhs.nonce < rhs.nonce;
-  });
-  for (std::size_t i = 1; i < locations.size(); ++i) {
-    if (locations[i - 1].source == locations[i].source && locations[i - 1].nonce == locations[i].nonce) {
-      // A deduplicated hash vector cannot normally map to the same source
-      // nonce twice. Treat a violation as ambiguity and retain the slow path.
-      fallback();
-      return;
-    }
-  }
-
-  auto &ranges_by_source = callback->native_excluded_prefixes;
-  for (const auto &location : locations) {
-    auto &ranges = ranges_by_source[location.source];
-    if (!ranges.empty() && ranges.back().last_nonce != std::numeric_limits<td::uint64>::max() &&
-        location.nonce == ranges.back().last_nonce + 1) {
-      ranges.back().last_nonce = location.nonce;
-    } else {
-      ranges.push_back({location.nonce, location.nonce});
-      ++counters.excluded_prefix_index_ranges;
-    }
-  }
-  counters.excluded_prefix_index_entries += locations.size();
-  ++counters.excluded_prefix_index_builds;
-  callback->native_exclusion_bootstrap_active = true;
-}
-
-void ExtMessagePool::discard_callback_native_exclusion_bootstrap(const std::shared_ptr<InstalledCallback> &callback) {
-  callback->native_exclusion_bootstrap_active = false;
-  callback->native_excluded_prefixes.clear();
-}
-
 void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<InstalledCallback> &callback,
                                                   const NativeAddress &source, CallbackNativeSource &state,
                                                   NativeQueueCounters &counters, bool enqueue_ready) {
@@ -1223,34 +1107,6 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
   };
 
   while (true) {
-    if (callback->native_exclusion_bootstrap_active) {
-      auto ranges_it = callback->native_excluded_prefixes.find(source);
-      if (ranges_it != callback->native_excluded_prefixes.end()) {
-        auto &ranges = ranges_it->second;
-        auto range_it = std::upper_bound(
-            ranges.begin(), ranges.end(), state.next_nonce,
-            [](td::uint64 nonce, const CallbackNativeExcludedRange &range) { return nonce < range.first_nonce; });
-        if (range_it != ranges.begin()) {
-          --range_it;
-          if (state.next_nonce >= range_it->first_nonce && state.next_nonce <= range_it->last_nonce) {
-            // This is reached only while install_collator_queue() is still in
-            // its synchronous prefill. prepare_callback_native_exclusion_bootstrap()
-            // proved every skipped reservation/hash/commit tuple immediately
-            // beforehand, so preserve the old logical counters while avoiding
-            // a repeated map/treap/hash-vector walk for the whole prefix.
-            const auto skipped = range_it->last_nonce - state.next_nonce + 1;
-            counters.scanned += skipped;
-            counters.excluded += skipped;
-            counters.excluded_prefix_shortcut_messages += skipped;
-            if (range_it->last_nonce == std::numeric_limits<td::uint64>::max()) {
-              return;
-            }
-            state.next_nonce = range_it->last_nonce + 1;
-            continue;
-          }
-        }
-      }
-    }
     auto reservation_it = info_it->second.messages.lower_bound(state.next_nonce);
     if (reservation_it == info_it->second.messages.end()) {
       if (state.next_nonce > first_nonce.value()) {
@@ -1758,14 +1614,7 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
   // transfers are basechain-only, and copying/scanning their large treaps while
   // producing a masterchain anchor created avoidable multi-second stalls.
   installed->native_cursor = native_scheduler_cursor_;
-  NativeQueueCounters exclusion_bootstrap_counters;
-  prepare_callback_native_exclusion_bootstrap(installed, exclusion_bootstrap_counters);
   prefill_callback_native(installed, true);
-  // The prefix index is valid only for the actor's synchronous install/prefill
-  // section above. The producer may suspend after this point, so all later
-  // refills deliberately retain the fully revalidated per-message slow path.
-  discard_callback_native_exclusion_bootstrap(installed);
-  native_queue_counters_.add(exclusion_bootstrap_counters);
   if (installed->callback->shard.workchain != masterchainId) {
     native_scheduler_cursor_ = installed->native_cursor;
   }
@@ -2621,14 +2470,7 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                 << " source_scans:" << native_queue_counters_.source_scans
                 << " source_refreshes:" << native_queue_counters_.source_refreshes
                 << " source_probes:" << native_queue_counters_.source_probes
-                << " stale_ready_tokens:" << native_queue_counters_.stale_ready_tokens
-                << " excluded_prefix_index_builds:" << native_queue_counters_.excluded_prefix_index_builds
-                << " excluded_prefix_index_entries:" << native_queue_counters_.excluded_prefix_index_entries
-                << " excluded_prefix_index_ranges:" << native_queue_counters_.excluded_prefix_index_ranges
-                << " excluded_prefix_shortcut_messages:"
-                << native_queue_counters_.excluded_prefix_shortcut_messages
-                << " excluded_prefix_fallbacks:" << native_queue_counters_.excluded_prefix_fallbacks
-                << " excluded_prefix_over_limit:" << native_queue_counters_.excluded_prefix_over_limit);
+                << " stale_ready_tokens:" << native_queue_counters_.stale_ready_tokens);
   std::lock_guard transport_lock(native_transport_telemetry_->accounting_mutex);
   auto selected = native_transport_telemetry_->selected.load(std::memory_order_relaxed);
   auto push_completed = native_transport_telemetry_->pushed.load(std::memory_order_relaxed);

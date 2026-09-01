@@ -453,16 +453,6 @@ class ExtMessagePool : public td::actor::Actor {
     td::uint64 source_refreshes{0};
     td::uint64 source_probes{0};
     td::uint64 stale_ready_tokens{0};
-    // A callback can inherit a large speculative-parent exclusion set. During
-    // its synchronous install/prefill only, verified contiguous native ranges
-    // may be skipped without replaying every reservation lookup. These
-    // counters make the strictly callback-local shortcut observable.
-    td::uint64 excluded_prefix_index_builds{0};
-    td::uint64 excluded_prefix_index_entries{0};
-    td::uint64 excluded_prefix_index_ranges{0};
-    td::uint64 excluded_prefix_shortcut_messages{0};
-    td::uint64 excluded_prefix_fallbacks{0};
-    td::uint64 excluded_prefix_over_limit{0};
 
     void add(const NativeQueueCounters &other) {
       installs += other.installs;
@@ -495,12 +485,6 @@ class ExtMessagePool : public td::actor::Actor {
       source_refreshes += other.source_refreshes;
       source_probes += other.source_probes;
       stale_ready_tokens += other.stale_ready_tokens;
-      excluded_prefix_index_builds += other.excluded_prefix_index_builds;
-      excluded_prefix_index_entries += other.excluded_prefix_index_entries;
-      excluded_prefix_index_ranges += other.excluded_prefix_index_ranges;
-      excluded_prefix_shortcut_messages += other.excluded_prefix_shortcut_messages;
-      excluded_prefix_fallbacks += other.excluded_prefix_fallbacks;
-      excluded_prefix_over_limit += other.excluded_prefix_over_limit;
     }
   } native_queue_counters_;
 
@@ -527,10 +511,6 @@ class ExtMessagePool : public td::actor::Actor {
     NativeAddress source;
     td::uint64 generation{0};
   };
-  struct CallbackNativeExcludedRange {
-    td::uint64 first_nonce{0};
-    td::uint64 last_nonce{0};
-  };
   struct CallbackNativeScheduler {
     bool initialized{false};
     std::map<NativeAddress, CallbackNativeSource> sources;
@@ -548,12 +528,6 @@ class ExtMessagePool : public td::actor::Actor {
     // the serialized pump is suspended on queue backpressure. The pump applies
     // them immediately before its next demand-driven refill.
     std::set<NativeAddress> native_dirty_sources;
-    // This index exists only while install_collator_queue() synchronously
-    // pre-fills the native transport. It never outlives that bootstrap, so a
-    // later pool mutation or losing speculative branch always uses the normal
-    // per-message exclusion path.
-    std::map<NativeAddress, std::vector<CallbackNativeExcludedRange>> native_excluded_prefixes;
-    bool native_exclusion_bootstrap_active{false};
     bool native_scheduler_rebuild{false};
     std::set<ExtMessage::Hash> delivered_native;
     td::optional<NativeAddress> native_cursor;
@@ -586,9 +560,6 @@ class ExtMessagePool : public td::actor::Actor {
                                     NativeQueueCounters &counters, bool enqueue_ready);
   void enqueue_callback_native_source(CallbackNativeScheduler &scheduler, const NativeAddress &source,
                                       CallbackNativeSource &state);
-  void prepare_callback_native_exclusion_bootstrap(const std::shared_ptr<InstalledCallback> &callback,
-                                                   NativeQueueCounters &counters);
-  void discard_callback_native_exclusion_bootstrap(const std::shared_ptr<InstalledCallback> &callback);
   std::size_t fill_callback_native(const std::shared_ptr<InstalledCallback> &callback,
                                    bool count_install = false,
                                    const std::set<NativeAddress> *source_filter = nullptr,
@@ -664,7 +635,6 @@ class ExtMessagePool : public td::actor::Actor {
   // additional references only leaves a large callback backlog that the
   // candidate can never consume.
   static constexpr size_t MAX_NATIVE_COLLATOR_QUEUE_LIMIT = 65536;
-  static constexpr size_t MAX_NATIVE_EXCLUDED_PREFIX_INDEX_ENTRIES = MAX_NATIVE_COLLATOR_QUEUE_LIMIT;
   static constexpr size_t NATIVE_DELIVERY_CHUNK = 512;
   static constexpr size_t NATIVE_SOURCE_RUN_TARGET = 16;
   static constexpr size_t STANDARD_COLLATOR_QUEUE_LIMIT = 500;

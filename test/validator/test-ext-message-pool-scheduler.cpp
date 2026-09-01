@@ -74,21 +74,12 @@ class ExtMessagePoolTestAccess {
     td::uint64 max_run_size{0};
   };
   struct SchedulerStats {
-    td::uint64 scanned{0};
     td::uint64 selected{0};
     td::uint64 builds{0};
     td::uint64 source_scans{0};
     td::uint64 source_refreshes{0};
     td::uint64 source_probes{0};
     td::uint64 runs{0};
-    td::uint64 max_run_size{0};
-    td::uint64 excluded{0};
-    td::uint64 excluded_prefix_index_builds{0};
-    td::uint64 excluded_prefix_index_entries{0};
-    td::uint64 excluded_prefix_index_ranges{0};
-    td::uint64 excluded_prefix_shortcut_messages{0};
-    td::uint64 excluded_prefix_fallbacks{0};
-    td::uint64 excluded_prefix_over_limit{0};
   };
 
   static ExtMessagePool make_pool() {
@@ -261,21 +252,6 @@ class ExtMessagePoolTestAccess {
     return hash;
   }
 
-  static ExtMessage::Hash add_generic(ExtMessagePool &pool, NativeAddress source, td::uint32 value,
-                                      int priority = 0) {
-    auto hash = make_bits(value, static_cast<unsigned>(source.second.as_array()[0] + 128));
-    auto message = td::make_ref<FakeExtMessage>(source.second, hash);
-    auto mempool_message = std::make_shared<ExtMessagePool::MempoolMsg>(message);
-    ExtMessagePool::MessageId id{message->shard(), hash};
-    auto &messages = pool.ext_msgs_[priority];
-    messages.ext_messages_ = messages.ext_messages_.insert(id, mempool_message);
-    messages.generic_messages_ = messages.generic_messages_.insert(id, mempool_message);
-    messages.ext_addr_messages_[source].emplace(hash, id);
-    pool.ext_messages_hashes_[hash] = {priority, id};
-    pool.ext_messages_hashes_norm_[hash].insert(ExtMessagePool::NormalizedMessageId{priority, id});
-    return hash;
-  }
-
   static void set_watermark(ExtMessagePool &pool, NativeAddress source, td::uint64 next_nonce) {
     auto &watermark = pool.native_nonce_watermarks_[source];
     watermark.observed_next_nonce = next_nonce;
@@ -318,30 +294,19 @@ class ExtMessagePoolTestAccess {
   }
 
   static void install_live_waiting_callback(ExtMessagePool &pool, std::size_t queue_capacity,
-                                            std::size_t transport_message_capacity = 500,
-                                            std::vector<ExtMessage::Hash> excluded_messages = {},
-                                            td::optional<NativeAddress> native_cursor = {}) {
+                                            std::size_t transport_message_capacity = 500) {
     auto callback = std::make_unique<ExtMsgCallback>();
     callback->shard = {basechainId, shardIdAll};
     callback->queue_capacity = queue_capacity;
     callback->transport_message_capacity = transport_message_capacity;
     callback->timeout = td::Timestamp::in(60.0);
     callback->native_streaming = true;
-    std::sort(excluded_messages.begin(), excluded_messages.end());
-    excluded_messages.erase(std::unique(excluded_messages.begin(), excluded_messages.end()), excluded_messages.end());
-    callback->excluded_messages = std::move(excluded_messages);
     auto installed = std::make_shared<ExtMessagePool::InstalledCallback>(std::move(callback));
     // Model the installed callback's serialized pump already waiting. This
     // keeps the unit test actor-free while ensuring the post-commit wake appends
     // work to the existing callback instead of creating another ingress event.
     installed->pump_active = true;
-    installed->native_cursor = native_cursor;
     pool.callbacks_.push_back(std::move(installed));
-  }
-
-  static void discard_live_callback(ExtMessagePool &pool) {
-    CHECK(pool.callbacks_.size() == 1);
-    pool.callbacks_.clear();
   }
 
   static bool finalize_existing_native(ExtMessagePool &pool, NativeAddress source, td::uint64 nonce,
@@ -543,64 +508,6 @@ class ExtMessagePoolTestAccess {
     return pool.fill_callback_native(callback, false);
   }
 
-  static std::size_t fill_limited(ExtMessagePool &pool, std::size_t max_items) {
-    CHECK(pool.callbacks_.size() == 1);
-    auto callback = pool.callbacks_.front();
-    pool.begin_callback_epoch(callback);
-    return pool.fill_callback_native(callback, false, nullptr, max_items);
-  }
-
-  static void begin_callback_exclusion_bootstrap(ExtMessagePool &pool) {
-    CHECK(pool.callbacks_.size() == 1);
-    ExtMessagePool::NativeQueueCounters counters;
-    pool.prepare_callback_native_exclusion_bootstrap(pool.callbacks_.front(), counters);
-    pool.native_queue_counters_.add(counters);
-  }
-
-  static void discard_callback_exclusion_bootstrap(ExtMessagePool &pool) {
-    CHECK(pool.callbacks_.size() == 1);
-    pool.discard_callback_native_exclusion_bootstrap(pool.callbacks_.front());
-  }
-
-  static std::size_t bootstrap_callback_prefill(ExtMessagePool &pool) {
-    begin_callback_exclusion_bootstrap(pool);
-    auto selected = prefill_native_transport(pool);
-    discard_callback_exclusion_bootstrap(pool);
-    return selected;
-  }
-
-  static bool callback_exclusion_bootstrap_active(const ExtMessagePool &pool) {
-    CHECK(pool.callbacks_.size() == 1);
-    return pool.callbacks_.front()->native_exclusion_bootstrap_active;
-  }
-
-  static std::size_t callback_exclusion_range_count(const ExtMessagePool &pool) {
-    CHECK(pool.callbacks_.size() == 1);
-    std::size_t count = 0;
-    for (const auto &[_, ranges] : pool.callbacks_.front()->native_excluded_prefixes) {
-      count += ranges.size();
-    }
-    return count;
-  }
-
-  static std::vector<std::pair<NativeAddress, td::uint64>> callback_pending_native_locations(
-      const ExtMessagePool &pool) {
-    CHECK(pool.callbacks_.size() == 1);
-    std::vector<std::pair<NativeAddress, td::uint64>> result;
-    for (const auto &entry : pool.callbacks_.front()->pending_native) {
-      CHECK(entry.message);
-      auto hash = entry.message->first->hash();
-      auto hash_it = pool.ext_messages_hashes_.find(hash);
-      CHECK(hash_it != pool.ext_messages_hashes_.end());
-      auto priority_it = pool.ext_msgs_.find(hash_it->second.first);
-      CHECK(priority_it != pool.ext_msgs_.end());
-      auto message = priority_it->second.ext_messages_.find(hash_it->second.second);
-      CHECK(message && message.value()->native_nonce);
-      result.emplace_back(message.value()->address(), message.value()->native_nonce.value());
-    }
-    return result;
-  }
-
   static std::size_t prefill_native_transport(ExtMessagePool &pool) {
     CHECK(pool.callbacks_.size() == 1);
     auto callback = pool.callbacks_.front();
@@ -637,21 +544,12 @@ class ExtMessagePoolTestAccess {
 
   static SchedulerStats scheduler_stats(const ExtMessagePool &pool) {
     const auto &stats = pool.native_queue_counters_;
-    return SchedulerStats{.scanned = stats.scanned,
-                          .selected = stats.selected,
+    return SchedulerStats{.selected = stats.selected,
                           .builds = stats.scheduler_builds,
                           .source_scans = stats.source_scans,
                           .source_refreshes = stats.source_refreshes,
                           .source_probes = stats.source_probes,
-                          .runs = stats.runs,
-                          .max_run_size = stats.max_run_size,
-                          .excluded = stats.excluded,
-                          .excluded_prefix_index_builds = stats.excluded_prefix_index_builds,
-                          .excluded_prefix_index_entries = stats.excluded_prefix_index_entries,
-                          .excluded_prefix_index_ranges = stats.excluded_prefix_index_ranges,
-                          .excluded_prefix_shortcut_messages = stats.excluded_prefix_shortcut_messages,
-                          .excluded_prefix_fallbacks = stats.excluded_prefix_fallbacks,
-                          .excluded_prefix_over_limit = stats.excluded_prefix_over_limit};
+                          .runs = stats.runs};
   }
 
   static std::size_t callback_pending(const ExtMessagePool &pool) {
@@ -688,10 +586,6 @@ class ExtMessagePoolTestAccess {
 
   static constexpr std::size_t max_native_queue_limit() {
     return ExtMessagePool::MAX_NATIVE_COLLATOR_QUEUE_LIMIT;
-  }
-
-  static constexpr std::size_t max_native_excluded_prefix_index_entries() {
-    return ExtMessagePool::MAX_NATIVE_EXCLUDED_PREFIX_INDEX_ENTRIES;
   }
 };
 
@@ -1298,245 +1192,6 @@ TEST(ExtMessagePoolScheduler, ExclusionsAdvanceOnlySpeculativeView) {
 
   auto losing_fork = ExtMessagePoolTestAccess::select(pool, {basechainId, shardIdAll}, 32);
   ASSERT_EQ(losing_fork.nonces, (std::vector<td::uint64>{0, 1, 2}));
-}
-
-TEST(ExtMessagePoolScheduler, CallbackExcludedPrefixBootstrapMatchesReferenceWithPriorityAndCursor) {
-  constexpr unsigned source_count = 3;
-  constexpr td::uint64 excluded_per_source = 3;
-  constexpr td::uint64 regular_source_nonces = 35;
-  constexpr td::uint64 high_priority_source_nonces = 11;
-  constexpr std::size_t transport_window = 40;
-  auto pool = ExtMessagePoolTestAccess::make_pool();
-  std::vector<ExtMessage::Hash> exclusions;
-  exclusions.reserve(source_count * excluded_per_source);
-
-  for (unsigned source_id = 1; source_id <= source_count; ++source_id) {
-    auto source = ExtMessagePoolTestAccess::source(source_id);
-    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
-    auto nonce_count = source_id == 2 ? high_priority_source_nonces : regular_source_nonces;
-    for (td::uint64 nonce = 0; nonce < nonce_count; ++nonce) {
-      // Keep one source at a higher priority and rotate the initial source
-      // cursor so the differential covers the scheduler's actual ordering,
-      // not merely a homogeneous full scan.
-      auto priority = source_id == 2 ? 7 : 0;
-      auto hash = ExtMessagePoolTestAccess::add(pool, source, nonce, priority);
-      if (nonce < excluded_per_source) {
-        exclusions.push_back(hash);
-      }
-    }
-  }
-
-  auto initial_cursor = ExtMessagePoolTestAccess::source(1);
-  auto reference =
-      ExtMessagePoolTestAccess::select(pool, {basechainId, shardIdAll}, transport_window, initial_cursor, exclusions);
-  std::vector<std::pair<ExtMessagePoolTestAccess::NativeAddress, td::uint64>> expected;
-  for (std::size_t i = 0; i < reference.sources.size(); ++i) {
-    expected.emplace_back(reference.sources[i], reference.nonces[i]);
-  }
-
-  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, transport_window, transport_window, exclusions,
-                                                          initial_cursor);
-  ASSERT_EQ(ExtMessagePoolTestAccess::bootstrap_callback_prefill(pool), transport_window);
-  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending_native_locations(pool), expected);
-
-  auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
-  ASSERT_EQ(stats.selected, reference.selected);
-  // The callback scheduler revalidates each ready source immediately before
-  // consuming its run. That existing live-callback guard contributes one
-  // additional logical scan per source relative to the stateless reference.
-  ASSERT_EQ(stats.scanned, reference.scanned + source_count);
-  ASSERT_EQ(stats.excluded, reference.excluded);
-  ASSERT_EQ(stats.max_run_size, reference.max_run_size);
-  ASSERT_EQ(stats.max_run_size, 16u);
-  ASSERT_EQ(stats.excluded, source_count * excluded_per_source);
-  ASSERT_EQ(stats.excluded_prefix_index_builds, 1u);
-  ASSERT_EQ(stats.excluded_prefix_index_entries, source_count * excluded_per_source);
-  ASSERT_EQ(stats.excluded_prefix_index_ranges, source_count);
-  ASSERT_EQ(stats.excluded_prefix_shortcut_messages, source_count * excluded_per_source);
-  ASSERT_EQ(stats.excluded_prefix_fallbacks, 0u);
-  ASSERT_EQ(stats.excluded_prefix_over_limit, 0u);
-  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_exclusion_bootstrap_active(pool));
-  ASSERT_EQ(ExtMessagePoolTestAccess::callback_exclusion_range_count(pool), 0u);
-}
-
-TEST(ExtMessagePoolScheduler, CallbackExcludedPrefixBootstrapFallsBackForInvalidInput) {
-  {
-    auto pool = ExtMessagePoolTestAccess::make_pool();
-    auto source = ExtMessagePoolTestAccess::source(30);
-    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
-    auto nonce_zero = ExtMessagePoolTestAccess::add(pool, source, 0);
-    ExtMessagePoolTestAccess::add(pool, source, 1);
-    ExtMessagePoolTestAccess::add(pool, source, 2);
-    auto generic = ExtMessagePoolTestAccess::add_generic(pool, source, 100);
-    ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 16, 16, {nonce_zero, generic});
-    ExtMessagePoolTestAccess::begin_callback_exclusion_bootstrap(pool);
-
-    ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_exclusion_bootstrap_active(pool));
-    ASSERT_EQ(ExtMessagePoolTestAccess::callback_exclusion_range_count(pool), 0u);
-    ASSERT_EQ(ExtMessagePoolTestAccess::fill_limited(pool, 2), 2u);
-    ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending_native_locations(pool),
-              (std::vector<std::pair<ExtMessagePoolTestAccess::NativeAddress, td::uint64>>{{source, 1}, {source, 2}}));
-    auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
-    ASSERT_EQ(stats.excluded_prefix_index_builds, 0u);
-    ASSERT_EQ(stats.excluded_prefix_fallbacks, 1u);
-    ASSERT_EQ(stats.excluded_prefix_index_entries, 0u);
-    ASSERT_EQ(stats.excluded_prefix_shortcut_messages, 0u);
-  }
-
-  {
-    auto pool = ExtMessagePoolTestAccess::make_pool();
-    auto source = ExtMessagePoolTestAccess::source(31);
-    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
-    auto nonce_zero = ExtMessagePoolTestAccess::add(pool, source, 0);
-    ExtMessagePoolTestAccess::add(pool, source, 1);
-    ExtMessagePoolTestAccess::add(pool, source, 2);
-    ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 16, 16, {nonce_zero, make_bits(999, 199)});
-    ExtMessagePoolTestAccess::begin_callback_exclusion_bootstrap(pool);
-
-    ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_exclusion_bootstrap_active(pool));
-    ASSERT_EQ(ExtMessagePoolTestAccess::fill_limited(pool, 2), 2u);
-    ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending_native_locations(pool),
-              (std::vector<std::pair<ExtMessagePoolTestAccess::NativeAddress, td::uint64>>{{source, 1}, {source, 2}}));
-    auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
-    ASSERT_EQ(stats.excluded_prefix_fallbacks, 1u);
-    ASSERT_EQ(stats.excluded_prefix_index_entries, 0u);
-  }
-
-  {
-    auto pool = ExtMessagePoolTestAccess::make_pool();
-    auto source = ExtMessagePoolTestAccess::source(32);
-    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
-    auto nonce_zero = ExtMessagePoolTestAccess::add(pool, source, 0);
-    ExtMessagePoolTestAccess::add(pool, source, 1);
-    ExtMessagePoolTestAccess::set_reservation_hash(pool, source, 0, make_bits(1000, 198));
-    ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 16, 16, {nonce_zero});
-    ExtMessagePoolTestAccess::begin_callback_exclusion_bootstrap(pool);
-
-    ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_exclusion_bootstrap_active(pool));
-    ASSERT_EQ(ExtMessagePoolTestAccess::fill_limited(pool, 1), 0u);
-    auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
-    ASSERT_EQ(stats.excluded_prefix_fallbacks, 1u);
-    ASSERT_EQ(stats.excluded_prefix_index_entries, 0u);
-  }
-
-  {
-    auto pool = ExtMessagePoolTestAccess::make_pool();
-    auto source = ExtMessagePoolTestAccess::source(35);
-    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
-    auto nonce_zero = ExtMessagePoolTestAccess::add(pool, source, 0, 0, true, false);
-    ExtMessagePoolTestAccess::add(pool, source, 1);
-    ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 16, 16, {nonce_zero});
-    ExtMessagePoolTestAccess::begin_callback_exclusion_bootstrap(pool);
-
-    ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_exclusion_bootstrap_active(pool));
-    ASSERT_EQ(ExtMessagePoolTestAccess::fill_limited(pool, 1), 0u);
-    auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
-    ASSERT_EQ(stats.excluded_prefix_index_builds, 0u);
-    ASSERT_EQ(stats.excluded_prefix_fallbacks, 1u);
-    ASSERT_EQ(stats.excluded_prefix_shortcut_messages, 0u);
-  }
-}
-
-TEST(ExtMessagePoolScheduler, CallbackExcludedPrefixBootstrapFallsBackOverBound) {
-  auto pool = ExtMessagePoolTestAccess::make_pool();
-  auto source = ExtMessagePoolTestAccess::source(33);
-  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
-  auto nonce_zero = ExtMessagePoolTestAccess::add(pool, source, 0);
-  ExtMessagePoolTestAccess::add(pool, source, 1);
-  std::vector<ExtMessage::Hash> exclusions;
-  exclusions.reserve(ExtMessagePoolTestAccess::max_native_excluded_prefix_index_entries() + 1);
-  exclusions.push_back(nonce_zero);
-  for (std::size_t i = 1; i <= ExtMessagePoolTestAccess::max_native_excluded_prefix_index_entries(); ++i) {
-    exclusions.push_back(make_bits(static_cast<td::uint32>(i), 200));
-  }
-  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 16, 16, std::move(exclusions));
-  ExtMessagePoolTestAccess::begin_callback_exclusion_bootstrap(pool);
-
-  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_exclusion_bootstrap_active(pool));
-  ASSERT_EQ(ExtMessagePoolTestAccess::callback_exclusion_range_count(pool), 0u);
-  ASSERT_EQ(ExtMessagePoolTestAccess::fill_limited(pool, 1), 1u);
-  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending_native_locations(pool),
-            (std::vector<std::pair<ExtMessagePoolTestAccess::NativeAddress, td::uint64>>{{source, 1}}));
-  auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
-  ASSERT_EQ(stats.excluded_prefix_index_builds, 0u);
-  ASSERT_EQ(stats.excluded_prefix_fallbacks, 1u);
-  ASSERT_EQ(stats.excluded_prefix_over_limit, 1u);
-}
-
-TEST(ExtMessagePoolScheduler, CallbackExcludedPrefixBootstrapDoesNotCrossNonceGap) {
-  auto pool = ExtMessagePoolTestAccess::make_pool();
-  auto source = ExtMessagePoolTestAccess::source(37);
-  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
-  auto nonce_one = ExtMessagePoolTestAccess::add(pool, source, 1);
-  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 16, 16, {nonce_one});
-  ExtMessagePoolTestAccess::begin_callback_exclusion_bootstrap(pool);
-
-  // The range is internally valid, but it is not an initial contiguous
-  // speculative prefix. The scheduler must still stop at the missing nonce 0.
-  ASSERT_TRUE(ExtMessagePoolTestAccess::callback_exclusion_bootstrap_active(pool));
-  ASSERT_EQ(ExtMessagePoolTestAccess::callback_exclusion_range_count(pool), 1u);
-  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), 0u);
-  auto stats = ExtMessagePoolTestAccess::scheduler_stats(pool);
-  ASSERT_EQ(stats.excluded_prefix_index_builds, 1u);
-  ASSERT_EQ(stats.excluded_prefix_shortcut_messages, 0u);
-  ExtMessagePoolTestAccess::discard_callback_exclusion_bootstrap(pool);
-}
-
-TEST(ExtMessagePoolScheduler, CallbackExcludedPrefixBootstrapIsDiscardedBeforeRefill) {
-  auto pool = ExtMessagePoolTestAccess::make_pool();
-  auto source = ExtMessagePoolTestAccess::source(34);
-  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
-  std::vector<ExtMessage::Hash> exclusions;
-  for (td::uint64 nonce = 0; nonce < 80; ++nonce) {
-    auto hash = ExtMessagePoolTestAccess::add(pool, source, nonce);
-    if (nonce < 16 || (nonce >= 48 && nonce < 64)) {
-      exclusions.push_back(hash);
-    }
-  }
-  // The first real synchronous prefill clears the bootstrap state before a
-  // later refill can run through the regular serialized producer path.
-  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 64, 16, exclusions);
-  ASSERT_EQ(ExtMessagePoolTestAccess::bootstrap_callback_prefill(pool), 16u);
-  auto after_prefill = ExtMessagePoolTestAccess::scheduler_stats(pool);
-  ASSERT_EQ(after_prefill.excluded_prefix_shortcut_messages, 16u);
-  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_exclusion_bootstrap_active(pool));
-  ASSERT_EQ(ExtMessagePoolTestAccess::callback_exclusion_range_count(pool), 0u);
-  ASSERT_EQ(ExtMessagePoolTestAccess::fill_limited(pool, 16), 16u);
-  auto after_refill = ExtMessagePoolTestAccess::scheduler_stats(pool);
-  ASSERT_EQ(after_refill.excluded_prefix_shortcut_messages, after_prefill.excluded_prefix_shortcut_messages);
-  ASSERT_EQ(after_refill.excluded, after_prefill.excluded + 16u);
-
-  std::vector<std::pair<ExtMessagePoolTestAccess::NativeAddress, td::uint64>> expected;
-  for (td::uint64 nonce = 16; nonce < 48; ++nonce) {
-    expected.emplace_back(source, nonce);
-  }
-  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending_native_locations(pool), expected);
-}
-
-TEST(ExtMessagePoolScheduler, CallbackExcludedPrefixBootstrapLeavesLosingForkReusable) {
-  auto pool = ExtMessagePoolTestAccess::make_pool();
-  auto source = ExtMessagePoolTestAccess::source(38);
-  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
-  auto nonce_zero = ExtMessagePoolTestAccess::add(pool, source, 0);
-  ExtMessagePoolTestAccess::add(pool, source, 1);
-
-  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 16, 16, {nonce_zero});
-  ASSERT_EQ(ExtMessagePoolTestAccess::bootstrap_callback_prefill(pool), 1u);
-  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending_native_locations(pool),
-            (std::vector<std::pair<ExtMessagePoolTestAccess::NativeAddress, td::uint64>>{{source, 1}}));
-  ASSERT_EQ(ExtMessagePoolTestAccess::first_unconsumed_nonce(pool, source), 0u);
-  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_exclusion_bootstrap_active(pool));
-  ASSERT_EQ(ExtMessagePoolTestAccess::callback_exclusion_range_count(pool), 0u);
-
-  // Dropping the speculative callback does not mutate the canonical watermark
-  // or pool state. A losing branch can therefore install a new callback and
-  // offer the excluded transfer again.
-  ExtMessagePoolTestAccess::discard_live_callback(pool);
-  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 16, 16);
-  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), 2u);
-  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending_native_locations(pool),
-            (std::vector<std::pair<ExtMessagePoolTestAccess::NativeAddress, td::uint64>>{{source, 0}, {source, 1}}));
-  ASSERT_EQ(ExtMessagePoolTestAccess::first_unconsumed_nonce(pool, source), 0u);
 }
 
 TEST(ExtMessagePoolScheduler, MasterchainNeverScansNativeSources) {

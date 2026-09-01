@@ -73,10 +73,15 @@ static constexpr td::uint64 NATIVE_DEFERRED_ACCOUNT_CHARGE_BYTES = 256;
 // rehashes in the hot path while staying far below the protocol maximum.
 static constexpr std::size_t NATIVE_ACCOUNT_STATE_RESERVE =
     std::min<std::size_t>(16 * NATIVE_FAST_PATH_EXTERNAL_BATCH, block::NativeTransferBatch::max_accounts);
-// After consuming nonempty native work, briefly let the bounded snapshot
-// producer refill before declaring ingress idle. This is an ingress
-// coalescing grace, not a block period or a consensus timing parameter.
+// Briefly let the bounded snapshot producer refill an uncommitted native
+// fragment before sealing it. This is an ingress coalescing grace, not a
+// block period or a consensus timing parameter.
 static constexpr double NATIVE_QUEUE_COALESCING_GRACE_SECONDS = 0.010;
+// Once a native fragment has committed its exact checkpoint, use a distinct,
+// still bounded window to pack the next fragment before sealing the candidate.
+// It is deliberately longer than the partial-fragment refill grace because no
+// speculative fragment remains to delay a checkpoint.
+static constexpr double NATIVE_POST_COMMIT_PACK_GRACE_SECONDS = 0.020;
 
 static constexpr int MAX_ATTEMPTS = 5;
 
@@ -5047,6 +5052,13 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
       return deadline;
     };
+    auto bounded_post_commit_pack_deadline = [&] {
+      auto deadline = td::Timestamp::in(NATIVE_POST_COMMIT_PACK_GRACE_SECONDS);
+      if (params_.soft_timeout) {
+        deadline.relax(params_.soft_timeout);
+      }
+      return deadline;
+    };
     while (batch.size() < batch_capacity) {
       if (!check_cancelled()) {
         co_return false;
@@ -5099,7 +5111,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
             checkpoint_refill_boundary = checkpoint_refill_boundary || !batch.empty();
             auto producer_pending = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
             if (batch.empty() && !native_transfer_batch_entries_.empty() && !post_commit_idle_until) {
-              post_commit_idle_until = bounded_coalescing_deadline();
+              post_commit_idle_until = bounded_post_commit_pack_deadline();
             }
             auto first_work_window_open = params_.wait_externals_until && !params_.wait_externals_until.is_in_past();
             refill_action = consensus::select_native_queue_refill_action({

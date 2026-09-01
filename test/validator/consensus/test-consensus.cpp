@@ -133,6 +133,15 @@ static_assert(select_native_queue_refill_action({.work_driven = true,
 static_assert(select_native_queue_refill_action(
                   {.work_driven = true, .has_committed_fragment = true, .post_commit_idle_window_open = true}) ==
               NativeQueueRefillAction::wait_post_commit_idle);
+// The longer post-commit packing window must not extend a staged fragment:
+// partial fragments are governed exclusively by their own shorter refill
+// deadline, even when a previously committed fragment exists.
+static_assert(select_native_queue_refill_action({.work_driven = true,
+                                                 .has_staged_fragment = true,
+                                                 .has_committed_fragment = true,
+                                                 .fragment_window_open = false,
+                                                 .post_commit_idle_window_open = true}) ==
+              NativeQueueRefillAction::stop);
 static_assert(select_native_queue_refill_action({.work_driven = true,
                                                  .has_committed_fragment = true,
                                                  .post_commit_idle_window_open = false,

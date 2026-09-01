@@ -1,0 +1,228 @@
+#include <cmath>
+#include <map>
+
+#include "td/utils/tests.h"
+
+#include "native-load-generator-policy.hpp"
+
+TEST(NativeLoadGeneratorPolicy, AdaptiveCwndAckHonorsIndependentCeiling) {
+  auto below = native_load::adaptive_cwnd_after_ack(63.0, 4096.0, 64.0);
+  ASSERT_TRUE(below.cwnd > 63.0);
+  ASSERT_TRUE(below.cwnd < 64.0);
+  ASSERT_TRUE(!below.limited);
+
+  auto boundary = native_load::adaptive_cwnd_after_ack(63.999, 4096.0, 64.0);
+  ASSERT_TRUE(std::abs(boundary.cwnd - 64.0) < 1e-9);
+  ASSERT_TRUE(boundary.limited);
+
+  auto repeated = boundary;
+  for (std::size_t i = 0; i < 1000; ++i) {
+    repeated = native_load::adaptive_cwnd_after_ack(repeated.cwnd, 4096.0, 64.0);
+  }
+  ASSERT_TRUE(std::abs(repeated.cwnd - 64.0) < 1e-9);
+  ASSERT_TRUE(repeated.limited);
+}
+
+TEST(NativeLoadGeneratorPolicy, ZeroAdaptiveCwndCeilingPreservesHardLimit) {
+  auto result = native_load::adaptive_cwnd_after_ack(64.0, 4096.0, 0.0);
+  ASSERT_TRUE(result.cwnd > 64.0);
+  ASSERT_TRUE(!result.limited);
+
+  auto hard_limited = native_load::adaptive_cwnd_after_ack(4096.0, 4096.0, 0.0);
+  ASSERT_TRUE(std::abs(hard_limited.cwnd - 4096.0) < 1e-9);
+  ASSERT_TRUE(hard_limited.limited);
+}
+
+TEST(NativeLoadGeneratorPolicy, AdaptiveCwndDistributionConservesGlobalCap) {
+  std::uint32_t worker_total = 0;
+  std::uint32_t client_total = 0;
+  for (std::uint32_t worker = 0; worker < 6; ++worker) {
+    auto worker_share = native_load::distributed_share(768, worker, 6);
+    ASSERT_EQ(worker_share, 128u);
+    worker_total += worker_share;
+    for (std::uint32_t client = 0; client < 2; ++client) {
+      auto client_share = native_load::distributed_share(worker_share, client, 2);
+      ASSERT_EQ(client_share, 64u);
+      client_total += client_share;
+    }
+  }
+  ASSERT_EQ(worker_total, 768u);
+  ASSERT_EQ(client_total, 768u);
+
+  ASSERT_EQ(native_load::distributed_share(11, 0, 3), 4u);
+  ASSERT_EQ(native_load::distributed_share(11, 1, 3), 4u);
+  ASSERT_EQ(native_load::distributed_share(11, 2, 3), 3u);
+  ASSERT_EQ(native_load::distributed_share(11, 3, 3), 0u);
+  ASSERT_EQ(native_load::distributed_share(11, 0, 0), 0u);
+}
+
+TEST(NativeLoadGeneratorPolicy, AdaptiveCwndConfigurationBoundsAreExplicit) {
+  ASSERT_TRUE(native_load::valid_adaptive_max_cwnd(0, 12, 65536));
+  ASSERT_TRUE(native_load::valid_adaptive_max_cwnd(12, 12, 65536));
+  ASSERT_TRUE(native_load::valid_adaptive_max_cwnd(768, 12, 65536));
+  ASSERT_TRUE(native_load::valid_adaptive_max_cwnd(65536, 12, 65536));
+  ASSERT_TRUE(!native_load::valid_adaptive_max_cwnd(11, 12, 65536));
+  ASSERT_TRUE(!native_load::valid_adaptive_max_cwnd(65537, 12, 65536));
+}
+
+TEST(NativeLoadGeneratorPolicy, DetectsOnlyExplicitCanonicalStateLag) {
+  ASSERT_TRUE(native_load::is_canonical_state_lag_diagnostic(
+      "error 651: canonical native account state has not caught up with finalized balance"));
+  ASSERT_TRUE(native_load::is_canonical_state_lag_diagnostic(
+      "canonical native account state has not caught up with finalized balance; retry admission"));
+  ASSERT_TRUE(native_load::is_canonical_state_lag_diagnostic(
+      "error 651: native account state predates the latest observed canonical state"));
+  ASSERT_TRUE(native_load::is_canonical_state_lag_diagnostic(
+      "native account state predates the latest observed canonical state; retry admission"));
+
+  ASSERT_TRUE(!native_load::is_canonical_state_lag_diagnostic("not ready"));
+  ASSERT_TRUE(!native_load::is_canonical_state_lag_diagnostic(
+      "native account changed before mempool insertion; retry admission"));
+  ASSERT_TRUE(!native_load::is_canonical_state_lag_diagnostic("mempool is full"));
+}
+
+TEST(NativeLoadGeneratorPolicy, CanonicalLagBackoffIsBounded) {
+  auto delay = [](std::uint32_t failures) {
+    return native_load::canonical_state_lag_retry_delay_seconds(failures, 250, 2000);
+  };
+  ASSERT_TRUE(std::abs(delay(1) - 0.25) < 1e-9);
+  ASSERT_TRUE(std::abs(delay(2) - 0.50) < 1e-9);
+  ASSERT_TRUE(std::abs(delay(3) - 1.00) < 1e-9);
+  ASSERT_TRUE(std::abs(delay(4) - 2.00) < 1e-9);
+  ASSERT_TRUE(std::abs(delay(8) - 2.00) < 1e-9);
+}
+
+TEST(NativeLoadGeneratorPolicy, RetryHorizonUsesElapsedTime) {
+  ASSERT_TRUE(!native_load::retry_horizon_elapsed(-1.0, 100.0, 30.0));
+  ASSERT_TRUE(!native_load::retry_horizon_elapsed(100.0, 129.999, 30.0));
+  ASSERT_TRUE(native_load::retry_horizon_elapsed(100.0, 130.0, 30.0));
+  ASSERT_TRUE(native_load::retry_horizon_elapsed(100.0, 140.0, 30.0));
+  ASSERT_TRUE(std::abs(native_load::clamp_retry_delay_to_horizon(25.6, 100.0, 125.5, 30.0) - 4.5) < 1e-9);
+  ASSERT_TRUE(std::abs(native_load::clamp_retry_delay_to_horizon(2.0, 100.0, 110.0, 30.0) - 2.0) < 1e-9);
+  ASSERT_TRUE(std::abs(native_load::clamp_retry_delay_to_horizon(2.0, 100.0, 130.0, 30.0)) < 1e-9);
+}
+
+TEST(NativeLoadGeneratorPolicy, ReadySourceRunIsBoundedAndRequeuesItsRemainder) {
+  std::map<std::uint64_t, bool> tasks{{10, true}, {11, true}, {12, true}, {13, true}};
+  native_load::ReadySourceQueue queue;
+  queue.reset(1);
+  ASSERT_TRUE(queue.enqueue(0));
+  ASSERT_TRUE(!queue.enqueue(0));
+  auto first = queue.pop();
+  ASSERT_TRUE(first.kind == native_load::ReadySourceQueue::PopKind::ready);
+  ASSERT_EQ(first.source_idx, 0u);
+  ASSERT_EQ(native_load::bounded_contiguous_ready_run(tasks.begin(), tasks.end(), 3, [](bool ready) { return ready; }),
+            3u);
+
+  tasks.erase(10);
+  tasks.erase(11);
+  tasks.erase(12);
+  ASSERT_TRUE(queue.enqueue(0));
+  auto remainder = queue.pop();
+  ASSERT_TRUE(remainder.kind == native_load::ReadySourceQueue::PopKind::ready);
+  ASSERT_EQ(native_load::bounded_contiguous_ready_run(tasks.begin(), tasks.end(), 3, [](bool ready) { return ready; }),
+            1u);
+}
+
+TEST(NativeLoadGeneratorPolicy, RetryingHeadWakesReadySuccessorsInNonceOrder) {
+  std::map<std::uint64_t, bool> tasks{{20, false}, {21, true}, {22, true}};
+  native_load::ReadySourceQueue queue;
+  queue.reset(1);
+
+  // A ready successor never queues the source while its unresolved head is
+  // waiting to retry.
+  if (tasks.begin()->second) {
+    queue.enqueue(0);
+  }
+  ASSERT_TRUE(queue.empty());
+
+  tasks.begin()->second = true;
+  ASSERT_TRUE(queue.enqueue(0));
+  auto retry = queue.pop();
+  ASSERT_TRUE(retry.kind == native_load::ReadySourceQueue::PopKind::ready);
+  ASSERT_EQ(native_load::bounded_contiguous_ready_run(tasks.begin(), tasks.end(), 8, [](bool ready) { return ready; }),
+            3u);
+}
+
+TEST(NativeLoadGeneratorPolicy, StaleReadyGenerationCannotDispatch) {
+  native_load::ReadySourceQueue queue;
+  queue.reset(1);
+  ASSERT_TRUE(queue.enqueue(0));
+  queue.invalidate(0);
+  ASSERT_TRUE(queue.enqueue(0));
+
+  auto stale = queue.pop();
+  ASSERT_TRUE(stale.kind == native_load::ReadySourceQueue::PopKind::stale);
+  auto current = queue.pop();
+  ASSERT_TRUE(current.kind == native_load::ReadySourceQueue::PopKind::ready);
+  ASSERT_TRUE(queue.empty());
+}
+
+TEST(NativeLoadGeneratorPolicy, QuarantinedSourceCannotBeRequeuedByStaleRetry) {
+  native_load::ReadySourceQueue queue;
+  queue.reset(1);
+  ASSERT_TRUE(queue.enqueue(0));
+  queue.disable(0);
+
+  ASSERT_EQ(native_load::active_tasks_after_source_quarantine(9, 4), 5u);
+  ASSERT_TRUE(!queue.enqueue(0));
+  ASSERT_TRUE(!native_load::retry_entry_can_wake(false, false, 130.0, 130.0));
+  auto stale = queue.pop();
+  ASSERT_TRUE(stale.kind == native_load::ReadySourceQueue::PopKind::stale);
+  ASSERT_TRUE(queue.empty());
+}
+
+TEST(NativeLoadGeneratorPolicy, SubmitCoalescerHonorsTwoMillisecondDeadline) {
+  native_load::SubmitCoalescer coalescer;
+  coalescer.note_fresh_ready(10.0, 0.002);
+
+  ASSERT_TRUE(coalescer.armed());
+  ASSERT_TRUE(std::abs(coalescer.deadline() - 10.002) < 1e-9);
+  ASSERT_TRUE(coalescer.release_reason(10.001999, 1, 64, false) ==
+              native_load::SubmitCoalescer::ReleaseReason::blocked);
+  ASSERT_TRUE(coalescer.release_reason(10.002, 1, 64, false) == native_load::SubmitCoalescer::ReleaseReason::deadline);
+}
+
+TEST(NativeLoadGeneratorPolicy, SubmitCoalescerHonorsTwentyMillisecondLeadingEdge) {
+  native_load::SubmitCoalescer coalescer;
+  coalescer.note_fresh_ready(20.0, 0.020);
+  coalescer.note_fresh_ready(20.010, 0.020);
+
+  // An unrelated 10 ms maintenance tick and a later completion must neither
+  // bypass nor slide the first completion's bounded deadline.
+  ASSERT_TRUE(std::abs(coalescer.deadline() - 20.020) < 1e-9);
+  ASSERT_TRUE(coalescer.release_reason(20.010, 2, 64, false) == native_load::SubmitCoalescer::ReleaseReason::blocked);
+  ASSERT_TRUE(coalescer.release_reason(20.019999, 2, 64, false) ==
+              native_load::SubmitCoalescer::ReleaseReason::blocked);
+  ASSERT_TRUE(coalescer.release_reason(20.020, 2, 64, false) == native_load::SubmitCoalescer::ReleaseReason::deadline);
+}
+
+TEST(NativeLoadGeneratorPolicy, SubmitCoalescerReleasesFullBatchAndUrgentWorkEarly) {
+  native_load::SubmitCoalescer coalescer;
+  coalescer.note_fresh_ready(30.0, 0.020);
+
+  ASSERT_TRUE(coalescer.release_reason(30.001, 63, 64, false) == native_load::SubmitCoalescer::ReleaseReason::blocked);
+  ASSERT_TRUE(coalescer.release_reason(30.001, 64, 64, false) ==
+              native_load::SubmitCoalescer::ReleaseReason::full_batch);
+  ASSERT_TRUE(coalescer.release_reason(30.001, 0, 64, true) == native_load::SubmitCoalescer::ReleaseReason::bypass);
+  // Bypassing for urgent work does not consume or prematurely release the
+  // ordinary first submissions that are still waiting in the same worker.
+  ASSERT_TRUE(coalescer.release_reason(30.001, 1, 64, false) == native_load::SubmitCoalescer::ReleaseReason::blocked);
+}
+
+TEST(NativeLoadGeneratorPolicy, SubmitCoalescerCannotStarveAfterDeadline) {
+  native_load::SubmitCoalescer coalescer;
+  coalescer.note_fresh_ready(40.0, 0.020);
+  coalescer.note_fresh_ready(40.005, 0.020);
+  ASSERT_TRUE(coalescer.release_reason(40.020, 1, 64, false) == native_load::SubmitCoalescer::ReleaseReason::deadline);
+
+  // A source head can remain ready while every client is capacity-bound.  Its
+  // elapsed window stays open rather than being restarted by later pumps.
+  ASSERT_TRUE(coalescer.release_reason(41.0, 1, 64, false) == native_load::SubmitCoalescer::ReleaseReason::deadline);
+
+  coalescer.note_queue_empty();
+  ASSERT_TRUE(!coalescer.armed());
+  coalescer.note_fresh_ready(42.0, 0.020);
+  ASSERT_TRUE(std::abs(coalescer.deadline() - 42.020) < 1e-9);
+  ASSERT_TRUE(coalescer.release_reason(42.010, 1, 64, false) == native_load::SubmitCoalescer::ReleaseReason::blocked);
+}

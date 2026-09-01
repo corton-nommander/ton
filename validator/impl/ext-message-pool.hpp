@@ -27,7 +27,6 @@
 #include "interfaces/validator-manager.h"
 #include "block/transaction.h"
 #include "td/actor/coro_utils.h"
-#include "td/utils/HashSet.h"
 #include "td/utils/PersistentTreap.h"
 
 #include "external-message.hpp"
@@ -454,16 +453,6 @@ class ExtMessagePool : public td::actor::Actor {
     td::uint64 source_refreshes{0};
     td::uint64 source_probes{0};
     td::uint64 stale_ready_tokens{0};
-    // A large speculative-ancestor exclusion vector is already sorted and
-    // deduplicated by the callback install path. During the one synchronous
-    // native prefill only, a callback-local membership cache may replace its
-    // repeated binary searches after enough proven native exclusions amortize
-    // the bounded cache build.
-    td::uint64 excluded_membership_builds{0};
-    td::uint64 excluded_membership_entries{0};
-    td::uint64 excluded_membership_slow_hits{0};
-    td::uint64 excluded_membership_below_threshold{0};
-    td::uint64 excluded_membership_over_limit{0};
 
     void add(const NativeQueueCounters &other) {
       installs += other.installs;
@@ -496,11 +485,6 @@ class ExtMessagePool : public td::actor::Actor {
       source_refreshes += other.source_refreshes;
       source_probes += other.source_probes;
       stale_ready_tokens += other.stale_ready_tokens;
-      excluded_membership_builds += other.excluded_membership_builds;
-      excluded_membership_entries += other.excluded_membership_entries;
-      excluded_membership_slow_hits += other.excluded_membership_slow_hits;
-      excluded_membership_below_threshold += other.excluded_membership_below_threshold;
-      excluded_membership_over_limit += other.excluded_membership_over_limit;
     }
   } native_queue_counters_;
 
@@ -532,16 +516,6 @@ class ExtMessagePool : public td::actor::Actor {
     std::map<NativeAddress, CallbackNativeSource> sources;
     std::map<int, std::deque<CallbackNativeReadyToken>> ready_by_priority;
   };
-  struct CallbackExcludedHash {
-    explicit CallbackExcludedHash(td::uint64 seed = 0) : seed_(seed) {
-    }
-
-    std::size_t operator()(const ExtMessage::Hash &hash) const noexcept;
-
-   private:
-    td::uint64 seed_;
-  };
-  using CallbackExcludedMembership = td::HashSet<ExtMessage::Hash, CallbackExcludedHash>;
   struct InstalledCallback {
     explicit InstalledCallback(std::unique_ptr<ExtMsgCallback> value) : callback(std::move(value)) {
     }
@@ -554,13 +528,6 @@ class ExtMessagePool : public td::actor::Actor {
     // the serialized pump is suspended on queue backpressure. The pump applies
     // them immediately before its next demand-driven refill.
     std::set<NativeAddress> native_dirty_sources;
-    // This cache is opt-in and exists only inside install_collator_queue()'s
-    // synchronous native prefill. Every per-message native reservation and
-    // mempool validation remains in probe_callback_native_source(); the cache
-    // only answers the already-authoritative hash-exclusion membership query.
-    td::optional<CallbackExcludedMembership> native_excluded_membership;
-    td::uint32 native_excluded_slow_hits{0};
-    bool native_excluded_membership_bootstrap{false};
     bool native_scheduler_rebuild{false};
     std::set<ExtMessage::Hash> delivered_native;
     td::optional<NativeAddress> native_cursor;
@@ -575,7 +542,6 @@ class ExtMessagePool : public td::actor::Actor {
   td::optional<NativeAddress> native_scheduler_cursor_;
   std::multimap<td::Timestamp, std::pair<int, MessageId>> native_reactivations_;
   std::shared_ptr<ExtMsgQueueTelemetry> native_transport_telemetry_{std::make_shared<ExtMsgQueueTelemetry>()};
-  td::uint64 native_excluded_membership_seed_{0};
 
   NativeQueueSelection select_native_messages(
       ShardIdFull shard, const std::vector<ExtMessage::Hash> &excluded_messages,
@@ -594,10 +560,6 @@ class ExtMessagePool : public td::actor::Actor {
                                     NativeQueueCounters &counters, bool enqueue_ready);
   void enqueue_callback_native_source(CallbackNativeScheduler &scheduler, const NativeAddress &source,
                                       CallbackNativeSource &state);
-  void prepare_callback_native_exclusion_membership(const std::shared_ptr<InstalledCallback> &callback);
-  void maybe_build_callback_native_exclusion_membership(const std::shared_ptr<InstalledCallback> &callback,
-                                                        NativeQueueCounters &counters);
-  void discard_callback_native_exclusion_membership(const std::shared_ptr<InstalledCallback> &callback);
   std::size_t fill_callback_native(const std::shared_ptr<InstalledCallback> &callback,
                                    bool count_install = false,
                                    const std::set<NativeAddress> *source_filter = nullptr,
@@ -673,9 +635,6 @@ class ExtMessagePool : public td::actor::Actor {
   // additional references only leaves a large callback backlog that the
   // candidate can never consume.
   static constexpr size_t MAX_NATIVE_COLLATOR_QUEUE_LIMIT = 65536;
-  static constexpr size_t MIN_NATIVE_EXCLUDED_MEMBERSHIP_ENTRIES = 256;
-  static constexpr size_t MAX_NATIVE_EXCLUDED_MEMBERSHIP_ENTRIES = MAX_NATIVE_COLLATOR_QUEUE_LIMIT;
-  static constexpr td::uint32 MIN_NATIVE_EXCLUDED_MEMBERSHIP_SLOW_HITS = 32;
   static constexpr size_t NATIVE_DELIVERY_CHUNK = 512;
   static constexpr size_t NATIVE_SOURCE_RUN_TARGET = 16;
   static constexpr size_t STANDARD_COLLATOR_QUEUE_LIMIT = 500;

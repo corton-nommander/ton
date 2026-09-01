@@ -273,7 +273,18 @@ void Collator::start_up() {
     callback->native_streaming = native_streaming;
     callback->excluded_messages = params_.excluded_ext_messages;
     callback->queue = ext_msg_queue_;
-    td::actor::send_closure_later(manager, &ValidatorManager::get_external_messages, shard_, std::move(callback));
+    // A work-driven native candidate is latency-sensitive: its first useful
+    // item otherwise waits through the Collator -> Manager -> Pool mailbox
+    // chain before the bounded producer can prefill. Use the actor runtime's
+    // guarded immediate dispatch only for this isolated native streaming
+    // path. It still falls back to the mailbox whenever a target actor is
+    // active, so it cannot re-enter a busy Manager or pool actor.
+    if (native_streaming) {
+      td::actor::send_closure_immediate(manager, &ValidatorManager::get_external_messages, shard_,
+                                        std::move(callback));
+    } else {
+      td::actor::send_closure_later(manager, &ValidatorManager::get_external_messages, shard_, std::move(callback));
+    }
   }
   if (is_masterchain() && !params_.is_hardfork) {
     // 4. load shard block info messages

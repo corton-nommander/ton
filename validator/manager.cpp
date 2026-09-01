@@ -1238,7 +1238,15 @@ void ValidatorManagerImpl::wait_block_message_queue_short(BlockIdExt block_id, t
 }
 
 void ValidatorManagerImpl::get_external_messages(ShardIdFull shard, std::unique_ptr<ExtMsgCallback> callback) {
-  td::actor::send_closure(ext_message_pool_, &ExtMessagePool::install_collator_queue, shard, std::move(callback));
+  // Complete the native Collator fast lane when the pool is idle. Ordinary
+  // and generic callbacks retain their existing deferred dispatch path; an
+  // occupied pool also falls back to normal mailbox delivery.
+  if (callback && callback->native_streaming) {
+    td::actor::send_closure_immediate(ext_message_pool_, &ExtMessagePool::install_collator_queue, shard,
+                                      std::move(callback));
+  } else {
+    td::actor::send_closure(ext_message_pool_, &ExtMessagePool::install_collator_queue, shard, std::move(callback));
+  }
 }
 
 void ValidatorManagerImpl::get_ihr_messages(ShardIdFull shard, td::Promise<std::vector<td::Ref<IhrMessage>>> promise) {

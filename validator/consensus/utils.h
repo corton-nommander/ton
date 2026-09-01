@@ -70,6 +70,18 @@ inline constexpr std::size_t native_collator_queue_default_capacity = 32'768;
 inline constexpr std::size_t native_collator_queue_max_capacity = 65'536;
 inline constexpr std::size_t standard_collator_queue_capacity = 500;
 
+// A native callback feeds the Collator through a much smaller physical
+// transport window than the candidate-level selection allowance above. Keep
+// the default at the existing two 512-message fragments, but permit a bounded
+// opt-in prefill for throughput experiments. The window is deliberately a
+// whole number of scheduler fragments: it preserves the native scheduler's
+// fairness and makes the producer's one-fragment look-ahead explicit.
+inline constexpr std::size_t native_ext_msg_transport_fragment_capacity = 512;
+inline constexpr std::size_t native_ext_msg_transport_default_capacity =
+    2 * native_ext_msg_transport_fragment_capacity;
+inline constexpr std::size_t native_ext_msg_transport_max_capacity =
+    16 * native_ext_msg_transport_fragment_capacity;
+
 constexpr std::size_t parse_native_collator_queue_capacity(std::string_view value) {
   if (value.empty()) {
     return native_collator_queue_default_capacity;
@@ -96,6 +108,40 @@ constexpr std::size_t parse_native_collator_queue_capacity(std::string_view valu
 
 constexpr std::size_t select_collator_queue_capacity(bool max_tps_mode, std::string_view native_limit) {
   return max_tps_mode ? parse_native_collator_queue_capacity(native_limit) : standard_collator_queue_capacity;
+}
+
+constexpr std::size_t parse_native_ext_msg_transport_capacity(std::string_view value) {
+  if (value.empty()) {
+    return native_ext_msg_transport_default_capacity;
+  }
+  std::size_t parsed = 0;
+  for (char ch : value) {
+    if (ch < '0' || ch > '9') {
+      return native_ext_msg_transport_default_capacity;
+    }
+    auto digit = static_cast<std::size_t>(ch - '0');
+    if (parsed < native_ext_msg_transport_max_capacity) {
+      if (parsed > (native_ext_msg_transport_max_capacity - digit) / 10) {
+        parsed = native_ext_msg_transport_max_capacity;
+      } else {
+        parsed = parsed * 10 + digit;
+      }
+    }
+  }
+  if (parsed < native_ext_msg_transport_fragment_capacity ||
+      parsed % native_ext_msg_transport_fragment_capacity != 0) {
+    return native_ext_msg_transport_default_capacity;
+  }
+  return std::min(parsed, native_ext_msg_transport_max_capacity);
+}
+
+// Non-native callbacks retain their ordinary queue capacity. A native
+// transport window is never allowed to exceed the per-candidate allowance,
+// including intentionally small queue-limit experiments.
+constexpr std::size_t select_native_ext_msg_transport_capacity(bool native_streaming, std::size_t queue_capacity,
+                                                                std::string_view configured_window) {
+  return native_streaming ? std::min(queue_capacity, parse_native_ext_msg_transport_capacity(configured_window))
+                          : queue_capacity;
 }
 
 // Native candidates are serialized as indexed mode-31 BOCs.  The generic

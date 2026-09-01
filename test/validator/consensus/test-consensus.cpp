@@ -53,6 +53,18 @@ static_assert(parse_native_collator_queue_capacity("999999999999999999999999") =
 static_assert(select_collator_queue_capacity(false, "262144") == standard_collator_queue_capacity);
 static_assert(select_collator_queue_capacity(true, "") == native_collator_queue_default_capacity);
 static_assert(select_collator_queue_capacity(true, "262144") == native_collator_queue_max_capacity);
+static_assert(parse_native_ext_msg_transport_capacity("") == native_ext_msg_transport_default_capacity);
+static_assert(parse_native_ext_msg_transport_capacity("0") == native_ext_msg_transport_default_capacity);
+static_assert(parse_native_ext_msg_transport_capacity("511") == native_ext_msg_transport_default_capacity);
+static_assert(parse_native_ext_msg_transport_capacity("513") == native_ext_msg_transport_default_capacity);
+static_assert(parse_native_ext_msg_transport_capacity("512") == native_ext_msg_transport_fragment_capacity);
+static_assert(parse_native_ext_msg_transport_capacity("2048") == 2'048);
+static_assert(parse_native_ext_msg_transport_capacity("8192") == native_ext_msg_transport_max_capacity);
+static_assert(parse_native_ext_msg_transport_capacity("999999999999999999999999") ==
+              native_ext_msg_transport_max_capacity);
+static_assert(select_native_ext_msg_transport_capacity(false, 500, "2048") == 500);
+static_assert(select_native_ext_msg_transport_capacity(true, 32'768, "2048") == 2'048);
+static_assert(select_native_ext_msg_transport_capacity(true, 1'000, "2048") == 1'000);
 inline constexpr td::uint64 native_candidate_test_max_bytes = 10'485'760;
 inline constexpr td::uint64 native_candidate_test_estimate_budget = 8'987'795;
 static_assert(native_candidate_size_reserve(native_candidate_test_max_bytes) == 1'497'965);

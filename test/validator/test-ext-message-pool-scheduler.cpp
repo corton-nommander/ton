@@ -293,10 +293,12 @@ class ExtMessagePoolTestAccess {
     return pool.reactivate_due_native_messages(td::Timestamp::in(0.01));
   }
 
-  static void install_live_waiting_callback(ExtMessagePool &pool, std::size_t queue_capacity) {
+  static void install_live_waiting_callback(ExtMessagePool &pool, std::size_t queue_capacity,
+                                            std::size_t transport_message_capacity = 500) {
     auto callback = std::make_unique<ExtMsgCallback>();
     callback->shard = {basechainId, shardIdAll};
     callback->queue_capacity = queue_capacity;
+    callback->transport_message_capacity = transport_message_capacity;
     callback->timeout = td::Timestamp::in(60.0);
     callback->native_streaming = true;
     auto installed = std::make_shared<ExtMessagePool::InstalledCallback>(std::move(callback));
@@ -504,6 +506,33 @@ class ExtMessagePoolTestAccess {
     auto callback = pool.callbacks_.front();
     pool.begin_callback_epoch(callback);
     return pool.fill_callback_native(callback, false);
+  }
+
+  static std::size_t prefill_native_transport(ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    auto callback = pool.callbacks_.front();
+    pool.begin_callback_epoch(callback);
+    return pool.prefill_callback_native(callback, true);
+  }
+
+  static td::uint64 callback_selected_ahead(ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    return pool.callbacks_.front()->callback->queue_state->native_selected_ahead();
+  }
+
+  static std::size_t callback_native_transport_selected_limit(const ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    return pool.native_transport_selected_limit(*pool.callbacks_.front());
+  }
+
+  static bool callback_native_transport_has_refill_credit(const ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    return pool.native_transport_has_refill_credit(*pool.callbacks_.front());
+  }
+
+  static void record_callback_selected(ExtMessagePool &pool, std::size_t count) {
+    CHECK(pool.callbacks_.size() == 1);
+    pool.callbacks_.front()->callback->queue_state->record_selected(count);
   }
 
   static std::size_t fill_sources(ExtMessagePool &pool, const std::set<NativeAddress> &sources) {
@@ -1210,6 +1239,38 @@ TEST(ExtMessagePoolScheduler, CallbackSelectionIsIncrementalAndChunkBounded) {
 
   ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), ExtMessagePoolTestAccess::native_delivery_chunk());
   ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending(pool), ExtMessagePoolTestAccess::native_delivery_chunk());
+}
+
+TEST(ExtMessagePoolScheduler, NativeTransportPrefillSeedsWindowAndBoundsProducerLookAhead) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  constexpr std::size_t transport_window = 2'048;
+  constexpr unsigned source_count = 40;
+  constexpr td::uint64 nonces_per_source = 64;
+  static_assert(source_count * nonces_per_source > transport_window);
+  for (unsigned source_id = 1; source_id <= source_count; ++source_id) {
+    auto source = ExtMessagePoolTestAccess::source(source_id);
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    for (td::uint64 nonce = 0; nonce < nonces_per_source; ++nonce) {
+      ExtMessagePoolTestAccess::add(pool, source, nonce);
+    }
+  }
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool,
+                                                          ExtMessagePoolTestAccess::max_native_queue_limit(),
+                                                          transport_window);
+
+  // Installation selects the whole configured transport window in fair
+  // 512-message scheduler chunks before the producer begins to push it.
+  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), transport_window);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending(pool), transport_window);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_selected_ahead(pool), transport_window);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_native_transport_selected_limit(pool),
+            transport_window + ExtMessagePoolTestAccess::native_delivery_chunk());
+  ASSERT_TRUE(ExtMessagePoolTestAccess::callback_native_transport_has_refill_credit(pool));
+
+  // Once the producer stages one additional native fragment while the window
+  // is full, it has no credit to append another snapshot-sized backlog.
+  ExtMessagePoolTestAccess::record_callback_selected(pool, ExtMessagePoolTestAccess::native_delivery_chunk());
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_native_transport_has_refill_credit(pool));
 }
 
 TEST(ExtMessagePoolScheduler, PersistentCallbackSchedulerScansSourcesOnlyOnceAcrossChunks) {

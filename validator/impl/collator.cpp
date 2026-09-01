@@ -61,10 +61,6 @@ static constexpr int HIGH_PRIORITY_EXTERNAL = 10;  // don't skip high priority e
 // committed.  Keep that deferred materialization bounded so a high-fanout
 // batch cannot jump from below the soft limit past the hard limit in one step.
 static constexpr std::size_t NATIVE_FAST_PATH_EXTERNAL_BATCH = 512;
-// Keep only two native fragments resident between the snapshot producer and
-// Collator. The logical per-candidate allowance remains independently bounded
-// by TON_NATIVE_COLLATOR_QUEUE_LIMIT.
-static constexpr std::size_t NATIVE_EXT_MSG_TRANSPORT_WINDOW = 2 * NATIVE_FAST_PATH_EXTERNAL_BATCH;
 // While a microbatch is still only an in-memory state delta, keep a
 // conservative soft-limit reservation for both its packed entry and every
 // distinct account it touches.  The exact ShardAccounts proof is still the
@@ -243,16 +239,20 @@ void Collator::start_up() {
         consensus::work_driven_max_tps_mode_enabled(shard_),
         native_queue_limit ? std::string_view{native_queue_limit} : std::string_view{});
     const bool native_streaming = consensus::work_driven_max_tps_mode_enabled(shard_);
+    const char* native_transport_window = std::getenv("TON_NATIVE_EXT_MSG_TRANSPORT_WINDOW");
     // One extra physical slot keeps a FIFO completion marker independent from
     // the bounded message window; it is not part of the logical transfer cap.
-    const auto transport_message_capacity =
-        native_streaming ? std::min(queue_capacity, NATIVE_EXT_MSG_TRANSPORT_WINDOW) : queue_capacity;
+    const auto transport_message_capacity = consensus::select_native_ext_msg_transport_capacity(
+        native_streaming, queue_capacity,
+        native_transport_window ? std::string_view{native_transport_window} : std::string_view{});
     const auto physical_queue_capacity = transport_message_capacity + (native_streaming ? 1 : 0);
     ext_msg_queue_ = ExtMsgQueue("ext_msg_queue", physical_queue_capacity);
     ext_msg_queue_state_ = std::make_shared<ExtMsgQueueState>();
     if (native_streaming) {
       LOG(DEBUG) << "native Collator BackpressureQueue logical_capacity=" << queue_capacity
-                 << " transport_message_capacity=" << transport_message_capacity;
+                 << " transport_message_capacity=" << transport_message_capacity
+                 << " configured_transport_window="
+                 << (native_transport_window ? native_transport_window : "default");
     }
     auto callback = std::make_unique<ExtMsgCallback>();
     callback->shard = shard_;

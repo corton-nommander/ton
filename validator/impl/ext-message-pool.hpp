@@ -562,7 +562,11 @@ class ExtMessagePool : public td::actor::Actor {
                                       CallbackNativeSource &state);
   std::size_t fill_callback_native(const std::shared_ptr<InstalledCallback> &callback,
                                    bool count_install = false,
-                                   const std::set<NativeAddress> *source_filter = nullptr);
+                                   const std::set<NativeAddress> *source_filter = nullptr,
+                                   std::size_t max_items = NATIVE_DELIVERY_CHUNK);
+  std::size_t prefill_callback_native(const std::shared_ptr<InstalledCallback> &callback, bool count_install);
+  std::size_t native_transport_selected_limit(const InstalledCallback &callback) const;
+  bool native_transport_has_refill_credit(const InstalledCallback &callback) const;
   std::size_t wake_native_callbacks(const std::set<NativeAddress> *source_filter = nullptr,
                                     bool preserve_valid_ready_head = false);
   std::size_t reactivate_due_native_messages(td::Timestamp now);

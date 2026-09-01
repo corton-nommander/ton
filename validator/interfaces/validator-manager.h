@@ -641,6 +641,11 @@ struct ExtMsgQueueState {
       }
     }
   }
+  td::uint64 native_selected_ahead() {
+    std::lock_guard lock(accounting_mutex_);
+    CHECK(native_consumed_ <= native_selected_);
+    return native_selected_ - native_consumed_;
+  }
   void record_empty(bool producer_pending) {
     if (auto telemetry = load_telemetry()) {
       auto& counter = producer_pending ? telemetry->producer_empty : telemetry->consumer_empty;

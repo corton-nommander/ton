@@ -1374,16 +1374,23 @@ td::actor::Task<> ExtMessagePool::pump_callback(std::shared_ptr<InstalledCallbac
       native_queue_counters_.add(counters);
     }
     if (callback->pending_native.empty() && callback->callback->native_streaming &&
-        !callback->native_snapshot_exhausted) {
+        !callback->native_snapshot_exhausted && native_transport_has_refill_credit(*callback)) {
       callback->native_snapshot_exhausted = fill_callback_native(callback, false) == 0;
     }
     auto* pending = !callback->pending_native.empty() ? &callback->pending_native : &callback->pending_generic;
     if (!pending->empty()) {
+      auto batch_capacity = NATIVE_DELIVERY_CHUNK;
+      if (pending == &callback->pending_native && callback->callback->native_streaming) {
+        // The initial native prefill is a whole bounded transport window, so
+        // publish it in one FIFO request. Later refills remain one 512-item
+        // scheduler fragment and block behind that window as needed.
+        batch_capacity = std::min(callback->callback->transport_message_capacity, pending->size());
+      }
       std::vector<ExtMsgQueueEntry> batch;
       std::vector<bool> native_entries;
-      batch.reserve(std::min<std::size_t>(NATIVE_DELIVERY_CHUNK, pending->size()));
-      native_entries.reserve(std::min<std::size_t>(NATIVE_DELIVERY_CHUNK, pending->size()));
-      while (batch.size() < NATIVE_DELIVERY_CHUNK && !pending->empty()) {
+      batch.reserve(batch_capacity);
+      native_entries.reserve(batch_capacity);
+      while (batch.size() < batch_capacity && !pending->empty()) {
         native_entries.push_back(pending->front().native);
         batch.push_back(std::move(pending->front()));
         pending->pop_front();
@@ -1450,7 +1457,8 @@ td::actor::Task<> ExtMessagePool::pump_callback(std::shared_ptr<InstalledCallbac
 
 std::size_t ExtMessagePool::fill_callback_native(const std::shared_ptr<InstalledCallback> &callback,
                                                  bool count_install,
-                                                 const std::set<NativeAddress> *source_filter) {
+                                                 const std::set<NativeAddress> *source_filter,
+                                                 std::size_t max_items) {
   NativeQueueCounters counters;
   if (count_install) {
     counters.installs = 1;
@@ -1465,7 +1473,11 @@ std::size_t ExtMessagePool::fill_callback_native(const std::shared_ptr<Installed
     native_queue_counters_.add(counters);
     return 0;
   }
-  auto remaining = std::min(delivery_limit - callback->delivered_native.size(), NATIVE_DELIVERY_CHUNK);
+  auto remaining = std::min({delivery_limit - callback->delivered_native.size(), NATIVE_DELIVERY_CHUNK, max_items});
+  if (remaining == 0) {
+    native_queue_counters_.add(counters);
+    return 0;
+  }
   auto selection = select_callback_native_messages(callback, remaining, source_filter);
   selection.counters.add(counters);
   callback->native_cursor = selection.cursor;
@@ -1480,6 +1492,42 @@ std::size_t ExtMessagePool::fill_callback_native(const std::shared_ptr<Installed
   callback->callback->queue_state->record_selected(selected);
   native_queue_counters_.add(selection.counters);
   return selected;
+}
+
+std::size_t ExtMessagePool::prefill_callback_native(const std::shared_ptr<InstalledCallback> &callback,
+                                                    bool count_install) {
+  if (!callback->callback->native_streaming) {
+    return fill_callback_native(callback, count_install);
+  }
+  // Seed the queue with the complete bounded transport window before starting
+  // its producer coroutine. Selection itself remains 512-message fair chunks;
+  // only the initial producer hand-off is widened.
+  const auto delivery_limit = std::min(native_collator_queue_limit_, callback->callback->queue_capacity);
+  const auto prefill_limit = std::min(delivery_limit, callback->callback->transport_message_capacity);
+  std::size_t selected = 0;
+  bool count_this_fill = count_install;
+  while (callback->pending_native.size() < prefill_limit) {
+    auto remaining = prefill_limit - callback->pending_native.size();
+    auto filled = fill_callback_native(callback, count_this_fill, nullptr, remaining);
+    count_this_fill = false;
+    selected += filled;
+    if (filled == 0) {
+      callback->native_snapshot_exhausted = true;
+      break;
+    }
+  }
+  return selected;
+}
+
+std::size_t ExtMessagePool::native_transport_selected_limit(const InstalledCallback &callback) const {
+  // The physical queue holds one configured window. The producer may stage or
+  // reserve one additional 512-message fragment while waiting for space, but
+  // never another full candidate snapshot.
+  return callback.callback->transport_message_capacity + NATIVE_DELIVERY_CHUNK;
+}
+
+bool ExtMessagePool::native_transport_has_refill_credit(const InstalledCallback &callback) const {
+  return callback.callback->queue_state->native_selected_ahead() < native_transport_selected_limit(callback);
 }
 
 std::size_t ExtMessagePool::wake_native_callbacks(const std::set<NativeAddress> *source_filter,
@@ -1566,7 +1614,7 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
   // transfers are basechain-only, and copying/scanning their large treaps while
   // producing a masterchain anchor created avoidable multi-second stalls.
   installed->native_cursor = native_scheduler_cursor_;
-  fill_callback_native(installed, true);
+  prefill_callback_native(installed, true);
   if (installed->callback->shard.workchain != masterchainId) {
     native_scheduler_cursor_ = installed->native_cursor;
   }

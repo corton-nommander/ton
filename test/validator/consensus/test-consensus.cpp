@@ -65,6 +65,15 @@ static_assert(parse_native_ext_msg_transport_capacity("999999999999999999999999"
 static_assert(select_native_ext_msg_transport_capacity(false, 500, "2048") == 500);
 static_assert(select_native_ext_msg_transport_capacity(true, 32'768, "2048") == 2'048);
 static_assert(select_native_ext_msg_transport_capacity(true, 1'000, "2048") == 1'000);
+static_assert(native_checkpoint_coalesce_max_entries == 2'048);
+static_assert(native_checkpoint_coalesce_fanout_limit == 3'072);
+static_assert(!should_flush_native_checkpoint(512, 1, 1'024, false, false, false, false));
+static_assert(should_flush_native_checkpoint(2'048, 4, 2'000, false, false, false, false));
+static_assert(should_flush_native_checkpoint(1'024, 2, 1'024, true, false, false, false));
+static_assert(should_flush_native_checkpoint(1'024, 2, 1'024, false, true, false, false));
+static_assert(should_flush_native_checkpoint(1'024, 2, 1'024, false, false, true, false));
+static_assert(should_flush_native_checkpoint(1'024, 2, 3'072, false, false, false, false));
+static_assert(should_flush_native_checkpoint(1'024, 2, 1'024, false, false, false, true));
 inline constexpr td::uint64 native_candidate_test_max_bytes = 10'485'760;
 inline constexpr td::uint64 native_candidate_test_estimate_budget = 8'987'795;
 static_assert(native_candidate_size_reserve(native_candidate_test_max_bytes) == 1'497'965);

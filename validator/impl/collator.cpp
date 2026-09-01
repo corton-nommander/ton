@@ -4737,28 +4737,289 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   };
 
   bool full = !block_limit_status_->fits(block::ParamLimits::cl_soft);
+  // The execution scheduler remains fixed at 512 transfers.  Only the exact
+  // ShardAccounts/storage-stat checkpoint below is coalesced, and its pending
+  // state owns every bit of rollback material until the single preflight has
+  // succeeded.  In particular, no Account, dictionary, compact batch, or fee
+  // accumulator is changed while this object is nonempty.
+  struct PendingNativeCheckpoint {
+    std::vector<NativeExternal> entries;
+    std::map<StdSmcAddress, NativeAccountSnapshot> journal;
+    std::set<StdSmcAddress> dirty_addresses;
+    std::size_t fragments{0};
+    bool first_fragment_deadline_commit_pending{false};
+    std::size_t first_fragment_deadline_deferred{0};
+    std::optional<td::Timestamp> latency_deadline;
+
+    bool empty() const {
+      return entries.empty();
+    }
+
+    void clear() {
+      entries.clear();
+      journal.clear();
+      dirty_addresses.clear();
+      fragments = 0;
+      first_fragment_deadline_commit_pending = false;
+      first_fragment_deadline_deferred = 0;
+      latency_deadline.reset();
+    }
+  };
+  enum class NativeCheckpointFlushReason { capacity, ingress, deadline, fanout, headroom, latency };
+  PendingNativeCheckpoint pending_checkpoint;
+
+  auto discard_unchanged_native_states = [&] {
+    for (auto it = native_states.begin(); it != native_states.end();) {
+      if (!it->second.changed) {
+        it = native_states.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  };
+  auto record_checkpoint_flush = [&](NativeCheckpointFlushReason reason) {
+    switch (reason) {
+      case NativeCheckpointFlushReason::capacity:
+        ++stats_.native_checkpoint_flush_capacity;
+        break;
+      case NativeCheckpointFlushReason::ingress:
+        ++stats_.native_checkpoint_flush_ingress;
+        break;
+      case NativeCheckpointFlushReason::deadline:
+        ++stats_.native_checkpoint_flush_deadline;
+        break;
+      case NativeCheckpointFlushReason::fanout:
+        ++stats_.native_checkpoint_flush_fanout;
+        break;
+      case NativeCheckpointFlushReason::headroom:
+        ++stats_.native_checkpoint_flush_headroom;
+        break;
+      case NativeCheckpointFlushReason::latency:
+        ++stats_.native_checkpoint_flush_latency;
+        break;
+    }
+  };
+  auto rollback_pending_checkpoint = [&]() -> std::size_t {
+    if (pending_checkpoint.empty()) {
+      return 0;
+    }
+    const auto deferred = pending_checkpoint.entries.size();
+    for (const auto& [address, snapshot] : pending_checkpoint.journal) {
+      auto state_it = native_states.find(address);
+      CHECK(state_it != native_states.end());
+      auto& state = state_it->second;
+      state.balance = snapshot.balance;
+      state.nonce = snapshot.nonce;
+      state.status = snapshot.status;
+      state.is_native = snapshot.is_native;
+      state.changed = snapshot.changed;
+    }
+    for (const auto& entry : pending_checkpoint.entries) {
+      delay_ext_msgs_.emplace_back(entry.ext_msg->hash());
+    }
+    // Fragment telemetry is recorded at execution time.  Correct its
+    // tentative acceptance only if the enclosing exact checkpoint rejects or
+    // a deadline seals an already-valid earlier checkpoint.
+    CHECK(stats_.native_microbatch_accepted >= deferred);
+    stats_.native_microbatch_accepted -= deferred;
+    stats_.native_microbatch_delayed += deferred;
+    ++stats_.native_checkpoint_rollbacks;
+    stats_.native_checkpoint_rollback_entries += deferred;
+    pending_checkpoint.clear();
+    discard_unchanged_native_states();
+    return deferred;
+  };
+  auto flush_pending_checkpoint = [&](NativeCheckpointFlushReason reason) -> bool {
+    if (pending_checkpoint.empty()) {
+      return true;
+    }
+    record_checkpoint_flush(reason);
+    const auto pending_entries = pending_checkpoint.entries.size();
+    const auto pending_fragments = pending_checkpoint.fragments;
+    td::ScopedRealCpuTimer timer{stats_.work_time.native_commit};
+    vm::AugmentedDictionary staged_account_dict{*account_dict_estimator_};
+    std::map<StdSmcAddress, Ref<vm::Cell>> staged_account_cells;
+    for (const auto& address : pending_checkpoint.dirty_addresses) {
+      auto& state = native_states.at(address);
+      Ref<vm::Cell> staged_total_state;
+      {
+        td::ScopedRealCpuTimer cell_timer{stats_.work_time.native_account_cell_build};
+        vm::CellBuilder state_builder;
+        if (!(state_builder.store_long_bool(1, 2) && state_builder.store_ulong_rchk_bool(state.balance, 64) &&
+              state_builder.store_ulong_rchk_bool(state.nonce, 64) &&
+              state_builder.store_ulong_rchk_bool(state.flags, 8) && state_builder.finalize_to(staged_total_state) &&
+              block::gen::t_Account.validate_ref(staged_total_state) &&
+              block::tlb::t_Account.validate_ref(staged_total_state))) {
+          fatal_error("cannot stage aggregated native account state");
+          return false;
+        }
+        ++stats_.native_account_cells_built;
+      }
+      {
+        td::ScopedRealCpuTimer dict_timer{stats_.work_time.native_staged_dict_set};
+        vm::CellBuilder account_builder;
+        if (!(account_builder.store_ref_bool(staged_total_state) &&
+              account_builder.store_bits_bool(state.account->last_trans_hash_) &&
+              account_builder.store_long_bool(state.account->last_trans_lt_, 64) &&
+              staged_account_dict.set_builder(address, account_builder))) {
+          fatal_error("cannot stage native account dictionary update");
+          return false;
+        }
+        ++stats_.native_staged_dict_sets;
+      }
+      staged_account_cells.emplace(address, std::move(staged_total_state));
+    }
+
+    // Precharge only the trial.  The live limit status remains untouched
+    // except for its temporary transaction count until every hard and
+    // serialized-size reservation check has passed.
+    block_limit_status_->add_transaction(static_cast<unsigned>(pending_entries));
+    unsigned provisional_new_accounts = 0;
+    for (const auto& [address, _] : staged_account_cells) {
+      if (!account_dict_estimator_added_accounts_.contains(native_states.at(address).account->addr)) {
+        ++provisional_new_accounts;
+      }
+    }
+    std::optional<block::BlockLimitStatus> trial_limit_status;
+    {
+      td::ScopedRealCpuTimer checkpoint_timer{stats_.work_time.native_stat_checkpoint_rebuild};
+      if (!native_pre_storage_stat_) {
+        native_pre_storage_stat_.emplace(block_limit_status_->st_stat);
+        ++stats_.native_stat_checkpoint_base_snapshots;
+      }
+      trial_limit_status.emplace(block_limit_status_->limits, block_limit_status_->cur_lt);
+      auto& trial = *trial_limit_status;
+      trial.gas_used = block_limit_status_->gas_used;
+      trial.accounts = block_limit_status_->accounts + provisional_new_accounts;
+      trial.transactions = block_limit_status_->transactions;
+      trial.extra_out_msgs = block_limit_status_->extra_out_msgs;
+      trial.collated_data_size_estimate = block_limit_status_->collated_data_size_estimate;
+      trial.public_library_diff = block_limit_status_->public_library_diff;
+      trial.st_stat = *native_pre_storage_stat_;
+      trial.st_stat.add_proof(staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
+      ++stats_.native_stat_checkpoint_rebuilds;
+    }
+    bool staged_hard_fits;
+    bool staged_size_guard_fits;
+    td::uint64 staged_estimated_bytes;
+    {
+      td::ScopedRealCpuTimer preflight_timer{stats_.work_time.native_proof_preflight};
+      staged_estimated_bytes = trial_limit_status->estimate_block_size();
+      record_native_size_estimate(staged_estimated_bytes);
+      staged_hard_fits = trial_limit_status->fits(block::ParamLimits::cl_hard);
+      staged_size_guard_fits =
+          consensus::native_candidate_estimate_fits(staged_estimated_bytes, consensus_max_block_size);
+    }
+    if (!staged_hard_fits || !staged_size_guard_fits) {
+      if (!staged_hard_fits) {
+        ++stats_.native_hard_preflight_failures;
+      }
+      if (!staged_size_guard_fits) {
+        ++stats_.native_size_guard_deferrals;
+      }
+      block_limit_status_->transactions -= static_cast<unsigned>(pending_entries);
+      rollback_pending_checkpoint();
+      full = true;
+      if (!staged_size_guard_fits) {
+        stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: deferred checkpoint group by candidate size "
+                                          "reserve estimate="
+                                       << staged_estimated_bytes << " budget=" << native_estimate_budget
+                                       << " reserve=" << native_size_reserve << "\n";
+      } else {
+        stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: deferred checkpoint group by hard-limit preflight\n";
+      }
+      return true;
+    }
+
+    block_limit_status_->st_stat = std::move(trial_limit_status->st_stat);
+    unsigned changed_accounts = 0;
+    for (auto& [address, staged_total_state] : staged_account_cells) {
+      auto& state = native_states.at(address);
+      state.staged_total_state = staged_total_state;
+      auto [_, first_update] = account_dict_estimator_added_accounts_.insert(state.account->addr);
+      block_limit_status_->add_account(first_update);
+      native_compact_accounts_.insert(state.account->addr);
+      ++changed_accounts;
+    }
+    account_dict_estimator_ = std::make_unique<vm::AugmentedDictionary>(staged_account_dict);
+    account_dict_ops_ += changed_accounts;
+    for (const auto& entry : pending_checkpoint.entries) {
+      native_compact_transaction_fees_ += block::CurrencyCollection{td::make_refint(entry.transfer.fee)};
+      if (!native_compact_transaction_fees_.is_valid()) {
+        fatal_error("native transfer fee total overflow");
+        return false;
+      }
+      native_transfer_batch_entries_.push_back(block::NativeTransferBatchEntry{entry.transfer, 0, 0});
+      ++stats_.transactions;
+      ++stats_.ext_msgs_accepted;
+    }
+    if (pending_checkpoint.first_fragment_deadline_commit_pending) {
+      record_deadline_seal(pending_checkpoint.first_fragment_deadline_deferred);
+      record_first_fragment_deadline_commit();
+    }
+    if (!block_limit_status_->fits(block::ParamLimits::cl_hard)) {
+      fatal_error("native hard-limit preflight invariant failed after commit");
+      return false;
+    }
+    if (!consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(), consensus_max_block_size)) {
+      fatal_error("native candidate size-reserve invariant failed after commit");
+      return false;
+    }
+    ++stats_.native_checkpoint_groups;
+    stats_.native_checkpoint_group_entries += pending_entries;
+    stats_.native_checkpoint_group_fragments += pending_fragments;
+    stats_.native_checkpoint_group_max_entries =
+        std::max<td::uint64>(stats_.native_checkpoint_group_max_entries, pending_entries);
+    stats_.native_checkpoint_group_max_fragments =
+        std::max<td::uint64>(stats_.native_checkpoint_group_max_fragments, pending_fragments);
+    pending_checkpoint.clear();
+    return true;
+  };
+
   while (true) {
     auto deadline_action = consensus::select_native_intake_deadline_action(
-        native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), false);
+        native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), !pending_checkpoint.empty());
     if (deadline_action != consensus::NativeIntakeDeadlineAction::continue_work) {
       if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed) {
-        record_deadline_seal(0);
+        auto deferred = rollback_pending_checkpoint();
+        record_deadline_seal(deferred);
+      } else if (deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment) {
+        // The first native fragment is always flushed before coalescing can
+        // begin.  Keep the existing nonempty-candidate exception bounded to
+        // that one 512-message fragment even if the deadline flips between
+        // the execution loop and this top-of-loop check.
+        if (pending_checkpoint.fragments != 1) {
+          co_return fatal_error("native deadline attempted to commit more than the first checkpoint fragment");
+        }
+        if (!flush_pending_checkpoint(NativeCheckpointFlushReason::deadline)) {
+          co_return false;
+        }
       }
       break;
     }
-    if (native_transfer_batch_entries_.size() >= block::NativeTransferBatch::max_entries) {
+    if (native_transfer_batch_entries_.size() + pending_checkpoint.entries.size() >=
+        block::NativeTransferBatch::max_entries) {
+      if (!flush_pending_checkpoint(NativeCheckpointFlushReason::capacity)) {
+        co_return false;
+      }
       LOG(INFO) << "native transfer protocol batch cap reached: " << native_transfer_batch_entries_.size();
       stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: protocol batch cap "
                                      << block::NativeTransferBatch::max_entries << "\n";
       break;
     }
     if (full) {
+      if (!flush_pending_checkpoint(NativeCheckpointFlushReason::headroom)) {
+        co_return false;
+      }
       LOG(INFO) << "BLOCK FULL, stop processing native fast-path external messages";
       stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: "
                                      << block_full_comment(*block_limit_status_, block::ParamLimits::cl_soft) << "\n";
       break;
     }
     if (medium_timeout_reached()) {
+      if (!flush_pending_checkpoint(NativeCheckpointFlushReason::ingress)) {
+        co_return false;
+      }
       LOG(WARNING) << "medium timeout reached, stop processing native fast-path external messages";
       stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: timeout\n";
       break;
@@ -4767,12 +5028,16 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       co_return false;
     }
 
-    auto protocol_capacity = block::NativeTransferBatch::max_entries - native_transfer_batch_entries_.size();
+    auto protocol_capacity =
+        block::NativeTransferBatch::max_entries - native_transfer_batch_entries_.size() - pending_checkpoint.entries.size();
     auto batch_capacity = std::min<std::size_t>(NATIVE_FAST_PATH_EXTERNAL_BATCH, protocol_capacity);
     std::vector<NativeExternal> batch;
     batch.reserve(batch_capacity);
     bool queue_exhausted = false;
     bool saw_item = false;
+    bool intake_deadline_before_batch = false;
+    bool checkpoint_ingress_boundary = false;
+    bool checkpoint_refill_boundary = false;
     std::optional<td::Timestamp> fragment_refill_until;
     std::optional<td::Timestamp> post_commit_idle_until;
     auto bounded_coalescing_deadline = [&] {
@@ -4788,7 +5053,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
       if (native_intake_timeout_reached()) {
         if (!native_transfer_batch_entries_.empty() && batch.empty()) {
-          record_deadline_seal(0);
+          intake_deadline_before_batch = true;
         }
         queue_exhausted = true;
         break;
@@ -4807,6 +5072,31 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
             co_return false;
           }
           if (maybe.is_error()) {
+            // Never retain a speculative checkpoint while waiting for the
+            // producer. Flush completed earlier fragments before either the
+            // normal post-commit idle grace or a partial-fragment refill. A
+            // partial batch has not executed yet, so this cannot split an
+            // ordered native state transition.
+            if (!pending_checkpoint.empty()) {
+              if (!flush_pending_checkpoint(NativeCheckpointFlushReason::ingress)) {
+                co_return false;
+              }
+              full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
+                     !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+                                                                consensus_max_block_size);
+              block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+              if (batch.empty()) {
+                checkpoint_ingress_boundary = true;
+                record_external_wait(wait_kind, wait_timer.elapsed());
+                break;
+              }
+              if (full) {
+                queue_exhausted = true;
+                record_external_wait(wait_kind, wait_timer.elapsed());
+                break;
+              }
+            }
+            checkpoint_refill_boundary = checkpoint_refill_boundary || !batch.empty();
             auto producer_pending = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
             if (batch.empty() && !native_transfer_batch_entries_.empty() && !post_commit_idle_until) {
               post_commit_idle_until = bounded_coalescing_deadline();
@@ -4954,6 +5244,21 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     }
 
     if (batch.empty()) {
+      if (checkpoint_ingress_boundary) {
+        if (!flush_pending_checkpoint(NativeCheckpointFlushReason::ingress)) {
+          co_return false;
+        }
+        full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
+               !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+                                                          consensus_max_block_size);
+        block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+        continue;
+      }
+      if (intake_deadline_before_batch) {
+        auto deferred = rollback_pending_checkpoint();
+        record_deadline_seal(deferred);
+        break;
+      }
       if (queue_exhausted) {
         break;
       }
@@ -4965,6 +5270,30 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     // OS-thread fanout per microbatch. The proposer consumes that trusted
     // admission result; every validator still independently verifies the
     // complete v4 batch before replaying any state transition.
+
+    // Do not start another 512-message execution fragment if the preceding
+    // exact checkpoint is already late, or if this fragment could exhaust
+    // its reserved fanout headroom in the worst case.  The bound is
+    // deliberately conservative (two accounts per queued transfer); it
+    // avoids constructing a larger proof merely to discover the flush was
+    // required.
+    if (!pending_checkpoint.empty()) {
+      const bool latency_expired = pending_checkpoint.latency_deadline &&
+                                   pending_checkpoint.latency_deadline->is_in_past(td::Timestamp::now());
+      const bool potential_fanout_limit =
+          pending_checkpoint.dirty_addresses.size() + 2 * batch.size() >=
+          consensus::native_checkpoint_coalesce_fanout_limit;
+      if (latency_expired || potential_fanout_limit) {
+        if (!flush_pending_checkpoint(latency_expired ? NativeCheckpointFlushReason::latency
+                                                      : NativeCheckpointFlushReason::fanout)) {
+          co_return false;
+        }
+        full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
+               !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+                                                          consensus_max_block_size);
+        block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+      }
+    }
 
     StdSmcAddress cached_src_address, cached_dst_address;
     NativeAccountState* cached_src_state = nullptr;
@@ -4988,10 +5317,17 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     std::size_t permanent_in_batch = 0;
     bool first_fragment_deadline_commit_pending = false;
     std::size_t first_fragment_deadline_deferred = 0;
+    bool deadline_seal_current_fragment = false;
+    std::size_t deadline_unprocessed_in_batch = 0;
     std::vector<std::size_t> accepted_indices;
     accepted_indices.reserve(batch.size());
     std::map<StdSmcAddress, NativeAccountSnapshot> state_journal;
     std::set<StdSmcAddress> dirty_addresses;
+    // `dirty_addresses` also carries endpoints already dirty in the pending
+    // checkpoint group. Track the local-only subset incrementally so the
+    // conservative size reservation stays exact without rescanning up to a
+    // full 512-endpoint set for every accepted transfer.
+    std::size_t local_dirty_addresses_not_in_pending = 0;
     auto journal_state = [&](const StdSmcAddress& address, const NativeAccountState& state) {
       state_journal.try_emplace(address, NativeAccountSnapshot{
                                              .balance = state.balance,
@@ -5023,6 +5359,14 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         }
         deadline_action = consensus::select_native_intake_deadline_action(
             native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), !accepted_indices.empty());
+        if (deadline_action == consensus::NativeIntakeDeadlineAction::idle) {
+          // The intake window closed before any first-fragment work became
+          // staged.  Do not turn a late queue pop into an oversized deadline
+          // exception; leave all of it for the next candidate.
+          delay_batch_suffix(index);
+          stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline idle\n";
+          break;
+        }
         if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed ||
             deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment) {
           delay_batch_suffix(index);
@@ -5030,7 +5374,8 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
             first_fragment_deadline_commit_pending = true;
             first_fragment_deadline_deferred += batch.size() - index;
           } else {
-            record_deadline_seal(batch.size() - index, accepted_indices.size());
+            deadline_seal_current_fragment = true;
+            deadline_unprocessed_in_batch += batch.size() - index;
           }
           stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline seal\n";
           break;
@@ -5100,13 +5445,20 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           continue;
         }
 
-        auto new_dirty_accounts = static_cast<td::uint64>(!dirty_addresses.contains(item.transfer.src));
-        if (dst != src && !dirty_addresses.contains(item.transfer.dst)) {
+        auto source_already_dirty = pending_checkpoint.dirty_addresses.contains(item.transfer.src) ||
+                                    dirty_addresses.contains(item.transfer.src);
+        auto destination_already_dirty = pending_checkpoint.dirty_addresses.contains(item.transfer.dst) ||
+                                         dirty_addresses.contains(item.transfer.dst);
+        auto new_dirty_accounts = static_cast<td::uint64>(!source_already_dirty);
+        if (dst != src && !destination_already_dirty) {
           ++new_dirty_accounts;
         }
         auto prospective_deferred_bytes =
-            static_cast<td::uint64>(accepted_indices.size() + 1) * NATIVE_DEFERRED_ENTRY_CHARGE_BYTES +
-            static_cast<td::uint64>(dirty_addresses.size() + new_dirty_accounts) * NATIVE_DEFERRED_ACCOUNT_CHARGE_BYTES;
+            static_cast<td::uint64>(pending_checkpoint.entries.size() + accepted_indices.size() + 1) *
+                NATIVE_DEFERRED_ENTRY_CHARGE_BYTES +
+            static_cast<td::uint64>(pending_checkpoint.dirty_addresses.size() +
+                                     local_dirty_addresses_not_in_pending + new_dirty_accounts) *
+                NATIVE_DEFERRED_ACCOUNT_CHARGE_BYTES;
         auto prospective_estimated_bytes = block_limit_status_->estimate_block_size() + prospective_deferred_bytes;
         record_native_size_estimate(prospective_estimated_bytes);
         auto speculative_size_limit =
@@ -5130,9 +5482,15 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         // conflict round.  The journal makes the exact hard-limit checkpoint
         // transactional without copying the block-wide state map.
         journal_state(item.transfer.src, *src);
+        if (!source_already_dirty) {
+          ++local_dirty_addresses_not_in_pending;
+        }
         dirty_addresses.insert(item.transfer.src);
         if (dst != src) {
           journal_state(item.transfer.dst, *dst);
+          if (!destination_already_dirty) {
+            ++local_dirty_addresses_not_in_pending;
+          }
           dirty_addresses.insert(item.transfer.dst);
         }
         src->balance = result.src_balance;
@@ -5168,16 +5526,18 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       accepted_in_batch = 0;
     };
 
-    // If this candidate already has a committed fragment, do not start the
-    // next dictionary/proof checkpoint after the intake deadline.  Rolling
-    // back only the current fragment leaves the previous exact checkpoint as
-    // a valid partial candidate.
+    // If this candidate already has a committed fragment, do not carry any
+    // unpreflighted checkpoint work across the intake deadline.  The whole
+    // pending group is rolled back after this fragment's telemetry is
+    // recorded, leaving the last exact checkpoint as the valid candidate.
+    bool seal_pending_checkpoint_for_deadline = deadline_seal_current_fragment;
+    std::size_t deadline_deferred_in_batch = deadline_unprocessed_in_batch;
     deadline_action = consensus::select_native_intake_deadline_action(
         native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), !accepted_indices.empty());
-    if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed && !accepted_indices.empty()) {
-      auto deferred = accepted_indices.size();
+    if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed) {
+      deadline_deferred_in_batch += accepted_indices.size();
       rollback_accepted_fragment();
-      record_deadline_seal(deferred);
+      seal_pending_checkpoint_for_deadline = true;
       stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline before checkpoint\n";
     }
 
@@ -5190,145 +5550,25 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     }
 
     if (!accepted_indices.empty()) {
-      td::ScopedRealCpuTimer timer{stats_.work_time.native_commit};
-      vm::AugmentedDictionary staged_account_dict{*account_dict_estimator_};
-      std::map<StdSmcAddress, Ref<vm::Cell>> staged_account_cells;
-      for (const auto& address : dirty_addresses) {
-        auto& state = native_states.at(address);
-        Ref<vm::Cell> staged_total_state;
-        {
-          td::ScopedRealCpuTimer cell_timer{stats_.work_time.native_account_cell_build};
-          vm::CellBuilder state_builder;
-          if (!(state_builder.store_long_bool(1, 2) && state_builder.store_ulong_rchk_bool(state.balance, 64) &&
-                state_builder.store_ulong_rchk_bool(state.nonce, 64) &&
-                state_builder.store_ulong_rchk_bool(state.flags, 8) && state_builder.finalize_to(staged_total_state) &&
-                block::gen::t_Account.validate_ref(staged_total_state) &&
-                block::tlb::t_Account.validate_ref(staged_total_state))) {
-            co_return fatal_error("cannot stage aggregated native account state");
-          }
-          ++stats_.native_account_cells_built;
-        }
-        {
-          td::ScopedRealCpuTimer dict_timer{stats_.work_time.native_staged_dict_set};
-          vm::CellBuilder account_builder;
-          if (!(account_builder.store_ref_bool(staged_total_state) &&
-                account_builder.store_bits_bool(state.account->last_trans_hash_) &&
-                account_builder.store_long_bool(state.account->last_trans_lt_, 64) &&
-                staged_account_dict.set_builder(address, account_builder))) {
-            co_return fatal_error("cannot stage native account dictionary update");
-          }
-          ++stats_.native_staged_dict_sets;
-        }
-        staged_account_cells.emplace(address, std::move(staged_total_state));
+      const bool checkpoint_was_empty = pending_checkpoint.empty();
+      for (const auto& [address, snapshot] : state_journal) {
+        pending_checkpoint.journal.try_emplace(address, snapshot);
       }
-
-      // Transaction bytes and all deferred account/dictionary cells are
-      // precharged before any Account or dictionary is mutated. A batch which
-      // would cross the hard limit is returned to the mempool and this valid
-      // candidate seals at its previous state, avoiding a deterministic retry
-      // loop at saturation.
-      block_limit_status_->add_transaction(static_cast<unsigned>(accepted_indices.size()));
-      // Native dictionary roots are replaceable candidate state, not additive
-      // block payload. Rebuild the trial statistic from the exact pre-native
-      // seen sets plus only the latest canonical ShardAccounts root. Keeping
-      // prior fragment roots permanently charged made an otherwise unchanged
-      // shared destination consume the soft/hard budget once per fragment.
-      unsigned provisional_new_accounts = 0;
-      for (const auto& [address, _] : staged_account_cells) {
-        if (!account_dict_estimator_added_accounts_.contains(native_states.at(address).account->addr)) {
-          ++provisional_new_accounts;
-        }
+      pending_checkpoint.dirty_addresses.insert(dirty_addresses.begin(), dirty_addresses.end());
+      for (auto index : accepted_indices) {
+        // Keep the authenticated ExtMessage reference alongside the ordered
+        // transfer so a rejected group returns the exact identities to the
+        // mempool instead of reconstructing them from nonce/account fields.
+        pending_checkpoint.entries.push_back(batch[index]);
       }
-      std::optional<block::BlockLimitStatus> trial_limit_status;
-      {
-        td::ScopedRealCpuTimer checkpoint_timer{stats_.work_time.native_stat_checkpoint_rebuild};
-        if (!native_pre_storage_stat_) {
-          native_pre_storage_stat_.emplace(block_limit_status_->st_stat);
-          ++stats_.native_stat_checkpoint_base_snapshots;
-        }
-        trial_limit_status.emplace(block_limit_status_->limits, block_limit_status_->cur_lt);
-        auto& trial = *trial_limit_status;
-        trial.gas_used = block_limit_status_->gas_used;
-        trial.accounts = block_limit_status_->accounts + provisional_new_accounts;
-        trial.transactions = block_limit_status_->transactions;
-        trial.extra_out_msgs = block_limit_status_->extra_out_msgs;
-        trial.collated_data_size_estimate = block_limit_status_->collated_data_size_estimate;
-        trial.public_library_diff = block_limit_status_->public_library_diff;
-        trial.st_stat = *native_pre_storage_stat_;
-        trial.st_stat.add_proof(staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
-        ++stats_.native_stat_checkpoint_rebuilds;
+      ++pending_checkpoint.fragments;
+      if (checkpoint_was_empty) {
+        pending_checkpoint.latency_deadline =
+            td::Timestamp::in(consensus::native_checkpoint_coalesce_max_latency_seconds);
       }
-      bool staged_hard_fits;
-      bool staged_size_guard_fits;
-      td::uint64 staged_estimated_bytes;
-      {
-        td::ScopedRealCpuTimer preflight_timer{stats_.work_time.native_proof_preflight};
-        staged_estimated_bytes = trial_limit_status->estimate_block_size();
-        record_native_size_estimate(staged_estimated_bytes);
-        staged_hard_fits = trial_limit_status->fits(block::ParamLimits::cl_hard);
-        staged_size_guard_fits =
-            consensus::native_candidate_estimate_fits(staged_estimated_bytes, consensus_max_block_size);
-      }
-      if (!staged_hard_fits || !staged_size_guard_fits) {
-        if (!staged_hard_fits) {
-          ++stats_.native_hard_preflight_failures;
-        }
-        if (!staged_size_guard_fits) {
-          ++stats_.native_size_guard_deferrals;
-        }
-        block_limit_status_->transactions -= static_cast<unsigned>(accepted_indices.size());
-        rollback_accepted_fragment();
-        full = true;
-        if (!staged_size_guard_fits) {
-          stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: deferred microbatch by candidate size "
-                                            "reserve estimate="
-                                         << staged_estimated_bytes << " budget=" << native_estimate_budget
-                                         << " reserve=" << native_size_reserve << "\n";
-        } else {
-          stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: deferred microbatch by hard-limit preflight\n";
-        }
-      } else {
-        // Replacing only st_stat is atomic with respect to candidate state: all
-        // other live counters already include this fragment's provisional
-        // transaction count and were copied exactly into the hard-fit trial.
-        block_limit_status_->st_stat = std::move(trial_limit_status->st_stat);
-        unsigned changed_accounts = 0;
-        for (auto& [address, staged_total_state] : staged_account_cells) {
-          auto& state = native_states.at(address);
-          state.staged_total_state = staged_total_state;
-          auto [_, first_update] = account_dict_estimator_added_accounts_.insert(state.account->addr);
-          block_limit_status_->add_account(first_update);
-          native_compact_accounts_.insert(state.account->addr);
-          ++changed_accounts;
-        }
-        // Install exactly the augmented dictionary root that was preflighted.
-        // Charging intermediate roots every 16 account updates retained
-        // transient path cells, made actual accounting exceed the final-root
-        // preflight, and added avoidable work on large native batches.
-        account_dict_estimator_ = std::make_unique<vm::AugmentedDictionary>(staged_account_dict);
-        account_dict_ops_ += changed_accounts;
-        for (auto index : accepted_indices) {
-          auto& item = batch[index];
-          native_compact_transaction_fees_ += block::CurrencyCollection{td::make_refint(item.transfer.fee)};
-          if (!native_compact_transaction_fees_.is_valid()) {
-            co_return fatal_error("native transfer fee total overflow");
-          }
-          native_transfer_batch_entries_.push_back(block::NativeTransferBatchEntry{item.transfer, 0, 0});
-          ++stats_.transactions;
-          ++stats_.ext_msgs_accepted;
-        }
-        if (first_fragment_deadline_commit_pending) {
-          record_deadline_seal(first_fragment_deadline_deferred);
-          record_first_fragment_deadline_commit();
-        }
-        if (!block_limit_status_->fits(block::ParamLimits::cl_hard)) {
-          co_return fatal_error("native hard-limit preflight invariant failed after commit");
-        }
-        if (!consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
-                                                       consensus_max_block_size)) {
-          co_return fatal_error("native candidate size-reserve invariant failed after commit");
-        }
-      }
+      pending_checkpoint.first_fragment_deadline_commit_pending =
+          pending_checkpoint.first_fragment_deadline_commit_pending || first_fragment_deadline_commit_pending;
+      pending_checkpoint.first_fragment_deadline_deferred += first_fragment_deadline_deferred;
     }
     full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
            !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
@@ -5351,17 +5591,62 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
               << " soft_load=" << block_limit_status_->load_fraction(block::ParamLimits::cl_soft)
               << " work_driven=" << work_driven;
 
-    // Accounts which were only inspected for rejected messages carry no
-    // candidate state and must not consume the protocol-bounded accumulator.
-    // Erasure invalidates the erased endpoint caches, which are deliberately
-    // scoped to the fragment above.
-    for (auto it = native_states.begin(); it != native_states.end();) {
-      if (!it->second.changed) {
-        it = native_states.erase(it);
-      } else {
-        ++it;
+    discard_unchanged_native_states();
+    if (seal_pending_checkpoint_for_deadline) {
+      auto deferred = rollback_pending_checkpoint();
+      record_deadline_seal(deadline_deferred_in_batch + deferred);
+      break;
+    }
+
+    if (!pending_checkpoint.empty()) {
+      const bool initial_checkpoint = native_transfer_batch_entries_.empty();
+      const bool ingress_boundary = checkpoint_refill_boundary || queue_exhausted || batch.size() < batch_capacity;
+      const bool headroom_limited = full;
+      const bool latency_expired = pending_checkpoint.latency_deadline &&
+                                   pending_checkpoint.latency_deadline->is_in_past(td::Timestamp::now());
+      const bool capacity_reached =
+          pending_checkpoint.entries.size() >= consensus::native_checkpoint_coalesce_max_entries ||
+          pending_checkpoint.fragments >= consensus::native_checkpoint_coalesce_max_fragments;
+      const bool fanout_reached =
+          pending_checkpoint.dirty_addresses.size() >= consensus::native_checkpoint_coalesce_fanout_limit;
+      const bool deadline_flush = first_fragment_deadline_commit_pending;
+      const bool should_flush = !work_driven || initial_checkpoint ||
+                                consensus::should_flush_native_checkpoint(
+                                    pending_checkpoint.entries.size(), pending_checkpoint.fragments,
+                                    pending_checkpoint.dirty_addresses.size(), deadline_flush, ingress_boundary,
+                                    headroom_limited, latency_expired);
+      if (should_flush) {
+        // Preserve the deadline exception before all other reasons.  The
+        // first checkpoint is independently forced above, so later deadline
+        // handling can safely roll back a whole group to a prior exact root.
+        auto reason = NativeCheckpointFlushReason::ingress;
+        if (deadline_flush) {
+          reason = NativeCheckpointFlushReason::deadline;
+        } else if (headroom_limited) {
+          reason = NativeCheckpointFlushReason::headroom;
+        } else if (fanout_reached) {
+          reason = NativeCheckpointFlushReason::fanout;
+        } else if (capacity_reached) {
+          reason = NativeCheckpointFlushReason::capacity;
+        } else if (latency_expired) {
+          reason = NativeCheckpointFlushReason::latency;
+        }
+        if (!flush_pending_checkpoint(reason)) {
+          co_return false;
+        }
+        full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
+               !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+                                                          consensus_max_block_size);
+        block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
       }
     }
+  }
+
+  // Normal loop exits (e.g. an exhausted snapshot) must not leave an
+  // unpreflighted compact state behind.  Deadline exits roll it back above;
+  // all other exits seal the final exact checkpoint.
+  if (!pending_checkpoint.empty() && !flush_pending_checkpoint(NativeCheckpointFlushReason::ingress)) {
+    co_return false;
   }
 
   if (!native_transfer_batch_entries_.empty() &&

@@ -63,3 +63,21 @@ TEST(CollatorExternalWaitStats, SerializesStableKeysForWallTimeOnly) {
   ASSERT_TRUE(real_stats.find("external_wait_calls=1") != std::string::npos);
   ASSERT_TRUE(cpu_stats.find("external_wait_") == std::string::npos);
 }
+
+TEST(CollatorExternalWaitStats, SerializesNativeCheckpointCoalescingTelemetry) {
+  ton::validator::CollationStats stats;
+  stats.native_checkpoint_groups = 2;
+  stats.native_checkpoint_group_max_entries = 2'048;
+  stats.native_checkpoint_group_max_fragments = 4;
+  stats.native_checkpoint_flush_ingress = 1;
+  stats.native_checkpoint_rollbacks = 1;
+  stats.native_checkpoint_rollback_entries = 512;
+
+  auto real_stats = stats.work_time_to_str(false);
+  ASSERT_TRUE(real_stats.find("native_checkpoint_groups=2") != std::string::npos);
+  ASSERT_TRUE(real_stats.find("native_checkpoint_group_max_entries=2048") != std::string::npos);
+  ASSERT_TRUE(real_stats.find("native_checkpoint_group_max_fragments=4") != std::string::npos);
+  ASSERT_TRUE(real_stats.find("native_checkpoint_flush_ingress=1") != std::string::npos);
+  ASSERT_TRUE(real_stats.find("native_checkpoint_rollbacks=1") != std::string::npos);
+  ASSERT_TRUE(real_stats.find("native_checkpoint_rollback_entries=512") != std::string::npos);
+}

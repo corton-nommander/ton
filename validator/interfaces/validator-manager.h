@@ -293,6 +293,19 @@ struct CollationStats {
   td::uint64 native_fast_path_invocations = 0;
   td::uint64 native_stat_checkpoint_base_snapshots = 0;
   td::uint64 native_stat_checkpoint_rebuilds = 0;
+  td::uint64 native_checkpoint_groups = 0;
+  td::uint64 native_checkpoint_group_entries = 0;
+  td::uint64 native_checkpoint_group_fragments = 0;
+  td::uint64 native_checkpoint_group_max_entries = 0;
+  td::uint64 native_checkpoint_group_max_fragments = 0;
+  td::uint64 native_checkpoint_flush_capacity = 0;
+  td::uint64 native_checkpoint_flush_ingress = 0;
+  td::uint64 native_checkpoint_flush_deadline = 0;
+  td::uint64 native_checkpoint_flush_fanout = 0;
+  td::uint64 native_checkpoint_flush_headroom = 0;
+  td::uint64 native_checkpoint_flush_latency = 0;
+  td::uint64 native_checkpoint_rollbacks = 0;
+  td::uint64 native_checkpoint_rollback_entries = 0;
   td::uint64 native_fragment_refill_waits = 0;
   td::uint64 native_fragment_refill_timeouts = 0;
   td::uint64 native_fragment_refill_messages = 0;
@@ -333,6 +346,20 @@ struct CollationStats {
                                    << " native_stat_checkpoint_base_snapshots="
                                    << native_stat_checkpoint_base_snapshots
                                    << " native_stat_checkpoint_rebuilds=" << native_stat_checkpoint_rebuilds
+                                   << " native_checkpoint_groups=" << native_checkpoint_groups
+                                   << " native_checkpoint_group_entries=" << native_checkpoint_group_entries
+                                   << " native_checkpoint_group_fragments=" << native_checkpoint_group_fragments
+                                   << " native_checkpoint_group_max_entries=" << native_checkpoint_group_max_entries
+                                   << " native_checkpoint_group_max_fragments="
+                                   << native_checkpoint_group_max_fragments
+                                   << " native_checkpoint_flush_capacity=" << native_checkpoint_flush_capacity
+                                   << " native_checkpoint_flush_ingress=" << native_checkpoint_flush_ingress
+                                   << " native_checkpoint_flush_deadline=" << native_checkpoint_flush_deadline
+                                   << " native_checkpoint_flush_fanout=" << native_checkpoint_flush_fanout
+                                   << " native_checkpoint_flush_headroom=" << native_checkpoint_flush_headroom
+                                   << " native_checkpoint_flush_latency=" << native_checkpoint_flush_latency
+                                   << " native_checkpoint_rollbacks=" << native_checkpoint_rollbacks
+                                   << " native_checkpoint_rollback_entries=" << native_checkpoint_rollback_entries
                                    << " native_fragment_refill_waits=" << native_fragment_refill_waits
                                    << " native_fragment_refill_timeouts=" << native_fragment_refill_timeouts
                                    << " native_fragment_refill_messages=" << native_fragment_refill_messages

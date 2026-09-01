@@ -82,6 +82,38 @@ inline constexpr std::size_t native_ext_msg_transport_default_capacity =
 inline constexpr std::size_t native_ext_msg_transport_max_capacity =
     16 * native_ext_msg_transport_fragment_capacity;
 
+// Native transfer execution remains deliberately fair and cancellable in
+// 512-message fragments.  The much more expensive exact ShardAccounts
+// proof/storage-stat checkpoint can safely cover a short run of those
+// fragments, provided no live candidate state is mutated before its single
+// hard-limit preflight.  These are hard local bounds, not protocol limits:
+// they cap both the uncommitted transfer journal and the time spent between
+// exact checkpoints.
+inline constexpr std::size_t native_checkpoint_coalesce_max_fragments = 4;
+inline constexpr std::size_t native_checkpoint_coalesce_max_entries =
+    native_checkpoint_coalesce_max_fragments * native_ext_msg_transport_fragment_capacity;
+// A transfer can touch two accounts.  Flush before a four-fragment checkpoint
+// reaches its worst-case fanout so high-cardinality traffic retains headroom
+// for exact proof construction and the final candidate state install.
+inline constexpr std::size_t native_checkpoint_coalesce_fanout_limit =
+    6 * native_ext_msg_transport_fragment_capacity;
+inline constexpr double native_checkpoint_coalesce_max_latency_seconds = 0.025;
+
+// The checkpoint policy is pure so its safety boundaries remain independently
+// testable.  `ingress_boundary` means the next fragment would need to wait or
+// the current fragment was partial; do not keep speculative state across that
+// boundary.  `headroom_limited` is raised by the conservative deferred-size
+// reservation before another transfer is staged.
+constexpr bool should_flush_native_checkpoint(std::size_t staged_entries, std::size_t staged_fragments,
+                                              std::size_t staged_dirty_accounts, bool deadline_reached,
+                                              bool ingress_boundary, bool headroom_limited,
+                                              bool latency_expired) {
+  return deadline_reached || ingress_boundary || headroom_limited || latency_expired ||
+         staged_entries >= native_checkpoint_coalesce_max_entries ||
+         staged_fragments >= native_checkpoint_coalesce_max_fragments ||
+         staged_dirty_accounts >= native_checkpoint_coalesce_fanout_limit;
+}
+
 constexpr std::size_t parse_native_collator_queue_capacity(std::string_view value) {
   if (value.empty()) {
     return native_collator_queue_default_capacity;

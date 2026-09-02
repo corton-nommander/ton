@@ -530,6 +530,9 @@ struct ExtMsgQueueTelemetry {
   std::atomic<td::uint64> max_pop_batch{0};
   std::atomic<td::uint64> producer_empty{0};
   std::atomic<td::uint64> consumer_empty{0};
+  std::atomic<td::uint64> prefetch_events{0};
+  std::atomic<td::uint64> prefetch_selected{0};
+  std::atomic<td::uint64> queue_empty_while_push_reserved{0};
 
   static void update_max(std::atomic<td::uint64>& value, td::uint64 candidate) {
     auto current = value.load(std::memory_order_relaxed);
@@ -674,9 +677,26 @@ struct ExtMsgQueueState {
     return native_selected_ - native_consumed_;
   }
   void record_empty(bool producer_pending) {
+    bool push_reserved = false;
+    {
+      std::lock_guard lock(accounting_mutex_);
+      push_reserved = native_push_reserved_ != 0;
+    }
     if (auto telemetry = load_telemetry()) {
       auto& counter = producer_pending ? telemetry->producer_empty : telemetry->consumer_empty;
       counter.fetch_add(1, std::memory_order_relaxed);
+      if (push_reserved) {
+        telemetry->queue_empty_while_push_reserved.fetch_add(1, std::memory_order_relaxed);
+      }
+    }
+  }
+  // The streaming pool invokes this once for every low-watermark top-up
+  // attempt.  `selected` is callback-local, fair-scheduler output; it never
+  // changes the queue's physical capacity or accounting ownership.
+  void record_prefetch(std::size_t selected) {
+    if (auto telemetry = load_telemetry()) {
+      telemetry->prefetch_events.fetch_add(1, std::memory_order_relaxed);
+      telemetry->prefetch_selected.fetch_add(selected, std::memory_order_relaxed);
     }
   }
   void record_cancel_discarded() {

@@ -75,12 +75,18 @@ inline constexpr std::size_t standard_collator_queue_capacity = 500;
 // the default at the existing two 512-message fragments, but permit a bounded
 // opt-in prefill for throughput experiments. The window is deliberately a
 // whole number of scheduler fragments: it preserves the native scheduler's
-// fairness and makes the producer's one-fragment look-ahead explicit.
+// fairness. The pool also retains a small callback-local low-watermark
+// staging area. It is not part of the physical queue or candidate allowance:
+// it is a bounded FIFO prefix already selected by the fair scheduler while a
+// previous queue push is waiting for consumer space.
 inline constexpr std::size_t native_ext_msg_transport_fragment_capacity = 512;
 inline constexpr std::size_t native_ext_msg_transport_default_capacity =
     2 * native_ext_msg_transport_fragment_capacity;
 inline constexpr std::size_t native_ext_msg_transport_max_capacity =
     16 * native_ext_msg_transport_fragment_capacity;
+inline constexpr std::size_t native_ext_msg_transport_prefetch_fragments = 2;
+inline constexpr std::size_t native_ext_msg_transport_prefetch_capacity =
+    native_ext_msg_transport_prefetch_fragments * native_ext_msg_transport_fragment_capacity;
 
 // Native transfer execution remains deliberately fair and cancellable in
 // 512-message fragments.  The much more expensive exact ShardAccounts

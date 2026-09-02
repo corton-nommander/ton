@@ -2951,6 +2951,13 @@ void NativeLoadWorker::pump() {
                                     : 0;
         auto logical_available = std::min<td::uint64>(
             static_cast<td::uint64>(options_.max_inflight - active_tasks_), source_available);
+        // NTRN is atomic after signing. Bound it by the still-free global
+        // proof-observed backlog budget before choosing a full paced run, or
+        // the final parent below a cap could overfill that cap by up to 15
+        // logical transfers.
+        logical_available = native_load::bounded_native_signed_run_canonical_capacity(
+            logical_available, canonical_backlog_, options_.max_canonical_backlog,
+            options_.auto_nonce || options_.canonical_block_follower);
         // A parent NTRN is indivisible at submission time. Limit its logical
         // output count to one currently available client window so a valid
         // run cannot be created only to wait forever behind per-client

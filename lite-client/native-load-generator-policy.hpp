@@ -373,6 +373,22 @@ inline std::size_t bounded_native_signed_run_pacing_target(std::size_t logical_c
   return std::min({logical_capacity, configured_run_size, pacing_burst_cap});
 }
 
+// A signed parent cannot be split after signing, so its candidate interval
+// must fit the remaining proof-observed canonical backlog budget before the
+// pacing target chooses its atomic size.  A disabled backlog control retains
+// the established capacity calculation.
+inline std::uint64_t bounded_native_signed_run_canonical_capacity(
+    std::uint64_t logical_capacity, std::uint64_t canonical_backlog,
+    std::uint64_t configured_backlog_limit, bool enforce_canonical_backlog) {
+  if (!enforce_canonical_backlog || configured_backlog_limit == 0) {
+    return logical_capacity;
+  }
+  if (canonical_backlog >= configured_backlog_limit) {
+    return 0;
+  }
+  return std::min(logical_capacity, configured_backlog_limit - canonical_backlog);
+}
+
 // A paced signed run with a useful multi-transfer target waits for its carried
 // token credit instead of immediately spending a one-to-few-transfer parent.
 // Scalar submissions and unpaced signed runs retain their existing behavior.

@@ -291,6 +291,28 @@ TEST(NativeLoadGeneratorPolicy, NativeSignedRunPacingWaitsForTheBoundedAtomicTar
   ASSERT_TRUE(!native_load::should_hold_native_signed_run_for_pacing(false, 1, 16));
 }
 
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunNeverOverfillsCanonicalBacklogBudget) {
+  native_load::NativeSignedRunSettings settings;
+  settings.requested = true;
+  settings.entries_per_run = 16;
+
+  // A paced 16-output parent must shrink to the one remaining canonical
+  // slot rather than wait for and then consume all sixteen token credits.
+  auto remaining = native_load::bounded_native_signed_run_canonical_capacity(16, 0, 1, true);
+  ASSERT_EQ(remaining, 1u);
+  auto preferred = native_load::bounded_native_signed_run_pacing_target(remaining, 16, 16);
+  ASSERT_EQ(preferred, 1u);
+  ASSERT_TRUE(!native_load::should_hold_native_signed_run_for_pacing(true, 1, preferred));
+  auto tail = native_load::make_native_signed_run_plan(100, remaining, settings);
+  ASSERT_TRUE(tail.is_valid());
+  ASSERT_EQ(tail.logical_count, 1u);
+
+  ASSERT_EQ(native_load::bounded_native_signed_run_canonical_capacity(16, 15, 16, true), 1u);
+  ASSERT_EQ(native_load::bounded_native_signed_run_canonical_capacity(16, 16, 16, true), 0u);
+  ASSERT_EQ(native_load::bounded_native_signed_run_canonical_capacity(16, 16, 0, true), 16u);
+  ASSERT_EQ(native_load::bounded_native_signed_run_canonical_capacity(16, 16, 16, false), 16u);
+}
+
 TEST(NativeLoadGeneratorPolicy, NativeSignedRunPlanCannotOverflowItsNonceInterval) {
   native_load::NativeSignedRunSettings settings;
   settings.requested = true;

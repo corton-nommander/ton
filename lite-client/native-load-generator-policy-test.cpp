@@ -251,6 +251,65 @@ TEST(NativeLoadGeneratorPolicy, QuarantinedSourceCannotBeRequeuedByStaleRetry) {
   ASSERT_TRUE(queue.empty());
 }
 
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunsAreDisabledByDefault) {
+  native_load::NativeSignedRunSettings settings;
+  ASSERT_TRUE(!settings.requested);
+  ASSERT_TRUE(native_load::valid_native_signed_run_settings(settings));
+
+  auto plan = native_load::make_native_signed_run_plan(100, 16, settings);
+  ASSERT_EQ(plan.first_nonce, 100u);
+  ASSERT_EQ(plan.logical_count, 0u);
+  ASSERT_TRUE(!plan.is_valid());
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunPlanIsBoundedAndAllowsShortTail) {
+  native_load::NativeSignedRunSettings settings;
+  settings.requested = true;
+  settings.entries_per_run = native_load::max_native_signed_run_entries;
+
+  auto full = native_load::make_native_signed_run_plan(100, 64, settings);
+  ASSERT_EQ(full.first_nonce, 100u);
+  ASSERT_EQ(full.logical_count, native_load::max_native_signed_run_entries);
+  ASSERT_TRUE(full.is_valid());
+
+  auto tail = native_load::make_native_signed_run_plan(200, 3, settings);
+  ASSERT_EQ(tail.first_nonce, 200u);
+  ASSERT_EQ(tail.logical_count, 3u);
+  ASSERT_TRUE(tail.is_valid());
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunPlanCannotOverflowItsNonceInterval) {
+  native_load::NativeSignedRunSettings settings;
+  settings.requested = true;
+  settings.entries_per_run = native_load::max_native_signed_run_entries;
+  auto max_nonce = std::numeric_limits<std::uint64_t>::max();
+
+  auto full = native_load::make_native_signed_run_plan(
+      max_nonce - (native_load::max_native_signed_run_entries - 1), 16, settings);
+  ASSERT_EQ(full.logical_count, native_load::max_native_signed_run_entries);
+  ASSERT_TRUE(full.is_valid());
+
+  auto truncated = native_load::make_native_signed_run_plan(max_nonce - 2, 16, settings);
+  ASSERT_EQ(truncated.logical_count, 3u);
+  ASSERT_TRUE(truncated.is_valid());
+
+  auto final_nonce = native_load::make_native_signed_run_plan(max_nonce, 16, settings);
+  ASSERT_EQ(final_nonce.logical_count, 1u);
+  ASSERT_TRUE(final_nonce.is_valid());
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunSettingsRejectInvalidBounds) {
+  native_load::NativeSignedRunSettings settings;
+  settings.requested = true;
+  settings.entries_per_run = 0;
+  ASSERT_TRUE(!native_load::valid_native_signed_run_settings(settings));
+  ASSERT_EQ(native_load::make_native_signed_run_plan(1, 8, settings).logical_count, 0u);
+
+  settings.entries_per_run = native_load::max_native_signed_run_entries + 1;
+  ASSERT_TRUE(!native_load::valid_native_signed_run_settings(settings));
+  ASSERT_EQ(native_load::make_native_signed_run_plan(1, 8, settings).logical_count, 0u);
+}
+
 TEST(NativeLoadGeneratorPolicy, SubmitCoalescerHonorsTwoMillisecondDeadline) {
   native_load::SubmitCoalescer coalescer;
   coalescer.note_fresh_ready(10.0, 0.002);

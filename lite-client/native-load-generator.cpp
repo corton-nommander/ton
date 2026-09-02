@@ -154,6 +154,7 @@ static_assert(!in_whole_second_window(120, 120001, 180999));
 static_assert(!in_whole_second_window(180, 120001, 180999));
 static_assert(source_task_can_seed_batch(9, 9));
 static_assert(!source_task_can_seed_batch(10, 9));
+static_assert(native_load::max_native_signed_run_entries == block::NativeTransferRun::max_entries);
 
 void request_stop(int) {
   stop_requested = 1;
@@ -171,6 +172,7 @@ struct Options {
   td::uint32 adaptive_max_cwnd{0};
   td::uint32 submit_batch_size{1};
   td::uint32 submit_source_run_size{1};
+  native_load::NativeSignedRunSettings native_signed_runs;
   td::uint32 submit_coalesce_ms{2};
   td::uint32 submit_max_queries_per_client{0};
   td::uint64 max_canonical_backlog{262144};
@@ -4382,6 +4384,17 @@ int main(int argc, char* argv[]) {
                                          : td::Status::Error(
                                                "submit-source-run-size must be 1..1024");
                             });
+  parser.add_option(0, "native-signed-runs",
+                    "request v5 NTRN source-signed runs (currently fail-closed until protocol activation)",
+                    [&] { options.native_signed_runs.requested = true; });
+  parser.add_checked_option(0, "native-signed-run-size",
+                            "logical transfers per requested v5 NTRN run (1..16; inactive until activation)",
+                            [&](td::Slice value) {
+                              options.native_signed_runs.entries_per_run = td::to_integer<td::uint32>(value);
+                              return native_load::valid_native_signed_run_settings(options.native_signed_runs)
+                                         ? td::Status::OK()
+                                         : td::Status::Error("native-signed-run-size must be 1..16");
+                            });
   parser.add_checked_option(0, "submit-coalesce-ms",
                             "bounded signer-completion coalescing delay in milliseconds",
                             [&](td::Slice value) {
@@ -4608,6 +4621,10 @@ int main(int argc, char* argv[]) {
   }
   if (options.submit_source_run_size > options.submit_batch_size) {
     LOG(FATAL) << "submit-source-run-size must not exceed submit-batch-size";
+  }
+  if (options.native_signed_runs.requested) {
+    LOG(FATAL) << "native-signed-runs requires v5 pool, collator, validator, follower, and genesis activation; "
+                  "this generator build intentionally emits only legacy NTFX messages";
   }
   if (options.workers > options.sources || options.workers > options.connections ||
       options.workers > options.signers || options.workers > options.max_inflight) {

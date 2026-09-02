@@ -281,4 +281,55 @@ inline bool retry_entry_can_wake(bool task_is_active, bool task_is_waiting, doub
   return task_is_active && task_is_waiting && task_retry_at == entry_retry_at;
 }
 
+// A NativeTransferRun has one source signature for a contiguous, ordered
+// nonce interval. Keep this small model independent from the wire codec so
+// generator policy tests can protect the eventual dispatcher without turning
+// on the v5 message format. The generator has a compile-time guard against
+// this value drifting from block::NativeTransferRun::max_entries.
+constexpr std::uint32_t max_native_signed_run_entries = 16;
+
+struct NativeSignedRunSettings {
+  // This records an operator's requested future wire mode. It is deliberately
+  // false by default; the current generator fails closed if it is set because
+  // its pool/collator/validator integration is not active yet.
+  bool requested{false};
+  std::uint32_t entries_per_run{max_native_signed_run_entries};
+};
+
+struct NativeSignedRunPlan {
+  std::uint64_t first_nonce{0};
+  std::uint32_t logical_count{0};
+
+  bool is_valid() const {
+    return logical_count != 0 && logical_count <= max_native_signed_run_entries &&
+           first_nonce <= std::numeric_limits<std::uint64_t>::max() - (logical_count - 1);
+  }
+};
+
+inline bool valid_native_signed_run_entries_per_run(std::uint32_t entries_per_run) {
+  return entries_per_run >= 1 && entries_per_run <= max_native_signed_run_entries;
+}
+
+inline bool valid_native_signed_run_settings(const NativeSignedRunSettings& settings) {
+  return valid_native_signed_run_entries_per_run(settings.entries_per_run);
+}
+
+// A requested run consumes only a consecutive sequence which fits both the
+// configured run bound and the nonce range. A short tail is valid, but the
+// returned plan is always one indivisible authorization: later integration
+// must never split it for batching, retry, checkpoint, or rollback.
+inline NativeSignedRunPlan make_native_signed_run_plan(std::uint64_t first_nonce,
+                                                       std::size_t contiguous_ready,
+                                                       const NativeSignedRunSettings& settings) {
+  if (!settings.requested || !valid_native_signed_run_settings(settings) || contiguous_ready == 0) {
+    return {first_nonce, 0};
+  }
+  auto count = std::min<std::size_t>(contiguous_ready, settings.entries_per_run);
+  while (count != 0 &&
+         first_nonce > std::numeric_limits<std::uint64_t>::max() - static_cast<std::uint64_t>(count - 1)) {
+    --count;
+  }
+  return {first_nonce, static_cast<std::uint32_t>(count)};
+}
+
 }  // namespace native_load

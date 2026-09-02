@@ -740,6 +740,44 @@ TEST(NativeStateEngine, installs_prevalidated_native_account_cell) {
   ASSERT_TRUE(!mismatch.is_native);
 }
 
+TEST(NativeStateEngine, parallel_native_account_state_cells_preserve_canonical_indices) {
+  std::vector<block::NativeAccountStateCellInput> inputs;
+  inputs.reserve(2'048);
+  for (td::uint64 index = 0; index < 2'048; ++index) {
+    inputs.push_back({
+        .balance = 1000000 + index * 1009,
+        .nonce = 7000 + index * 17,
+        .flags = static_cast<td::uint8>(index),
+    });
+  }
+
+  // Compare a serial materialization with two bounded multi-worker passes.
+  // The vectors must stay index-aligned even though workers take items in a
+  // nondeterministic order.
+  auto serial = block::build_native_account_state_cells_parallel(inputs, 1);
+  auto parallel = block::build_native_account_state_cells_parallel(inputs, 4);
+  auto repeated = block::build_native_account_state_cells_parallel(inputs, 4);
+  ASSERT_EQ(serial.size(), inputs.size());
+  ASSERT_EQ(parallel.size(), inputs.size());
+  ASSERT_EQ(repeated.size(), inputs.size());
+  for (std::size_t index = 0; index < inputs.size(); ++index) {
+    ASSERT_TRUE(!serial[index].is_null());
+    ASSERT_TRUE(!parallel[index].is_null());
+    ASSERT_TRUE(!repeated[index].is_null());
+    ASSERT_TRUE(block::gen::t_Account.validate_ref(parallel[index]));
+    ASSERT_TRUE(block::tlb::t_Account.validate_ref(parallel[index]));
+    ASSERT_EQ(serial[index]->get_hash(), parallel[index]->get_hash());
+    ASSERT_EQ(parallel[index]->get_hash(), repeated[index]->get_hash());
+
+    block::gen::Account::Record_account_native decoded;
+    auto state = vm::load_cell_slice(parallel[index]);
+    ASSERT_TRUE(tlb::unpack_exact(state, decoded));
+    ASSERT_EQ(decoded.balance, inputs[index].balance);
+    ASSERT_EQ(decoded.nonce, inputs[index].nonce);
+    ASSERT_EQ(decoded.flags, static_cast<int>(inputs[index].flags));
+  }
+}
+
 TEST(NativeStateEngine, preflighted_shard_accounts_root_is_canonical_after_ordinary_corrections) {
   auto address = [](unsigned char suffix) {
     ton::StdSmcAddress result;

@@ -467,6 +467,16 @@ struct NativeTransferStateResult {
   const char* message() const;
 };
 
+// A compact native Account cell is independent of every other account once
+// the ordered state transition has completed.  The parallel builder preserves
+// the input index in its output, so callers retain deterministic commit order
+// by supplying inputs in their canonical address order.
+struct NativeAccountStateCellInput {
+  td::uint64 balance{0};
+  td::uint64 nonce{0};
+  td::uint8 flags{0};
+};
+
 // Pure, allocation-free native execution.  A caller may execute independent
 // inputs concurrently and then commit the returned states in deterministic
 // block order.
@@ -475,6 +485,12 @@ NativeTransferStateResult execute_native_transfer_state(const NativeTransferStat
 std::vector<NativeTransferStateResult> execute_native_transfer_states_parallel(
     const std::vector<NativeTransferStateInput>& inputs, ton::UnixTime now, bool verify_signatures = true,
     unsigned workers = 0);
+
+// Builds validated compact native Account cells on a bounded number of CPU
+// workers.  A null cell at an input's index means its cell could not be
+// materialized; no result is moved or reordered by this helper.
+std::vector<Ref<vm::Cell>> build_native_account_state_cells_parallel(
+    const std::vector<NativeAccountStateCellInput>& inputs, unsigned workers = 0);
 
 // Verifies a block batch on a bounded number of CPU workers.  The worker count
 // defaults to TON_NATIVE_EXECUTOR_THREADS, or a laptop-safe hardware-derived

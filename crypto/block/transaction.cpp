@@ -1119,6 +1119,23 @@ unsigned native_executor_workers(unsigned requested, std::size_t work_items) {
   }
   return static_cast<unsigned>(std::min<std::size_t>(requested, work_items));
 }
+
+// Account-cell construction is intentionally tiny.  Avoid creating a new
+// worker group for the common low-fanout checkpoint; parallelism begins only
+// when there is enough independent immutable work to amortize that setup.
+constexpr std::size_t native_account_state_cell_parallel_min_items = 1'024;
+
+Ref<vm::Cell> build_native_account_state_cell(const NativeAccountStateCellInput& input) {
+  vm::CellBuilder builder;
+  Ref<vm::Cell> total_state;
+  if (!(builder.store_long_bool(1, 2) && builder.store_ulong_rchk_bool(input.balance, 64) &&
+        builder.store_ulong_rchk_bool(input.nonce, 64) && builder.store_ulong_rchk_bool(input.flags, 8) &&
+        builder.finalize_to(total_state) && block::gen::t_Account.validate_ref(total_state) &&
+        block::tlb::t_Account.validate_ref(total_state))) {
+    return {};
+  }
+  return total_state;
+}
 }  // namespace
 
 bool NativeTransfer::is_valid() const {
@@ -1307,6 +1324,41 @@ std::vector<NativeTransferStateResult> execute_native_transfer_states_parallel(
     }
   }
   return results;
+}
+
+std::vector<Ref<vm::Cell>> build_native_account_state_cells_parallel(
+    const std::vector<NativeAccountStateCellInput>& inputs, unsigned workers) {
+  std::vector<Ref<vm::Cell>> cells(inputs.size());
+  workers = native_executor_workers(workers, inputs.size());
+  if (inputs.size() < native_account_state_cell_parallel_min_items) {
+    workers = std::min(workers, 1u);
+  }
+  if (!workers) {
+    return cells;
+  }
+  std::atomic<std::size_t> cursor{0};
+  auto run = [&] {
+    while (true) {
+      auto index = cursor.fetch_add(1, std::memory_order_relaxed);
+      if (index >= inputs.size()) {
+        return;
+      }
+      cells[index] = build_native_account_state_cell(inputs[index]);
+    }
+  };
+  if (workers == 1) {
+    run();
+  } else {
+    std::vector<std::thread> threads;
+    threads.reserve(workers);
+    for (unsigned i = 0; i < workers; ++i) {
+      threads.emplace_back(run);
+    }
+    for (auto& thread : threads) {
+      thread.join();
+    }
+  }
+  return cells;
 }
 
 td::Status verify_native_transfer_signatures_parallel(const std::vector<const NativeTransfer*>& transfers,

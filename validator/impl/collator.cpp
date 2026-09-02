@@ -4857,23 +4857,35 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     vm::AugmentedDictionary staged_account_dict{*account_dict_estimator_};
     std::map<StdSmcAddress, Ref<vm::Cell>> staged_account_cells;
     std::vector<vm::AugmentedDictionary::SetManyEntry> staged_account_updates;
+    std::vector<StdSmcAddress> staged_account_addresses;
+    std::vector<block::NativeAccountStateCellInput> staged_account_inputs;
     staged_account_updates.reserve(pending_checkpoint.dirty_addresses.size());
+    staged_account_addresses.reserve(pending_checkpoint.dirty_addresses.size());
+    staged_account_inputs.reserve(pending_checkpoint.dirty_addresses.size());
     for (const auto& address : pending_checkpoint.dirty_addresses) {
+      const auto& state = native_states.at(address);
+      staged_account_addresses.push_back(address);
+      staged_account_inputs.push_back({.balance = state.balance, .nonce = state.nonce, .flags = state.flags});
+    }
+    std::vector<Ref<vm::Cell>> staged_total_states;
+    {
+      td::ScopedRealCpuTimer cell_timer{stats_.work_time.native_account_cell_build};
+      staged_total_states = block::build_native_account_state_cells_parallel(staged_account_inputs);
+    }
+    if (staged_total_states.size() != staged_account_addresses.size()) {
+      fatal_error("native account-state cell builder returned an invalid result size");
+      return false;
+    }
+    for (std::size_t index = 0; index < staged_account_addresses.size(); ++index) {
+      const auto& address = staged_account_addresses[index];
       auto& state = native_states.at(address);
-      Ref<vm::Cell> staged_total_state;
-      {
-        td::ScopedRealCpuTimer cell_timer{stats_.work_time.native_account_cell_build};
-        vm::CellBuilder state_builder;
-        if (!(state_builder.store_long_bool(1, 2) && state_builder.store_ulong_rchk_bool(state.balance, 64) &&
-              state_builder.store_ulong_rchk_bool(state.nonce, 64) &&
-              state_builder.store_ulong_rchk_bool(state.flags, 8) && state_builder.finalize_to(staged_total_state) &&
-              block::gen::t_Account.validate_ref(staged_total_state) &&
-              block::tlb::t_Account.validate_ref(staged_total_state))) {
-          fatal_error("cannot stage aggregated native account state");
-          return false;
-        }
-        ++stats_.native_account_cells_built;
+      auto staged_total_state = std::move(staged_total_states[index]);
+      if (staged_total_state.is_null() || !block::gen::t_Account.validate_ref(staged_total_state) ||
+          !block::tlb::t_Account.validate_ref(staged_total_state)) {
+        fatal_error("cannot stage aggregated native account state");
+        return false;
       }
+      ++stats_.native_account_cells_built;
       {
         vm::CellBuilder account_builder;
         if (!(account_builder.store_ref_bool(staged_total_state) &&

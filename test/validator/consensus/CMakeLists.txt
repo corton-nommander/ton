@@ -29,3 +29,12 @@ set_tests_properties(consensus-max-tps-shardchain-idle PROPERTIES
 
 add_test(NAME consensus-cancelled-accept-skips-external-tracking
   COMMAND test-consensus --n-nodes 1 --duration 0.75 --target-rate-ms 100 --cancel-block-accepts)
+
+add_executable(test-finalize-metadata test-finalize-metadata.cpp)
+target_include_directories(test-finalize-metadata PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+                                                            ${CMAKE_SOURCE_DIR}/common
+                                                            ${CMAKE_SOURCE_DIR}/crypto
+                                                            ${CMAKE_SOURCE_DIR}/tdactor
+                                                            ${CMAKE_SOURCE_DIR}/tddb)
+target_link_libraries(test-finalize-metadata PRIVATE td-test-main tdactor tdutils tl_api ton_validator validator)
+ton_test(test-finalize-metadata)

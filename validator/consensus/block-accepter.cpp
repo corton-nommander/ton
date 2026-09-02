@@ -8,7 +8,6 @@
 
 #include "bus.h"
 #include "stats.h"
-#include "utils.h"
 
 namespace ton::validator::consensus {
 
@@ -43,12 +42,11 @@ class BlockAccepterImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     // only the central applied-state reconciliation may purge the pool.
     co_await td::actor::ask(owning_bus()->manager, &ManagerFacade::accept_block, block.id, block_data,
                             event->candidate->leader.value(), event->signatures, broadcast_mode, true);
-    auto native_messages = get_candidate_native_external_messages(block);
-    if (native_messages.is_error()) {
-      co_return native_messages.move_as_error_prefix("cannot track native external messages: ");
-    }
+    // StateResolver already decoded this value while finalizing the candidate.
+    // Moving only after accept succeeds keeps cancelled/losing candidates from
+    // registering any local native-message metadata.
     co_await td::actor::ask(owning_bus()->manager, &ManagerFacade::track_external_messages,
-                            native_messages.move_as_ok());
+                            std::move(event->native_external_messages));
     owning_bus().publish<TraceEvent>(stats::BlockAccepted::create(event->candidate->id));
     co_return {};
   }

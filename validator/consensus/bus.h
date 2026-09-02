@@ -15,6 +15,7 @@
 #include "chain-state.h"
 #include "manager-facade.h"
 #include "types.h"
+#include "validator/interfaces/external-message.h"
 
 namespace ton::validator::consensus {
 
@@ -31,8 +32,19 @@ struct StopRequested {};
 struct FinalizeBlock {
   using ReturnType = td::Unit;
 
+  // The finalized candidate is decoded exactly once by StateResolver.  Keep
+  // its native metadata with the acceptance request so BlockAccepter can
+  // track the same value after (and only after) accept_block succeeds.
+  FinalizeBlock(CandidateRef candidate, td::Ref<block::BlockSignatureSet> signatures,
+                std::vector<TrackedNativeExternalMessage> native_external_messages)
+      : candidate(std::move(candidate))
+      , signatures(std::move(signatures))
+      , native_external_messages(std::move(native_external_messages)) {
+  }
+
   CandidateRef candidate;
   td::Ref<block::BlockSignatureSet> signatures;
+  std::vector<TrackedNativeExternalMessage> native_external_messages;
 
   std::string contents_to_string() const;
 };

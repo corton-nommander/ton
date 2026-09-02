@@ -337,8 +337,21 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
         co_await finalize_blocks(*parent, std::nullopt, std::nullopt);
       }
 
-      auto finalized_native_hashes =
-          get_candidate_native_external_hashes(std::get<BlockCandidate>(candidate->block)).move_as_ok();
+      // Decode compact native metadata once. FinalizeBlock value-owns the
+      // tracked identities for BlockAccepter, while this separate hash vector
+      // survives the publish await for the masterchain-race exclusion guard.
+      auto finalized_native_messages =
+          get_candidate_native_external_messages(std::get<BlockCandidate>(candidate->block)).move_as_ok();
+      std::vector<Bits256> finalized_native_hashes;
+      finalized_native_hashes.reserve(finalized_native_messages.size());
+      for (const auto& message : finalized_native_messages) {
+        finalized_native_hashes.push_back(message.hash);
+      }
+      // The decoder already returns this order, but retain the resolver's
+      // legacy sort/dedup guarantee independently of that implementation.
+      std::sort(finalized_native_hashes.begin(), finalized_native_hashes.end());
+      finalized_native_hashes.erase(
+          std::unique(finalized_native_hashes.begin(), finalized_native_hashes.end()), finalized_native_hashes.end());
 
       td::Ref<block::BlockSignatureSet> sig_set;
       if (final_cert) {
@@ -346,7 +359,7 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       } else {
         sig_set = notar_cert->to_signature_set(candidate, bus);
       }
-      co_await owning_bus().publish<FinalizeBlock>(candidate, sig_set);
+      co_await owning_bus().publish<FinalizeBlock>(candidate, sig_set, std::move(finalized_native_messages));
       record_unanchored_finalized_native_hashes(candidate->block_id(), std::move(finalized_native_hashes));
     } else {
       if (auto parent = candidate->parent_id) {

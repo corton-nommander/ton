@@ -431,7 +431,11 @@ struct WorkerStats {
   td::uint64 native_signed_run_submission_attempts{0};
   td::uint64 native_signed_run_proof_resolutions{0};
   td::uint64 max_native_signed_run_size{0};
+  // Physical external BOC bodies submitted to liteServer. This preserves the
+  // historical transport meaning of wire_attempts when one NTRN carries many
+  // logical transfers.
   td::uint64 wire_attempts{0};
+  td::uint64 logical_submission_attempts{0};
   td::uint64 wire_queries{0};
   td::uint64 wire_batches{0};
   td::uint64 wire_batch_messages{0};
@@ -484,8 +488,12 @@ struct WorkerStats {
   td::uint64 measure_canonical_backpressure_events{0};
   td::uint64 source_backpressure_stalls{0};
   td::uint64 source_issue_bursts{0};
+  // Physical authorizations constructed during source issue turns. For a
+  // scalar burst this equals its transfer count; for an NTRN burst it is one.
   td::uint64 source_issue_burst_messages{0};
+  td::uint64 source_issue_burst_logical_transfers{0};
   td::uint64 max_source_issue_burst{0};
+  td::uint64 max_source_issue_burst_logical_transfers{0};
   td::uint64 head_blocked_ready_notifications{0};
   td::uint64 head_blocked_ready_scans{0};
   td::uint64 ready_source_queue_pushes{0};
@@ -1258,6 +1266,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(native_signed_run_submission_attempts);
       ADD_FIELD(native_signed_run_proof_resolutions);
       ADD_FIELD(wire_attempts);
+      ADD_FIELD(logical_submission_attempts);
       ADD_FIELD(wire_queries);
       ADD_FIELD(wire_batches);
       ADD_FIELD(wire_batch_messages);
@@ -1309,6 +1318,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(source_backpressure_stalls);
       ADD_FIELD(source_issue_bursts);
       ADD_FIELD(source_issue_burst_messages);
+      ADD_FIELD(source_issue_burst_logical_transfers);
       ADD_FIELD(head_blocked_ready_notifications);
       ADD_FIELD(head_blocked_ready_scans);
       ADD_FIELD(ready_source_queue_pushes);
@@ -1337,6 +1347,9 @@ class NativeLoadCoordinator final : public td::actor::Actor {
           std::max(total.max_wire_batch_source_run, value.max_wire_batch_source_run);
       total.max_source_issue_burst =
           std::max(total.max_source_issue_burst, value.max_source_issue_burst);
+      total.max_source_issue_burst_logical_transfers =
+          std::max(total.max_source_issue_burst_logical_transfers,
+                   value.max_source_issue_burst_logical_transfers);
       total.max_ready_source_queue_depth =
           std::max(total.max_ready_source_queue_depth, value.max_ready_source_queue_depth);
       total.max_source_canonical_backlog_current =
@@ -1568,6 +1581,9 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"native_signed_run_max_size\":" << total.max_native_signed_run_size
         << ",\"wire_attempts\":" << total.wire_attempts
         << ",\"wire_tps\":" << rate(total.wire_attempts, previous_.wire_attempts)
+        << ",\"logical_submission_attempts\":" << total.logical_submission_attempts
+        << ",\"logical_submission_attempt_tps\":"
+        << rate(total.logical_submission_attempts, previous_.logical_submission_attempts)
         << ",\"wire_queries\":" << total.wire_queries
         << ",\"wire_query_tps\":" << rate(total.wire_queries, previous_.wire_queries)
         << ",\"wire_batches\":" << total.wire_batches << ",\"wire_batch_messages\":" << total.wire_batch_messages
@@ -1594,7 +1610,14 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"source_issue_burst_avg_size\":"
         << static_cast<double>(total.source_issue_burst_messages) /
                static_cast<double>(std::max<td::uint64>(1, total.source_issue_bursts))
-        << ",\"source_issue_burst_max_size\":" << total.max_source_issue_burst << ",\"retries\":" << total.retries
+        << ",\"source_issue_burst_max_size\":" << total.max_source_issue_burst
+        << ",\"source_issue_burst_logical_transfers\":"
+        << total.source_issue_burst_logical_transfers
+        << ",\"source_issue_burst_logical_avg_size\":"
+        << static_cast<double>(total.source_issue_burst_logical_transfers) /
+               static_cast<double>(std::max<td::uint64>(1, total.source_issue_bursts))
+        << ",\"source_issue_burst_logical_max_size\":"
+        << total.max_source_issue_burst_logical_transfers << ",\"retries\":" << total.retries
         << ",\"retry_exhausted\":" << total.retry_exhausted
         << ",\"retry_horizon_exhausted\":" << total.retry_horizon_exhausted
         << ",\"retry_exhausted_sources\":" << total.retry_exhausted_sources
@@ -1822,8 +1845,10 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     std::cout << ",\"finalized\":null,\"finalized_semantics\":\"not_independently_observed\""
               << ",\"admission_semantics\":\"liteServer.sendMessage status=1; not block inclusion\""
               << ",\"native_signed_run_semantics\":\"when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash\""
+              << ",\"wire_attempts_semantics\":\"physical external BOC bodies submitted to liteServer; an NTRN parent contributes one even when it authorizes multiple logical transfers\""
+              << ",\"logical_submission_attempts_semantics\":\"logical transfers represented by every admission attempt, including retries; use alongside wire_attempts to measure NTRN message amortization\""
               << ",\"wire_batch_source_run_semantics\":\"adjacent ascending nonces from one source in a sendMessageBatch; each source appears in at most one bounded run per batch and seed selection remains globally fair\""
-              << ",\"source_issue_burst_semantics\":\"fair round-robin sources issue up to submit_source_run_size contiguous nonces per turn, bounded by pacing, worker inflight, and canonical backlog limits\""
+              << ",\"source_issue_burst_semantics\":\"fair round-robin sources issue bounded contiguous work per turn; scalar mode counts one physical message per nonce, while signed-run mode constructs one physical NTRN parent carrying its reported logical transfer count\""
               << ",\"head_blocked_ready_notifications_semantics\":\"O(1) ready-state notifications for non-head same-source tasks; they do not enter or rotate through the dispatch queue\""
               << ",\"head_blocked_ready_scans_semantics\":\"deprecated compatibility counter; source-head scheduling avoids blocked-task scans and leaves this at zero\""
               << ",\"ready_source_queue_semantics\":\"at most one live dispatch entry per source; stale generation entries and bounded same-batch source exclusions are reported separately\""
@@ -2967,9 +2992,16 @@ void NativeLoadWorker::pump() {
       }
     }
     if (burst_size) {
+      auto burst_counts = native_load::source_issue_burst_message_counts(
+          options_.native_signed_runs.requested, burst_size);
       ++stats_.source_issue_bursts;
-      stats_.source_issue_burst_messages += burst_size;
-      stats_.max_source_issue_burst = std::max(stats_.max_source_issue_burst, burst_size);
+      stats_.source_issue_burst_messages += burst_counts.physical_messages;
+      stats_.source_issue_burst_logical_transfers += burst_counts.logical_transfers;
+      stats_.max_source_issue_burst =
+          std::max(stats_.max_source_issue_burst, burst_counts.physical_messages);
+      stats_.max_source_issue_burst_logical_transfers =
+          std::max(stats_.max_source_issue_burst_logical_transfers,
+                   burst_counts.logical_transfers);
     }
     enqueue_available_wallet(wallet_idx.value());
     now = td::Time::now();
@@ -3494,7 +3526,9 @@ void NativeLoadWorker::send_task(std::shared_ptr<TransferTask> task, std::size_t
   if (task->signed_run) {
     ++stats_.native_signed_run_submission_attempts;
   }
-  stats_.wire_attempts += logical_count;
+  auto attempt_counts = native_load::single_submission_message_counts(logical_count);
+  stats_.wire_attempts += attempt_counts.physical_messages;
+  stats_.logical_submission_attempts += attempt_counts.logical_transfers;
   ++stats_.wire_queries;
   inflight_ += logical_count;
   client.inflight += logical_count;
@@ -3566,7 +3600,9 @@ void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tas
         td::actor::send_closure(self, &NativeLoadWorker::on_batch_result, std::move(tasks), client_idx,
                                 std::move(result));
       });
-  stats_.wire_attempts += logical_count;
+  auto attempt_counts = native_load::batch_submission_message_counts(tasks.size(), logical_count);
+  stats_.wire_attempts += attempt_counts.physical_messages;
+  stats_.logical_submission_attempts += attempt_counts.logical_transfers;
   ++stats_.wire_queries;
   ++stats_.wire_batches;
   stats_.wire_batch_messages += tasks.size();

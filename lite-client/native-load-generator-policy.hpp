@@ -281,6 +281,33 @@ inline bool retry_entry_can_wake(bool task_is_active, bool task_is_waiting, doub
   return task_is_active && task_is_waiting && task_retry_at == entry_retry_at;
 }
 
+// Native-load reporting has two independent units once one NTRN parent can
+// authorize several transfers: physical external BOC bodies and the logical
+// transfers they carry.  Keep the conversion explicit so transport metrics
+// never silently turn into logical-TPS metrics in signed-run mode.
+struct PhysicalLogicalMessageCounts {
+  std::uint64_t physical_messages{0};
+  std::uint64_t logical_transfers{0};
+};
+
+constexpr PhysicalLogicalMessageCounts single_submission_message_counts(
+    std::uint64_t logical_transfers) {
+  return {logical_transfers == 0 ? std::uint64_t{0} : std::uint64_t{1}, logical_transfers};
+}
+
+constexpr PhysicalLogicalMessageCounts batch_submission_message_counts(
+    std::uint64_t physical_messages, std::uint64_t logical_transfers) {
+  return {physical_messages, logical_transfers};
+}
+
+constexpr PhysicalLogicalMessageCounts source_issue_burst_message_counts(
+    bool source_signed_run, std::uint64_t logical_transfers) {
+  if (logical_transfers == 0) {
+    return {};
+  }
+  return {source_signed_run ? std::uint64_t{1} : logical_transfers, logical_transfers};
+}
+
 // A NativeTransferRun has one source signature for a contiguous, ordered
 // nonce interval. Keep this small model independent from the wire codec so
 // generator policy tests can protect dispatcher range rules without needing

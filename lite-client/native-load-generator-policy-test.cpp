@@ -320,6 +320,24 @@ TEST(NativeLoadGeneratorPolicy, NativeSignedRunRangeMustResolveAsOneWholeInterva
   ASSERT_TRUE(!plan.bisected_by(44));
 }
 
+TEST(NativeLoadGeneratorPolicy, SignedRunsKeepPhysicalAndLogicalTrafficCountersSeparate) {
+  auto signed_submission = native_load::single_submission_message_counts(16);
+  ASSERT_EQ(signed_submission.physical_messages, 1u);
+  ASSERT_EQ(signed_submission.logical_transfers, 16u);
+
+  auto scalar_batch = native_load::batch_submission_message_counts(96, 96);
+  ASSERT_EQ(scalar_batch.physical_messages, 96u);
+  ASSERT_EQ(scalar_batch.logical_transfers, 96u);
+
+  auto signed_burst = native_load::source_issue_burst_message_counts(true, 16);
+  ASSERT_EQ(signed_burst.physical_messages, 1u);
+  ASSERT_EQ(signed_burst.logical_transfers, 16u);
+
+  auto scalar_burst = native_load::source_issue_burst_message_counts(false, 16);
+  ASSERT_EQ(scalar_burst.physical_messages, 16u);
+  ASSERT_EQ(scalar_burst.logical_transfers, 16u);
+}
+
 TEST(NativeLoadGeneratorPolicy, NativeSignedRunSettingsRejectInvalidBounds) {
   native_load::NativeSignedRunSettings settings;
   settings.requested = true;

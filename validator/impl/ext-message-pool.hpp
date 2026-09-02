@@ -50,6 +50,10 @@ class ExtMessagePool : public td::actor::Actor {
     td::uint64 amount{0};
     td::uint64 fee{0};
     UnixTime valid_until{0};
+    // `logical_count == 1` is not sufficient to identify the wire format:
+    // a source-signed run may legitimately contain one output. Keep the mode
+    // explicit so a capability transition can evict only incompatible work.
+    bool is_run{false};
 
     bool has_valid_interval() const {
       return logical_count != 0 &&
@@ -99,29 +103,7 @@ class ExtMessagePool : public td::actor::Actor {
   void reconcile_native_external_messages(td::Ref<MasterchainState> state);
   void erase_external_messages(std::vector<ExtMessage::Hash> to_delete);
 
-  void update_last_masterchain_state(td::Ref<MasterchainState> state) {
-    if (state.is_null()) {
-      return;
-    }
-    auto block_id = state->get_block_id();
-    if (!block_id.is_masterchain()) {
-      ++native_batch_ignored_mc_state_updates_;
-      return;
-    }
-    if (last_masterchain_state_.not_null()) {
-      auto current_id = last_masterchain_state_->get_block_id();
-      if (block_id.seqno() < current_id.seqno() || (block_id.seqno() == current_id.seqno() && block_id != current_id)) {
-        ++native_batch_ignored_mc_state_updates_;
-        return;
-      }
-      if (block_id != current_id) {
-        reset_native_admission_cache_generation(block_id);
-      }
-    } else {
-      reset_native_admission_cache_generation(block_id);
-    }
-    last_masterchain_state_ = std::move(state);
-  }
+  void update_last_masterchain_state(td::Ref<MasterchainState> state);
   void update_options(td::Ref<ValidatorManagerOptions> opts) {
     opts_ = std::move(opts);
   }
@@ -206,6 +188,7 @@ class ExtMessagePool : public td::actor::Actor {
     // the external payload while it is on its hot path.
     td::optional<td::uint64> native_nonce;
     td::uint32 native_nonce_count{0};
+    bool native_is_run{false};
 
     auto address() const {
       return std::make_pair(message->wc(), message->addr());
@@ -367,6 +350,13 @@ class ExtMessagePool : public td::actor::Actor {
     std::map<BlockIdExt, NativeAdmissionShardViewPtr> shard_views;
   } native_admission_shard_cache_;
 
+  struct NativeAdmissionSnapshot {
+    td::Ref<MasterchainState> state;
+    BlockIdExt block_id;
+    Bits256 chain_domain;
+    bool runs_enabled{false};
+  };
+
   td::Timestamp cleanup_mempool_at_ = td::Timestamp::now();
 
   td::Status add_message_to_mempool(td::Ref<ExtMessage> message, int priority,
@@ -423,6 +413,7 @@ class ExtMessagePool : public td::actor::Actor {
     td::uint64 amount;
     td::uint64 fee;
     td::uint32 valid_until;
+    bool is_run{false};
     td::uint64 account_revision{0};
     td::Promise<td::Unit> allow_broadcast_promise;
     std::vector<td::Promise<td::Unit>> insertion_waiters;
@@ -534,6 +525,11 @@ class ExtMessagePool : public td::actor::Actor {
     }
   };
   std::map<NativeAddress, NativeInfo> native_accounts_;
+  // The applied configuration selects exactly one native wire format. A
+  // one-output NTRN is still a run, so this cannot be inferred from interval
+  // length when clearing an incompatible mode after a config transition.
+  bool native_transfer_runs_mode_initialized_{false};
+  bool native_transfer_runs_mode_enabled_{false};
   // Do not discard a watermark when an account has no pending messages: an
   // older account-state fetch can still be suspended in a signature worker.
   std::map<NativeAddress, NativeNonceWatermark> native_nonce_watermarks_;
@@ -738,6 +734,11 @@ class ExtMessagePool : public td::actor::Actor {
   static td::Status validate_native_transfer_run_locality(const block::NativeTransferRun &run,
                                                            const MasterchainState &state);
   td::Result<td::Ref<MasterchainState>> pin_native_admission_masterchain_state() const;
+  td::Result<NativeAdmissionSnapshot> pin_native_admission_snapshot();
+  td::Status validate_native_admission_mode(const NativeAdmissionSnapshot &snapshot, bool is_run) const;
+  void update_native_transfer_runs_mode(bool enabled);
+  void purge_incompatible_native_messages(bool runs_enabled);
+  void refresh_native_transfer_runs_mode_from_applied_state();
   void reset_native_admission_cache_generation(const BlockIdExt &masterchain_block_id);
   NativeAdmissionShardViewPtr lookup_native_admission_shard_view(
       const BlockIdExt &masterchain_block_id, const BlockIdExt &shard_block_id);

@@ -34,6 +34,7 @@
 #include <iterator>
 #include <limits>
 #include <thread>
+#include <tuple>
 
 namespace ton::validator {
 void ExtMessagePool::start_up() {
@@ -75,6 +76,39 @@ void ExtMessagePool::start_up() {
                << " generic_retention_s=" << MempoolMsg::GENERIC_MEMPOOL_TTL_SECONDS;
 }
 
+void ExtMessagePool::update_last_masterchain_state(td::Ref<MasterchainState> state) {
+  if (state.is_null()) {
+    return;
+  }
+  auto block_id = state->get_block_id();
+  if (!block_id.is_masterchain()) {
+    ++native_batch_ignored_mc_state_updates_;
+    return;
+  }
+  if (last_masterchain_state_.not_null()) {
+    auto current_id = last_masterchain_state_->get_block_id();
+    if (block_id.seqno() < current_id.seqno() ||
+        (block_id.seqno() == current_id.seqno() && block_id != current_id)) {
+      ++native_batch_ignored_mc_state_updates_;
+      return;
+    }
+    if (block_id != current_id) {
+      reset_native_admission_cache_generation(block_id);
+    }
+  } else {
+    reset_native_admission_cache_generation(block_id);
+  }
+  last_masterchain_state_ = std::move(state);
+
+  // A config rollback/reorg must not leave a physical message from the other
+  // native wire mode at a source head. This is intentionally best-effort for
+  // malformed test/bootstrap states; the admission paths turn a config parse
+  // failure into a hard rejection before accepting new native work.
+  if (!native_accounts_.empty()) {
+    refresh_native_transfer_runs_mode_from_applied_state();
+  }
+}
+
 td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_external_message(td::BufferSlice data,
                                                                                         int priority,
                                                                                         bool add_to_mempool) {
@@ -111,6 +145,119 @@ td::Result<td::Ref<MasterchainState>> ExtMessagePool::pin_native_admission_maste
     return td::Status::Error(ErrorCode::notready, "native admission masterchain state is invalid");
   }
   return state;
+}
+
+td::Result<ExtMessagePool::NativeAdmissionSnapshot> ExtMessagePool::pin_native_admission_snapshot() {
+  TRY_RESULT(state, pin_native_admission_masterchain_state());
+  const auto block_id = state->get_block_id();
+  auto config_result =
+      block::ConfigInfo::extract_config(state->root_cell(), block_id, block::ConfigInfo::needCapabilities);
+  if (config_result.is_error()) {
+    return config_result.move_as_error();
+  }
+  const auto &config = *config_result.ok();
+  const bool runs_enabled = native_transfer_runs_enabled(config);
+  update_native_transfer_runs_mode(runs_enabled);
+  return NativeAdmissionSnapshot{.state = std::move(state),
+                                 .block_id = block_id,
+                                 .chain_domain = config.get_zerostate_id().root_hash,
+                                 .runs_enabled = runs_enabled};
+}
+
+td::Status ExtMessagePool::validate_native_admission_mode(const NativeAdmissionSnapshot &snapshot,
+                                                           bool is_run) const {
+  if (snapshot.runs_enabled == is_run) {
+    return td::Status::OK();
+  }
+  if (snapshot.runs_enabled) {
+    return td::Status::Error("scalar native transfers are disabled when source-signed runs are enabled");
+  }
+  return td::Status::Error("native transfer runs require global version 15 and capNativeTransferRuns");
+}
+
+void ExtMessagePool::update_native_transfer_runs_mode(bool enabled) {
+  if (native_transfer_runs_mode_initialized_ && native_transfer_runs_mode_enabled_ == enabled) {
+    return;
+  }
+  native_transfer_runs_mode_initialized_ = true;
+  native_transfer_runs_mode_enabled_ = enabled;
+  purge_incompatible_native_messages(enabled);
+}
+
+void ExtMessagePool::purge_incompatible_native_messages(bool runs_enabled) {
+  std::vector<std::tuple<NativeAddress, td::uint64, ExtMessage::Hash>> incompatible;
+  for (const auto &[address, account] : native_accounts_) {
+    for (const auto &[nonce, work] : account.messages) {
+      if (work.is_run != runs_enabled) {
+        incompatible.emplace_back(address, nonce, work.hash);
+      }
+    }
+  }
+  if (incompatible.empty()) {
+    return;
+  }
+
+  const td::Slice reason = runs_enabled
+                               ? td::Slice("scalar native transfer was evicted after source-signed runs were enabled")
+                               : td::Slice("native transfer run was evicted after source-signed runs were disabled");
+  std::set<NativeAddress> changed_sources;
+  for (const auto &[address, nonce, hash] : incompatible) {
+    auto account_it = native_accounts_.find(address);
+    if (account_it == native_accounts_.end()) {
+      continue;
+    }
+    auto reservation_it = account_it->second.messages.find(nonce);
+    if (reservation_it == account_it->second.messages.end() || reservation_it->second.hash != hash ||
+        reservation_it->second.is_run == runs_enabled) {
+      continue;
+    }
+    if (reservation_it->second.allow_broadcast_promise) {
+      reservation_it->second.allow_broadcast_promise.set_error(td::Status::Error(reason));
+    }
+    reservation_it->second.insertion_failed(reason);
+
+    bool removed = false;
+    auto pool_it = ext_messages_hashes_.find(hash);
+    if (pool_it != ext_messages_hashes_.end()) {
+      removed = erase_message(pool_it->second.first, pool_it->second.second, false);
+    }
+    if (!removed) {
+      account_it = native_accounts_.find(address);
+      if (account_it != native_accounts_.end()) {
+        reservation_it = account_it->second.messages.find(nonce);
+        if (reservation_it != account_it->second.messages.end() && reservation_it->second.hash == hash &&
+            reservation_it->second.is_run != runs_enabled) {
+          reservation_it->second.clear_mempool_link();
+          account_it->second.messages.erase(reservation_it);
+          if (account_it->second.messages.empty()) {
+            native_accounts_.erase(account_it);
+          }
+          prune_native_reconciliation_target_if_idle(address);
+          removed = true;
+        }
+      }
+    }
+    if (removed) {
+      changed_sources.insert(address);
+    }
+  }
+  if (!changed_sources.empty()) {
+    wake_native_callbacks(&changed_sources);
+  }
+}
+
+void ExtMessagePool::refresh_native_transfer_runs_mode_from_applied_state() {
+  auto state = last_masterchain_state_;
+  if (state.is_null()) {
+    return;
+  }
+  const auto block_id = state->get_block_id();
+  auto config_result =
+      block::ConfigInfo::extract_config(state->root_cell(), block_id, block::ConfigInfo::needCapabilities);
+  if (config_result.is_error()) {
+    return;
+  }
+  update_native_transfer_runs_mode(native_transfer_runs_enabled(*config_result.ok()));
 }
 
 void ExtMessagePool::reset_native_admission_cache_generation(const BlockIdExt &masterchain_block_id) {
@@ -234,7 +381,8 @@ td::Result<ExtMessagePool::NativeAdmission> ExtMessagePool::make_native_admissio
                          .logical_count = 1,
                          .amount = transfer.amount,
                          .fee = transfer.fee,
-                         .valid_until = transfer.valid_until};
+                         .valid_until = transfer.valid_until,
+                         .is_run = false};
 }
 
 td::Result<ExtMessagePool::NativeAdmission> ExtMessagePool::make_native_admission(
@@ -246,7 +394,8 @@ td::Result<ExtMessagePool::NativeAdmission> ExtMessagePool::make_native_admissio
                             .logical_count = static_cast<td::uint32>(run.outputs.size()),
                             .amount = 0,
                             .fee = 0,
-                            .valid_until = run.valid_until};
+                            .valid_until = run.valid_until,
+                            .is_run = true};
   if (!admission.has_valid_interval()) {
     return td::Status::Error("native transfer run has an invalid nonce interval");
   }
@@ -344,6 +493,7 @@ td::Result<td::optional<ExtMessagePool::CheckResult>> ExtMessagePool::check_exis
               (reservation_it != account_it->second.messages.end() &&
                (reservation_it->second.hash != existing_message.value()->message->hash() ||
                 reservation_it->second.logical_count != existing_message.value()->native_nonce_count ||
+                reservation_it->second.is_run != existing_message.value()->native_is_run ||
                 reservation_it->second.source != address ||
                 watermark_it->second.is_consumed(existing_message.value()->native_nonce.value()) ||
                 (!reservation_it->second.committed &&
@@ -437,6 +587,20 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_parsed_ex
     td::Ref<ExtMessage> message, int priority, bool add_to_mempool, td::Timestamp deadline) {
   if (deadline && deadline.is_in_past()) {
     co_return td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
+  }
+  const auto native_tag = vm::load_cell_slice(message->root_cell()).prefetch_ulong(32);
+  if (native_tag == block::NativeTransfer::magic || native_tag == block::NativeTransferRun::magic) {
+    // Check the applied mode before raw-hash idempotence. Otherwise a scalar
+    // NTFX (or a run after a rollback) already present in the pool could
+    // bypass the current configuration gate through check_existing().
+    auto snapshot = pin_native_admission_snapshot();
+    if (snapshot.is_error()) {
+      co_return snapshot.move_as_error();
+    }
+    auto mode_status = validate_native_admission_mode(snapshot.ok(), native_tag == block::NativeTransferRun::magic);
+    if (mode_status.is_error()) {
+      co_return std::move(mode_status);
+    }
   }
   auto r_existing = check_existing_external_message(message, priority, add_to_mempool);
   if (r_existing.is_error()) {
@@ -561,6 +725,31 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     }
   }
 
+  td::optional<NativeAdmissionSnapshot> native_snapshot;
+  if (!native_indices.empty()) {
+    auto snapshot = pin_native_admission_snapshot();
+    if (snapshot.is_error()) {
+      auto error = snapshot.move_as_error();
+      for (auto index : native_indices) {
+        if (!status_set[index]) {
+          reject(index, td::Status::Error(error.code(), error.message().str()));
+        }
+      }
+    } else {
+      native_snapshot = snapshot.move_as_ok();
+      for (auto index : native_indices) {
+        if (status_set[index]) {
+          continue;
+        }
+        auto mode_status = validate_native_admission_mode(native_snapshot.value(),
+                                                          items[index].native_admission.value().is_run);
+        if (mode_status.is_error()) {
+          reject(index, std::move(mode_status));
+        }
+      }
+    }
+  }
+
   // Generic externals retain the full TVM/wallet fallback. They still benefit
   // from batch-level parsing/deduplication, while native transfers below use a
   // single pinned chain revision and no per-item LiteQuery actor.
@@ -588,6 +777,9 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
 
   std::map<NativeAddress, std::vector<std::size_t>> source_items;
   for (auto index : native_indices) {
+    if (status_set[index]) {
+      continue;
+    }
     auto &message = items[index].message;
     const auto &admission = items[index].native_admission.value();
     const auto &native_source = items[index].native_transfer
@@ -630,18 +822,18 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
   std::set<NativeAddress> changed_native_sources;
   Bits256 chain_domain;
   if (!source_items.empty()) {
-    auto mc_result = pin_native_admission_masterchain_state();
-    if (mc_result.is_error()) {
-      auto error = mc_result.move_as_error();
+    if (!native_snapshot) {
       for (const auto &[_, indices] : source_items) {
         for (auto index : indices) {
-          reject(index, td::Status::Error(error.code(), error.message().str()));
+          reject(index, td::Status::Error(ErrorCode::notready,
+                                          "native admission configuration was not pinned; retry"));
         }
       }
       source_items.clear();
     } else {
-      auto mc_state = mc_result.move_as_ok();
-      auto mc_block_id = mc_state->get_block_id();
+      const auto &admission_snapshot = native_snapshot.value();
+      auto mc_state = admission_snapshot.state;
+      const auto &mc_block_id = admission_snapshot.block_id;
       // Keep the cache generation tied to the exact state pinned by this
       // actor turn. update_last_masterchain_state normally established it,
       // while this idempotent reset also makes the invariant local to the
@@ -649,30 +841,8 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
       reset_native_admission_cache_generation(mc_block_id);
       ++native_batch_mc_state_pins_;
       native_batch_last_pinned_mc_seqno_ = mc_block_id.seqno();
-      auto config_result =
-          block::ConfigInfo::extract_config(mc_state->root_cell(), mc_block_id, 0xFFFF);
-      if (config_result.is_error()) {
-        auto error = config_result.move_as_error();
-        for (const auto &[_, indices] : source_items) {
-          for (auto index : indices) {
-            reject(index, td::Status::Error(error.code(), error.message().str()));
-          }
-        }
-        source_items.clear();
-      } else {
-        const auto &config = *config_result.ok();
-        chain_domain = config.get_zerostate_id().root_hash;
-        if (!native_transfer_runs_enabled(config)) {
-          for (const auto &[_, indices] : source_items) {
-            for (auto index : indices) {
-              if (items[index].native_transfer_run) {
-                reject(index, td::Status::Error(
-                                  "native transfer runs require global version 15 and capNativeTransferRuns"));
-              }
-            }
-          }
-        }
-        auto erase_rejected_source_items = [&] {
+      chain_domain = admission_snapshot.chain_domain;
+      auto erase_rejected_source_items = [&] {
           for (auto it = source_items.begin(); it != source_items.end();) {
             auto &indices = it->second;
             indices.erase(std::remove_if(indices.begin(), indices.end(),
@@ -842,7 +1012,6 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
         }
       }
     }
-  }
   if (!changed_native_sources.empty()) {
     wake_native_callbacks(&changed_native_sources);
   }
@@ -910,6 +1079,41 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     for (std::size_t i = 0; i < verification_results.size(); ++i) {
       if (verification_results[i].is_error()) {
         reject(verify_indices[i], verification_results[i].move_as_error());
+      }
+    }
+  }
+
+  if (!verify_indices.empty() && native_snapshot) {
+    // Shard reads and signature workers can suspend this actor while the
+    // applied MC topology/config advances. v5 locality and its signature
+    // domain are bound to the exact snapshot above, so never reserve a run
+    // after that snapshot changed. Legacy scalar admission retains its old
+    // behavior unless the newly applied config has switched to run-only.
+    auto current_snapshot = pin_native_admission_snapshot();
+    if (current_snapshot.is_error()) {
+      auto error = current_snapshot.move_as_error();
+      for (auto index : verify_indices) {
+        if (!status_set[index]) {
+          reject(index, td::Status::Error(error.code(), error.message().str()));
+        }
+      }
+    } else {
+      const auto &current = current_snapshot.ok();
+      const bool mc_changed = current.block_id != native_snapshot.value().block_id;
+      for (auto index : verify_indices) {
+        if (status_set[index]) {
+          continue;
+        }
+        const bool is_run = items[index].native_admission.value().is_run;
+        if (is_run && mc_changed) {
+          reject(index, td::Status::Error(ErrorCode::notready,
+                                          "native transfer run admission snapshot changed; retry"));
+          continue;
+        }
+        auto mode_status = validate_native_admission_mode(current, is_run);
+        if (mode_status.is_error()) {
+          reject(index, std::move(mode_status));
+        }
       }
     }
   }
@@ -1167,7 +1371,8 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
         return;
       }
       if (!message.value()->has_native_interval() || message.value()->native_nonce.value() != source.next_nonce ||
-          message.value()->native_nonce_count != reservation_it->second.logical_count) {
+          message.value()->native_nonce_count != reservation_it->second.logical_count ||
+          message.value()->native_is_run != reservation_it->second.is_run) {
         ++selection.counters.head_gaps;
         ++selection.counters.head_nonce_mismatch;
         source.blocked = true;
@@ -1353,7 +1558,8 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
         link->id.hash == hash && link->id.dst == link->message->message->shard() &&
         link->message->message->hash() == hash && link->message->has_native_interval() &&
         link->message->native_nonce.value() == state.next_nonce &&
-        link->message->native_nonce_count == reservation.logical_count && link->message->address() == source) {
+        link->message->native_nonce_count == reservation.logical_count &&
+        link->message->native_is_run == reservation.is_run && link->message->address() == source) {
       mempool_message = link->message.get();
       priority = link->priority;
       ++counters.direct_link_hits;
@@ -1382,7 +1588,8 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
         return;
       }
       if (!message.value()->has_native_interval() || message.value()->native_nonce.value() != state.next_nonce ||
-          message.value()->native_nonce_count != reservation.logical_count) {
+          message.value()->native_nonce_count != reservation.logical_count ||
+          message.value()->native_is_run != reservation.is_run) {
         ++counters.head_gaps;
         ++counters.head_nonce_mismatch;
         return;
@@ -2541,7 +2748,8 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id, bool prune
       auto reservation = native_it->second.messages.find(native_nonce.value());
       if (reservation != native_it->second.messages.end() &&
           reservation->second.hash == msg_opt.value()->message->hash() &&
-          reservation->second.logical_count == msg_opt.value()->native_nonce_count) {
+          reservation->second.logical_count == msg_opt.value()->native_nonce_count &&
+          reservation->second.is_run == msg_opt.value()->native_is_run) {
         return prune_expired_native_suffix(
                    address, native_nonce.value(),
                    "native transfer retention expired; removed this nonce and its pending suffix") != 0;
@@ -2560,7 +2768,8 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id, bool prune
           reservation_it->second.clear_mempool_link();
         }
         if (reservation_it->second.hash == msg_opt.value()->message->hash() &&
-            reservation_it->second.logical_count == msg_opt.value()->native_nonce_count) {
+            reservation_it->second.logical_count == msg_opt.value()->native_nonce_count &&
+            reservation_it->second.is_run == msg_opt.value()->native_is_run) {
           reservation_it->second.insertion_failed("native message was removed from the mempool");
           native_it->second.messages.erase(reservation_it);
         }
@@ -2673,7 +2882,8 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
       continue;
     }
     if (!message.value()->has_native_interval() || message.value()->native_nonce.value() != first_nonce.value() ||
-        message.value()->native_nonce_count != reservation->second.logical_count) {
+        message.value()->native_nonce_count != reservation->second.logical_count ||
+        message.value()->native_is_run != reservation->second.is_run) {
       ++head_nonce_mismatch_sources;
       continue;
     }
@@ -2897,6 +3107,7 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
     CHECK(last_nonce);
     msg->native_nonce = native_admission->first_nonce;
     msg->native_nonce_count = native_admission->logical_count;
+    msg->native_is_run = native_admission->is_run;
     auto watermark_it = native_nonce_watermarks_.find(address);
     if (watermark_it != native_nonce_watermarks_.end() &&
         watermark_it->second.is_consumed(native_admission->first_nonce)) {
@@ -2910,6 +3121,7 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
     auto reservation_it = account_it->second.messages.find(native_admission->first_nonce);
     if (reservation_it == account_it->second.messages.end() ||
         reservation_it->second.logical_count != native_admission->logical_count ||
+        reservation_it->second.is_run != native_admission->is_run ||
         reservation_it->second.source != address || reservation_it->second.hash != message->hash()) {
       return td::Status::Error("native message reservation disappeared before mempool insertion");
     }
@@ -2983,7 +3195,8 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
     if (account_it != native_accounts_.end()) {
       auto reservation_it = account_it->second.messages.find(msg->native_nonce.value());
       if (reservation_it != account_it->second.messages.end() && reservation_it->second.hash == id.hash &&
-          reservation_it->second.logical_count == msg->native_nonce_count) {
+          reservation_it->second.logical_count == msg->native_nonce_count &&
+          reservation_it->second.is_run == msg->native_is_run) {
         reservation_it->second.set_mempool_link(msg, priority, id);
       }
     }
@@ -3044,6 +3257,7 @@ td::Status ExtMessagePool::commit_checked_message(td::Ref<ExtMessage> message,
     auto reservation_it = native_it->second.messages.find(native_admission->first_nonce);
     if (reservation_it == native_it->second.messages.end() ||
         reservation_it->second.logical_count != native_admission->logical_count ||
+        reservation_it->second.is_run != native_admission->is_run ||
         reservation_it->second.source != address || reservation_it->second.hash != message->hash()) {
       return td::Status::Error("native message reservation disappeared before mempool commit");
     }
@@ -3091,6 +3305,7 @@ void ExtMessagePool::rollback_checked_message(td::Ref<ExtMessage> message,
       auto message_it = native_it->second.messages.find(native_admission->first_nonce);
       if (message_it != native_it->second.messages.end() &&
           message_it->second.logical_count == native_admission->logical_count &&
+          message_it->second.is_run == native_admission->is_run &&
           message_it->second.source == address && message_it->second.hash == message->hash()) {
         if (message_it->second.allow_broadcast_promise) {
           message_it->second.allow_broadcast_promise.set_error(
@@ -3156,6 +3371,19 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
   auto native_cs = vm::load_cell_slice(message->root_cell());
   const auto native_tag = native_cs.prefetch_ulong(32);
   if (native_tag == block::NativeTransfer::magic || native_tag == block::NativeTransferRun::magic) {
+    // The account fetch above may come from a liteserver view. Native wire
+    // mode, run locality and the signing domain instead come from the exact
+    // locally applied masterchain snapshot used by batch admission.
+    auto snapshot_result = pin_native_admission_snapshot();
+    if (snapshot_result.is_error()) {
+      co_return snapshot_result.move_as_error();
+    }
+    auto admission_snapshot = snapshot_result.move_as_ok();
+    const bool is_run = native_tag == block::NativeTransferRun::magic;
+    auto mode_status = validate_native_admission_mode(admission_snapshot, is_run);
+    if (mode_status.is_error()) {
+      co_return std::move(mode_status);
+    }
     td::optional<block::NativeTransfer> transfer;
     td::optional<block::NativeTransferRun> run;
     NativeAdmission admission;
@@ -3178,14 +3406,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
         co_return parsed_run.move_as_error();
       }
       run = parsed_run.move_as_ok();
-      if (!native_transfer_runs_enabled(*config)) {
-        co_return td::Status::Error("native transfer runs require global version 15 and capNativeTransferRuns");
-      }
-      auto locality_state = pin_native_admission_masterchain_state();
-      if (locality_state.is_error()) {
-        co_return locality_state.move_as_error();
-      }
-      auto locality = validate_native_transfer_run_locality(run.value(), *locality_state.ok());
+      auto locality = validate_native_transfer_run_locality(run.value(), *admission_snapshot.state);
       if (locality.is_error()) {
         co_return locality.move_as_error();
       }
@@ -3257,12 +3478,12 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     if (transfer) {
       signature_result =
           co_await td::actor::ask(verifier, &NativeSignatureVerifier::verify, transfer.value(),
-                                  config->get_zerostate_id().root_hash)
+                                  admission_snapshot.chain_domain)
               .wrap();
     } else {
       signature_result =
           co_await td::actor::ask(verifier, &NativeSignatureVerifier::verify_run, run.value(),
-                                  config->get_zerostate_id().root_hash)
+                                  admission_snapshot.chain_domain)
               .wrap();
     }
     if (signature_result.is_error()) {
@@ -3271,6 +3492,24 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     if (deadline_expired()) {
       co_return td::Status::Error(ErrorCode::timeout,
                                   "external message admission deadline expired");
+    }
+
+    // A signature worker can yield while the applied MC config or shard map
+    // advances. Runs are tied to the exact v5 snapshot; scalar work may only
+    // continue across that yield while the current applied config remains
+    // scalar-compatible.
+    auto current_snapshot_result = pin_native_admission_snapshot();
+    if (current_snapshot_result.is_error()) {
+      co_return current_snapshot_result.move_as_error();
+    }
+    auto current_snapshot = current_snapshot_result.move_as_ok();
+    if (is_run && current_snapshot.block_id != admission_snapshot.block_id) {
+      co_return td::Status::Error(ErrorCode::notready,
+                                  "native transfer run admission snapshot changed; retry");
+    }
+    mode_status = validate_native_admission_mode(current_snapshot, is_run);
+    if (mode_status.is_error()) {
+      co_return std::move(mode_status);
     }
 
     co_return co_await reserve_verified_native_message(message, std::move(admission), available_balance.value(),
@@ -3350,6 +3589,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
     if (pending_it != native_info.messages.end()) {
       if (pending_it->first != native_admission.first_nonce ||
           pending_it->second.logical_count != native_admission.logical_count ||
+          pending_it->second.is_run != native_admission.is_run ||
           pending_it->second.hash != message->hash()) {
         co_return td::Status::Error(PSTRING() << "Duplicate native nonce " << native_admission.first_nonce);
       }
@@ -3393,6 +3633,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
       inserted.amount = native_admission.amount;
       inserted.fee = native_admission.fee;
       inserted.valid_until = native_admission.valid_until;
+      inserted.is_run = native_admission.is_run;
       inserted.account_revision = account_revision;
       inserted.allow_broadcast_promise = std::move(allow_broadcast_promise);
       inserted.committed = false;

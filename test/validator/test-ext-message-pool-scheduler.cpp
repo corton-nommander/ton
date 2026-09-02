@@ -237,6 +237,7 @@ class ExtMessagePoolTestAccess {
     auto mempool_message = std::make_shared<ExtMessagePool::MempoolMsg>(message);
     mempool_message->native_nonce = nonce;
     mempool_message->native_nonce_count = 1;
+    mempool_message->native_is_run = false;
     mempool_message->in_mempool = true;
     mempool_message->active = active;
     if (!active) {
@@ -255,6 +256,7 @@ class ExtMessagePoolTestAccess {
     reservation.hash = hash;
     reservation.source = source;
     reservation.logical_count = 1;
+    reservation.is_run = false;
     reservation.amount = amount;
     reservation.fee = fee;
     reservation.valid_until = std::numeric_limits<td::uint32>::max();
@@ -273,7 +275,7 @@ class ExtMessagePoolTestAccess {
   static ExtMessage::Hash add_work(ExtMessagePool &pool, NativeAddress source, td::uint64 first_nonce,
                                    td::uint32 logical_count, int priority = 0, bool active = true,
                                    bool committed = true, td::uint64 amount = 1, td::uint64 fee = 0,
-                                   bool link_direct = true) {
+                                   bool link_direct = true, bool is_run = true) {
     CHECK(logical_count != 0);
     CHECK(first_nonce <= std::numeric_limits<td::uint64>::max() - (logical_count - 1));
     auto hash =
@@ -282,6 +284,7 @@ class ExtMessagePoolTestAccess {
     auto mempool_message = std::make_shared<ExtMessagePool::MempoolMsg>(message);
     mempool_message->native_nonce = first_nonce;
     mempool_message->native_nonce_count = logical_count;
+    mempool_message->native_is_run = is_run;
     mempool_message->in_mempool = true;
     mempool_message->active = active;
     if (!active) {
@@ -300,6 +303,7 @@ class ExtMessagePoolTestAccess {
     reservation.hash = hash;
     reservation.source = source;
     reservation.logical_count = logical_count;
+    reservation.is_run = is_run;
     reservation.amount = amount;
     reservation.fee = fee;
     reservation.valid_until = std::numeric_limits<td::uint32>::max();
@@ -745,6 +749,27 @@ class ExtMessagePoolTestAccess {
     return ExtMessagePool::native_transfer_runs_enabled(global_version, has_capabilities, capabilities);
   }
 
+  static td::Status validate_native_admission_mode(ExtMessagePool &pool, bool runs_enabled, bool is_run) {
+    // This uses the same stateful mode transition and gate as both production
+    // admission paths. In particular, cleanup happens before the caller can
+    // ask check_existing_external_message() for a raw-hash retry.
+    pool.update_native_transfer_runs_mode(runs_enabled);
+    ExtMessagePool::NativeAdmissionSnapshot snapshot{};
+    snapshot.runs_enabled = runs_enabled;
+    return pool.validate_native_admission_mode(snapshot, is_run);
+  }
+
+  static void update_native_transfer_runs_mode(ExtMessagePool &pool, bool runs_enabled) {
+    pool.update_native_transfer_runs_mode(runs_enabled);
+  }
+
+  static bool has_exact_native_retry(ExtMessagePool &pool, NativeAddress source, const ExtMessage::Hash &hash) {
+    auto message = td::make_ref<FakeExtMessage>(source.second, hash);
+    auto existing = pool.check_existing_external_message(std::move(message), 0, true);
+    CHECK(existing.is_ok());
+    return static_cast<bool>(existing.ok());
+  }
+
   static td::Result<ExtMessagePool::NativeAdmission> native_run_admission(
       const block::NativeTransferRun &run) {
     return ExtMessagePool::make_native_admission(run);
@@ -790,6 +815,79 @@ TEST(ExtMessagePoolScheduler, NativeTransferRunAdmissionUsesOneAtomicAggregateIn
   run.outputs = {{.dst = make_bits(8, 20), .amount = std::numeric_limits<td::uint64>::max(), .fee = 0},
                  {.dst = make_bits(9, 21), .amount = 1, .fee = 0}};
   ASSERT_TRUE(ExtMessagePoolTestAccess::native_run_admission(run).is_error());
+}
+
+TEST(ExtMessagePoolScheduler, NativeRunModeRejectsIncompatibleWireTypesBeforeExistingMessageLookup) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(108);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 10);
+  auto scalar_hash = ExtMessagePoolTestAccess::add(pool, source, 10);
+  ASSERT_TRUE(ExtMessagePoolTestAccess::has_exact_native_retry(pool, source, scalar_hash));
+
+  // This is the stateful early gate used before check_existing_external_message
+  // on the single-message path. Entering run-only mode must both reject the
+  // scalar wire type and remove an old scalar exact-retry target first.
+  auto scalar_in_run_mode =
+      ExtMessagePoolTestAccess::validate_native_admission_mode(pool, true, false);
+  ASSERT_TRUE(scalar_in_run_mode.is_error());
+  ASSERT_TRUE(scalar_in_run_mode.error().message().str().find("scalar native transfers are disabled") !=
+              std::string::npos);
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, scalar_hash));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_native_reservation(pool, source, 10));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_exact_native_retry(pool, source, scalar_hash));
+
+  // Conversely, a source-signed run never reaches the legacy path while the
+  // capability/version gate is disabled.
+  auto run_without_cap =
+      ExtMessagePoolTestAccess::validate_native_admission_mode(pool, false, true);
+  ASSERT_TRUE(run_without_cap.is_error());
+  ASSERT_TRUE(run_without_cap.error().message().str().find("capNativeTransferRuns") != std::string::npos);
+}
+
+TEST(ExtMessagePoolScheduler, NativeRunModeTransitionsPurgeOnlyIncompatibleReservations) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto scalar_source = ExtMessagePoolTestAccess::source(109);
+  auto run_source = ExtMessagePoolTestAccess::source(110);
+  ExtMessagePoolTestAccess::set_watermark(pool, scalar_source, 20);
+  ExtMessagePoolTestAccess::set_watermark(pool, run_source, 30);
+  auto scalar_hash = ExtMessagePoolTestAccess::add(pool, scalar_source, 20);
+  auto run_hash = ExtMessagePoolTestAccess::add_work(pool, run_source, 30, 2, 0, true, true, 7, 3, true, true);
+
+  ExtMessagePoolTestAccess::update_native_transfer_runs_mode(pool, true);
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, scalar_hash));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_native_reservation(pool, scalar_source, 20));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::contains(pool, run_hash));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::has_native_reservation(pool, run_source, 30));
+
+  // The rollback/reorg direction is symmetric: the old v5 parent BOC and its
+  // complete reservation disappear before a scalar head can be admitted.
+  ExtMessagePoolTestAccess::update_native_transfer_runs_mode(pool, false);
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, run_hash));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_native_reservation(pool, run_source, 30));
+}
+
+TEST(ExtMessagePoolScheduler, NativeRunReservationKeepsAggregateDebitAndIntervalAtomic) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(111);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 40);
+  ExtMessagePoolTestAccess::update_native_transfer_runs_mode(pool, true);
+  auto hash = ExtMessagePoolTestAccess::add_work(pool, source, 40, 3, 0, true, true, 12, 5, true, true);
+
+  // One physical NTRN owns all three logical nonces and reserves its full
+  // aggregate amount + fees. There is no synthetic child at nonce 41 or 42.
+  ASSERT_EQ(ExtMessagePoolTestAccess::reservation_nonces(pool, source), std::vector<td::uint64>({40}));
+  ASSERT_EQ(ExtMessagePoolTestAccess::reserved_amount_before(pool, source, 40, 43), 17u);
+
+  auto too_small = ExtMessagePoolTestAccess::select(pool, {basechainId, shardIdAll}, 2);
+  ASSERT_EQ(too_small.selected, 0u);
+  ASSERT_EQ(too_small.logical_selected, 0u);
+
+  auto fitting = ExtMessagePoolTestAccess::select(pool, {basechainId, shardIdAll}, 3);
+  ASSERT_EQ(fitting.selected, 1u);
+  ASSERT_EQ(fitting.logical_selected, 3u);
+  ASSERT_EQ(fitting.nonces, std::vector<td::uint64>({40}));
+  ASSERT_EQ(fitting.logical_counts, std::vector<td::uint32>({3}));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::contains(pool, hash));
 }
 
 TEST(ExtMessagePoolScheduler, NativeAdmissionCacheUsesExactShardBlockId) {

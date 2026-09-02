@@ -617,6 +617,9 @@ struct Aug_ShardAccounts final : AugmentationCheckData {
   bool supports_parallel_construction() const override {
     return true;
   }
+  bool supports_parallel_sorted_build() const override {
+    return true;
+  }
 };
 
 extern const Aug_ShardAccounts aug_ShardAccounts;

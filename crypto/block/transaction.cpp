@@ -1209,7 +1209,7 @@ td::Result<std::vector<NativeTransferRunOutput>> unpack_native_transfer_run_outp
   return outputs;
 }
 
-unsigned native_executor_workers(unsigned requested, std::size_t work_items) {
+unsigned native_executor_workers_impl(unsigned requested, std::size_t work_items) {
   if (!work_items) {
     return 0;
   }
@@ -1249,6 +1249,10 @@ Ref<vm::Cell> build_native_account_state_cell(const NativeAccountStateCellInput&
   return total_state;
 }
 }  // namespace
+
+unsigned native_executor_workers(unsigned requested, std::size_t work_items) {
+  return native_executor_workers_impl(requested, work_items);
+}
 
 bool NativeTransfer::is_valid() const {
   return amount != 0 && signature.size() == native_transfer_signature_size && amount + fee >= amount &&

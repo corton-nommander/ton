@@ -17,6 +17,7 @@
     Copyright 2017-2020 Telegram Systems LLP
 */
 #pragma once
+#include <cstddef>
 #include <ostream>
 #include <vector>
 
@@ -568,6 +569,12 @@ std::vector<NativeTransferStateResult> execute_native_transfer_states_parallel(
 // materialized; no result is moved or reordered by this helper.
 std::vector<Ref<vm::Cell>> build_native_account_state_cells_parallel(
     const std::vector<NativeAccountStateCellInput>& inputs, unsigned workers = 0);
+
+// Resolves a bounded worker count from an explicit request or
+// TON_NATIVE_EXECUTOR_THREADS. It preserves the native executor's small-work
+// serial cutoff so adjacent deterministic construction phases can share the
+// same resource policy.
+unsigned native_executor_workers(unsigned requested, std::size_t work_items);
 
 // Verifies a block batch on a bounded number of CPU workers.  The worker count
 // defaults to TON_NATIVE_EXECUTOR_THREADS, or a laptop-safe hardware-derived

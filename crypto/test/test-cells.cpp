@@ -1085,17 +1085,60 @@ TEST(AugmentedDictionary, parallel_shard_accounts_bulk_merge_is_canonical_and_at
     ASSERT_TRUE(atomic_parallel.validate_all());
 
     // UsageCell child traversal records mutable proof/accounting state. The
-    // parallel entry point must detect that wrapper graph and preserve the
-    // serial result rather than letting worker reads touch it concurrently.
-    auto tracked_usage_tree = std::make_shared<vm::CellUsageTree>();
-    auto tracked_root = vm::UsageCell::create(initial.get_root_cell(), tracked_usage_tree->root_ptr());
-    vm::AugmentedDictionary tracked_initial{tracked_root, 256, block::tlb::aug_ShardAccounts};
-    vm::AugmentedDictionary tracked_serial{tracked_initial};
+    // update side is independently safe to build in workers, but the final
+    // merge must keep this prior-state graph serial. Use separate trees so
+    // each path observes the same callback/proof sequence from a clean base.
+    const auto plain_initial_root = initial.get_root_cell();
+    const auto owner = std::this_thread::get_id();
+    using UsageEvent = std::pair<std::string, td::uint32>;
+    std::vector<UsageEvent> serial_events;
+    std::vector<UsageEvent> parallel_events;
+    std::atomic<bool> serial_worker_callback{false};
+    std::atomic<bool> parallel_worker_callback{false};
+    auto serial_usage_tree = std::make_shared<vm::CellUsageTree>();
+    serial_usage_tree->set_cell_load_callback([&](const vm::LoadedCell& loaded) {
+      if (std::this_thread::get_id() != owner) {
+        serial_worker_callback.store(true, std::memory_order_relaxed);
+        return;
+      }
+      serial_events.emplace_back(loaded.data_cell->get_hash().as_slice().str(), loaded.effective_level);
+    });
+    auto parallel_usage_tree = std::make_shared<vm::CellUsageTree>();
+    parallel_usage_tree->set_cell_load_callback([&](const vm::LoadedCell& loaded) {
+      if (std::this_thread::get_id() != owner) {
+        parallel_worker_callback.store(true, std::memory_order_relaxed);
+        return;
+      }
+      parallel_events.emplace_back(loaded.data_cell->get_hash().as_slice().str(), loaded.effective_level);
+    });
+    vm::AugmentedDictionary tracked_serial{
+        vm::UsageCell::create(plain_initial_root, serial_usage_tree->root_ptr()), 256, block::tlb::aug_ShardAccounts,
+        /*validate=*/false};
     ASSERT_TRUE(tracked_serial.set_many_sorted(td::as_span(updates)));
-    vm::AugmentedDictionary tracked_parallel{tracked_initial};
+    vm::AugmentedDictionary tracked_parallel{
+        vm::UsageCell::create(plain_initial_root, parallel_usage_tree->root_ptr()), 256, block::tlb::aug_ShardAccounts,
+        /*validate=*/false};
     ASSERT_TRUE(tracked_parallel.set_many_sorted_parallel(td::as_span(updates), 8));
+    ASSERT_TRUE(tracked_serial.validate_all());
     ASSERT_TRUE(tracked_parallel.validate_all());
     ASSERT_EQ(tracked_parallel.get_root_cell()->get_hash(), tracked_serial.get_root_cell()->get_hash());
+    ASSERT_TRUE(!serial_worker_callback.load(std::memory_order_relaxed));
+    ASSERT_TRUE(!parallel_worker_callback.load(std::memory_order_relaxed));
+    ASSERT_EQ(parallel_events, serial_events);
+
+    vm::NewCellStorageStat tracked_serial_stat;
+    tracked_serial_stat.add_proof(tracked_serial.get_root_cell(), serial_usage_tree.get());
+    vm::NewCellStorageStat tracked_parallel_stat;
+    tracked_parallel_stat.add_proof(tracked_parallel.get_root_cell(), parallel_usage_tree.get());
+    ASSERT_EQ(tracked_parallel_stat.get_proof_stat(), tracked_serial_stat.get_proof_stat());
+    ASSERT_EQ(tracked_parallel_stat.get_total_stat(), tracked_serial_stat.get_total_stat());
+
+    auto tracked_serial_update = vm::CellBuilder::create_merkle_update(plain_initial_root, tracked_serial.get_root_cell());
+    auto tracked_parallel_update =
+        vm::CellBuilder::create_merkle_update(plain_initial_root, tracked_parallel.get_root_cell());
+    ASSERT_TRUE(tracked_serial_update.not_null());
+    ASSERT_TRUE(tracked_parallel_update.not_null());
+    ASSERT_EQ(tracked_parallel_update->get_hash(), tracked_serial_update->get_hash());
   };
 
   run_case(/*prefix_clustered=*/false);
@@ -1126,6 +1169,9 @@ TEST(AugmentedDictionary, parallel_bulk_merge_worker_failure_is_atomic) {
     bool supports_parallel_construction() const override {
       return true;
     }
+    bool supports_parallel_sorted_build() const override {
+      return true;
+    }
   } augmentation;
   auto value = [](td::uint64 number) {
     vm::CellBuilder builder;
@@ -1137,10 +1183,19 @@ TEST(AugmentedDictionary, parallel_bulk_merge_worker_failure_is_atomic) {
   td::BitArray<8> key1{static_cast<long long>(64)};
   td::BitArray<8> key2{static_cast<long long>(128)};
   td::BitArray<8> key3{static_cast<long long>(192)};
-  vm::AugmentedDictionary initial{8, augmentation};
-  ASSERT_TRUE(initial.set(key0, value(1)));
-  ASSERT_TRUE(initial.set(key2, value(2)));
-  const auto committed_root = initial.get_root_cell()->get_hash();
+  vm::AugmentedDictionary plain_initial{8, augmentation};
+  ASSERT_TRUE(plain_initial.set(key0, value(1)));
+  ASSERT_TRUE(plain_initial.set(key2, value(2)));
+  const auto committed_root = plain_initial.get_root_cell()->get_hash();
+  auto usage_tree = std::make_shared<vm::CellUsageTree>();
+  std::atomic<bool> worker_usage_callback{false};
+  usage_tree->set_cell_load_callback([&](const vm::LoadedCell&) {
+    if (std::this_thread::get_id() != augmentation.owner) {
+      worker_usage_callback.store(true, std::memory_order_relaxed);
+    }
+  });
+  vm::AugmentedDictionary initial{vm::UsageCell::create(plain_initial.get_root_cell(), usage_tree->root_ptr()), 8,
+                                  augmentation, /*validate=*/false};
 
   std::vector<vm::AugmentedDictionary::SetManyEntry> updates;
   updates.emplace_back(key0.cbits(), value(10));
@@ -1158,6 +1213,7 @@ TEST(AugmentedDictionary, parallel_bulk_merge_worker_failure_is_atomic) {
   ASSERT_TRUE(!applied);
   ASSERT_TRUE(failed);
   ASSERT_TRUE(augmentation.worker_fork_seen.load(std::memory_order_relaxed));
+  ASSERT_TRUE(!worker_usage_callback.load(std::memory_order_relaxed));
   ASSERT_EQ(initial.get_root_cell()->get_hash(), committed_root);
   ASSERT_TRUE(initial.validate_all());
 }
@@ -1184,6 +1240,9 @@ TEST(AugmentedDictionary, parallel_bulk_merge_unsafe_update_reuses_prepared_trie
       return cb.store_ulong_rchk_bool(0, 16);
     }
     bool supports_parallel_construction() const override {
+      return true;
+    }
+    bool supports_parallel_sorted_build() const override {
       return true;
     }
   } parallel_augmentation, serial_augmentation;
@@ -1229,6 +1288,57 @@ TEST(AugmentedDictionary, parallel_bulk_merge_unsafe_update_reuses_prepared_trie
   ASSERT_TRUE(!parallel_augmentation.worker_fork_seen.load(std::memory_order_relaxed));
   ASSERT_TRUE(serial.set_many_sorted(td::as_span(updates)));
   ASSERT_EQ(serial_augmentation.leaf_evaluations.load(std::memory_order_relaxed), keys.size());
+  ASSERT_EQ(parallel.get_root_cell()->get_hash(), serial.get_root_cell()->get_hash());
+}
+
+TEST(AugmentedDictionary, parallel_bulk_merge_default_sorted_build_capability_is_incremental) {
+  struct IncrementalOnlyAugmentation final : vm::dict::AugmentationData {
+    std::thread::id owner{std::this_thread::get_id()};
+    mutable std::atomic<unsigned> leaf_evaluations{0};
+    mutable std::atomic<bool> worker_fork_seen{false};
+
+    bool skip_extra(vm::CellSlice& cs) const override {
+      return cs.advance(16);
+    }
+    bool eval_leaf(vm::CellBuilder& cb, vm::CellSlice&) const override {
+      return cb.store_ulong_rchk_bool(leaf_evaluations.fetch_add(1, std::memory_order_relaxed) + 1, 16);
+    }
+    bool eval_fork(vm::CellBuilder& cb, vm::CellSlice&, vm::CellSlice&) const override {
+      if (std::this_thread::get_id() != owner) {
+        worker_fork_seen.store(true, std::memory_order_relaxed);
+      }
+      return cb.store_ulong_rchk_bool(0, 16);
+    }
+    bool eval_empty(vm::CellBuilder& cb) const override {
+      return cb.store_ulong_rchk_bool(0, 16);
+    }
+    bool supports_parallel_construction() const override {
+      return true;
+    }
+    // Deliberately do not override supports_parallel_sorted_build(): this
+    // augmentation's leaf extra depends on incremental evaluation order.
+  } parallel_augmentation, serial_augmentation;
+
+  auto value = [](td::uint64 number) {
+    vm::CellBuilder builder;
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(number, 16));
+    return vm::load_cell_slice_ref(builder.finalize());
+  };
+  std::array<td::BitArray<8>, 4> keys{
+      td::BitArray<8>{static_cast<long long>(0x00)}, td::BitArray<8>{static_cast<long long>(0x40)},
+      td::BitArray<8>{static_cast<long long>(0x80)}, td::BitArray<8>{static_cast<long long>(0xc0)}};
+  std::vector<vm::AugmentedDictionary::SetManyEntry> updates;
+  for (std::size_t index = 0; index < keys.size(); ++index) {
+    updates.emplace_back(keys[index].cbits(), value(index));
+  }
+
+  vm::AugmentedDictionary parallel{8, parallel_augmentation};
+  ASSERT_TRUE(parallel.set_many_sorted_parallel(td::as_span(updates), 2));
+  vm::AugmentedDictionary serial{8, serial_augmentation};
+  ASSERT_TRUE(serial.set_many_sorted(td::as_span(updates)));
+  ASSERT_EQ(parallel_augmentation.leaf_evaluations.load(std::memory_order_relaxed), keys.size());
+  ASSERT_EQ(serial_augmentation.leaf_evaluations.load(std::memory_order_relaxed), keys.size());
+  ASSERT_TRUE(!parallel_augmentation.worker_fork_seen.load(std::memory_order_relaxed));
   ASSERT_EQ(parallel.get_root_cell()->get_hash(), serial.get_root_cell()->get_hash());
 }
 

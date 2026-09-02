@@ -4938,7 +4938,14 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     }
     {
       td::ScopedRealCpuTimer dict_timer{stats_.work_time.native_staged_dict_set};
-      if (!staged_account_dict.set_many_sorted(td::as_span(staged_account_updates))) {
+      // Large checkpoint update sets are newly materialized plain values, so
+      // their private trie can be built in parallel. The tracked prior state
+      // remains serially merged by the dictionary primitive to retain its
+      // UsageCell proof-accounting behavior.
+      const auto dict_workers = staged_account_updates.size() < 512u
+                                    ? 1u
+                                    : block::native_executor_workers(0, staged_account_updates.size());
+      if (!staged_account_dict.set_many_sorted_parallel(td::as_span(staged_account_updates), dict_workers)) {
         fatal_error("cannot stage native account dictionary bulk update");
         return false;
       }

@@ -90,6 +90,13 @@ struct AugmentationData {
                                     int key_len) const {
     return check_leaf(extra_cs, val_cs);
   }
+  // Building a complete sorted trie evaluates augmentation callbacks in a
+  // different order (and often fewer times) than incremental insertion. Opt
+  // in only when those callbacks are pure, deterministic, and independent of
+  // their evaluation count and order, in addition to being thread-safe.
+  virtual bool supports_parallel_sorted_build() const {
+    return false;
+  }
   Ref<vm::CellSlice> extract_extra(vm::CellSlice& cs) const;
   Ref<vm::CellSlice> extract_extra(Ref<vm::CellSlice> cs_ref) const;
   bool extract_extra_to(vm::CellSlice& cs, Ref<vm::CellSlice>& extra_csr) const {
@@ -668,6 +675,9 @@ class AugmentedDictionary final : public DictionaryFixed {
   std::pair<Ref<Cell>, Ref<CellSlice>> decompose_value_ref_extra(Ref<CellSlice> value_extra) const;
 
  private:
+  Ref<Cell> build_sorted_update_trie(td::Span<SetManyEntry> new_values, unsigned workers) const;
+  Ref<Cell> build_sorted_update_subtree(td::Span<SetManyEntry> new_values, int prefix_len,
+                                        unsigned parallel_depth) const;
   bool compute_root() const;
   Ref<CellSlice> get_node_extra(Ref<Cell> cell_ref, int n) const;
   Ref<CellSlice> extract_leaf_value(Ref<CellSlice> leaf) const override;

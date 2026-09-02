@@ -3273,6 +3273,85 @@ bool AugmentedDictionary::set_builder(td::ConstBitPtr key, int key_len, const Ce
   return set(key, key_len, load_cell_slice(value.finalize_copy()), mode);
 }
 
+Ref<Cell> AugmentedDictionary::build_sorted_update_trie(td::Span<SetManyEntry> new_values, unsigned workers) const {
+  workers = std::min(workers, 8u);
+  unsigned parallel_depth = 0;
+  for (unsigned active_workers = 1; active_workers <= workers / 2; active_workers <<= 1) {
+    ++parallel_depth;
+  }
+  return build_sorted_update_subtree(new_values, 0, parallel_depth);
+}
+
+Ref<Cell> AugmentedDictionary::build_sorted_update_subtree(td::Span<SetManyEntry> new_values, int prefix_len,
+                                                            unsigned parallel_depth) const {
+  if (new_values.empty()) {
+    return {};
+  }
+  if (new_values.size() == 1) {
+    CellBuilder cb;
+    append_dict_label(cb, new_values[0].first + prefix_len, key_bits - prefix_len, key_bits - prefix_len);
+    return finish_create_leaf(cb, *new_values[0].second);
+  }
+
+  size_t common_prefix_len_s;
+  td::bitstring::bits_memcmp(new_values.front().first + prefix_len, new_values.back().first + prefix_len,
+                             key_bits - prefix_len, &common_prefix_len_s);
+  int common_prefix_len = static_cast<int>(common_prefix_len_s);
+  CHECK(prefix_len + common_prefix_len < key_bits);
+  std::size_t split = 0;
+  while (split < new_values.size() && new_values[split].first[prefix_len + common_prefix_len] == 0) {
+    ++split;
+  }
+  CHECK(split != 0 && split != new_values.size());
+
+  auto left_values = new_values.substr(0, split);
+  auto right_values = new_values.substr(split);
+  const int child_prefix_len = prefix_len + common_prefix_len + 1;
+  Ref<Cell> left, right;
+  if (parallel_depth != 0) {
+    std::exception_ptr left_error;
+    std::thread left_thread;
+    bool launched = false;
+    try {
+      left_thread = std::thread([this, left_values, child_prefix_len, parallel_depth, &left, &left_error] {
+        try {
+          left = build_sorted_update_subtree(left_values, child_prefix_len, parallel_depth - 1);
+        } catch (...) {
+          left_error = std::current_exception();
+        }
+      });
+      launched = true;
+    } catch (...) {
+      // A failed worker launch must preserve the serial dictionary semantics.
+    }
+    if (launched) {
+      std::exception_ptr right_error;
+      try {
+        right = build_sorted_update_subtree(right_values, child_prefix_len, parallel_depth - 1);
+      } catch (...) {
+        right_error = std::current_exception();
+      }
+      left_thread.join();
+      if (left_error) {
+        std::rethrow_exception(left_error);
+      }
+      if (right_error) {
+        std::rethrow_exception(right_error);
+      }
+    } else {
+      left = build_sorted_update_subtree(left_values, child_prefix_len, 0);
+      right = build_sorted_update_subtree(right_values, child_prefix_len, 0);
+    }
+  } else {
+    left = build_sorted_update_subtree(left_values, child_prefix_len, 0);
+    right = build_sorted_update_subtree(right_values, child_prefix_len, 0);
+  }
+
+  CellBuilder cb;
+  append_dict_label(cb, new_values.front().first + prefix_len, common_prefix_len, key_bits - prefix_len);
+  return finish_create_fork(cb, std::move(left), std::move(right), key_bits - prefix_len);
+}
+
 bool AugmentedDictionary::set_many_sorted(td::Span<SetManyEntry> new_values) {
   force_validate();
   for (std::size_t i = 0; i < new_values.size(); ++i) {
@@ -3324,9 +3403,7 @@ bool AugmentedDictionary::set_many_sorted_parallel(td::Span<SetManyEntry> new_va
   }
 
   force_validate();
-  if (!is_parallel_plain_cell_graph(get_root_cell())) {
-    return set_many_sorted(new_values);
-  }
+  bool values_are_plain = aug.supports_parallel_sorted_build();
   for (std::size_t i = 0; i < new_values.size(); ++i) {
     const auto& [key, value] = new_values[i];
     if (key.is_null() || value.is_null() || !value->is_valid()) {
@@ -3335,19 +3412,26 @@ bool AugmentedDictionary::set_many_sorted_parallel(td::Span<SetManyEntry> new_va
     if (i && td::bitstring::bits_memcmp(new_values[i - 1].first, key, key_bits) >= 0) {
       return false;
     }
+    if (values_are_plain && !is_parallel_plain_cell_graph(value->get_base_cell())) {
+      values_are_plain = false;
+    }
   }
   if (new_values.empty()) {
     return true;
   }
 
-  // Keep construction of the update-side trie serialized. Its leaf values
-  // are raw values supplied by the caller, while the merge below is where the
-  // existing and update tries expose independent immutable sibling subtrees.
-  // `updates` is private until a fully successful merge publishes our root.
+  // The update trie is private until a fully successful merge publishes our
+  // root. A complete direct build is safe only for an augmentation that has
+  // explicitly opted into its stronger evaluation-order contract and values
+  // whose full graphs are already plain DataCells.
   AugmentedDictionary updates{key_bits, aug};
-  for (const auto& [key, value] : new_values) {
-    if (!updates.set(key, key_bits, value)) {
-      return false;
+  if (values_are_plain) {
+    updates.set_root_cell(updates.build_sorted_update_trie(new_values, workers));
+  } else {
+    for (const auto& [key, value] : new_values) {
+      if (!updates.set(key, key_bits, value)) {
+        return false;
+      }
     }
   }
 
@@ -3361,13 +3445,10 @@ bool AugmentedDictionary::set_many_sorted_parallel(td::Span<SetManyEntry> new_va
     }
     return true;
   };
-  // The update trie has already evaluated this augmentation exactly once.
-  // If one of its raw values is not a plain cell graph, reuse that prepared
-  // trie for the serial merge instead of rebuilding it through
-  // set_many_sorted(). Besides avoiding unnecessary work, this preserves the
-  // serial API's one-evaluation behavior for augmentations that are
-  // thread-safe but intentionally stateful.
-  if (!is_parallel_plain_cell_graph(updates.get_root_cell())) {
+  // Never let worker merges touch a tracked/virtual old root. In that case
+  // the newly built plain update trie is still useful, but the final merge
+  // stays serial to preserve UsageCell callbacks and proof accounting.
+  if (!is_parallel_plain_cell_graph(get_root_cell()) || !is_parallel_plain_cell_graph(updates.get_root_cell())) {
     return combine_with(updates, overwrite_with_update);
   }
   return combine_with_parallel(updates, overwrite_with_update, workers);

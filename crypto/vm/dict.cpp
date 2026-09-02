@@ -3350,9 +3350,6 @@ bool AugmentedDictionary::set_many_sorted_parallel(td::Span<SetManyEntry> new_va
       return false;
     }
   }
-  if (!is_parallel_plain_cell_graph(updates.get_root_cell())) {
-    return set_many_sorted(new_values);
-  }
 
   // This callback is intentionally stateless: the bounded merge may call it
   // from independent child workers. The right-hand payload already includes
@@ -3364,6 +3361,15 @@ bool AugmentedDictionary::set_many_sorted_parallel(td::Span<SetManyEntry> new_va
     }
     return true;
   };
+  // The update trie has already evaluated this augmentation exactly once.
+  // If one of its raw values is not a plain cell graph, reuse that prepared
+  // trie for the serial merge instead of rebuilding it through
+  // set_many_sorted(). Besides avoiding unnecessary work, this preserves the
+  // serial API's one-evaluation behavior for augmentations that are
+  // thread-safe but intentionally stateful.
+  if (!is_parallel_plain_cell_graph(updates.get_root_cell())) {
+    return combine_with(updates, overwrite_with_update);
+  }
   return combine_with_parallel(updates, overwrite_with_update, workers);
 }
 

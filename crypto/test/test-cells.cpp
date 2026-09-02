@@ -17,6 +17,7 @@
     Copyright 2017-2020 Telegram Systems LLP
 */
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
@@ -1159,6 +1160,76 @@ TEST(AugmentedDictionary, parallel_bulk_merge_worker_failure_is_atomic) {
   ASSERT_TRUE(augmentation.worker_fork_seen.load(std::memory_order_relaxed));
   ASSERT_EQ(initial.get_root_cell()->get_hash(), committed_root);
   ASSERT_TRUE(initial.validate_all());
+}
+
+TEST(AugmentedDictionary, parallel_bulk_merge_unsafe_update_reuses_prepared_trie) {
+  struct CountingAugmentation final : vm::dict::AugmentationData {
+    std::thread::id owner{std::this_thread::get_id()};
+    mutable std::atomic<unsigned> leaf_evaluations{0};
+    mutable std::atomic<bool> worker_fork_seen{false};
+
+    bool skip_extra(vm::CellSlice& cs) const override {
+      return cs.advance(16);
+    }
+    bool eval_leaf(vm::CellBuilder& cb, vm::CellSlice&) const override {
+      return cb.store_ulong_rchk_bool(leaf_evaluations.fetch_add(1, std::memory_order_relaxed) + 1, 16);
+    }
+    bool eval_fork(vm::CellBuilder& cb, vm::CellSlice&, vm::CellSlice&) const override {
+      if (std::this_thread::get_id() != owner) {
+        worker_fork_seen.store(true, std::memory_order_relaxed);
+      }
+      return cb.store_ulong_rchk_bool(0, 16);
+    }
+    bool eval_empty(vm::CellBuilder& cb) const override {
+      return cb.store_ulong_rchk_bool(0, 16);
+    }
+    bool supports_parallel_construction() const override {
+      return true;
+    }
+  } parallel_augmentation, serial_augmentation;
+
+  auto usage_tree = std::make_shared<vm::CellUsageTree>();
+  auto value = [&](td::uint64 number, bool tracked) {
+    vm::CellBuilder child_builder;
+    ASSERT_TRUE(child_builder.store_ulong_rchk_bool(number, 8));
+    td::Ref<vm::Cell> child = child_builder.finalize();
+    if (tracked) {
+      child = vm::UsageCell::create(std::move(child), usage_tree->root_ptr());
+    }
+    vm::CellBuilder value_builder;
+    ASSERT_TRUE(value_builder.store_ref_bool(std::move(child)));
+    return vm::load_cell_slice_ref(value_builder.finalize());
+  };
+
+  std::array<td::BitArray<8>, 4> keys{
+      td::BitArray<8>{static_cast<long long>(0x00)}, td::BitArray<8>{static_cast<long long>(0x40)},
+      td::BitArray<8>{static_cast<long long>(0x80)}, td::BitArray<8>{static_cast<long long>(0xc0)}};
+
+  vm::AugmentedDictionary parallel{8, parallel_augmentation};
+  vm::AugmentedDictionary serial{8, serial_augmentation};
+  for (std::size_t index = 0; index < keys.size(); ++index) {
+    ASSERT_TRUE(parallel.set(keys[index], value(index, /*tracked=*/false)));
+    ASSERT_TRUE(serial.set(keys[index], value(index, /*tracked=*/false)));
+  }
+  ASSERT_EQ(parallel.get_root_cell()->get_hash(), serial.get_root_cell()->get_hash());
+  parallel_augmentation.leaf_evaluations.store(0, std::memory_order_relaxed);
+  serial_augmentation.leaf_evaluations.store(0, std::memory_order_relaxed);
+
+  // The update values are plain outer DataCells with UsageCell children. The
+  // initial tree is safe to inspect, but the prepared update trie is not safe
+  // to enter from worker threads. Its serial fallback must retain that first
+  // prepared trie: rebuilding it would evaluate this stateful augmentation
+  // twice and would let worker forks run if the guard regressed.
+  std::vector<vm::AugmentedDictionary::SetManyEntry> updates;
+  for (std::size_t index = 0; index < keys.size(); ++index) {
+    updates.emplace_back(keys[index].cbits(), value(10 + index, /*tracked=*/true));
+  }
+  ASSERT_TRUE(parallel.set_many_sorted_parallel(td::as_span(updates), 2));
+  ASSERT_EQ(parallel_augmentation.leaf_evaluations.load(std::memory_order_relaxed), keys.size());
+  ASSERT_TRUE(!parallel_augmentation.worker_fork_seen.load(std::memory_order_relaxed));
+  ASSERT_TRUE(serial.set_many_sorted(td::as_span(updates)));
+  ASSERT_EQ(serial_augmentation.leaf_evaluations.load(std::memory_order_relaxed), keys.size());
+  ASSERT_EQ(parallel.get_root_cell()->get_hash(), serial.get_root_cell()->get_hash());
 }
 
 TEST(NativeStateEngine, repeated_shard_accounts_checkpoint_rollback_preserves_largest_prefix) {

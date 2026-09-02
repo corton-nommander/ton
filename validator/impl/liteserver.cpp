@@ -64,16 +64,36 @@ td::int32 get_tl_tag(td::Slice slice) {
 namespace {
 
 bool is_bounded_native_send_message(td::Slice data) {
-  // NativeTransfer begins with a byte-aligned `NTXF` tag. Most ordinary
-  // externals should retain their legacy path without paying a second BOC
-  // decode merely because they are small enough for the microbatch lane.
-  static constexpr char native_magic[] = "NTXF";
-  if (data.size() > native_send_message_coalescing_max_message_bytes ||
-      std::search(data.begin(), data.end(), native_magic, native_magic + 4) == data.end()) {
+  // NativeTransfer and NativeTransferRun begin with byte-aligned `NTXF` and
+  // `NTRN` tags respectively. Most ordinary externals should retain their
+  // legacy path without paying a second BOC decode merely because they are
+  // small enough for the native-only microbatch lane. The pool itself applies
+  // the v15/capability gate for NTRN; classification here only preserves the
+  // bounded individual-RPC admission path.
+  static constexpr char transfer_magic[] = "NTXF";
+  static constexpr char run_magic[] = "NTRN";
+  if (data.size() > native_send_message_coalescing_max_message_bytes) {
+    return false;
+  }
+  const bool maybe_transfer =
+      std::search(data.begin(), data.end(), transfer_magic, transfer_magic + 4) != data.end();
+  const bool maybe_run = std::search(data.begin(), data.end(), run_magic, run_magic + 4) != data.end();
+  if (!maybe_transfer && !maybe_run) {
     return false;
   }
   auto root = vm::std_boc_deserialize(data);
-  return root.is_ok() && block::NativeTransfer::unpack_external(root.move_as_ok()).is_ok();
+  if (root.is_error()) {
+    return false;
+  }
+  auto native_root = root.move_as_ok();
+  auto native_cs = vm::load_cell_slice(native_root);
+  if (native_cs.prefetch_ulong(32) == block::NativeTransfer::magic) {
+    return block::NativeTransfer::unpack_external(std::move(native_root)).is_ok();
+  }
+  if (native_cs.prefetch_ulong(32) == block::NativeTransferRun::magic) {
+    return block::NativeTransferRun::unpack_external(std::move(native_root)).is_ok();
+  }
+  return false;
 }
 
 }  // namespace

@@ -111,15 +111,14 @@ td::Result<Ref<ExtMessageQ>> ExtMessageQ::create_ext_message(td::BufferSlice dat
     return Ref<ExtMessageQ>{true, std::move(data), std::move(ext_msg), src_prefix, wc, transfer.src, hash, hash};
   }
   if (native_tag == block::NativeTransferRun::magic) {
-    // Parse before rejecting so malformed or non-canonical NTRN cells cannot
-    // masquerade as ordinary external messages.  Admission stays disabled
-    // until the pool can reserve the full nonce range atomically; allowing it
-    // through today would incorrectly send it down the wallet/TVM fallback.
-    auto parsed_run = block::NativeTransferRun::unpack_external(ext_msg);
-    if (parsed_run.is_error()) {
-      return parsed_run.move_as_error();
-    }
-    return td::Status::Error("native transfer run admission is disabled pending pool integration");
+    // Parse before routing so malformed or non-canonical NTRN cells cannot
+    // masquerade as ordinary external messages.  The pool applies the v15
+    // capability gate and atomically reserves the full nonce interval; here
+    // we only establish the same source route used by scalar NTFX ingress.
+    TRY_RESULT(run, block::NativeTransferRun::unpack_external(ext_msg));
+    auto wc = ton::basechainId;
+    auto src_prefix = ton::extract_addr_prefix(wc, run.src);
+    return Ref<ExtMessageQ>{true, std::move(data), std::move(ext_msg), src_prefix, wc, run.src, hash, hash};
   }
   vm::CellSlice cs{vm::NoVmOrd{}, ext_msg};
   if (cs.prefetch_ulong(2) != 2) {  // ext_in_msg_info$10

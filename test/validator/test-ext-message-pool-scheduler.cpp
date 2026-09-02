@@ -266,9 +266,9 @@ class ExtMessagePoolTestAccess {
     return hash;
   }
 
-  // Test-only scaffolding for the inactive multi-transfer representation. It
-  // builds one physical pool object and one reservation keyed by the first
-  // nonce, exactly as a future NTRN admission path will do. Production NTFX
+  // Test-only scaffolding for a multi-transfer native work item. It builds one
+  // physical pool object and one reservation keyed by the first nonce, which
+  // is the representation used by admitted NTRN runs. Production NTFX
   // admission continues to call add() above with logical_count == 1.
   static ExtMessage::Hash add_work(ExtMessagePool &pool, NativeAddress source, td::uint64 first_nonce,
                                    td::uint32 logical_count, int priority = 0, bool active = true,
@@ -393,7 +393,12 @@ class ExtMessagePoolTestAccess {
                                        .wait_allow_broadcast = std::move(wait_allow_broadcast),
                                        .should_broadcast = true,
                                        .msg_seqno = {},
-                                       .native_transfer = transfer};
+                                       .native_admission = ExtMessagePool::NativeAdmission{
+                                           .first_nonce = transfer.nonce,
+                                           .logical_count = 1,
+                                           .amount = transfer.amount,
+                                           .fee = transfer.fee,
+                                           .valid_until = transfer.valid_until}};
     return pool.finalize_checked_message(std::move(result), priority, true, td::Timestamp::never()).is_ok();
   }
 
@@ -735,11 +740,57 @@ class ExtMessagePoolTestAccess {
   static constexpr std::size_t max_native_queue_limit() {
     return ExtMessagePool::MAX_NATIVE_COLLATOR_QUEUE_LIMIT;
   }
+
+  static bool native_transfer_runs_enabled(int global_version, bool has_capabilities, long long capabilities) {
+    return ExtMessagePool::native_transfer_runs_enabled(global_version, has_capabilities, capabilities);
+  }
+
+  static td::Result<ExtMessagePool::NativeAdmission> native_run_admission(
+      const block::NativeTransferRun &run) {
+    return ExtMessagePool::make_native_admission(run);
+  }
 };
 
 static_assert(ExtMessagePoolTestAccess::max_native_queue_limit() == 65'536);
 static_assert(ExtMessagePoolTestAccess::max_native_queue_limit() == block::NativeTransferBatch::max_entries);
 static_assert(ExtMessagePoolTestAccess::native_delivery_chunk() == 512);
+
+TEST(ExtMessagePoolScheduler, NativeTransferRunAdmissionRequiresVersionAndCapability) {
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::native_transfer_runs_enabled(
+      block::NativeTransferBatch::runs_global_version - 1, true, ton::capNativeTransferRuns));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::native_transfer_runs_enabled(
+      block::NativeTransferBatch::runs_global_version, false, ton::capNativeTransferRuns));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::native_transfer_runs_enabled(
+      block::NativeTransferBatch::runs_global_version, true, 0));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::native_transfer_runs_enabled(
+      block::NativeTransferBatch::runs_global_version, true, ton::capNativeTransferRuns));
+}
+
+TEST(ExtMessagePoolScheduler, NativeTransferRunAdmissionUsesOneAtomicAggregateInterval) {
+  block::NativeTransferRun run;
+  run.src = make_bits(7, 19);
+  run.first_nonce = 41;
+  run.valid_until = std::numeric_limits<UnixTime>::max();
+  run.signature.assign(64, '\x01');
+  run.outputs = {{.dst = make_bits(8, 20), .amount = 5, .fee = 2},
+                 {.dst = make_bits(9, 21), .amount = 7, .fee = 3}};
+
+  auto admission = ExtMessagePoolTestAccess::native_run_admission(run);
+  ASSERT_TRUE(admission.is_ok());
+  auto value = admission.move_as_ok();
+  ASSERT_EQ(value.first_nonce, 41u);
+  ASSERT_EQ(value.logical_count, 2u);
+  ASSERT_EQ(value.last_nonce(), td::optional<td::uint64>(42));
+  ASSERT_EQ(value.amount, 12u);
+  ASSERT_EQ(value.fee, 5u);
+  ASSERT_EQ(value.required_amount(), td::optional<td::uint64>(17));
+
+  // Each output is individually valid, but aggregate debit must never wrap
+  // when the pool reserves the signed work as a single interval.
+  run.outputs = {{.dst = make_bits(8, 20), .amount = std::numeric_limits<td::uint64>::max(), .fee = 0},
+                 {.dst = make_bits(9, 21), .amount = 1, .fee = 0}};
+  ASSERT_TRUE(ExtMessagePoolTestAccess::native_run_admission(run).is_error());
+}
 
 TEST(ExtMessagePoolScheduler, NativeAdmissionCacheUsesExactShardBlockId) {
   auto pool = ExtMessagePoolTestAccess::make_pool();

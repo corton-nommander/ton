@@ -29,11 +29,14 @@ td::BufferSlice make_malformed_native_transfer_run_boc() {
 
 }  // namespace
 
-TEST(ExternalMessageRouting, NativeTransferRunIsRecognizedButAdmissionIsDisabled) {
+TEST(ExternalMessageRouting, NativeTransferRunRoutesToItsSourceForCapabilityGatedAdmission) {
   auto result = ton::validator::ExtMessageQ::create_ext_message(
       make_native_transfer_run_boc(), block::SizeLimitsConfig::ExtMsgLimits{});
-  ASSERT_TRUE(result.is_error());
-  ASSERT_TRUE(result.error().message().str().find("disabled pending pool integration") != std::string::npos);
+  ASSERT_TRUE(result.is_ok());
+  auto message = result.move_as_ok();
+  ASSERT_EQ(message->wc(), ton::basechainId);
+  ASSERT_TRUE(message->root_cell().not_null());
+  ASSERT_EQ(vm::load_cell_slice(message->root_cell()).prefetch_ulong(32), block::NativeTransferRun::magic);
 }
 
 TEST(ExternalMessageRouting, MalformedNativeTransferRunDoesNotFallBackToOrdinaryExternalMessage) {

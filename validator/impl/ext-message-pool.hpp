@@ -39,12 +39,42 @@ class ExtMessagePool : public td::actor::Actor {
       : opts_(opts), manager_(manager) {
   }
 
+  // The pool schedules one physical native external at a time, but a v5
+  // NativeTransferRun owns an indivisible contiguous source-nonce interval.
+  // Keep the admission facts independent from the wire type so all pool
+  // lifecycle paths (insert, commit, rollback, expiry and reconciliation)
+  // use the same first-nonce/count pair for NTFX and NTRN.
+  struct NativeAdmission {
+    td::uint64 first_nonce{0};
+    td::uint32 logical_count{0};
+    td::uint64 amount{0};
+    td::uint64 fee{0};
+    UnixTime valid_until{0};
+
+    bool has_valid_interval() const {
+      return logical_count != 0 &&
+             first_nonce <= std::numeric_limits<td::uint64>::max() - (logical_count - 1);
+    }
+    td::optional<td::uint64> last_nonce() const {
+      if (!has_valid_interval()) {
+        return {};
+      }
+      return first_nonce + logical_count - 1;
+    }
+    td::optional<td::uint64> required_amount() const {
+      if (amount > std::numeric_limits<td::uint64>::max() - fee) {
+        return {};
+      }
+      return amount + fee;
+    }
+  };
+
   struct CheckResult {
     td::Ref<ExtMessage> message;
     td::actor::StartedTask<> wait_allow_broadcast;
     bool should_broadcast{true};
     td::optional<td::uint32> msg_seqno;
-    td::optional<block::NativeTransfer> native_transfer;
+    td::optional<NativeAdmission> native_admission;
   };
   struct BatchCheckResult {
     ExternalMessageAdmissionResults statuses;
@@ -105,6 +135,14 @@ class ExtMessagePool : public td::actor::Actor {
    public:
     void verify(block::NativeTransfer transfer, Bits256 chain_domain, td::Promise<td::Unit> promise) {
       auto status = transfer.verify_signature(chain_domain);
+      if (status.is_error()) {
+        promise.set_error(std::move(status));
+      } else {
+        promise.set_value(td::Unit{});
+      }
+    }
+    void verify_run(block::NativeTransferRun run, Bits256 chain_domain, td::Promise<td::Unit> promise) {
+      auto status = run.verify_signature(chain_domain);
       if (status.is_error()) {
         promise.set_error(std::move(status));
       } else {
@@ -333,11 +371,11 @@ class ExtMessagePool : public td::actor::Actor {
 
   td::Status add_message_to_mempool(td::Ref<ExtMessage> message, int priority,
                                     td::optional<td::uint32> msg_seqno,
-                                    const block::NativeTransfer *native_transfer = nullptr);
+                                    const NativeAdmission *native_admission = nullptr);
   td::Status commit_checked_message(td::Ref<ExtMessage> message, td::optional<td::uint32> msg_seqno,
-                                    const block::NativeTransfer *native_transfer = nullptr);
+                                    const NativeAdmission *native_admission = nullptr);
   void rollback_checked_message(td::Ref<ExtMessage> message, td::optional<td::uint32> msg_seqno,
-                                const block::NativeTransfer *native_transfer = nullptr);
+                                const NativeAdmission *native_admission = nullptr);
   bool erase_message(int priority, const MessageId &id, bool prune_expired_suffix = true);
 
   struct WalletMessageInfo {
@@ -688,10 +726,17 @@ class ExtMessagePool : public td::actor::Actor {
   td::Result<CheckResult> finalize_checked_message(CheckResult result, int priority, bool add_to_mempool,
                                                    td::Timestamp deadline);
   td::actor::Task<CheckResult> reserve_verified_native_message(td::Ref<ExtMessage> message,
-                                                               block::NativeTransfer transfer,
+                                                               NativeAdmission native_admission,
                                                                td::uint64 available_balance,
                                                                td::uint64 account_revision, UnixTime utime,
                                                                td::Timestamp deadline);
+  static td::Result<NativeAdmission> make_native_admission(const block::NativeTransfer &transfer);
+  static td::Result<NativeAdmission> make_native_admission(const block::NativeTransferRun &run);
+  static td::Result<td::optional<NativeAdmission>> parse_native_admission(td::Ref<vm::Cell> root);
+  static bool native_transfer_runs_enabled(int global_version, bool has_capabilities, long long capabilities);
+  static bool native_transfer_runs_enabled(const block::ConfigInfo &config);
+  static td::Status validate_native_transfer_run_locality(const block::NativeTransferRun &run,
+                                                           const MasterchainState &state);
   td::Result<td::Ref<MasterchainState>> pin_native_admission_masterchain_state() const;
   void reset_native_admission_cache_generation(const BlockIdExt &masterchain_block_id);
   NativeAdmissionShardViewPtr lookup_native_admission_shard_view(

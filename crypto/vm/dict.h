@@ -78,6 +78,14 @@ struct AugmentationData {
   virtual bool check_leaf(vm::CellSlice& cs, vm::CellSlice& val_cs) const;
   virtual bool check_fork(vm::CellSlice& cs, vm::CellSlice& left_cs, vm::CellSlice& right_cs) const;
   virtual bool check_empty(vm::CellSlice& cs) const;
+  // Augmentation implementations are serial by default. An implementation
+  // may opt in only when eval_leaf/eval_fork/eval_empty and every object they
+  // reach are safe to invoke concurrently for independent immutable cells.
+  // This is deliberately a capability of the augmentation rather than a
+  // property inferred from its const-qualified API.
+  virtual bool supports_parallel_construction() const {
+    return false;
+  }
   virtual bool check_leaf_key_extra(vm::CellSlice& val_cs, vm::CellSlice& extra_cs, td::ConstBitPtr key,
                                     int key_len) const {
     return check_leaf(extra_cs, val_cs);
@@ -175,6 +183,7 @@ class DictionaryBase {
 };
 
 class DictIterator;
+class AugmentedDictionary;
 
 template <typename T>
 std::pair<T, int> dict_range(T&& dict, bool rev = false, bool sgnd = false) {
@@ -287,6 +296,7 @@ class DictionaryFixed : public DictionaryBase {
   }
   bool check_fork_raw(Ref<CellSlice> cs_ref, int n) const;
   friend class DictIterator;
+  friend class AugmentedDictionary;
 
  private:
   std::pair<Ref<CellSlice>, Ref<Cell>> dict_lookup_delete(Ref<Cell> dict, td::ConstBitPtr key, int n) const;
@@ -298,8 +308,15 @@ class DictionaryFixed : public DictionaryBase {
                            const foreach_func_t& foreach_func, bool invert_first = false, bool shuffle = false) const;
   std::pair<Ref<Cell>, int> dict_filter(Ref<Cell> dict, td::BitPtr key, int n, const filter_func_t& check_leaf,
                                         int& skip_rest) const;
+  // Builds a replacement root with bounded fork/join work, but does not
+  // publish it until every worker has completed successfully. Only
+  // AugmentedDictionary may invoke it after checking its augmentation and
+  // backing-cell concurrency contracts.
+  bool combine_with_parallel(DictionaryFixed& dict2, const combine_func_t& combine_func, unsigned workers,
+                             int mode = 0);
   Ref<Cell> dict_combine_with(Ref<Cell> dict1, Ref<Cell> dict2, td::BitPtr key_buffer, int n, int total_key_len,
-                              const combine_func_t& combine_func, int mode = 0, int skip1 = 0, int skip2 = 0) const;
+                              const combine_func_t& combine_func, int mode, int skip1, int skip2,
+                              unsigned parallel_depth, td::BitPtr key_buffer_base) const;
   bool dict_scan_diff(Ref<Cell> dict1, Ref<Cell> dict2, td::BitPtr key_buffer, int n, int total_key_len,
                       const scan_diff_func_t& diff_func, int mode = 0, int skip1 = 0, int skip2 = 0) const;
   bool dict_validate_check(Ref<Cell> dict, td::BitPtr key_buffer, int n, int total_key_len,
@@ -599,6 +616,11 @@ class AugmentedDictionary final : public DictionaryFixed {
   // unique, non-null list. The receiver is not published or otherwise
   // modified when input validation or the augmented merge fails.
   bool set_many_sorted(td::Span<SetManyEntry> new_values);
+  // The serial API above remains the default. This opt-in variant only
+  // creates parallel subtree work when its augmentation explicitly declares
+  // itself safe; otherwise it preserves the serial implementation exactly.
+  // `workers` is capped internally to keep recursive fork/join bounded.
+  bool set_many_sorted_parallel(td::Span<SetManyEntry> new_values, unsigned workers);
   bool check_for_each_extra(const foreach_extra_func_t& foreach_extra_func, bool invert_first = false);
   std::pair<Ref<CellSlice>, Ref<CellSlice>> traverse_extra(td::BitPtr key_buffer, int key_len,
                                                            const traverse_func_t& traverse_node);

@@ -17,6 +17,7 @@
     Copyright 2017-2020 Telegram Systems LLP
 */
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -26,6 +27,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -970,6 +972,193 @@ TEST(AugmentedDictionary, bulk_sorted_set_matches_sequential_and_is_atomic) {
   ASSERT_TRUE(!bulk.set_many_sorted(td::as_span(null_leaf)));
   ASSERT_EQ(bulk.get_root_cell()->get_hash(), committed_root);
   ASSERT_TRUE(bulk.validate_all());
+}
+
+TEST(AugmentedDictionary, parallel_shard_accounts_bulk_merge_is_canonical_and_atomic) {
+  auto shard_account = [](td::uint64 balance, td::uint64 nonce, td::uint64 last_lt) {
+    vm::CellBuilder state_builder;
+    ASSERT_TRUE(state_builder.store_long_bool(1, 2));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(balance, 64));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(nonce, 64));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(0, 8));
+    auto state = state_builder.finalize();
+    vm::CellBuilder account_builder;
+    ASSERT_TRUE(account_builder.store_ref_bool(std::move(state)));
+    ASSERT_TRUE(account_builder.store_bits_bool(ton::Bits256{}));
+    ASSERT_TRUE(account_builder.store_ulong_rchk_bool(last_lt, 64));
+    return vm::load_cell_slice_ref(account_builder.finalize());
+  };
+  auto make_address = [](std::size_t index, bool prefix_clustered) {
+    ton::StdSmcAddress result;
+    std::string bytes(32, '\0');
+    if (prefix_clustered) {
+      // All entries share the first byte but still fan out below it.
+      bytes[0] = static_cast<char>(0x20);
+      bytes[1] = static_cast<char>(index >> 8);
+      bytes[2] = static_cast<char>(index);
+    } else {
+      // The leading byte changes regularly, exercising root-level siblings.
+      bytes[0] = static_cast<char>(index >> 8);
+      bytes[1] = static_cast<char>(index);
+      bytes[31] = static_cast<char>(index * 37);
+    }
+    result.as_slice().copy_from(bytes);
+    return result;
+  };
+
+  auto run_case = [&](bool prefix_clustered) {
+    constexpr std::size_t update_count = 2'048;
+    std::vector<ton::StdSmcAddress> addresses;
+    addresses.reserve(update_count);
+    for (std::size_t index = 0; index < update_count; ++index) {
+      addresses.push_back(make_address(index, prefix_clustered));
+    }
+
+    vm::AugmentedDictionary initial{256, block::tlb::aug_ShardAccounts};
+    std::vector<vm::AugmentedDictionary::SetManyEntry> updates;
+    updates.reserve(update_count);
+    for (std::size_t index = 0; index < update_count; ++index) {
+      // Seed half the keys first: the bulk operation must perform both
+      // canonical replacements and inserts through every subtree shape.
+      if ((index & 1) == 0) {
+        ASSERT_TRUE(initial.set(addresses[index], shard_account(10'000 + index, index, 100 + index)));
+      }
+      updates.emplace_back(addresses[index].cbits(), shard_account(100'000 + index, 1'000 + index, 10'000 + index));
+    }
+
+    vm::AugmentedDictionary sequential{initial};
+    for (const auto& [key, value] : updates) {
+      ASSERT_TRUE(sequential.set(key, 256, value));
+    }
+    ASSERT_TRUE(sequential.validate_all());
+    const auto expected_root = sequential.get_root_cell()->get_hash();
+
+    vm::AugmentedDictionary serial_bulk{initial};
+    ASSERT_TRUE(serial_bulk.set_many_sorted(td::as_span(updates)));
+    ASSERT_TRUE(serial_bulk.validate_all());
+    ASSERT_EQ(serial_bulk.get_root_cell()->get_hash(), expected_root);
+
+    vm::AugmentedDictionary repeated{initial};
+    ASSERT_TRUE(repeated.set_many_sorted_parallel(td::as_span(updates), 8));
+    ASSERT_TRUE(repeated.validate_all());
+    ASSERT_EQ(repeated.get_root_cell()->get_hash(), expected_root);
+    for (unsigned workers : {1u, 2u, 4u, 8u}) {
+      vm::AugmentedDictionary parallel{initial};
+      ASSERT_TRUE(parallel.set_many_sorted_parallel(td::as_span(updates), workers));
+      ASSERT_TRUE(parallel.validate_all());
+      ASSERT_EQ(parallel.get_root_cell()->get_hash(), expected_root);
+      ASSERT_EQ(parallel.get_root_cell()->get_hash(), repeated.get_root_cell()->get_hash());
+    }
+
+    auto usage_tree = std::make_shared<vm::CellUsageTree>();
+    vm::NewCellStorageStat serial_stat;
+    serial_stat.add_proof(serial_bulk.get_root_cell(), usage_tree.get());
+    vm::NewCellStorageStat parallel_stat;
+    parallel_stat.add_proof(repeated.get_root_cell(), usage_tree.get());
+    ASSERT_EQ(serial_stat.get_total_stat(), parallel_stat.get_total_stat());
+
+    auto serial_update = vm::CellBuilder::create_merkle_update(initial.get_root_cell(), serial_bulk.get_root_cell());
+    auto parallel_update = vm::CellBuilder::create_merkle_update(initial.get_root_cell(), repeated.get_root_cell());
+    ASSERT_TRUE(serial_update.not_null());
+    ASSERT_TRUE(parallel_update.not_null());
+    ASSERT_EQ(serial_update->get_hash(), parallel_update->get_hash());
+
+    vm::AugmentedDictionary atomic_parallel{initial};
+    const auto committed_root = atomic_parallel.get_root_cell()->get_hash();
+    std::vector<vm::AugmentedDictionary::SetManyEntry> unsorted;
+    unsorted.emplace_back(addresses[1].cbits(), shard_account(200'001, 1, 1));
+    unsorted.emplace_back(addresses[0].cbits(), shard_account(200'002, 1, 1));
+    ASSERT_TRUE(!atomic_parallel.set_many_sorted_parallel(td::as_span(unsorted), 4));
+    ASSERT_EQ(atomic_parallel.get_root_cell()->get_hash(), committed_root);
+
+    std::vector<vm::AugmentedDictionary::SetManyEntry> duplicate;
+    duplicate.emplace_back(addresses[2].cbits(), shard_account(200'003, 1, 1));
+    duplicate.emplace_back(addresses[2].cbits(), shard_account(200'004, 1, 1));
+    ASSERT_TRUE(!atomic_parallel.set_many_sorted_parallel(td::as_span(duplicate), 4));
+    ASSERT_EQ(atomic_parallel.get_root_cell()->get_hash(), committed_root);
+
+    std::vector<vm::AugmentedDictionary::SetManyEntry> null_leaf;
+    null_leaf.emplace_back(addresses[3].cbits(), td::Ref<vm::CellSlice>{});
+    ASSERT_TRUE(!atomic_parallel.set_many_sorted_parallel(td::as_span(null_leaf), 4));
+    ASSERT_EQ(atomic_parallel.get_root_cell()->get_hash(), committed_root);
+    ASSERT_TRUE(atomic_parallel.validate_all());
+
+    // UsageCell child traversal records mutable proof/accounting state. The
+    // parallel entry point must detect that wrapper graph and preserve the
+    // serial result rather than letting worker reads touch it concurrently.
+    auto tracked_usage_tree = std::make_shared<vm::CellUsageTree>();
+    auto tracked_root = vm::UsageCell::create(initial.get_root_cell(), tracked_usage_tree->root_ptr());
+    vm::AugmentedDictionary tracked_initial{tracked_root, 256, block::tlb::aug_ShardAccounts};
+    vm::AugmentedDictionary tracked_serial{tracked_initial};
+    ASSERT_TRUE(tracked_serial.set_many_sorted(td::as_span(updates)));
+    vm::AugmentedDictionary tracked_parallel{tracked_initial};
+    ASSERT_TRUE(tracked_parallel.set_many_sorted_parallel(td::as_span(updates), 8));
+    ASSERT_TRUE(tracked_parallel.validate_all());
+    ASSERT_EQ(tracked_parallel.get_root_cell()->get_hash(), tracked_serial.get_root_cell()->get_hash());
+  };
+
+  run_case(/*prefix_clustered=*/false);
+  run_case(/*prefix_clustered=*/true);
+}
+
+TEST(AugmentedDictionary, parallel_bulk_merge_worker_failure_is_atomic) {
+  struct WorkerFailingAugmentation final : vm::dict::AugmentationData {
+    std::thread::id owner{std::this_thread::get_id()};
+    mutable std::atomic<bool> worker_fork_seen{false};
+
+    bool skip_extra(vm::CellSlice&) const override {
+      return true;
+    }
+    bool eval_leaf(vm::CellBuilder&, vm::CellSlice&) const override {
+      return true;
+    }
+    bool eval_fork(vm::CellBuilder&, vm::CellSlice&, vm::CellSlice&) const override {
+      if (std::this_thread::get_id() != owner) {
+        worker_fork_seen.store(true, std::memory_order_relaxed);
+        return false;
+      }
+      return true;
+    }
+    bool eval_empty(vm::CellBuilder&) const override {
+      return true;
+    }
+    bool supports_parallel_construction() const override {
+      return true;
+    }
+  } augmentation;
+  auto value = [](td::uint64 number) {
+    vm::CellBuilder builder;
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(number, 16));
+    return vm::load_cell_slice_ref(builder.finalize());
+  };
+
+  td::BitArray<8> key0{static_cast<long long>(0)};
+  td::BitArray<8> key1{static_cast<long long>(64)};
+  td::BitArray<8> key2{static_cast<long long>(128)};
+  td::BitArray<8> key3{static_cast<long long>(192)};
+  vm::AugmentedDictionary initial{8, augmentation};
+  ASSERT_TRUE(initial.set(key0, value(1)));
+  ASSERT_TRUE(initial.set(key2, value(2)));
+  const auto committed_root = initial.get_root_cell()->get_hash();
+
+  std::vector<vm::AugmentedDictionary::SetManyEntry> updates;
+  updates.emplace_back(key0.cbits(), value(10));
+  updates.emplace_back(key1.cbits(), value(11));
+  updates.emplace_back(key2.cbits(), value(12));
+  updates.emplace_back(key3.cbits(), value(13));
+
+  bool failed = false;
+  bool applied = false;
+  try {
+    applied = initial.set_many_sorted_parallel(td::as_span(updates), 2);
+  } catch (const vm::VmError&) {
+    failed = true;
+  }
+  ASSERT_TRUE(!applied);
+  ASSERT_TRUE(failed);
+  ASSERT_TRUE(augmentation.worker_fork_seen.load(std::memory_order_relaxed));
+  ASSERT_EQ(initial.get_root_cell()->get_hash(), committed_root);
+  ASSERT_TRUE(initial.validate_all());
 }
 
 TEST(NativeStateEngine, repeated_shard_accounts_checkpoint_rollback_preserves_largest_prefix) {

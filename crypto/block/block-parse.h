@@ -614,6 +614,9 @@ struct Aug_ShardAccounts final : AugmentationCheckData {
   Aug_ShardAccounts() : AugmentationCheckData(t_ShardAccount, t_DepthBalanceInfo) {
   }
   bool eval_leaf(vm::CellBuilder& cb, vm::CellSlice& cs) const override;
+  bool supports_parallel_construction() const override {
+    return true;
+  }
 };
 
 extern const Aug_ShardAccounts aug_ShardAccounts;

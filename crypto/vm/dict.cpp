@@ -20,11 +20,60 @@
 #include "td/utils/Random.h"
 #include "td/utils/bits.h"
 #include "vm/cells.h"
+#include "vm/cells/DataCell.h"
 #include "vm/cellslice.h"
 #include "vm/dict.h"
 #include "vm/stack.hpp"
+#include "vm/vmstate.h"
+
+#include <algorithm>
+#include <array>
+#include <cstring>
+#include <exception>
+#include <thread>
+#include <unordered_set>
 
 namespace vm {
+
+namespace {
+
+// Worker threads deliberately do not inherit a VmStateInterface or a
+// CellUsageTree. Restrict parallel dictionary construction to a bounded graph
+// of plain, already-materialized DataCells, where child reads and cell creation
+// have no external accounting side effects. Every other shape falls back to
+// the serial API before any worker is launched.
+constexpr std::size_t parallel_plain_cell_scan_limit = 32'768;
+
+bool is_parallel_plain_cell_graph(Ref<Cell> root) {
+  if (VmStateInterface::get()) {
+    return false;
+  }
+  std::vector<Ref<Cell>> pending;
+  std::unordered_set<const Cell*> seen;
+  if (root.not_null()) {
+    pending.push_back(std::move(root));
+  }
+  while (!pending.empty()) {
+    auto cell = std::move(pending.back());
+    pending.pop_back();
+    if (cell.is_null() || !seen.insert(cell.get()).second) {
+      continue;
+    }
+    if (seen.size() > parallel_plain_cell_scan_limit || !cell->get_tree_node().empty()) {
+      return false;
+    }
+    auto* data_cell = dynamic_cast<const DataCell*>(cell.get());
+    if (!data_cell) {
+      return false;
+    }
+    for (unsigned ref_id = 0; ref_id < data_cell->get_refs_cnt(); ++ref_id) {
+      pending.push_back(data_cell->get_ref(ref_id));
+    }
+  }
+  return true;
+}
+
+}  // namespace
 
 /*
  *
@@ -2031,7 +2080,8 @@ Ref<Cell> Dictionary::dict_multiset(Ref<Cell> dict1, td::Span<std::pair<td::Cons
 //       +2 = forbid empty dict2 with non-empty dict1
 Ref<Cell> DictionaryFixed::dict_combine_with(Ref<Cell> dict1, Ref<Cell> dict2, td::BitPtr key_buffer, int n,
                                              int total_key_len, const DictionaryFixed::combine_func_t& combine_func,
-                                             int mode, int skip1, int skip2) const {
+                                             int mode, int skip1, int skip2, unsigned parallel_depth,
+                                             td::BitPtr key_buffer_base) const {
   if (dict1.is_null()) {
     assert(!skip2);
     if ((mode & 1) && dict2.not_null()) {
@@ -2105,15 +2155,76 @@ Ref<Cell> DictionaryFixed::dict_combine_with(Ref<Cell> dict1, Ref<Cell> dict2, t
       return cb.finalize();
     }
     assert(c < n);
-    key_buffer += c + 1;
-    key_buffer[-1] = 0;
-    // combine left subtrees
-    auto c1 = dict_combine_with(label1.remainder->prefetch_ref(0), label2.remainder->prefetch_ref(0), key_buffer,
-                                n - c - 1, total_key_len, combine_func, mode);
-    key_buffer[-1] = 1;
-    // combine right subtrees
-    auto c2 = dict_combine_with(label1.remainder->prefetch_ref(1), label2.remainder->prefetch_ref(1), key_buffer,
-                                n - c - 1, total_key_len, combine_func, mode);
+    const auto child_key_buffer = key_buffer + c + 1;
+    auto left_dict1 = label1.remainder->prefetch_ref(0);
+    auto left_dict2 = label2.remainder->prefetch_ref(0);
+    auto right_dict1 = label1.remainder->prefetch_ref(1);
+    auto right_dict2 = label2.remainder->prefetch_ref(1);
+    Ref<Cell> c1, c2;
+    if (parallel_depth != 0) {
+      // `key_buffer` is deliberately mutable in the serial merge. Give the
+      // forked left branch a complete private copy, including the already
+      // decoded prefix, before both children start touching their own bit.
+      std::array<unsigned char, max_key_bytes> left_key_storage{};
+      std::memcpy(left_key_storage.data(), key_buffer_base.ptr, left_key_storage.size());
+      const int left_key_offset = child_key_buffer.offs - key_buffer_base.offs;
+      std::exception_ptr left_error;
+      std::thread left_thread;
+      bool launched = false;
+      try {
+        left_thread = std::thread([this, left_dict1, left_dict2, left_key_storage = std::move(left_key_storage),
+                                   left_key_offset, n, c, total_key_len, &combine_func, mode, parallel_depth, &c1,
+                                   &left_error]() mutable {
+          try {
+            auto left_key_buffer = td::BitPtr{left_key_storage.data(), left_key_offset};
+            left_key_buffer[-1] = 0;
+            c1 = dict_combine_with(std::move(left_dict1), std::move(left_dict2), left_key_buffer, n - c - 1,
+                                   total_key_len, combine_func, mode, 0, 0, parallel_depth - 1,
+                                   td::BitPtr{left_key_storage.data()});
+          } catch (...) {
+            left_error = std::current_exception();
+          }
+        });
+        launched = true;
+      } catch (...) {
+        // An inability to create a worker must not change the dictionary's
+        // semantics. Fall back to the ordinary serial subtree merge.
+      }
+      if (launched) {
+        std::exception_ptr right_error;
+        key_buffer = child_key_buffer;
+        key_buffer[-1] = 1;
+        try {
+          c2 = dict_combine_with(std::move(right_dict1), std::move(right_dict2), key_buffer, n - c - 1,
+                                 total_key_len, combine_func, mode, 0, 0, parallel_depth - 1, key_buffer_base);
+        } catch (...) {
+          right_error = std::current_exception();
+        }
+        left_thread.join();
+        if (left_error) {
+          std::rethrow_exception(left_error);
+        }
+        if (right_error) {
+          std::rethrow_exception(right_error);
+        }
+      } else {
+        key_buffer = child_key_buffer;
+        key_buffer[-1] = 0;
+        c1 = dict_combine_with(std::move(left_dict1), std::move(left_dict2), key_buffer, n - c - 1,
+                               total_key_len, combine_func, mode, 0, 0, 0, key_buffer_base);
+        key_buffer[-1] = 1;
+        c2 = dict_combine_with(std::move(right_dict1), std::move(right_dict2), key_buffer, n - c - 1,
+                               total_key_len, combine_func, mode, 0, 0, 0, key_buffer_base);
+      }
+    } else {
+      key_buffer = child_key_buffer;
+      key_buffer[-1] = 0;
+      c1 = dict_combine_with(std::move(left_dict1), std::move(left_dict2), key_buffer, n - c - 1, total_key_len,
+                             combine_func, mode, 0, 0, 0, key_buffer_base);
+      key_buffer[-1] = 1;
+      c2 = dict_combine_with(std::move(right_dict1), std::move(right_dict2), key_buffer, n - c - 1, total_key_len,
+                             combine_func, mode, 0, 0, 0, key_buffer_base);
+    }
     label1.remainder.clear();
     label2.remainder.clear();
     // c1 and c2 are merged left and right children of dict1 and dict2
@@ -2158,11 +2269,11 @@ Ref<Cell> DictionaryFixed::dict_combine_with(Ref<Cell> dict1, Ref<Cell> dict2, t
     if (!sw) {
       // merge c1 with dict2
       c1 = dict_combine_with(std::move(c1), std::move(dict2), key_buffer + c + 1, n - c - 1, total_key_len,
-                             combine_func, mode, 0, skip2 + c + 1);
+                             combine_func, mode, 0, skip2 + c + 1, parallel_depth, key_buffer_base);
     } else {
       // merge c2 with dict2
       c2 = dict_combine_with(std::move(c2), std::move(dict2), key_buffer + c + 1, n - c - 1, total_key_len,
-                             combine_func, mode, 0, skip2 + c + 1);
+                             combine_func, mode, 0, skip2 + c + 1, parallel_depth, key_buffer_base);
     }
     if (!c1.is_null() && !c2.is_null()) {
       CellBuilder cb;
@@ -2200,11 +2311,11 @@ Ref<Cell> DictionaryFixed::dict_combine_with(Ref<Cell> dict1, Ref<Cell> dict2, t
     if (!sw) {
       // merge dict1 with c1
       c1 = dict_combine_with(std::move(dict1), std::move(c1), key_buffer + c + 1, n - c - 1, total_key_len,
-                             combine_func, mode, skip1 + c + 1, 0);
+                             combine_func, mode, skip1 + c + 1, 0, parallel_depth, key_buffer_base);
     } else {
       // merge dict1 with c2
       c2 = dict_combine_with(std::move(dict1), std::move(c2), key_buffer + c + 1, n - c - 1, total_key_len,
-                             combine_func, mode, skip1 + c + 1, 0);
+                             combine_func, mode, skip1 + c + 1, 0, parallel_depth, key_buffer_base);
     }
     if (!c1.is_null() && !c2.is_null()) {
       CellBuilder cb;
@@ -2239,7 +2350,39 @@ bool DictionaryFixed::combine_with(DictionaryFixed& dict2, const combine_func_t&
   unsigned char key_buffer[max_key_bytes];
   try {
     auto res = dict_combine_with(get_root_cell(), dict2.get_root_cell(), td::BitPtr{key_buffer}, key_len, key_len,
-                                 combine_func, mode);
+                                 combine_func, mode, 0, 0, 0, td::BitPtr{key_buffer});
+    set_root_cell(std::move(res));
+    return true;
+  } catch (CombineError) {
+    return false;
+  }
+}
+
+bool DictionaryFixed::combine_with_parallel(DictionaryFixed& dict2, const combine_func_t& combine_func,
+                                            unsigned workers, int mode) {
+  force_validate();
+  dict2.force_validate();
+  int key_len = get_key_bits();
+  if (key_len != dict2.get_key_bits()) {
+    throw VmError{Excno::dict_err, "cannot combine dictionaries with different key lengths"};
+  }
+
+  // A complete binary fork tree with this depth creates at most the requested
+  // number of simultaneously active callers. Keep the public opt-in bounded
+  // even if an accidental caller provides an unexpectedly large worker count.
+  workers = std::min(workers, 8u);
+  unsigned parallel_depth = 0;
+  for (unsigned active_workers = 1; active_workers <= workers / 2; active_workers <<= 1) {
+    ++parallel_depth;
+  }
+  if (parallel_depth == 0) {
+    return combine_with(dict2, combine_func, mode);
+  }
+
+  unsigned char key_buffer[max_key_bytes]{};
+  try {
+    auto res = dict_combine_with(get_root_cell(), dict2.get_root_cell(), td::BitPtr{key_buffer}, key_len, key_len,
+                                 combine_func, mode, 0, 0, parallel_depth, td::BitPtr{key_buffer});
     set_root_cell(std::move(res));
     return true;
   } catch (CombineError) {
@@ -3170,6 +3313,58 @@ bool AugmentedDictionary::set_many_sorted(td::Span<SetManyEntry> new_values) {
     return true;
   };
   return combine_with(updates, overwrite_with_update);
+}
+
+bool AugmentedDictionary::set_many_sorted_parallel(td::Span<SetManyEntry> new_values, unsigned workers) {
+  // Do not make a generic augmented dictionary concurrent by accident. The
+  // serial method remains both the default and the fallback for every
+  // augmentation that has not explicitly documented its thread-safety.
+  if (workers < 2 || !aug.supports_parallel_construction()) {
+    return set_many_sorted(new_values);
+  }
+
+  force_validate();
+  if (!is_parallel_plain_cell_graph(get_root_cell())) {
+    return set_many_sorted(new_values);
+  }
+  for (std::size_t i = 0; i < new_values.size(); ++i) {
+    const auto& [key, value] = new_values[i];
+    if (key.is_null() || value.is_null() || !value->is_valid()) {
+      return false;
+    }
+    if (i && td::bitstring::bits_memcmp(new_values[i - 1].first, key, key_bits) >= 0) {
+      return false;
+    }
+  }
+  if (new_values.empty()) {
+    return true;
+  }
+
+  // Keep construction of the update-side trie serialized. Its leaf values
+  // are raw values supplied by the caller, while the merge below is where the
+  // existing and update tries expose independent immutable sibling subtrees.
+  // `updates` is private until a fully successful merge publishes our root.
+  AugmentedDictionary updates{key_bits, aug};
+  for (const auto& [key, value] : new_values) {
+    if (!updates.set(key, key_bits, value)) {
+      return false;
+    }
+  }
+  if (!is_parallel_plain_cell_graph(updates.get_root_cell())) {
+    return set_many_sorted(new_values);
+  }
+
+  // This callback is intentionally stateless: the bounded merge may call it
+  // from independent child workers. The right-hand payload already includes
+  // its augmented leaf extra, exactly as in the serial bulk API.
+  auto overwrite_with_update = [](CellBuilder& cb, Ref<CellSlice>, Ref<CellSlice> update_value, td::ConstBitPtr,
+                                  int) -> bool {
+    if (update_value.is_null() || !update_value->is_valid() || !cb.append_cellslice_bool(*update_value)) {
+      throw CombineError{};
+    }
+    return true;
+  };
+  return combine_with_parallel(updates, overwrite_with_update, workers);
 }
 
 bool AugmentedDictionary::check_for_each_extra(const foreach_extra_func_t& foreach_extra_func, bool invert_first) {

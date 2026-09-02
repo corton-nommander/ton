@@ -6800,7 +6800,14 @@ bool ValidateQuery::check_native_transfer_batch() {
     if (signature_status.is_error()) {
       return reject_query("v4 native transfer signature verification failed: "s + signature_status.to_string());
     }
+  }
 
+  // v5 entries are the canonical flattened execution view of the signed
+  // runs. Their copied signature bytes are deliberately not individual NTFX
+  // authorizations, so signature verification above is one-per-run; the
+  // ordered state replay below is otherwise identical to v4.
+  if (native_transfer_batch_.value().version >= 4) {
+    const auto& entries = native_transfer_batch_.value().entries;
     struct NativeAccountState {
       block::Account* account{nullptr};
       td::uint64 balance{0};
@@ -6823,7 +6830,7 @@ bool ValidateQuery::check_native_transfer_batch() {
       }
       auto balance = account->native_balance_uint64();
       if (!balance) {
-        reject_query("v4 native state-engine account balance is not uint64: "s + addr.to_hex());
+        reject_query("native state-engine account balance is not uint64: "s + addr.to_hex());
         return nullptr;
       }
       NativeAccountState state{
@@ -6883,7 +6890,7 @@ bool ValidateQuery::check_native_transfer_batch() {
         };
         auto result = block::execute_native_transfer_state(input, now_, /*verify_signature=*/false);
         if (result.code != block::NativeTransferStateResult::ok) {
-          return reject_query(PSTRING() << result.message() << " for v4 native state-engine transfer "
+          return reject_query(PSTRING() << result.message() << " for compact native state-engine transfer "
                                         << transfer.src.to_hex() << " -> " << transfer.dst.to_hex());
         }
         src->balance = result.src_balance;
@@ -6899,7 +6906,7 @@ bool ValidateQuery::check_native_transfer_batch() {
         }
         transaction_fees_ += block::CurrencyCollection{td::make_refint(transfer.fee)};
         if (!transaction_fees_.is_valid()) {
-          return reject_query("invalid total v4 native state-engine fees");
+          return reject_query("invalid total compact native state-engine fees");
         }
       }
     }
@@ -6909,11 +6916,12 @@ bool ValidateQuery::check_native_transfer_batch() {
       td::ScopedRealCpuTimer materialize_timer{stats_.work_time.native_account_materialize};
       for (auto& [_, state] : states) {
         if (state.changed && !state.account->set_native_state(state.balance, state.nonce, state.flags)) {
-          return reject_query("cannot apply aggregated v4 native account state");
+          return reject_query("cannot apply aggregated compact native account state");
         }
       }
     }
-    LOG(INFO) << "replayed v4 native transfer batch: transfers=" << entries.size()
+    LOG(INFO) << "replayed v" << static_cast<unsigned>(native_transfer_batch_.value().version)
+              << " native transfer batch: transfers=" << entries.size()
               << " accounts=" << states.size();
   } else if (native_transfer_batch_.value().version >= 2) {
     const auto& entries = native_transfer_batch_.value().entries;

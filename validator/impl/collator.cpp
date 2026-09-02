@@ -4604,7 +4604,20 @@ td::actor::Task<bool> Collator::process_inbound_external_messages() {
 td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   struct NativeExternal {
     td::Ref<ExtMessage> ext_msg;
-    block::NativeTransfer transfer;
+    // `transfers` is the ordered state-engine view.  A scalar NTFX contains
+    // one element; an NTRN run contributes all of its outputs together.  Do
+    // not enqueue NTRN children as separate NativeExternal values: every
+    // defer, deadline rollback, and checkpoint decision must retain the
+    // signed source interval as one physical work item.
+    std::vector<block::NativeTransfer> transfers;
+    td::optional<block::NativeTransferRun> run;
+
+    bool is_run() const {
+      return static_cast<bool>(run);
+    }
+    std::size_t logical_count() const {
+      return transfers.size();
+    }
   };
 
   ++stats_.native_fast_path_invocations;
@@ -4618,6 +4631,21 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   auto start_accepted = stats_.ext_msgs_accepted;
   auto start_rejected = stats_.ext_msgs_rejected;
   auto start_compact_entries = native_transfer_batch_entries_.size();
+  const bool native_runs_enabled = native_transfer_runs_enabled();
+  if (native_runs_enabled) {
+    // This processor may be re-entered after a previous v5 checkpoint has
+    // committed, so nonempty derived entries alone do not prove scalar work.
+    // The two committed vectors must instead be populated together; an entry
+    // vector without authenticated runs is the only forbidden scalar mix.
+    if (!native_transfer_batch_entries_.empty() && native_transfer_batch_runs_.empty()) {
+      co_return fatal_error("cannot enter v5 native run collation after scalar compact transfers");
+    }
+    if (native_transfer_batch_entries_.empty() != native_transfer_batch_runs_.empty()) {
+      co_return fatal_error("v5 native candidate has inconsistent run and logical-entry state");
+    }
+  } else if (!native_transfer_batch_runs_.empty()) {
+    co_return fatal_error("scalar native collation encountered committed source-signed runs");
+  }
   const auto consensus_max_block_size = static_cast<td::uint64>(config_->get_consensus_config().max_block_size);
   const auto native_size_reserve = consensus::native_candidate_size_reserve(consensus_max_block_size);
   const auto native_estimate_budget = consensus::native_candidate_estimate_budget(consensus_max_block_size);
@@ -4761,6 +4789,10 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   // accumulator is changed while this object is nonempty.
   struct PendingNativeCheckpoint {
     std::vector<NativeExternal> entries;
+    // Physical work units are kept above for exact mempool identities;
+    // limits, state transitions, and batch headers are charged by the
+    // flattened logical transfer count below.
+    std::size_t logical_entries{0};
     std::map<StdSmcAddress, NativeAccountSnapshot> journal;
     std::set<StdSmcAddress> dirty_addresses;
     std::size_t fragments{0};
@@ -4774,6 +4806,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
 
     void clear() {
       entries.clear();
+      logical_entries = 0;
       journal.clear();
       dirty_addresses.clear();
       fragments = 0;
@@ -4820,7 +4853,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     if (pending_checkpoint.empty()) {
       return 0;
     }
-    const auto deferred = pending_checkpoint.entries.size();
+    const auto deferred = pending_checkpoint.logical_entries;
     for (const auto& [address, snapshot] : pending_checkpoint.journal) {
       auto state_it = native_states.find(address);
       CHECK(state_it != native_states.end());
@@ -4851,7 +4884,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       return true;
     }
     record_checkpoint_flush(reason);
-    const auto pending_entries = pending_checkpoint.entries.size();
+    const auto pending_entries = pending_checkpoint.logical_entries;
     const auto pending_fragments = pending_checkpoint.fragments;
     td::ScopedRealCpuTimer timer{stats_.work_time.native_commit};
     vm::AugmentedDictionary staged_account_dict{*account_dict_estimator_};
@@ -4986,13 +5019,25 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     account_dict_estimator_ = std::make_unique<vm::AugmentedDictionary>(staged_account_dict);
     account_dict_ops_ += changed_accounts;
     for (const auto& entry : pending_checkpoint.entries) {
-      native_compact_transaction_fees_ += block::CurrencyCollection{td::make_refint(entry.transfer.fee)};
-      if (!native_compact_transaction_fees_.is_valid()) {
-        fatal_error("native transfer fee total overflow");
+      if (native_runs_enabled != entry.is_run()) {
+        fatal_error("mixed scalar and source-signed native work reached one checkpoint");
         return false;
       }
-      native_transfer_batch_entries_.push_back(block::NativeTransferBatchEntry{entry.transfer, 0, 0});
-      ++stats_.transactions;
+      if (entry.is_run()) {
+        native_transfer_batch_runs_.push_back(entry.run.value());
+      }
+      for (const auto& transfer : entry.transfers) {
+        native_compact_transaction_fees_ += block::CurrencyCollection{td::make_refint(transfer.fee)};
+        if (!native_compact_transaction_fees_.is_valid()) {
+          fatal_error("native transfer fee total overflow");
+          return false;
+        }
+        native_transfer_batch_entries_.push_back(block::NativeTransferBatchEntry{transfer, 0, 0});
+        ++stats_.transactions;
+      }
+      // External-message accounting stays physical: a signed NTRN work is
+      // one admitted external even though it contributes several logical
+      // native payments to the compact batch.
       ++stats_.ext_msgs_accepted;
     }
     if (pending_checkpoint.first_fragment_deadline_commit_pending) {
@@ -5018,6 +5063,19 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     return true;
   };
 
+  // A physical NTRN can straddle the 512-logical-transfer execution fragment
+  // boundary while still fitting comfortably in the candidate-wide protocol
+  // cap. Keep it locally (it was already registered and counted) so the next
+  // fragment can execute it without re-admitting or splitting the signed
+  // interval. Any terminal exit returns the exact parent identity to the
+  // pool.
+  std::optional<NativeExternal> carryover_native_work;
+  SCOPE_EXIT {
+    if (carryover_native_work) {
+      delay_ext_msgs_.emplace_back(carryover_native_work->ext_msg->hash());
+    }
+  };
+
   while (true) {
     auto deadline_action = consensus::select_native_intake_deadline_action(
         native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), !pending_checkpoint.empty());
@@ -5039,7 +5097,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
       break;
     }
-    if (native_transfer_batch_entries_.size() + pending_checkpoint.entries.size() >=
+    if (native_transfer_batch_entries_.size() + pending_checkpoint.logical_entries >=
         block::NativeTransferBatch::max_entries) {
       if (!flush_pending_checkpoint(NativeCheckpointFlushReason::capacity)) {
         co_return false;
@@ -5070,12 +5128,20 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       co_return false;
     }
 
-    auto protocol_capacity =
-        block::NativeTransferBatch::max_entries - native_transfer_batch_entries_.size() - pending_checkpoint.entries.size();
-    auto batch_capacity = std::min<std::size_t>(NATIVE_FAST_PATH_EXTERNAL_BATCH, protocol_capacity);
+    auto protocol_capacity = block::NativeTransferBatch::max_entries - native_transfer_batch_entries_.size() -
+                             pending_checkpoint.logical_entries;
+    // Keep the established 512-logical-transfer execution/checkpoint shape.
+    // A physical NTRN work can contain up to sixteen outputs, so physical
+    // queue pulls retain their own cap and the logical budget is enforced
+    // separately before a work is staged.
+    auto batch_logical_capacity = std::min<std::size_t>(NATIVE_FAST_PATH_EXTERNAL_BATCH, protocol_capacity);
+    auto batch_capacity = NATIVE_FAST_PATH_EXTERNAL_BATCH;
     std::vector<NativeExternal> batch;
     batch.reserve(batch_capacity);
+    std::size_t batch_logical_entries = 0;
     bool queue_exhausted = false;
+    bool protocol_capacity_deferred = false;
+    bool logical_fragment_boundary = false;
     bool saw_item = false;
     bool intake_deadline_before_batch = false;
     std::optional<td::Timestamp> fragment_refill_until;
@@ -5094,7 +5160,26 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
       return deadline;
     };
-    while (batch.size() < batch_capacity) {
+    if (carryover_native_work) {
+      if (carryover_native_work->logical_count() > batch_logical_capacity) {
+        // This can only happen when the candidate-wide remaining capacity is
+        // smaller than the complete work. It must be deferred, never split.
+        ++stats_.ext_msgs_rejected;
+        delay_ext_msgs_.emplace_back(carryover_native_work->ext_msg->hash());
+        carryover_native_work.reset();
+        protocol_capacity_deferred = true;
+        queue_exhausted = true;
+      } else {
+        batch_logical_entries = carryover_native_work->logical_count();
+        batch.push_back(std::move(carryover_native_work.value()));
+        carryover_native_work.reset();
+        saw_item = true;
+        if (work_driven) {
+          fragment_refill_until = bounded_coalescing_deadline();
+        }
+      }
+    }
+    while (batch.size() < batch_capacity && batch_logical_entries < batch_logical_capacity) {
       if (!check_cancelled()) {
         co_return false;
       }
@@ -5303,14 +5388,63 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
 
       auto ext_msg = ext_msg_ref->root_cell();
-      auto native_transfer_res = block::NativeTransfer::unpack_external(ext_msg);
-      if (native_transfer_res.is_error()) {
-        LOG(DEBUG) << "native fast path rejected non-native external message";
-        ++stats_.ext_msgs_rejected;
-        delay_ext_msgs_.emplace_back(ext_msg_ref->hash());
-        continue;
+      NativeExternal native_external;
+      native_external.ext_msg = std::move(ext_msg_ref);
+      if (native_runs_enabled) {
+        auto native_run_res = block::NativeTransferRun::unpack_external(ext_msg);
+        if (native_run_res.is_error()) {
+          LOG(DEBUG) << "v5 native fast path rejected non-NTRN external message";
+          ++stats_.ext_msgs_rejected;
+          bad_ext_msgs_.emplace_back(native_external.ext_msg->hash());
+          continue;
+        }
+        native_external.run = native_run_res.move_as_ok();
+        const auto& run = native_external.run.value();
+        native_external.transfers.reserve(run.outputs.size());
+        for (std::size_t output_index = 0; output_index < run.outputs.size(); ++output_index) {
+          const auto& output = run.outputs[output_index];
+          block::NativeTransfer transfer;
+          transfer.src = run.src;
+          transfer.dst = output.dst;
+          transfer.amount = output.amount;
+          transfer.fee = output.fee;
+          transfer.nonce = run.first_nonce + static_cast<td::uint64>(output_index);
+          transfer.valid_until = run.valid_until;
+          // The bytes intentionally make this only a state-engine view. The
+          // enclosing NativeTransferRun is the sole authorization and is
+          // verified once by admission and once by every validator.
+          transfer.signature = run.signature;
+          native_external.transfers.push_back(std::move(transfer));
+        }
+      } else {
+        auto native_transfer_res = block::NativeTransfer::unpack_external(ext_msg);
+        if (native_transfer_res.is_error()) {
+          LOG(DEBUG) << "native fast path rejected non-native external message";
+          ++stats_.ext_msgs_rejected;
+          delay_ext_msgs_.emplace_back(native_external.ext_msg->hash());
+          continue;
+        }
+        native_external.transfers.push_back(native_transfer_res.move_as_ok());
       }
-      batch.push_back(NativeExternal{std::move(ext_msg_ref), native_transfer_res.move_as_ok()});
+      if (native_external.logical_count() > batch_logical_capacity - batch_logical_entries) {
+        // The signed interval must never be split merely to fill a candidate.
+        // If only this execution fragment is full, retain the already
+        // admitted parent locally and continue it in the next fragment of the
+        // same candidate. Only an actual protocol-cap shortfall returns it to
+        // the pool for a later candidate.
+        if (native_external.logical_count() <= protocol_capacity - batch_logical_entries) {
+          carryover_native_work.emplace(std::move(native_external));
+          logical_fragment_boundary = true;
+        } else {
+          ++stats_.ext_msgs_rejected;
+          delay_ext_msgs_.emplace_back(native_external.ext_msg->hash());
+          protocol_capacity_deferred = true;
+          queue_exhausted = true;
+        }
+        break;
+      }
+      batch_logical_entries += native_external.logical_count();
+      batch.push_back(std::move(native_external));
       if (work_driven && batch.size() == 1) {
         // Fixed from the first staged transfer: later arrivals and producer
         // markers may fill the fragment, but cannot perpetually postpone its
@@ -5319,7 +5453,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
     }
 
-    if (work_driven && batch.size() == batch_capacity) {
+    if (work_driven && (batch_logical_entries == batch_logical_capacity || logical_fragment_boundary)) {
       ++stats_.native_fragment_capacity_fills;
     }
 
@@ -5339,7 +5473,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     // message. Repeating even a cached lookup here adds mutex traffic and an
     // OS-thread fanout per microbatch. The proposer consumes that trusted
     // admission result; every validator still independently verifies the
-    // complete v4 batch before replaying any state transition.
+    // complete compact batch before replaying any state transition.
 
     // Do not start another 512-message execution fragment if the preceding
     // exact checkpoint is already late, or if this fragment could exhaust
@@ -5351,7 +5485,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       const bool latency_expired = pending_checkpoint.latency_deadline &&
                                    pending_checkpoint.latency_deadline->is_in_past(td::Timestamp::now());
       const bool potential_fanout_limit =
-          pending_checkpoint.dirty_addresses.size() + 2 * batch.size() >=
+          pending_checkpoint.dirty_addresses.size() + 2 * batch_logical_entries >=
           consensus::native_checkpoint_coalesce_fanout_limit;
       if (latency_expired || potential_fanout_limit) {
         if (!flush_pending_checkpoint(latency_expired ? NativeCheckpointFlushReason::latency
@@ -5395,24 +5529,22 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     std::set<StdSmcAddress> dirty_addresses;
     // `dirty_addresses` also carries endpoints already dirty in the pending
     // checkpoint group. Track the local-only subset incrementally so the
-    // conservative size reservation stays exact without rescanning up to a
-    // full 512-endpoint set for every accepted transfer.
+    // conservative size reservation stays exact without rescanning a whole
+    // logical fragment for every accepted work.
     std::size_t local_dirty_addresses_not_in_pending = 0;
-    auto journal_state = [&](const StdSmcAddress& address, const NativeAccountState& state) {
-      state_journal.try_emplace(address, NativeAccountSnapshot{
-                                             .balance = state.balance,
-                                             .nonce = state.nonce,
-                                             .status = state.status,
-                                             .is_native = state.is_native,
-                                             .changed = state.changed,
-                                         });
+    auto suffix_logical_count = [&](std::size_t index) {
+      std::size_t count = 0;
+      for (; index < batch.size(); ++index) {
+        count += batch[index].logical_count();
+      }
+      return count;
     };
     auto delay_batch_suffix = [&](std::size_t index) {
       for (; index < batch.size(); ++index) {
-        // Keep the exact admitted-message identity.  A nonce alone is not
-        // sufficient when forks or a replacement signature are involved.
+        // Keep the exact admitted-message identity. A source-signed run is
+        // one identity even though it contains several logical transfers.
         delay_ext_msgs_.emplace_back(batch[index].ext_msg->hash());
-        ++delayed_in_batch;
+        delayed_in_batch += batch[index].logical_count();
       }
     };
     {
@@ -5431,7 +5563,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
             native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), !accepted_indices.empty());
         if (deadline_action == consensus::NativeIntakeDeadlineAction::idle) {
           // The intake window closed before any first-fragment work became
-          // staged.  Do not turn a late queue pop into an oversized deadline
+          // staged. Do not turn a late queue pop into an oversized deadline
           // exception; leave all of it for the next candidate.
           delay_batch_suffix(index);
           stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline idle\n";
@@ -5439,13 +5571,14 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         }
         if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed ||
             deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment) {
+          const auto deferred = suffix_logical_count(index);
           delay_batch_suffix(index);
           if (deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment) {
             first_fragment_deadline_commit_pending = true;
-            first_fragment_deadline_deferred += batch.size() - index;
+            first_fragment_deadline_deferred += deferred;
           } else {
             deadline_seal_current_fragment = true;
-            deadline_unprocessed_in_batch += batch.size() - index;
+            deadline_unprocessed_in_batch += deferred;
           }
           stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline seal\n";
           break;
@@ -5456,75 +5589,22 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           break;
         }
 
-        auto* src = load_cached_native_state(item.transfer.src, false);
-        if (src) {
-          cached_src_address = item.transfer.src;
-          cached_src_state = src;
+        // Reserve the complete signed work before touching any state. This
+        // is what prevents a capacity or proof guard from accepting only a
+        // prefix of an NTRN interval.
+        std::set<StdSmcAddress> work_dirty_addresses;
+        for (const auto& transfer : item.transfers) {
+          work_dirty_addresses.insert(transfer.src);
+          work_dirty_addresses.insert(transfer.dst);
         }
-        auto* dst = load_cached_native_state(item.transfer.dst, true);
-        if (dst) {
-          cached_dst_address = item.transfer.dst;
-          cached_dst_state = dst;
-        }
-        if (fatal) {
-          bad_ext_msgs_.emplace_back(item.ext_msg->hash());
-          co_return false;
-        }
-        if (state_capacity_reached) {
-          full = true;
-          delay_batch_suffix(index);
-          stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: protocol account-state cap reached\n";
-          break;
-        }
-        if (!src || !dst || !src->valid_balance || !dst->valid_balance) {
-          ++stats_.ext_msgs_rejected;
-          ++delayed_in_batch;
-          delay_ext_msgs_.emplace_back(item.ext_msg->hash());
-          continue;
-        }
-
-        block::NativeTransferStateInput input{
-            .transfer = &item.transfer,
-            .src_balance = src->balance,
-            .src_nonce = src->nonce,
-            .src_flags = src->flags,
-            .src_status = src->status,
-            .src_is_native = src->is_native,
-            .dst_balance = dst->balance,
-            .dst_nonce = dst->nonce,
-            .dst_flags = dst->flags,
-            .dst_status = dst->status,
-            .dst_is_native = dst->is_native,
-            .same_account = src == dst,
-        };
-        auto result = block::execute_native_transfer_state(input, now_, /*verify_signature=*/false);
-        if (result.code != block::NativeTransferStateResult::ok) {
-          ++stats_.ext_msgs_rejected;
-          // A lower nonce may have been consumed only by a speculative parent
-          // on this branch.  Never erase it before finalization: a losing fork
-          // must make the message eligible again.  Exact hashes are removed by
-          // the consensus finalization path after accept_block succeeds.
-          bool permanently_invalid = result.code == block::NativeTransferStateResult::expired;
-          if (permanently_invalid) {
-            bad_ext_msgs_.emplace_back(item.ext_msg->hash());
-            ++permanent_in_batch;
-          } else {
-            delay_ext_msgs_.emplace_back(item.ext_msg->hash());
-            ++delayed_in_batch;
+        std::size_t new_dirty_accounts = 0;
+        for (const auto& address : work_dirty_addresses) {
+          if (!pending_checkpoint.dirty_addresses.contains(address) && !dirty_addresses.contains(address)) {
+            ++new_dirty_accounts;
           }
-          continue;
-        }
-
-        auto source_already_dirty = pending_checkpoint.dirty_addresses.contains(item.transfer.src) ||
-                                    dirty_addresses.contains(item.transfer.src);
-        auto destination_already_dirty = pending_checkpoint.dirty_addresses.contains(item.transfer.dst) ||
-                                         dirty_addresses.contains(item.transfer.dst);
-        auto new_dirty_accounts = static_cast<td::uint64>(!source_already_dirty);
-        if (dst != src && !destination_already_dirty) {
-          ++new_dirty_accounts;
         }
         auto prospective_deferred_bytes =
-            static_cast<td::uint64>(pending_checkpoint.entries.size() + accepted_indices.size() + 1) *
+            static_cast<td::uint64>(pending_checkpoint.logical_entries + accepted_in_batch + item.logical_count()) *
                 NATIVE_DEFERRED_ENTRY_CHARGE_BYTES +
             static_cast<td::uint64>(pending_checkpoint.dirty_addresses.size() +
                                      local_dirty_addresses_not_in_pending + new_dirty_accounts) *
@@ -5547,35 +5627,122 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           break;
         }
 
-        // Apply the ordered logical transition to compact in-memory state.  A
-        // shared destination is updated here without forcing a one-transfer
-        // conflict round.  The journal makes the exact hard-limit checkpoint
-        // transactional without copying the block-wide state map.
-        journal_state(item.transfer.src, *src);
-        if (!source_already_dirty) {
-          ++local_dirty_addresses_not_in_pending;
+        // A work-local journal is separate from the fragment journal. An NTRN
+        // output may touch a source/destination already changed by earlier
+        // outputs, but any later failure restores the complete signed run to
+        // the state seen before its first output.
+        std::map<StdSmcAddress, NativeAccountSnapshot> work_journal;
+        auto journal_work_state = [&](const StdSmcAddress& address, const NativeAccountState& state) {
+          work_journal.try_emplace(address, NativeAccountSnapshot{
+                                                 .balance = state.balance,
+                                                 .nonce = state.nonce,
+                                                 .status = state.status,
+                                                 .is_native = state.is_native,
+                                                 .changed = state.changed,
+                                             });
+        };
+        auto rollback_work = [&] {
+          for (const auto& [address, snapshot] : work_journal) {
+            auto& state = native_states.at(address);
+            state.balance = snapshot.balance;
+            state.nonce = snapshot.nonce;
+            state.status = snapshot.status;
+            state.is_native = snapshot.is_native;
+            state.changed = snapshot.changed;
+          }
+        };
+
+        bool work_deferred = false;
+        bool work_permanently_invalid = false;
+        for (const auto& transfer : item.transfers) {
+          auto* src = load_cached_native_state(transfer.src, false);
+          if (src) {
+            cached_src_address = transfer.src;
+            cached_src_state = src;
+          }
+          auto* dst = load_cached_native_state(transfer.dst, true);
+          if (dst) {
+            cached_dst_address = transfer.dst;
+            cached_dst_state = dst;
+          }
+          if (fatal) {
+            bad_ext_msgs_.emplace_back(item.ext_msg->hash());
+            co_return false;
+          }
+          if (state_capacity_reached) {
+            work_deferred = true;
+            break;
+          }
+          if (!src || !dst || !src->valid_balance || !dst->valid_balance) {
+            work_deferred = true;
+            break;
+          }
+          block::NativeTransferStateInput input{
+              .transfer = &transfer,
+              .src_balance = src->balance,
+              .src_nonce = src->nonce,
+              .src_flags = src->flags,
+              .src_status = src->status,
+              .src_is_native = src->is_native,
+              .dst_balance = dst->balance,
+              .dst_nonce = dst->nonce,
+              .dst_flags = dst->flags,
+              .dst_status = dst->status,
+              .dst_is_native = dst->is_native,
+              .same_account = src == dst,
+          };
+          auto result = block::execute_native_transfer_state(input, now_, /*verify_signature=*/false);
+          if (result.code != block::NativeTransferStateResult::ok) {
+            work_deferred = true;
+            work_permanently_invalid = result.code == block::NativeTransferStateResult::expired;
+            break;
+          }
+          journal_work_state(transfer.src, *src);
+          if (dst != src) {
+            journal_work_state(transfer.dst, *dst);
+          }
+          src->balance = result.src_balance;
+          src->nonce = result.src_nonce;
+          src->status = block::Account::acc_uninit;
+          src->is_native = true;
+          src->changed = true;
+          if (dst != src) {
+            dst->balance = result.dst_balance;
+            dst->status = block::Account::acc_uninit;
+            dst->is_native = true;
+            dst->changed = true;
+          }
         }
-        dirty_addresses.insert(item.transfer.src);
-        if (dst != src) {
-          journal_state(item.transfer.dst, *dst);
-          if (!destination_already_dirty) {
+        if (work_deferred) {
+          rollback_work();
+          ++stats_.ext_msgs_rejected;
+          if (work_permanently_invalid) {
+            bad_ext_msgs_.emplace_back(item.ext_msg->hash());
+            permanent_in_batch += item.logical_count();
+          } else {
+            delay_ext_msgs_.emplace_back(item.ext_msg->hash());
+            delayed_in_batch += item.logical_count();
+          }
+          if (state_capacity_reached) {
+            full = true;
+            delay_batch_suffix(index + 1);
+            stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: protocol account-state cap reached\n";
+            break;
+          }
+          continue;
+        }
+
+        for (const auto& [address, snapshot] : work_journal) {
+          state_journal.try_emplace(address, snapshot);
+        }
+        for (const auto& address : work_dirty_addresses) {
+          if (!pending_checkpoint.dirty_addresses.contains(address) && !dirty_addresses.contains(address)) {
             ++local_dirty_addresses_not_in_pending;
           }
-          dirty_addresses.insert(item.transfer.dst);
-        }
-        src->balance = result.src_balance;
-        src->nonce = result.src_nonce;
-        src->status = block::Account::acc_uninit;
-        src->is_native = true;
-        src->changed = true;
-        if (dst != src) {
-          dst->balance = result.dst_balance;
-          dst->status = block::Account::acc_uninit;
-          dst->is_native = true;
-          dst->changed = true;
+          dirty_addresses.insert(address);
         }
         accepted_indices.push_back(index);
-        ++accepted_in_batch;
+        accepted_in_batch += item.logical_count();
       }
     }
 
@@ -5590,7 +5757,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
       for (auto index : accepted_indices) {
         delay_ext_msgs_.emplace_back(batch[index].ext_msg->hash());
-        ++delayed_in_batch;
+        delayed_in_batch += batch[index].logical_count();
       }
       accepted_indices.clear();
       accepted_in_batch = 0;
@@ -5605,7 +5772,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     deadline_action = consensus::select_native_intake_deadline_action(
         native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), !accepted_indices.empty());
     if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed) {
-      deadline_deferred_in_batch += accepted_indices.size();
+      deadline_deferred_in_batch += accepted_in_batch;
       rollback_accepted_fragment();
       seal_pending_checkpoint_for_deadline = true;
       stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline before checkpoint\n";
@@ -5627,8 +5794,10 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       pending_checkpoint.dirty_addresses.insert(dirty_addresses.begin(), dirty_addresses.end());
       for (auto index : accepted_indices) {
         // Keep the authenticated ExtMessage reference alongside the ordered
-        // transfer so a rejected group returns the exact identities to the
-        // mempool instead of reconstructing them from nonce/account fields.
+        // physical work so a rejected group returns the exact identities to
+        // the mempool instead of reconstructing them from nonce/account
+        // fields. In v5 this remains one whole source-signed run.
+        pending_checkpoint.logical_entries += batch[index].logical_count();
         pending_checkpoint.entries.push_back(batch[index]);
       }
       ++pending_checkpoint.fragments;
@@ -5645,15 +5814,17 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
                                                       consensus_max_block_size);
     block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
     ++stats_.native_microbatches;
-    stats_.native_microbatch_input += batch.size();
+    stats_.native_microbatch_input += batch_logical_entries;
     stats_.native_microbatch_accepted += accepted_in_batch;
     stats_.native_microbatch_delayed += delayed_in_batch;
     stats_.native_microbatch_permanent += permanent_in_batch;
     stats_.native_microbatch_unique_accounts += state_journal.size();
-    stats_.native_microbatch_max_input = std::max<td::uint64>(stats_.native_microbatch_max_input, batch.size());
+    stats_.native_microbatch_max_input =
+        std::max<td::uint64>(stats_.native_microbatch_max_input, batch_logical_entries);
     stats_.native_microbatch_max_unique_accounts =
         std::max<td::uint64>(stats_.native_microbatch_max_unique_accounts, state_journal.size());
-    LOG(INFO) << "native fast-path batch: input=" << batch.size() << " accepted=" << accepted_in_batch
+    LOG(INFO) << "native fast-path batch: works=" << batch.size() << " logical_input=" << batch_logical_entries
+              << " accepted=" << accepted_in_batch
               << " delayed=" << delayed_in_batch << " permanent=" << permanent_in_batch
               << " dirty_accounts=" << state_journal.size() << " candidate_accounts=" << native_states.size()
               << " estimated_bytes=" << block_limit_status_->estimate_block_size()
@@ -5670,19 +5841,20 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
 
     if (!pending_checkpoint.empty()) {
       const bool initial_checkpoint = native_transfer_batch_entries_.empty();
-      const bool ingress_boundary = queue_exhausted || batch.size() < batch_capacity;
+      const bool ingress_boundary =
+          queue_exhausted || (!logical_fragment_boundary && batch_logical_entries < batch_logical_capacity);
       const bool headroom_limited = full;
       const bool latency_expired = pending_checkpoint.latency_deadline &&
                                    pending_checkpoint.latency_deadline->is_in_past(td::Timestamp::now());
       const bool capacity_reached =
-          pending_checkpoint.entries.size() >= consensus::native_checkpoint_coalesce_max_entries ||
+          pending_checkpoint.logical_entries >= consensus::native_checkpoint_coalesce_max_entries ||
           pending_checkpoint.fragments >= consensus::native_checkpoint_coalesce_max_fragments;
       const bool fanout_reached =
           pending_checkpoint.dirty_addresses.size() >= consensus::native_checkpoint_coalesce_fanout_limit;
       const bool deadline_flush = first_fragment_deadline_commit_pending;
       const bool should_flush = !work_driven || initial_checkpoint ||
                                 consensus::should_flush_native_checkpoint(
-                                    pending_checkpoint.entries.size(), pending_checkpoint.fragments,
+                                    pending_checkpoint.logical_entries, pending_checkpoint.fragments,
                                     pending_checkpoint.dirty_addresses.size(), deadline_flush, ingress_boundary,
                                     headroom_limited, latency_expired);
       if (should_flush) {
@@ -5709,6 +5881,14 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
                                                           consensus_max_block_size);
         block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
       }
+    }
+    if (protocol_capacity_deferred) {
+      if (!pending_checkpoint.empty() && !flush_pending_checkpoint(NativeCheckpointFlushReason::capacity)) {
+        co_return false;
+      }
+      LOG(INFO) << "native transfer protocol batch capacity deferred an atomic work";
+      stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: deferred atomic work by protocol batch capacity\n";
+      break;
     }
   }
 
@@ -7672,8 +7852,19 @@ bool Collator::create_block_extra(Ref<vm::Cell>& block_extra) {
   if (native_compact) {
     td::ScopedRealCpuTimer timer{stats_.work_time.native_batch_serialize};
     block::NativeTransferBatch batch;
+    if (native_transfer_runs_enabled()) {
+      if (native_transfer_batch_runs_.empty()) {
+        return fatal_error("v5 native candidate has logical entries but no source-signed runs");
+      }
+      batch.version = block::NativeTransferBatch::runs_version;
+      batch.runs = native_transfer_batch_runs_;
+    } else if (!native_transfer_batch_runs_.empty()) {
+      return fatal_error("scalar native candidate unexpectedly contains source-signed runs");
+    }
     batch.entries = native_transfer_batch_entries_;
-    if (!block::NativeTransferBatch::version_allowed_for_global_version(batch.version, global_version_)) {
+    const auto capabilities = config_->has_capabilities() ? config_->get_capabilities() : 0;
+    if (!block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(batch.version, global_version_,
+                                                                                         capabilities)) {
       return fatal_error("native transfer batch version is disabled by current global version");
     }
     vm::CellBuilder native_cb;
@@ -8176,6 +8367,9 @@ td::Status Collator::register_external_message(Ref<ExtMessage> ext_msg, int prio
   Bits256 hash{ext_msg_cell->get_hash().bits()};
   vm::CellSlice cs{vm::NoVmOrd{}, ext_msg_cell};
   if (cs.prefetch_ulong(32) == block::NativeTransfer::magic) {
+    if (native_transfer_runs_enabled()) {
+      return td::Status::Error("scalar native transfers are disabled by the v5 run capability");
+    }
     if (registered_ext_msgs_.contains(hash)) {
       return td::Status::Error("external message has been registered before");
     }
@@ -8185,6 +8379,25 @@ td::Status Collator::register_external_message(Ref<ExtMessage> ext_msg, int prio
     }
     if (!ton::shard_contains(shard_, ton::extract_addr_prefix(basechainId, transfer.dst))) {
       return td::Status::Error("native transfer destination address is not in this shard");
+    }
+    registered_ext_msgs_.insert(hash);
+    return td::Status::OK();
+  }
+  if (cs.prefetch_ulong(32) == block::NativeTransferRun::magic) {
+    if (!native_transfer_runs_enabled()) {
+      return td::Status::Error("native transfer runs are disabled by the current protocol configuration");
+    }
+    if (registered_ext_msgs_.contains(hash)) {
+      return td::Status::Error("external message has been registered before");
+    }
+    TRY_RESULT(run, block::NativeTransferRun::unpack_external(ext_msg_cell));
+    if (!ton::shard_contains(shard_, ton::extract_addr_prefix(basechainId, run.src))) {
+      return td::Status::Error("native transfer run source address is not in this shard");
+    }
+    for (const auto& output : run.outputs) {
+      if (!ton::shard_contains(shard_, ton::extract_addr_prefix(basechainId, output.dst))) {
+        return td::Status::Error("native transfer run destination address is not in this shard");
+      }
     }
     registered_ext_msgs_.insert(hash);
     return td::Status::OK();

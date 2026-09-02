@@ -19,6 +19,9 @@
 namespace ton {
 
 // See doc/GlobalVersions.md
-constexpr int SUPPORTED_VERSION = 14;
+// v15 introduces the capability-gated, run-only native transfer batch. The
+// default genesis remains v14; merely supporting this version does not enable
+// the wire format without capNativeTransferRuns in the live configuration.
+constexpr int SUPPORTED_VERSION = 15;
 
 }  // namespace ton

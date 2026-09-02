@@ -22,6 +22,7 @@
 #include <cstring>
 #include <initializer_list>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -31,6 +32,7 @@
 #include "common/bigexp.h"
 #include "common/bigint.hpp"
 #include "common/bitstring.h"
+#include "common/global-version.h"
 #include "common/refcnt.hpp"
 #include "common/refint.h"
 #include "common/util.h"
@@ -1254,6 +1256,38 @@ TEST(NativeStateEngine, native_transfer_batch_v5_keeps_signed_runs_atomic_and_fl
   // execution view. It is intentionally not an individually signed NTFX.
   ASSERT_TRUE(decoded.entries[0].transfer.verify_signature(domain).is_error());
 
+  // Validators replay the derived entries in this exact run/output order
+  // after verifying the enclosing run signatures once. Exercise the state
+  // engine with verification deliberately disabled: an individual flattened
+  // entry must not be reinterpreted as a separately signed NTFX payload.
+  td::uint64 source_balance = 1'000;
+  td::uint64 source_nonce = 40;
+  std::map<ton::StdSmcAddress, td::uint64> destination_balances;
+  for (const auto& entry : decoded.entries) {
+    auto& destination_balance = destination_balances[entry.transfer.dst];
+    block::NativeTransferStateInput input{
+        .transfer = &entry.transfer,
+        .src_balance = source_balance,
+        .src_nonce = source_nonce,
+        .src_status = block::Account::acc_uninit,
+        .src_is_native = true,
+        .dst_balance = destination_balance,
+        .dst_status = block::Account::acc_nonexist,
+        .dst_is_native = false,
+    };
+    auto result = block::execute_native_transfer_state(input, decoded.entries.front().transfer.valid_until - 1,
+                                                        /*verify_signature=*/false);
+    ASSERT_EQ(result.code, block::NativeTransferStateResult::ok);
+    source_balance = result.src_balance;
+    source_nonce = result.src_nonce;
+    destination_balance = result.dst_balance;
+  }
+  ASSERT_EQ(source_nonce, 43u);
+  ASSERT_EQ(source_balance, 963u);
+  ASSERT_EQ(destination_balances[decoded.entries[0].transfer.dst], 7u);
+  ASSERT_EQ(destination_balances[decoded.entries[1].transfer.dst], 11u);
+  ASSERT_EQ(destination_balances[decoded.entries[2].transfer.dst], 13u);
+
   // A single run is the transfer root itself; no synthetic leaf wrapper is
   // introduced around the signed external cell.
   block::NativeTransferBatch single_run_batch;
@@ -1501,6 +1535,7 @@ TEST(NativeStateEngine, compact_batch_rejects_unbounded_header_counts) {
 }
 
 TEST(NativeStateEngine, compact_batch_version_and_run_capability_activation) {
+  ASSERT_EQ(ton::SUPPORTED_VERSION, block::NativeTransferBatch::runs_global_version);
   ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version(3, 13));
   ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version(4, 13));
   ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version(
@@ -1510,8 +1545,9 @@ TEST(NativeStateEngine, compact_batch_version_and_run_capability_activation) {
   ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version(
       block::NativeTransferBatch::runs_version, 14));
 
-  // The existing call sites use the legacy two-argument gate, so a v5 batch
-  // remains inactive until the collator and validator are changed together.
+  // Legacy callers intentionally retain the two-argument gate. The
+  // collator/validator use the capability-aware gate below for v5, so an
+  // accidental call site cannot enable a run batch by version alone.
   ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version(
       block::NativeTransferBatch::runs_version, block::NativeTransferBatch::runs_global_version));
 

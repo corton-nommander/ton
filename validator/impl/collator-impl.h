@@ -53,7 +53,8 @@ class Collator final : public td::actor::Actor {
   }
   static constexpr long long supported_capabilities() {
     return ton::capCreateStatsEnabled | ton::capBounceMsgBody | ton::capReportVersion | ton::capShortDequeue |
-           ton::capStoreOutMsgQueueSize | ton::capMsgMetadata | ton::capDeferMessages | ton::capFullCollatedData;
+           ton::capStoreOutMsgQueueSize | ton::capMsgMetadata | ton::capDeferMessages | ton::capFullCollatedData |
+           ton::capNativeTransferRuns;
   }
 
  private:
@@ -229,6 +230,10 @@ class Collator final : public td::actor::Actor {
   std::vector<ExtMessage::Hash> bad_ext_msgs_, delay_ext_msgs_;
   Ref<vm::Cell> shard_account_blocks_;  // ShardAccountBlocks
   std::vector<block::NativeTransferBatchEntry> native_transfer_batch_entries_;
+  // v5 keeps its authenticated NTRN objects alongside the derived logical
+  // entries above.  The latter still drives state/accounting; only this
+  // vector is authoritative when serializing a source-signed run batch.
+  std::vector<block::NativeTransferRun> native_transfer_batch_runs_;
   std::set<StdSmcAddress> native_compact_accounts_;
   block::CurrencyCollection native_compact_transaction_fees_{0};
 
@@ -350,6 +355,11 @@ class Collator final : public td::actor::Actor {
   }
   bool use_native_fast_path() const {
     return workchain() == basechainId && global_version_ >= 14;
+  }
+  bool native_transfer_runs_enabled() const {
+    return use_native_fast_path() && config_ &&
+           global_version_ >= block::NativeTransferBatch::runs_global_version &&
+           config_->has_capability(block::NativeTransferBatch::runs_capability);
   }
   int prev_block_idx(const BlockIdExt& id) const {
     for (size_t i = 0; i < prev_blocks.size(); ++i) {

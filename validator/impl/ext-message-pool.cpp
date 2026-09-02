@@ -1847,18 +1847,14 @@ td::actor::Task<> ExtMessagePool::pump_callback(std::shared_ptr<InstalledCallbac
       callback->native_dirty_sources.clear();
       native_queue_counters_.add(counters);
     }
-    if (callback->pending_native.empty() && callback->callback->native_streaming &&
-        !callback->native_snapshot_exhausted && native_transport_has_refill_credit(*callback)) {
-      callback->native_snapshot_exhausted = fill_callback_native(callback, false) == 0;
+    if (callback->callback->native_streaming && !callback->native_snapshot_exhausted) {
+      prefill_callback_native_low_watermark(callback);
     }
     auto* pending = !callback->pending_native.empty() ? &callback->pending_native : &callback->pending_generic;
     if (!pending->empty()) {
       auto batch_capacity = NATIVE_DELIVERY_CHUNK;
       if (pending == &callback->pending_native && callback->callback->native_streaming) {
-        // The initial native prefill is a whole bounded transport window, so
-        // publish it in one FIFO request. Later refills remain one 512-item
-        // scheduler fragment and block behind that window as needed.
-        batch_capacity = std::min(callback->callback->transport_message_capacity, pending->size());
+        batch_capacity = native_transport_publish_batch_capacity(*callback);
       }
       std::vector<ExtMsgQueueEntry> batch;
       std::vector<bool> native_entries;
@@ -1873,6 +1869,11 @@ td::actor::Task<> ExtMessagePool::pump_callback(std::shared_ptr<InstalledCallbac
         pending->pop_front();
       }
       auto batch_size = batch.size();
+      if (pending == &callback->pending_native && callback->callback->native_streaming &&
+          callback->initial_native_publish_pending != 0) {
+        CHECK(batch_size <= callback->initial_native_publish_pending);
+        callback->initial_native_publish_pending -= batch_size;
+      }
       std::size_t native_reserved = 0;
       std::size_t native_reserved_logical = 0;
       for (std::size_t index = 0; index < native_entries.size(); ++index) {
@@ -2003,18 +2004,89 @@ std::size_t ExtMessagePool::prefill_callback_native(const std::shared_ptr<Instal
       break;
     }
   }
+  if (count_install) {
+    // The installation snapshot is the only native prefix allowed to cross
+    // the actor queue as one complete physical transport-window push. Later
+    // low-watermark work is always published in 512-message fragments.
+    CHECK(callback->initial_native_publish_pending == 0);
+    callback->initial_native_publish_pending = callback->pending_native.size();
+  }
   return selected;
+}
+
+std::size_t ExtMessagePool::prefill_callback_native_low_watermark(
+    const std::shared_ptr<InstalledCallback> &callback) {
+  if (!callback->callback->native_streaming || callback->native_snapshot_exhausted) {
+    return 0;
+  }
+
+  const auto prefetch_capacity = native_transport_prefetch_capacity(*callback);
+  if (callback->pending_native.size() >= prefetch_capacity) {
+    return 0;
+  }
+
+  // The first look-ahead is the retained bounded producer fragment. A second
+  // fragment is deliberately deferred until the Collator has completed one
+  // full fragment of real consumption. This avoids eagerly pinning a second
+  // callback-local prefix in candidates that are cancelled before doing work.
+  std::size_t selected = 0;
+  while (callback->pending_native.size() < prefetch_capacity) {
+    const auto credit = native_transport_refill_credit(*callback);
+    if (credit == 0) {
+      break;
+    }
+    const auto requested = std::min({NATIVE_DELIVERY_CHUNK,
+                                     prefetch_capacity - callback->pending_native.size(), credit});
+    CHECK(requested != 0);
+    const auto filled = fill_callback_native(callback, false, nullptr, requested);
+    selected += filled;
+    if (filled == 0) {
+      callback->native_snapshot_exhausted = true;
+      break;
+    }
+  }
+  return selected;
+}
+
+std::size_t ExtMessagePool::native_transport_prefetch_capacity(const InstalledCallback &callback) const {
+  // The physical transport queue stays unchanged. Before one complete
+  // scheduler fragment has been consumed, retain only the long-standing one
+  // fragment producer look-ahead. After that proven progress, one additional
+  // callback-local backup may overlap fair source selection with hand-off.
+  return callback.callback->queue_state->native_consumed_count() >= NATIVE_DELIVERY_CHUNK
+             ? NATIVE_TRANSPORT_LOW_WATERMARK_PREFETCH_CAPACITY
+             : NATIVE_TRANSPORT_INITIAL_PREFETCH_CAPACITY;
+}
+
+std::size_t ExtMessagePool::native_transport_publish_batch_capacity(const InstalledCallback &callback) const {
+  CHECK(callback.callback->native_streaming);
+  if (callback.initial_native_publish_pending != 0) {
+    // Preserve the known-good installation hand-off. `prefill_callback_native`
+    // bounds this count by the configured physical transport window.
+    return std::min({callback.callback->transport_message_capacity, callback.pending_native.size(),
+                     callback.initial_native_publish_pending});
+  }
+  // Never repeat Cycle 58's 1,024-item blocked push: a later low-watermark
+  // prefix is handed off one fair execution fragment at a time.
+  return std::min(NATIVE_DELIVERY_CHUNK, callback.pending_native.size());
 }
 
 std::size_t ExtMessagePool::native_transport_selected_limit(const InstalledCallback &callback) const {
   // The physical queue holds one configured window. The producer may stage or
-  // reserve one additional 512-message fragment while waiting for space, but
-  // never another full candidate snapshot.
-  return callback.callback->transport_message_capacity + NATIVE_DELIVERY_CHUNK;
+  // reserve at most two fair scheduler fragments while waiting for space, but
+  // never another full candidate snapshot. The second fragment is separately
+  // gated on one completed fragment in native_transport_prefetch_capacity().
+  return callback.callback->transport_message_capacity + NATIVE_TRANSPORT_LOW_WATERMARK_PREFETCH_CAPACITY;
+}
+
+std::size_t ExtMessagePool::native_transport_refill_credit(const InstalledCallback &callback) const {
+  const auto selected_ahead = callback.callback->queue_state->native_selected_ahead();
+  const auto selected_limit = native_transport_selected_limit(callback);
+  return selected_ahead >= selected_limit ? 0 : selected_limit - static_cast<std::size_t>(selected_ahead);
 }
 
 bool ExtMessagePool::native_transport_has_refill_credit(const InstalledCallback &callback) const {
-  return callback.callback->queue_state->native_selected_ahead() < native_transport_selected_limit(callback);
+  return native_transport_refill_credit(callback) != 0;
 }
 
 std::size_t ExtMessagePool::wake_native_callbacks(const std::set<NativeAddress> *source_filter,

@@ -655,6 +655,10 @@ class ExtMessagePool : public td::actor::Actor {
 
     std::unique_ptr<ExtMsgCallback> callback;
     std::deque<ExtMsgQueueEntry> pending_native;
+    // Only the installation prefill is allowed to use one transport-window
+    // push. Every later native hand-off stays a scheduler fragment, even if a
+    // low-watermark prefix has more than one fragment staged locally.
+    std::size_t initial_native_publish_pending{0};
     std::deque<ExtMsgQueueEntry> pending_generic;
     CallbackNativeScheduler native_scheduler;
     // Live ingress coalesces source-local scheduler invalidations here while
@@ -699,7 +703,11 @@ class ExtMessagePool : public td::actor::Actor {
                                    const std::set<NativeAddress> *source_filter = nullptr,
                                    std::size_t max_items = NATIVE_DELIVERY_CHUNK);
   std::size_t prefill_callback_native(const std::shared_ptr<InstalledCallback> &callback, bool count_install);
+  std::size_t prefill_callback_native_low_watermark(const std::shared_ptr<InstalledCallback> &callback);
+  std::size_t native_transport_prefetch_capacity(const InstalledCallback &callback) const;
+  std::size_t native_transport_publish_batch_capacity(const InstalledCallback &callback) const;
   std::size_t native_transport_selected_limit(const InstalledCallback &callback) const;
+  std::size_t native_transport_refill_credit(const InstalledCallback &callback) const;
   bool native_transport_has_refill_credit(const InstalledCallback &callback) const;
   std::size_t wake_native_callbacks(const std::set<NativeAddress> *source_filter = nullptr,
                                     bool preserve_valid_ready_head = false);
@@ -783,6 +791,12 @@ class ExtMessagePool : public td::actor::Actor {
   // candidate can never consume.
   static constexpr size_t MAX_NATIVE_COLLATOR_QUEUE_LIMIT = 65536;
   static constexpr size_t NATIVE_DELIVERY_CHUNK = 512;
+  // The ordinary look-ahead is one fair fragment. After the Collator has
+  // consumed a complete fragment, one additional callback-local backup may
+  // be selected so source scheduling can overlap the next hand-off. It never
+  // changes the physical queue capacity or candidate allowance.
+  static constexpr size_t NATIVE_TRANSPORT_INITIAL_PREFETCH_CAPACITY = NATIVE_DELIVERY_CHUNK;
+  static constexpr size_t NATIVE_TRANSPORT_LOW_WATERMARK_PREFETCH_CAPACITY = 2 * NATIVE_DELIVERY_CHUNK;
   static constexpr size_t NATIVE_SOURCE_RUN_TARGET = 16;
   static constexpr size_t STANDARD_COLLATOR_QUEUE_LIMIT = 500;
   static constexpr td::uint32 MAX_NATIVE_MEMPOOL_TTL = 86400;

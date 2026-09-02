@@ -375,6 +375,7 @@ class ExtMessagePoolTestAccess {
     // keeps the unit test actor-free while ensuring the post-commit wake appends
     // work to the existing callback instead of creating another ingress event.
     installed->pump_active = true;
+    installed->callback->queue_state->attach_telemetry(pool.native_transport_telemetry_);
     pool.callbacks_.push_back(std::move(installed));
   }
 
@@ -652,6 +653,45 @@ class ExtMessagePoolTestAccess {
     auto callback = pool.callbacks_.front();
     pool.begin_callback_epoch(callback);
     return pool.prefill_callback_native(callback, true);
+  }
+
+  static std::size_t prefill_native_transport_low_watermark(ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    td::actor::core::ActorExecuteContext context(&pool);
+    td::actor::core::ActorExecuteContext::Guard guard(&context);
+    return pool.prefill_callback_native_low_watermark(pool.callbacks_.front());
+  }
+
+  static std::size_t callback_native_transport_publish_batch_capacity(const ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    return pool.native_transport_publish_batch_capacity(*pool.callbacks_.front());
+  }
+
+  static void consume_callback_native(ExtMessagePool &pool, std::size_t consumed) {
+    CHECK(pool.callbacks_.size() == 1);
+    pool.callbacks_.front()->callback->queue_state->record_consumed(consumed);
+  }
+
+  static void publish_callback_pending_native(ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    auto callback = pool.callbacks_.front();
+    std::size_t logical = 0;
+    for (const auto &entry : callback->pending_native) {
+      logical += entry.logical_native_count();
+    }
+    const auto published = callback->pending_native.size();
+    CHECK(published != 0);
+    if (callback->initial_native_publish_pending != 0) {
+      CHECK(published <= callback->initial_native_publish_pending);
+      callback->initial_native_publish_pending -= published;
+    }
+    callback->pending_native.clear();
+    callback->callback->queue_state->record_pushed(published, logical);
+  }
+
+  static std::shared_ptr<ExtMsgQueueTelemetry> callback_transport_telemetry(const ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    return pool.native_transport_telemetry_;
   }
 
   static td::uint64 callback_selected_ahead(ExtMessagePool &pool) {
@@ -1847,13 +1887,77 @@ TEST(ExtMessagePoolScheduler, NativeTransportPrefillSeedsWindowAndBoundsProducer
   ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending(pool), transport_window);
   ASSERT_EQ(ExtMessagePoolTestAccess::callback_selected_ahead(pool), transport_window);
   ASSERT_EQ(ExtMessagePoolTestAccess::callback_native_transport_selected_limit(pool),
-            transport_window + ExtMessagePoolTestAccess::native_delivery_chunk());
+            transport_window + 2 * ExtMessagePoolTestAccess::native_delivery_chunk());
   ASSERT_TRUE(ExtMessagePoolTestAccess::callback_native_transport_has_refill_credit(pool));
 
-  // Once the producer stages one additional native fragment while the window
-  // is full, it has no credit to append another snapshot-sized backlog.
+  // The hard hand-off bound permits at most two additional scheduler
+  // fragments. The low-watermark consumption gate is covered separately;
+  // this assertion protects the global selected-ahead cap itself.
+  ExtMessagePoolTestAccess::record_callback_selected(pool, ExtMessagePoolTestAccess::native_delivery_chunk());
+  ASSERT_TRUE(ExtMessagePoolTestAccess::callback_native_transport_has_refill_credit(pool));
   ExtMessagePoolTestAccess::record_callback_selected(pool, ExtMessagePoolTestAccess::native_delivery_chunk());
   ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_native_transport_has_refill_credit(pool));
+}
+
+TEST(ExtMessagePoolScheduler, NativeTransportLowWatermarkDefersSecondBackupAndFragmentsPublication) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  constexpr std::size_t transport_window = 2'048;
+  constexpr unsigned source_count = 64;
+  constexpr td::uint64 nonces_per_source = 64;
+  static_assert(source_count * nonces_per_source > transport_window + 2 * 512);
+  for (unsigned source_id = 1; source_id <= source_count; ++source_id) {
+    auto source = ExtMessagePoolTestAccess::source(source_id);
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    for (td::uint64 nonce = 0; nonce < nonces_per_source; ++nonce) {
+      ExtMessagePoolTestAccess::add(pool, source, nonce);
+    }
+  }
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool,
+                                                          ExtMessagePoolTestAccess::max_native_queue_limit(),
+                                                          transport_window);
+
+  const auto fragment = ExtMessagePoolTestAccess::native_delivery_chunk();
+  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport(pool), transport_window);
+  // The known-good installation hand-off may fill the physical window in one
+  // request. It is explicitly distinct from all later low-watermark pushes.
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_native_transport_publish_batch_capacity(pool), transport_window);
+  ExtMessagePoolTestAccess::publish_callback_pending_native(pool);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_selected_ahead(pool), transport_window);
+  const auto scheduler_after_initial = ExtMessagePoolTestAccess::scheduler_stats(pool);
+
+  // Before a full fragment has been consumed, only the existing one-fragment
+  // look-ahead may be selected. Repeating the refill cannot create the
+  // rejected two-fragment eager prefix.
+  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport_low_watermark(pool), fragment);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending(pool), fragment);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_selected_ahead(pool), transport_window + fragment);
+  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport_low_watermark(pool), 0u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_native_transport_publish_batch_capacity(pool), fragment);
+
+  // Once the Collator has made a full fragment of progress, the second backup
+  // is eligible. Even with two fragments staged, every post-initial queue
+  // operation remains exactly one fair 512-message fragment.
+  ExtMessagePoolTestAccess::consume_callback_native(pool, fragment);
+  ExtMessagePoolTestAccess::publish_callback_pending_native(pool);
+  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport_low_watermark(pool), 2 * fragment);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending(pool), 2 * fragment);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_selected_ahead(pool), transport_window + 2 * fragment);
+  ASSERT_EQ(ExtMessagePoolTestAccess::prefill_native_transport_low_watermark(pool), 0u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_native_transport_publish_batch_capacity(pool), fragment);
+  const auto scheduler_after_prefetch = ExtMessagePoolTestAccess::scheduler_stats(pool);
+  ASSERT_EQ(scheduler_after_prefetch.builds, scheduler_after_initial.builds);
+  ASSERT_EQ(scheduler_after_prefetch.source_scans, scheduler_after_initial.source_scans);
+
+  // Callback-local staging never crosses a cancelled candidate. Exact queue
+  // accounting partitions the physical window and the two unpushed backup
+  // fragments without a live residue.
+  auto telemetry = ExtMessagePoolTestAccess::callback_transport_telemetry(pool);
+  ExtMessagePoolTestAccess::cancel_callback(pool);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_pending(pool), 0u);
+  ASSERT_EQ(telemetry->queued_discarded.load(), transport_window);
+  ASSERT_EQ(telemetry->unpushed_discarded.load(), 2 * fragment);
+  ASSERT_EQ(telemetry->queued_discarded.load() + telemetry->unpushed_discarded.load(),
+            transport_window + 2 * fragment);
 }
 
 TEST(ExtMessagePoolScheduler, PersistentCallbackSchedulerScansSourcesOnlyOnceAcrossChunks) {

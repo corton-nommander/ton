@@ -742,6 +742,11 @@ struct ExtMsgQueueState {
     CHECK(native_consumed_ <= native_selected_);
     return native_selected_ - native_consumed_;
   }
+  td::uint64 native_consumed_count() {
+    std::lock_guard lock(accounting_mutex_);
+    CHECK(native_consumed_ <= native_selected_);
+    return native_consumed_;
+  }
   td::uint64 native_logical_selected_ahead() {
     std::lock_guard lock(accounting_mutex_);
     CHECK(native_consumed_logical_ <= native_selected_logical_);

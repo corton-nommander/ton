@@ -782,6 +782,57 @@ TEST(NativeStateEngine, parallel_native_account_state_cells_preserve_canonical_i
   }
 }
 
+TEST(NativeStateEngine, parallel_native_account_state_cells_install_prevalidated_accounts) {
+  constexpr td::uint64 count = 2'048;
+  std::vector<ton::StdSmcAddress> addresses;
+  std::vector<block::NativeAccountStateCellInput> inputs;
+  std::vector<std::unique_ptr<block::Account>> serial_accounts;
+  std::vector<std::unique_ptr<block::Account>> parallel_accounts;
+  addresses.reserve(count);
+  inputs.reserve(count);
+  serial_accounts.reserve(count);
+  parallel_accounts.reserve(count);
+
+  for (td::uint64 index = 0; index < count; ++index) {
+    std::string bytes(32, '\0');
+    for (std::size_t byte = 0; byte < sizeof(index); ++byte) {
+      bytes[bytes.size() - 1 - byte] = static_cast<char>(index >> (byte * 8));
+    }
+    ton::StdSmcAddress address;
+    address.as_slice().copy_from(bytes);
+    addresses.push_back(address);
+    inputs.push_back({
+        .balance = 1'000'000 + index * 1009,
+        .nonce = 7'000 + index * 17,
+        .flags = static_cast<td::uint8>(index),
+    });
+
+    auto serial = std::make_unique<block::Account>(ton::basechainId, addresses.back().cbits());
+    auto parallel = std::make_unique<block::Account>(ton::basechainId, addresses.back().cbits());
+    serial->status = block::Account::acc_uninit;
+    parallel->status = block::Account::acc_uninit;
+    ASSERT_TRUE(serial->set_native_state(inputs.back().balance, inputs.back().nonce, inputs.back().flags));
+    serial_accounts.push_back(std::move(serial));
+    parallel_accounts.push_back(std::move(parallel));
+  }
+
+  // This mirrors validator replay: immutable cells are prepared in parallel,
+  // then installed in a fixed order. The result must exactly match serial
+  // Account::set_native_state for every independent final state.
+  auto prepared = block::build_native_account_state_cells_parallel(inputs, 4);
+  ASSERT_EQ(prepared.size(), inputs.size());
+  for (std::size_t index = 0; index < inputs.size(); ++index) {
+    ASSERT_TRUE(!prepared[index].is_null());
+    ASSERT_TRUE(parallel_accounts[index]->set_prevalidated_native_state(std::move(prepared[index]), inputs[index].balance,
+                                                                         inputs[index].nonce, inputs[index].flags));
+    ASSERT_EQ(serial_accounts[index]->total_state->get_hash(), parallel_accounts[index]->total_state->get_hash());
+    ASSERT_TRUE(parallel_accounts[index]->is_native);
+    ASSERT_EQ(parallel_accounts[index]->native_balance_uint64().value(), inputs[index].balance);
+    ASSERT_EQ(parallel_accounts[index]->native_nonce, inputs[index].nonce);
+    ASSERT_EQ(parallel_accounts[index]->native_flags, inputs[index].flags);
+  }
+}
+
 TEST(NativeStateEngine, preflighted_shard_accounts_root_is_canonical_after_ordinary_corrections) {
   auto address = [](unsigned char suffix) {
     ton::StdSmcAddress result;

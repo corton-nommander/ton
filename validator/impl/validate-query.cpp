@@ -16,6 +16,7 @@
 
     Copyright 2017-2020 Telegram Systems LLP
 */
+#include <algorithm>
 #include <ctime>
 #include <numeric>
 #include <unordered_map>
@@ -6914,8 +6915,35 @@ bool ValidateQuery::check_native_transfer_batch() {
         stats_.work_time.native_account_load - account_load_before_replay;
     {
       td::ScopedRealCpuTimer materialize_timer{stats_.work_time.native_account_materialize};
-      for (auto& [_, state] : states) {
-        if (state.changed && !state.account->set_native_state(state.balance, state.nonce, state.flags)) {
+      // State replay above mutates only the compact, candidate-local views.
+      // Final Account cells are therefore independent immutable work. Build
+      // them by a stable address order, then retain a serialized install so a
+      // worker schedule can never affect the validated candidate state.
+      std::vector<std::pair<StdSmcAddress, NativeAccountState*>> changed_states;
+      changed_states.reserve(states.size());
+      for (auto& [address, state] : states) {
+        if (state.changed) {
+          changed_states.emplace_back(address, &state);
+        }
+      }
+      std::sort(changed_states.begin(), changed_states.end(),
+                [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
+
+      std::vector<block::NativeAccountStateCellInput> state_inputs;
+      state_inputs.reserve(changed_states.size());
+      for (const auto& [_, state] : changed_states) {
+        state_inputs.push_back({.balance = state->balance, .nonce = state->nonce, .flags = state->flags});
+      }
+      auto total_states = block::build_native_account_state_cells_parallel(state_inputs);
+      if (total_states.size() != changed_states.size()) {
+        return reject_query("native account-state cell builder returned an invalid result size");
+      }
+      for (std::size_t index = 0; index < changed_states.size(); ++index) {
+        auto& state = *changed_states[index].second;
+        auto total_state = std::move(total_states[index]);
+        if (total_state.is_null() ||
+            !state.account->set_prevalidated_native_state(std::move(total_state), state.balance, state.nonce,
+                                                          state.flags)) {
           return reject_query("cannot apply aggregated compact native account state");
         }
       }

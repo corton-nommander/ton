@@ -20,10 +20,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common/bigexp.h"
@@ -1021,6 +1023,301 @@ TEST(NativeStateEngine, native_signature_is_bound_to_zerostate_domain) {
   ASSERT_TRUE(transfer.verify_signature().is_error());
 }
 
+TEST(NativeStateEngine, native_transfer_run_is_domain_signed_and_canonical) {
+  auto source_key = td::Ed25519::generate_private_key().move_as_ok();
+  auto first_destination = td::Ed25519::generate_private_key().move_as_ok();
+  auto second_destination = td::Ed25519::generate_private_key().move_as_ok();
+  block::NativeTransferRun run;
+  run.src.as_slice().copy_from(source_key.get_public_key().move_as_ok().as_octet_string());
+  run.first_nonce = 700;
+  run.valid_until = std::numeric_limits<ton::UnixTime>::max();
+  run.outputs = {
+      {.dst = ton::StdSmcAddress{}, .amount = 11, .fee = 2},
+      {.dst = ton::StdSmcAddress{}, .amount = 13, .fee = 3},
+  };
+  run.outputs[0].dst.as_slice().copy_from(first_destination.get_public_key().move_as_ok().as_octet_string());
+  run.outputs[1].dst.as_slice().copy_from(second_destination.get_public_key().move_as_ok().as_octet_string());
+
+  ton::Bits256 domain_a, domain_b;
+  domain_a.as_slice().copy_from(std::string(32, '\x31'));
+  domain_b.as_slice().copy_from(std::string(32, '\x32'));
+  run.signature = source_key.sign(run.signing_payload(domain_a)).move_as_ok().as_slice().str();
+  ASSERT_TRUE(run.is_valid());
+  ASSERT_TRUE(run.verify_signature(domain_a).is_ok());
+  ASSERT_TRUE(run.verify_signature(domain_b).is_error());
+  ASSERT_TRUE(run.verify_signature().is_error());
+
+  vm::CellBuilder first_builder;
+  ASSERT_TRUE(run.store_external(first_builder));
+  auto first_root = first_builder.finalize();
+  auto first_hash = ton::Bits256{first_root->get_hash().bits()};
+  ASSERT_EQ(run.external_hash().move_as_ok(), first_hash);
+  auto decoded = block::NativeTransferRun::unpack_external(first_root).move_as_ok();
+  ASSERT_EQ(decoded.src, run.src);
+  ASSERT_EQ(decoded.first_nonce, run.first_nonce);
+  ASSERT_EQ(decoded.valid_until, run.valid_until);
+  ASSERT_EQ(decoded.outputs.size(), 2u);
+  ASSERT_EQ(decoded.outputs[0].dst, run.outputs[0].dst);
+  ASSERT_EQ(decoded.outputs[1].amount, run.outputs[1].amount);
+  ASSERT_TRUE(decoded.verify_signature(domain_a).is_ok());
+
+  vm::CellBuilder second_builder;
+  ASSERT_TRUE(decoded.store_external(second_builder));
+  auto second_root = second_builder.finalize();
+  ASSERT_EQ(first_root->get_hash(), second_root->get_hash());
+  auto first_boc = vm::std_boc_serialize(first_root).move_as_ok();
+  auto second_boc = vm::std_boc_serialize(second_root).move_as_ok();
+  ASSERT_TRUE(first_boc.as_slice() == second_boc.as_slice());
+
+  decoded.outputs[1].amount++;
+  ASSERT_TRUE(decoded.verify_signature(domain_a).is_error());
+}
+
+TEST(NativeStateEngine, native_transfer_run_rejects_invalid_ranges_and_output_tree) {
+  auto source_key = td::Ed25519::generate_private_key().move_as_ok();
+  auto destination_key = td::Ed25519::generate_private_key().move_as_ok();
+  block::NativeTransferRun run;
+  run.src.as_slice().copy_from(source_key.get_public_key().move_as_ok().as_octet_string());
+  run.first_nonce = std::numeric_limits<td::uint64>::max() - 15;
+  run.valid_until = std::numeric_limits<ton::UnixTime>::max();
+  for (std::size_t index = 0; index < block::NativeTransferRun::max_entries; ++index) {
+    block::NativeTransferRunOutput output;
+    output.dst.as_slice().copy_from(destination_key.get_public_key().move_as_ok().as_octet_string());
+    output.amount = index + 1;
+    output.fee = index;
+    run.outputs.push_back(std::move(output));
+  }
+  ton::Bits256 domain;
+  domain.as_slice().copy_from(std::string(32, '\x41'));
+  run.signature = source_key.sign(run.signing_payload(domain)).move_as_ok().as_slice().str();
+  ASSERT_TRUE(run.is_valid());
+  run.first_nonce++;
+  ASSERT_TRUE(!run.is_valid());
+  vm::CellBuilder overflow_builder;
+  ASSERT_TRUE(!run.store_external(overflow_builder));
+  run.first_nonce--;
+
+  auto signature_cell = [] {
+    vm::CellBuilder builder;
+    ASSERT_TRUE(builder.store_bytes_bool(std::string(64, '\0')));
+    return builder.finalize();
+  };
+  auto output_leaf = [&] {
+    vm::CellBuilder builder;
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(block::NativeTransferRun::outputs_leaf_magic, 32));
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(1, 5));
+    ASSERT_TRUE(builder.store_bits_bool(run.outputs.front().dst));
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(1, 64));
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(0, 64));
+    return builder.finalize();
+  };
+  vm::CellBuilder zero_count_builder;
+  ASSERT_TRUE(zero_count_builder.store_ulong_rchk_bool(block::NativeTransferRun::magic, 32));
+  ASSERT_TRUE(zero_count_builder.store_bits_bool(run.src));
+  ASSERT_TRUE(zero_count_builder.store_ulong_rchk_bool(0, 64));
+  ASSERT_TRUE(zero_count_builder.store_ulong_rchk_bool(run.valid_until, 32));
+  ASSERT_TRUE(zero_count_builder.store_ulong_rchk_bool(0, 5));
+  ASSERT_TRUE(zero_count_builder.store_ref_bool(signature_cell()));
+  ASSERT_TRUE(zero_count_builder.store_ref_bool(output_leaf()));
+  ASSERT_TRUE(block::NativeTransferRun::unpack_external(zero_count_builder.finalize()).is_error());
+
+  vm::CellBuilder malformed_leaf_builder;
+  ASSERT_TRUE(malformed_leaf_builder.store_ulong_rchk_bool(block::NativeTransferRun::outputs_leaf_magic, 32));
+  ASSERT_TRUE(malformed_leaf_builder.store_ulong_rchk_bool(2, 5));
+  ASSERT_TRUE(malformed_leaf_builder.store_bits_bool(run.outputs.front().dst));
+  ASSERT_TRUE(malformed_leaf_builder.store_ulong_rchk_bool(1, 64));
+  ASSERT_TRUE(malformed_leaf_builder.store_ulong_rchk_bool(0, 64));
+  vm::CellBuilder malformed_root_builder;
+  ASSERT_TRUE(malformed_root_builder.store_ulong_rchk_bool(block::NativeTransferRun::magic, 32));
+  ASSERT_TRUE(malformed_root_builder.store_bits_bool(run.src));
+  ASSERT_TRUE(malformed_root_builder.store_ulong_rchk_bool(0, 64));
+  ASSERT_TRUE(malformed_root_builder.store_ulong_rchk_bool(run.valid_until, 32));
+  ASSERT_TRUE(malformed_root_builder.store_ulong_rchk_bool(1, 5));
+  ASSERT_TRUE(malformed_root_builder.store_ref_bool(signature_cell()));
+  ASSERT_TRUE(malformed_root_builder.store_ref_bool(malformed_leaf_builder.finalize()));
+  ASSERT_TRUE(block::NativeTransferRun::unpack_external(malformed_root_builder.finalize()).is_error());
+
+  // The field-level signature must not permit multiple equivalent output-tree
+  // layouts. For three outputs the canonical tree is [two-output leaf, one-
+  // output leaf]; reverse that split while retaining the signed field sequence.
+  block::NativeTransferRun three_run;
+  three_run.src = run.src;
+  three_run.first_nonce = 17;
+  three_run.valid_until = run.valid_until;
+  three_run.outputs.assign(run.outputs.begin(), run.outputs.begin() + 3);
+  three_run.signature = source_key.sign(three_run.signing_payload(domain)).move_as_ok().as_slice().str();
+  auto make_output_leaf = [&](std::size_t start, std::size_t count) {
+    vm::CellBuilder builder;
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(block::NativeTransferRun::outputs_leaf_magic, 32));
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(count, 5));
+    for (std::size_t index = start; index < start + count; ++index) {
+      const auto& output = three_run.outputs[index];
+      ASSERT_TRUE(builder.store_bits_bool(output.dst));
+      ASSERT_TRUE(builder.store_ulong_rchk_bool(output.amount, 64));
+      ASSERT_TRUE(builder.store_ulong_rchk_bool(output.fee, 64));
+    }
+    return builder.finalize();
+  };
+  vm::CellBuilder alternate_tree_builder;
+  ASSERT_TRUE(alternate_tree_builder.store_ulong_rchk_bool(block::NativeTransferRun::outputs_node_magic, 32));
+  ASSERT_TRUE(alternate_tree_builder.store_ulong_rchk_bool(1, 5));
+  ASSERT_TRUE(alternate_tree_builder.store_ref_bool(make_output_leaf(0, 1)));
+  ASSERT_TRUE(alternate_tree_builder.store_ref_bool(make_output_leaf(1, 2)));
+  vm::CellBuilder valid_signature_builder;
+  ASSERT_TRUE(valid_signature_builder.store_bytes_bool(three_run.signature));
+  vm::CellBuilder alternate_root_builder;
+  ASSERT_TRUE(alternate_root_builder.store_ulong_rchk_bool(block::NativeTransferRun::magic, 32));
+  ASSERT_TRUE(alternate_root_builder.store_bits_bool(three_run.src));
+  ASSERT_TRUE(alternate_root_builder.store_ulong_rchk_bool(three_run.first_nonce, 64));
+  ASSERT_TRUE(alternate_root_builder.store_ulong_rchk_bool(three_run.valid_until, 32));
+  ASSERT_TRUE(alternate_root_builder.store_ulong_rchk_bool(three_run.outputs.size(), 5));
+  ASSERT_TRUE(alternate_root_builder.store_ref_bool(valid_signature_builder.finalize()));
+  ASSERT_TRUE(alternate_root_builder.store_ref_bool(alternate_tree_builder.finalize()));
+  ASSERT_TRUE(block::NativeTransferRun::unpack_external(alternate_root_builder.finalize()).is_error());
+}
+
+TEST(NativeStateEngine, native_transfer_batch_v5_keeps_signed_runs_atomic_and_flattens_entries) {
+  auto source_key = td::Ed25519::generate_private_key().move_as_ok();
+  auto source_public = source_key.get_public_key().move_as_ok().as_octet_string();
+  ton::Bits256 domain;
+  domain.as_slice().copy_from(std::string(32, '\x51'));
+
+  auto make_run = [&](td::uint64 first_nonce, std::initializer_list<std::pair<td::uint64, td::uint64>> values,
+                      unsigned destination_seed) {
+    block::NativeTransferRun run;
+    run.src.as_slice().copy_from(source_public);
+    run.first_nonce = first_nonce;
+    run.valid_until = std::numeric_limits<ton::UnixTime>::max();
+    unsigned index = 0;
+    for (const auto& [amount, fee] : values) {
+      block::NativeTransferRunOutput output;
+      std::string destination(32, '\0');
+      destination[0] = 3;
+      destination.back() = static_cast<char>(destination_seed + index++);
+      output.dst.as_slice().copy_from(destination);
+      output.amount = amount;
+      output.fee = fee;
+      run.outputs.push_back(std::move(output));
+    }
+    run.signature = source_key.sign(run.signing_payload(domain)).move_as_ok().as_slice().str();
+    ASSERT_TRUE(run.verify_signature(domain).is_ok());
+    return run;
+  };
+
+  block::NativeTransferBatch batch;
+  batch.version = block::NativeTransferBatch::runs_version;
+  batch.runs.push_back(make_run(40, {{7, 1}, {11, 2}}, 10));
+  batch.runs.push_back(make_run(42, {{13, 3}}, 20));
+
+  vm::CellBuilder builder;
+  ASSERT_TRUE(batch.store(builder));
+  auto root = builder.finalize();
+
+  // The v5 transfer tree refers to the source-signed run cells directly. Its
+  // branch weights are logical transfer counts, not run counts.
+  auto header = vm::load_cell_slice(root);
+  ASSERT_EQ(header.fetch_ulong(32), block::NativeTransferBatch::magic);
+  ASSERT_EQ(header.fetch_ulong(8), block::NativeTransferBatch::runs_version);
+  auto accounts_count = header.fetch_ulong(32);
+  ASSERT_EQ(header.fetch_ulong(32), 3);
+  td::Ref<vm::Cell> account_root, run_tree;
+  ASSERT_TRUE(header.fetch_maybe_ref(account_root));
+  ASSERT_TRUE(header.fetch_maybe_ref(run_tree));
+  ASSERT_TRUE(header.empty_ext());
+  ASSERT_EQ(accounts_count, 0);
+  ASSERT_TRUE(account_root.is_null());
+  auto run_node = vm::load_cell_slice(run_tree);
+  ASSERT_EQ(run_node.fetch_ulong(32), block::NativeTransferBatch::runs_node_magic);
+  ASSERT_EQ(run_node.fetch_ulong(32), 2);
+  td::Ref<vm::Cell> left_run, right_run;
+  ASSERT_TRUE(run_node.fetch_ref_to(left_run));
+  ASSERT_TRUE(run_node.fetch_ref_to(right_run));
+  ASSERT_TRUE(run_node.empty_ext());
+  ASSERT_EQ(vm::load_cell_slice(left_run).prefetch_ulong(32), block::NativeTransferRun::magic);
+  ASSERT_EQ(vm::load_cell_slice(right_run).prefetch_ulong(32), block::NativeTransferRun::magic);
+
+  auto decoded = block::NativeTransferBatch::unpack(root).move_as_ok();
+  ASSERT_EQ(decoded.version, block::NativeTransferBatch::runs_version);
+  ASSERT_EQ(decoded.runs.size(), 2u);
+  ASSERT_EQ(decoded.accounts.size(), 4u);
+  ASSERT_EQ(decoded.entries.size(), 3u);
+  ASSERT_EQ(decoded.entries[0].transfer.nonce, 40u);
+  ASSERT_EQ(decoded.entries[1].transfer.nonce, 41u);
+  ASSERT_EQ(decoded.entries[2].transfer.nonce, 42u);
+  ASSERT_EQ(decoded.entries[0].transfer.signature, decoded.runs[0].signature);
+  ASSERT_TRUE(decoded.runs[0].verify_signature(domain).is_ok());
+  ASSERT_TRUE(decoded.runs[1].verify_signature(domain).is_ok());
+  // A flattened v5 entry keeps the run's signature bytes only as a derived
+  // execution view. It is intentionally not an individually signed NTFX.
+  ASSERT_TRUE(decoded.entries[0].transfer.verify_signature(domain).is_error());
+
+  // A single run is the transfer root itself; no synthetic leaf wrapper is
+  // introduced around the signed external cell.
+  block::NativeTransferBatch single_run_batch;
+  single_run_batch.version = block::NativeTransferBatch::runs_version;
+  single_run_batch.runs.push_back(batch.runs.front());
+  vm::CellBuilder single_run_builder;
+  ASSERT_TRUE(single_run_batch.store(single_run_builder));
+  auto single_run_decoded = block::NativeTransferBatch::unpack(single_run_builder.finalize()).move_as_ok();
+  ASSERT_EQ(single_run_decoded.runs.size(), 1u);
+  ASSERT_EQ(single_run_decoded.entries.size(), 2u);
+
+  vm::CellBuilder roundtrip_builder;
+  ASSERT_TRUE(decoded.store(roundtrip_builder));
+  auto roundtrip_root = roundtrip_builder.finalize();
+  ASSERT_EQ(root->get_hash(), roundtrip_root->get_hash());
+
+  auto inconsistent = decoded;
+  ++inconsistent.entries[1].transfer.amount;
+  vm::CellBuilder inconsistent_builder;
+  ASSERT_TRUE(!inconsistent.store(inconsistent_builder));
+
+  // The header contains the logical count. A direct run leaf cannot claim a
+  // different number of output transfers, otherwise a run could be silently
+  // split or truncated by a malformed batch tree.
+  vm::CellBuilder first_run_builder;
+  ASSERT_TRUE(batch.runs.front().store_external(first_run_builder));
+  auto first_run_root = first_run_builder.finalize();
+  vm::CellBuilder malformed_builder;
+  ASSERT_TRUE(malformed_builder.store_ulong_rchk_bool(block::NativeTransferBatch::magic, 32));
+  ASSERT_TRUE(malformed_builder.store_ulong_rchk_bool(block::NativeTransferBatch::runs_version, 8));
+  ASSERT_TRUE(malformed_builder.store_ulong_rchk_bool(accounts_count, 32));
+  ASSERT_TRUE(malformed_builder.store_ulong_rchk_bool(3, 32));
+  ASSERT_TRUE(malformed_builder.store_maybe_ref(account_root));
+  ASSERT_TRUE(malformed_builder.store_maybe_ref(first_run_root));
+  ASSERT_TRUE(block::NativeTransferBatch::unpack(malformed_builder.finalize()).is_error());
+
+  // Run leaves are canonical individually, but the enclosing vector must be
+  // canonical as well.  Three one-output runs normally serialize as
+  // [[first, second], third]; reject the equivalent [first, [second, third]].
+  auto third_run = make_run(43, {{17, 4}}, 30);
+  auto serialize_run = [](const block::NativeTransferRun& run) {
+    vm::CellBuilder run_builder;
+    ASSERT_TRUE(run.store_external(run_builder));
+    return run_builder.finalize();
+  };
+  vm::CellBuilder right_branch_builder;
+  ASSERT_TRUE(right_branch_builder.store_ulong_rchk_bool(block::NativeTransferBatch::runs_node_magic, 32));
+  ASSERT_TRUE(right_branch_builder.store_ulong_rchk_bool(1, 32));
+  ASSERT_TRUE(right_branch_builder.store_ref_bool(serialize_run(batch.runs[1])));
+  ASSERT_TRUE(right_branch_builder.store_ref_bool(serialize_run(third_run)));
+  auto right_branch = right_branch_builder.finalize();
+  vm::CellBuilder alternate_root_builder;
+  ASSERT_TRUE(alternate_root_builder.store_ulong_rchk_bool(block::NativeTransferBatch::runs_node_magic, 32));
+  ASSERT_TRUE(alternate_root_builder.store_ulong_rchk_bool(2, 32));
+  ASSERT_TRUE(alternate_root_builder.store_ref_bool(serialize_run(batch.runs[0])));
+  ASSERT_TRUE(alternate_root_builder.store_ref_bool(right_branch));
+  auto alternate_root = alternate_root_builder.finalize();
+  vm::CellBuilder alternate_batch_builder;
+  ASSERT_TRUE(alternate_batch_builder.store_ulong_rchk_bool(block::NativeTransferBatch::magic, 32));
+  ASSERT_TRUE(alternate_batch_builder.store_ulong_rchk_bool(block::NativeTransferBatch::runs_version, 8));
+  ASSERT_TRUE(alternate_batch_builder.store_ulong_rchk_bool(0, 32));
+  ASSERT_TRUE(alternate_batch_builder.store_ulong_rchk_bool(4, 32));
+  ASSERT_TRUE(alternate_batch_builder.store_maybe_ref(td::Ref<vm::Cell>{}));
+  ASSERT_TRUE(alternate_batch_builder.store_maybe_ref(alternate_root));
+  ASSERT_TRUE(block::NativeTransferBatch::unpack(alternate_batch_builder.finalize()).is_error());
+}
+
 TEST(NativeStateEngine, compact_batch_v3_balanced_tree) {
   block::NativeTransferBatch batch;
   batch.version = 3;
@@ -1200,9 +1497,34 @@ TEST(NativeStateEngine, compact_batch_rejects_unbounded_header_counts) {
   ASSERT_TRUE(block::NativeTransferBatch::unpack(make_header(3, 1, true, true)).is_error());
 }
 
-TEST(NativeStateEngine, compact_batch_domain_signature_activation_rejects_downgrade) {
+TEST(NativeStateEngine, compact_batch_version_and_run_capability_activation) {
   ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version(3, 13));
   ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version(4, 13));
+  ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version(
+      block::NativeTransferBatch::runs_version, 13));
   ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version(3, 14));
   ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version(4, 14));
+  ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version(
+      block::NativeTransferBatch::runs_version, 14));
+
+  // The existing call sites use the legacy two-argument gate, so a v5 batch
+  // remains inactive until the collator and validator are changed together.
+  ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version(
+      block::NativeTransferBatch::runs_version, block::NativeTransferBatch::runs_global_version));
+
+  // The future opt-in is deliberately two-dimensional: neither a version
+  // bump alone nor an advertised capability alone can enable NTRN runs.
+  ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(
+      block::NativeTransferBatch::runs_version, block::NativeTransferBatch::runs_global_version - 1,
+      block::NativeTransferBatch::runs_capability));
+  ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(
+      block::NativeTransferBatch::runs_version, block::NativeTransferBatch::runs_global_version, 0));
+  ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(
+      block::NativeTransferBatch::runs_version, block::NativeTransferBatch::runs_global_version,
+      block::NativeTransferBatch::runs_capability));
+
+  // v1-v4 policy remains unchanged through the capability-aware route.
+  ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(4, 15, 0));
+  ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(3, 15,
+                                                                                                  ton::capNativeTransferRuns));
 }

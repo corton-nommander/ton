@@ -65,7 +65,11 @@ enum GlobalCapabilities {
   capStoreOutMsgQueueSize = 64,
   capMsgMetadata = 128,
   capDeferMessages = 256,
-  capFullCollatedData = 512
+  capFullCollatedData = 512,
+  // Reserved for the source-signed NativeTransferRun wire format.  The
+  // codec can inspect v5 before activation, but block production/validation
+  // must require this bit together with its global-version gate.
+  capNativeTransferRuns = 1024
 };
 
 inline int shard_pfx_len(ShardId shard) {

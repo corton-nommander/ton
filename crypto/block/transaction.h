@@ -109,6 +109,42 @@ struct NativeTransfer {
   static td::Result<NativeTransfer> unpack_debit_description(ton::StdSmcAddress src, Ref<vm::Cell> cell);
 };
 
+// A source-signed, nonce-contiguous native transfer run.  It is deliberately
+// separate from NativeTransfer: one Ed25519 authorization covers the ordered
+// output vector rather than pretending that its signature authenticates each
+// individual NativeTransfer payload.  A protocol batch can later carry this
+// object directly without retaining a 64-byte signature per logical transfer.
+struct NativeTransferRunOutput {
+  ton::StdSmcAddress dst;
+  td::uint64 amount{0};
+  td::uint64 fee{0};
+};
+
+struct NativeTransferRun {
+  static constexpr td::uint32 magic = 0x4e54524e;  // "NTRN"
+  static constexpr td::uint32 outputs_leaf_magic = 0x4e54524c;  // "NTRL"
+  static constexpr td::uint32 outputs_node_magic = 0x4e545244;  // "NTRD"
+  static constexpr std::size_t max_entries = 16;
+
+  ton::StdSmcAddress src;
+  td::uint64 first_nonce{0};
+  ton::UnixTime valid_until{0};
+  std::vector<NativeTransferRunOutput> outputs;
+  std::string signature;
+
+  // `outputs[index]` always consumes `first_nonce + index`.  Validity rejects
+  // both an empty/oversized run and a final-nonce overflow, so this implicit
+  // sequence is a complete, canonical nonce range.
+  bool is_valid() const;
+  std::string signing_payload() const;
+  std::string signing_payload(const ton::Bits256& chain_domain) const;
+  td::Status verify_signature() const;
+  td::Status verify_signature(const ton::Bits256& chain_domain) const;
+  bool store_external(vm::CellBuilder& cb) const;
+  td::Result<ton::Bits256> external_hash() const;
+  static td::Result<NativeTransferRun> unpack_external(Ref<vm::Cell> cell);
+};
+
 struct NativeTransferCredit {
   ton::StdSmcAddress src;
   ton::LogicalTime debit_lt{0};
@@ -132,6 +168,12 @@ struct NativeTransferBatch {
   static constexpr td::uint32 accounts_node_magic = 0x4e414e44;   // "NAND"
   static constexpr td::uint32 transfers_leaf_magic = 0x4e54584c;  // "NTXL"
   static constexpr td::uint32 transfers_node_magic = 0x4e54584e;  // "NTXN"
+  // v5 has no serialized account table: a run already carries its source and
+  // every destination. Its transfer root is an ordered tree of direct
+  // NativeTransferRun cells. Each node stores the number of flattened logical
+  // entries in its left branch, rather than a run count, so the existing
+  // header entries_count remains the complete bound for a decoder.
+  static constexpr td::uint32 runs_node_magic = 0x4e54524d;  // "NTRM"
 
   // Counts are attacker-controlled when a candidate is decoded.  Keep an
   // absolute protocol bound below any practical hard block capacity so a
@@ -142,16 +184,44 @@ struct NativeTransferBatch {
   // v4 keeps the balanced packed representation introduced by v3, but the
   // transfer vector itself is the complete authorization for native account
   // state changes.  Per-account AccountBlock/HASH_UPDATE records are omitted.
+  //
+  // v5 is deliberately opt-in while its activation capability is wired by the
+  // validator.  Keep current_version at v4 so existing producers retain their
+  // exact wire format until that activation lands; store()/unpack() can still
+  // encode and inspect a requested v5 batch for the protocol tests below.
   static constexpr td::uint8 current_version = 4;
+  static constexpr td::uint8 runs_version = 5;
   static constexpr int domain_signatures_global_version = 14;
+  // Keep the new wire format inactive unless both gates are present.  The
+  // existing two-argument policy intentionally remains v1-v4-only; callers
+  // that eventually activate v5 must opt in through the explicit
+  // capability-aware overload below.
+  static constexpr int runs_global_version = 15;
+  static constexpr long long runs_capability = ton::capNativeTransferRuns;
 
   static bool version_allowed_for_global_version(td::uint8 candidate_version, int global_version) {
-    return global_version < domain_signatures_global_version || candidate_version == current_version;
+    return candidate_version >= 1 && candidate_version <= current_version &&
+           (global_version < domain_signatures_global_version || candidate_version == current_version);
+  }
+  static bool version_allowed_for_global_version_and_capabilities(td::uint8 candidate_version, int global_version,
+                                                                   long long capabilities) {
+    if (candidate_version == runs_version) {
+      return global_version >= runs_global_version && (capabilities & runs_capability) == runs_capability;
+    }
+    return version_allowed_for_global_version(candidate_version, global_version);
   }
   td::uint8 version{current_version};
   std::vector<ton::StdSmcAddress> accounts;
   std::vector<NativeTransferBatchEntry> entries;
+  // For v5, runs are the signed, atomic wire objects in traversal order.
+  // entries is a derived logical execution view: each run output maps to one
+  // NativeTransferBatchEntry.  Its NativeTransfer signature bytes belong to
+  // the enclosing run and must not be verified as individual-transfer
+  // signatures; callers must verify NativeTransferRun instead.
+  std::vector<NativeTransferRun> runs;
 
+  static td::Result<std::vector<NativeTransferBatchEntry>> flatten_runs(
+      const std::vector<NativeTransferRun>& runs);
   bool store(vm::CellBuilder& cb) const;
   static td::Result<NativeTransferBatch> unpack(Ref<vm::Cell> cell);
 };

@@ -65,8 +65,6 @@ static_assert(parse_native_ext_msg_transport_capacity("999999999999999999999999"
 static_assert(select_native_ext_msg_transport_capacity(false, 500, "2048") == 500);
 static_assert(select_native_ext_msg_transport_capacity(true, 32'768, "2048") == 2'048);
 static_assert(select_native_ext_msg_transport_capacity(true, 1'000, "2048") == 1'000);
-static_assert(native_ext_msg_transport_prefetch_fragments == 2);
-static_assert(native_ext_msg_transport_prefetch_capacity == 1'024);
 static_assert(native_checkpoint_coalesce_max_entries == 2'048);
 static_assert(native_checkpoint_coalesce_fanout_limit == 3'072);
 // A transient empty queue probe does not end a checkpoint group; the caller

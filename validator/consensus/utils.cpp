@@ -125,16 +125,47 @@ td::Result<std::vector<TrackedNativeExternalMessage>> get_candidate_native_exter
 
   TRY_RESULT(batch, block::NativeTransferBatch::unpack(std::move(custom)));
   messages.reserve(batch.entries.size());
-  for (const auto& entry : batch.entries) {
-    TRY_RESULT(hash, entry.transfer.external_hash());
-    messages.push_back(TrackedNativeExternalMessage{.hash = hash,
-                                                      .workchain = basechainId,
-                                                      .source = entry.transfer.src,
-                                                      .nonce = entry.transfer.nonce});
+  if (batch.version == block::NativeTransferBatch::runs_version) {
+    // `entries` is a derived execution view for v5. Its copied signature bytes
+    // are not an NTFX authorization, so its synthetic external hashes must
+    // never become mempool identity. Track the canonical NTRN parent once per
+    // child nonce instead.
+    for (const auto& run : batch.runs) {
+      TRY_RESULT(parent_hash, run.external_hash());
+      for (std::size_t output_index = 0; output_index < run.outputs.size(); ++output_index) {
+        messages.push_back(TrackedNativeExternalMessage{
+            .hash = parent_hash,
+            .workchain = basechainId,
+            .source = run.src,
+            .nonce = run.first_nonce + static_cast<td::uint64>(output_index),
+        });
+      }
+    }
+  } else {
+    for (const auto& entry : batch.entries) {
+      TRY_RESULT(hash, entry.transfer.external_hash());
+      messages.push_back(TrackedNativeExternalMessage{.hash = hash,
+                                                        .workchain = basechainId,
+                                                        .source = entry.transfer.src,
+                                                        .nonce = entry.transfer.nonce});
+    }
   }
-  std::sort(messages.begin(), messages.end(), [](const auto &lhs, const auto &rhs) { return lhs.hash < rhs.hash; });
-  messages.erase(std::unique(messages.begin(), messages.end(),
-                             [](const auto &lhs, const auto &rhs) { return lhs.hash == rhs.hash; }),
+  std::sort(messages.begin(), messages.end(), [](const auto& lhs, const auto& rhs) {
+    if (lhs.hash != rhs.hash) {
+      return lhs.hash < rhs.hash;
+    }
+    if (lhs.workchain != rhs.workchain) {
+      return lhs.workchain < rhs.workchain;
+    }
+    if (lhs.source != rhs.source) {
+      return lhs.source < rhs.source;
+    }
+    return lhs.nonce < rhs.nonce;
+  });
+  messages.erase(std::unique(messages.begin(), messages.end(), [](const auto& lhs, const auto& rhs) {
+                   return lhs.hash == rhs.hash && lhs.workchain == rhs.workchain && lhs.source == rhs.source &&
+                          lhs.nonce == rhs.nonce;
+                 }),
                  messages.end());
   return messages;
 }

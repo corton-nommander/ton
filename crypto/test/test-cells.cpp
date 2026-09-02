@@ -1046,6 +1046,9 @@ TEST(NativeStateEngine, native_transfer_run_is_domain_signed_and_canonical) {
   ASSERT_TRUE(run.verify_signature(domain_a).is_ok());
   ASSERT_TRUE(run.verify_signature(domain_b).is_error());
   ASSERT_TRUE(run.verify_signature().is_error());
+  std::vector<const block::NativeTransferRun*> signed_runs{&run};
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain_a).is_ok());
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain_b).is_error());
 
   vm::CellBuilder first_builder;
   ASSERT_TRUE(run.store_external(first_builder));
@@ -1523,8 +1526,14 @@ TEST(NativeStateEngine, compact_batch_version_and_run_capability_activation) {
       block::NativeTransferBatch::runs_version, block::NativeTransferBatch::runs_global_version,
       block::NativeTransferBatch::runs_capability));
 
-  // v1-v4 policy remains unchanged through the capability-aware route.
+  // Scalar batches remain available before the v15 run-capability switch,
+  // including if the capability bit is configured early. Once both v15 gates
+  // are enabled, the fresh chain has one authorization model only.
+  ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(
+      4, block::NativeTransferBatch::runs_global_version - 1, block::NativeTransferBatch::runs_capability));
   ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(4, 15, 0));
+  ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(
+      4, 15, ton::capNativeTransferRuns));
   ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(3, 15,
                                                                                                   ton::capNativeTransferRuns));
 }

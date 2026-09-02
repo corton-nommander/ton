@@ -75,6 +75,40 @@ BlockCandidate make_native_candidate(const block::NativeTransfer& transfer) {
   return make_candidate(extra_builder.finalize_novm());
 }
 
+block::NativeTransferRun make_native_transfer_run() {
+  block::NativeTransferRun run;
+  run.src.as_slice().copy_from(std::string(32, '\x11'));
+  run.first_nonce = 41;
+  run.valid_until = std::numeric_limits<UnixTime>::max();
+  run.signature.assign(64, '\x5a');
+  for (unsigned index = 0; index < 2; ++index) {
+    block::NativeTransferRunOutput output;
+    output.dst.as_slice().copy_from(std::string(32, static_cast<char>(0x22 + index)));
+    output.amount = 17 + index;
+    output.fee = 3 + index;
+    run.outputs.push_back(std::move(output));
+  }
+  CHECK(run.is_valid());
+  return run;
+}
+
+BlockCandidate make_native_run_candidate(const block::NativeTransferRun& run) {
+  block::NativeTransferBatch batch;
+  batch.version = block::NativeTransferBatch::runs_version;
+  batch.runs.push_back(run);
+  vm::CellBuilder native_builder;
+  CHECK(batch.store(native_builder));
+  auto native_batch = native_builder.finalize_novm();
+
+  auto empty = make_empty_hashmap();
+  vm::CellBuilder extra_builder;
+  CHECK(extra_builder.store_long_bool(0x4a33f6fd, 32) && extra_builder.store_ref_bool(empty) &&
+        extra_builder.store_ref_bool(empty) && extra_builder.store_ref_bool(empty) &&
+        extra_builder.store_bits_bool(td::Bits256::zero()) && extra_builder.store_bits_bool(td::Bits256::zero()) &&
+        extra_builder.store_bool_bool(true) && extra_builder.store_ref_bool(native_batch));
+  return make_candidate(extra_builder.finalize_novm());
+}
+
 TrackedNativeExternalMessage make_handoff_metadata() {
   TrackedNativeExternalMessage metadata;
   metadata.hash.as_slice().copy_from(std::string(32, '\x33'));
@@ -226,6 +260,25 @@ TEST(FinalizeMetadataHandoff, ParsesRealCompactNativeBatch) {
   ASSERT_EQ(messages[0].workchain, basechainId);
   ASSERT_TRUE(messages[0].source == transfer.src);
   ASSERT_EQ(messages[0].nonce, transfer.nonce);
+}
+
+TEST(FinalizeMetadataHandoff, V5RunTracksParentHashForEveryChildNonce) {
+  auto run = make_native_transfer_run();
+  auto candidate = make_native_run_candidate(run);
+  auto messages = get_candidate_native_external_messages(candidate).move_as_ok();
+  auto parent_hash = run.external_hash().move_as_ok();
+
+  ASSERT_EQ(messages.size(), run.outputs.size());
+  for (std::size_t index = 0; index < messages.size(); ++index) {
+    ASSERT_TRUE(messages[index].hash == parent_hash);
+    ASSERT_EQ(messages[index].workchain, basechainId);
+    ASSERT_TRUE(messages[index].source == run.src);
+    ASSERT_EQ(messages[index].nonce, run.first_nonce + index);
+  }
+
+  auto hashes = get_candidate_native_external_hashes(candidate).move_as_ok();
+  ASSERT_EQ(hashes.size(), 1u);
+  ASSERT_TRUE(hashes[0] == parent_hash);
 }
 
 TEST(FinalizeMetadataHandoff, MovesValueOwnedMetadataOnlyAfterAccept) {

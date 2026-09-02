@@ -1552,6 +1552,46 @@ td::Status verify_native_transfer_signatures_parallel(const std::vector<const Na
   return td::Status::OK();
 }
 
+td::Status verify_native_transfer_run_signatures_parallel(const std::vector<const NativeTransferRun*>& runs,
+                                                          const ton::Bits256& chain_domain, unsigned workers) {
+  workers = native_executor_workers(workers, runs.size());
+  if (!workers) {
+    return td::Status::OK();
+  }
+  std::atomic<std::size_t> cursor{0};
+  std::atomic<std::size_t> first_failure{runs.size()};
+  auto run = [&] {
+    while (true) {
+      auto index = cursor.fetch_add(1, std::memory_order_relaxed);
+      if (index >= runs.size()) {
+        return;
+      }
+      if (!runs[index] || runs[index]->verify_signature(chain_domain).is_error()) {
+        auto expected = runs.size();
+        first_failure.compare_exchange_strong(expected, index, std::memory_order_relaxed);
+      }
+    }
+  };
+  if (workers == 1) {
+    run();
+  } else {
+    std::vector<std::thread> threads;
+    threads.reserve(workers);
+    for (unsigned i = 0; i < workers; ++i) {
+      threads.emplace_back(run);
+    }
+    for (auto& thread : threads) {
+      thread.join();
+    }
+  }
+  auto failure = first_failure.load(std::memory_order_relaxed);
+  if (failure != runs.size()) {
+    return td::Status::Error(PSTRING() << "native transfer run domain signature verification failed at batch index "
+                                       << failure);
+  }
+  return td::Status::OK();
+}
+
 bool NativeTransfer::store_external(vm::CellBuilder& cb) const {
   return is_valid() && cb.store_ulong_rchk_bool(magic, 32) && cb.store_bits_bool(src) && cb.store_bits_bool(dst) &&
          cb.store_ulong_rchk_bool(amount, 64) && cb.store_ulong_rchk_bool(fee, 64) &&

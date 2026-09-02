@@ -27,9 +27,15 @@ td::Result<double> get_candidate_gen_utime_exact(const BlockCandidate& candidate
 
 // Returns raw external-message hashes reconstructed from a compact native
 // batch carried by the candidate. The result is sorted and deduplicated so it
-// can be merged directly into a speculative-branch exclusion vector.
+// can be merged directly into a speculative-branch exclusion vector. A v5
+// source-signed run contributes its parent NTRN hash once, not a synthetic
+// hash for every flattened child.
 td::Result<std::vector<Bits256>> get_candidate_native_external_hashes(const BlockCandidate& candidate);
 
+// Returns every native source/nonce mapping carried by a candidate. v5 keeps
+// each logical child mapping but assigns all children in a signed run the
+// same parent NTRN hash, allowing reconciliation to retire the whole nonce
+// range while speculative exclusion remains parent-hash based.
 td::Result<std::vector<TrackedNativeExternalMessage>> get_candidate_native_external_messages(
     const BlockCandidate& candidate);
 

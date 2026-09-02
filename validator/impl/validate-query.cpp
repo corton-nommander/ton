@@ -1032,13 +1032,15 @@ bool ValidateQuery::try_unpack_mc_state() {
                                     << " while the masterchain configuration expects " << config_->get_vert_seqno());
     }
     global_version_ = config_->get_global_version();
-    if (native_transfer_batch_ && !block::NativeTransferBatch::version_allowed_for_global_version(
-                                      native_transfer_batch_.value().version, global_version_)) {
+    auto config_capabilities = config_->has_capabilities() ? config_->get_capabilities() : 0;
+    if (native_transfer_batch_ &&
+        !block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(
+            native_transfer_batch_.value().version, global_version_, config_capabilities)) {
       return reject_query(PSTRING() << "native transfer batch version "
                                     << static_cast<unsigned>(native_transfer_batch_.value().version)
-                                    << " is disabled at global version " << global_version_
-                                    << "; expected domain-signed version "
-                                    << static_cast<unsigned>(block::NativeTransferBatch::current_version));
+                                    << " is disabled at global version " << global_version_ << " with capabilities "
+                                    << config_capabilities
+                                    << "; batch version is not enabled by the current protocol configuration");
     }
     allow_same_timestamp_ = global_version_ >= 13;
     prev_key_block_exists_ = config_->get_last_key_block(prev_key_block_, prev_key_block_lt_);
@@ -6766,7 +6768,23 @@ bool ValidateQuery::check_native_transfer_batch() {
     return result;
   };
 
-  if (native_transfer_batch_.value().version >= 4) {
+  if (native_transfer_batch_.value().version == block::NativeTransferBatch::runs_version) {
+    const auto& runs = native_transfer_batch_.value().runs;
+    std::vector<const block::NativeTransferRun*> signed_runs;
+    signed_runs.reserve(runs.size());
+    for (const auto& run : runs) {
+      signed_runs.push_back(&run);
+    }
+    td::Status signature_status;
+    {
+      td::ScopedRealCpuTimer signature_timer{stats_.work_time.native_signature_verify};
+      signature_status = block::verify_native_transfer_run_signatures_parallel(
+          signed_runs, config_->get_zerostate_id().root_hash);
+    }
+    if (signature_status.is_error()) {
+      return reject_query("v5 native transfer run signature verification failed: "s + signature_status.to_string());
+    }
+  } else if (native_transfer_batch_.value().version >= 4) {
     const auto& entries = native_transfer_batch_.value().entries;
     std::vector<const block::NativeTransfer*> transfers;
     transfers.reserve(entries.size());

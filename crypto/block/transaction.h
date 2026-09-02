@@ -192,10 +192,12 @@ struct NativeTransferBatch {
   static constexpr td::uint8 current_version = 4;
   static constexpr td::uint8 runs_version = 5;
   static constexpr int domain_signatures_global_version = 14;
-  // Keep the new wire format inactive unless both gates are present.  The
+  // Keep the new wire format inactive unless both gates are present. The
   // existing two-argument policy intentionally remains v1-v4-only; callers
   // that eventually activate v5 must opt in through the explicit
-  // capability-aware overload below.
+  // capability-aware overload below. Once that opt-in is active, the batch
+  // is run-only: mixing scalar and source-signed authorization models in a
+  // fresh v15 chain would make mempool identity and replay policy ambiguous.
   static constexpr int runs_global_version = 15;
   static constexpr long long runs_capability = ton::capNativeTransferRuns;
 
@@ -205,8 +207,13 @@ struct NativeTransferBatch {
   }
   static bool version_allowed_for_global_version_and_capabilities(td::uint8 candidate_version, int global_version,
                                                                    long long capabilities) {
+    const bool runs_enabled = global_version >= runs_global_version &&
+                              (capabilities & runs_capability) == runs_capability;
+    if (runs_enabled) {
+      return candidate_version == runs_version;
+    }
     if (candidate_version == runs_version) {
-      return global_version >= runs_global_version && (capabilities & runs_capability) == runs_capability;
+      return false;
     }
     return version_allowed_for_global_version(candidate_version, global_version);
   }
@@ -569,6 +576,13 @@ td::Status verify_native_transfer_signatures_parallel(const std::vector<const Na
                                                       unsigned workers = 0);
 td::Status verify_native_transfer_signatures_parallel(const std::vector<const NativeTransfer*>& transfers,
                                                       const ton::Bits256& chain_domain, unsigned workers = 0);
+// A v5 NativeTransferRun authorizes all of its ordered outputs with one
+// domain-separated signature.  Keep this separate from the transfer helper:
+// flattened v5 entries deliberately do not have independently valid NTFX
+// signatures.
+td::Status verify_native_transfer_run_signatures_parallel(const std::vector<const NativeTransferRun*>& runs,
+                                                          const ton::Bits256& chain_domain,
+                                                          unsigned workers = 0);
 
 namespace transaction {
 struct Transaction {

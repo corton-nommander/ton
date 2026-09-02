@@ -161,7 +161,13 @@ class ExtMessagePool : public td::actor::Actor {
     td::Timestamp reactivate_at;
     td::Timestamp delete_at;
     td::optional<td::uint32> msg_seqno;
+    // A native external is one physical BOC but can eventually represent an
+    // atomic contiguous nonce interval.  Existing NTFX transfers always keep
+    // the scalar shape (native_nonce_count == 1).  Keep the interval next to
+    // the pool object so a scheduler never needs to infer logical work from
+    // the external payload while it is on its hot path.
     td::optional<td::uint64> native_nonce;
+    td::uint32 native_nonce_count{0};
 
     auto address() const {
       return std::make_pair(message->wc(), message->addr());
@@ -200,6 +206,24 @@ class ExtMessagePool : public td::actor::Actor {
     }
     bool expired() const {
       return delete_at.is_in_past();
+    }
+    bool has_native_interval() const {
+      return native_nonce && native_nonce_count != 0;
+    }
+    td::optional<td::uint64> native_last_nonce() const {
+      if (!has_native_interval()) {
+        return {};
+      }
+      const auto first = native_nonce.value();
+      const auto count = native_nonce_count;
+      if (first > std::numeric_limits<td::uint64>::max() - (count - 1)) {
+        return {};
+      }
+      return first + count - 1;
+    }
+    bool covers_native_nonce(td::uint64 nonce) const {
+      auto last = native_last_nonce();
+      return last && native_nonce.value() <= nonce && nonce <= last.value();
     }
     void set_retention(double seconds) {
       delete_at = td::Timestamp::in(std::max(0.001, seconds));
@@ -337,7 +361,15 @@ class ExtMessagePool : public td::actor::Actor {
   };
   std::map<std::pair<WorkchainId, StdSmcAddress>, WalletInfo> wallets_;
 
-  struct NativeMessageInfo {
+  using NativeAddress = std::pair<WorkchainId, StdSmcAddress>;
+
+  // One NativeWork owns the whole source-contiguous interval represented by a
+  // native external.  The map below is keyed by first_nonce, never by every
+  // logical output.  Scalar NTFX uses logical_count=1, which keeps the
+  // existing pool layout and scheduling behaviour byte-for-byte equivalent.
+  // A future NTRN admission path can populate a work with logical_count > 1
+  // without allowing a checkpoint, expiry, or rollback to split it.
+  struct NativeWork {
     struct MempoolLink {
       std::shared_ptr<MempoolMsg> message;
       int priority;
@@ -345,6 +377,11 @@ class ExtMessagePool : public td::actor::Actor {
     };
 
     ExtMessage::Hash hash;
+    NativeAddress source;
+    td::uint32 logical_count{1};
+    // Aggregate debit across every logical output in the interval.  This is
+    // deliberately not a per-output value: balance admission/rebasing must
+    // retain or reject the signed work as a whole.
     td::uint64 amount;
     td::uint64 fee;
     td::uint32 valid_until;
@@ -359,6 +396,26 @@ class ExtMessagePool : public td::actor::Actor {
     // and immutable identity are checked; otherwise probing takes the legacy
     // lookup path and repairs it.
     td::optional<MempoolLink> mempool_link;
+
+    bool has_valid_interval(td::uint64 first_nonce) const {
+      return logical_count != 0 && first_nonce <= std::numeric_limits<td::uint64>::max() - (logical_count - 1);
+    }
+    td::optional<td::uint64> last_nonce(td::uint64 first_nonce) const {
+      if (!has_valid_interval(first_nonce)) {
+        return {};
+      }
+      return first_nonce + logical_count - 1;
+    }
+    bool covers_nonce(td::uint64 first_nonce, td::uint64 nonce) const {
+      auto last = last_nonce(first_nonce);
+      return last && first_nonce <= nonce && nonce <= last.value();
+    }
+    td::optional<td::uint64> required_amount() const {
+      if (amount > std::numeric_limits<td::uint64>::max() - fee) {
+        return {};
+      }
+      return amount + fee;
+    }
 
     void set_mempool_link(std::shared_ptr<MempoolMsg> message, int priority, MessageId id) {
       mempool_link = MempoolLink{std::move(message), priority, std::move(id)};
@@ -385,7 +442,7 @@ class ExtMessagePool : public td::actor::Actor {
     td::uint64 expired_suffix_pruned{0};
   };
   struct NativeInfo {
-    std::map<td::uint64, NativeMessageInfo> messages;
+    std::map<td::uint64, NativeWork> messages;
     td::uint64 observed_nonce{0};
     UnixTime observed_utime{0};
     ~NativeInfo() {
@@ -396,11 +453,16 @@ class ExtMessagePool : public td::actor::Actor {
         message.insertion_failed("native account is no longer valid");
       }
     }
+    using WorkIterator = std::map<td::uint64, NativeWork>::iterator;
+    using ConstWorkIterator = std::map<td::uint64, NativeWork>::const_iterator;
+
+    WorkIterator find_work_covering(td::uint64 nonce);
+    ConstWorkIterator find_work_covering(td::uint64 nonce) const;
+    bool interval_overlaps(td::uint64 first_nonce, td::uint32 logical_count) const;
     NativeMessageProcessResult process_messages(td::uint64 native_nonce, UnixTime utime);
     bool commit_message(td::uint64 native_nonce, NativeMessageProcessResult &processed);
     td::uint64 reserved_amount_before(td::uint64 native_nonce, td::uint64 before_nonce) const;
   };
-  using NativeAddress = std::pair<WorkchainId, StdSmcAddress>;
   struct NativeNonceWatermark {
     // Account nonce is the first nonce not consumed by observed canonical
     // state. Only account states referenced by an applied masterchain state
@@ -453,7 +515,10 @@ class ExtMessagePool : public td::actor::Actor {
     td::uint64 scanned{0};
     td::uint64 direct_link_hits{0};
     td::uint64 direct_link_fallbacks{0};
+    // selected is physical native BOCs handed to the transport; logical_selected
+    // is the total source nonce/candidate capacity represented by them.
     td::uint64 selected{0};
+    td::uint64 logical_selected{0};
     td::uint64 active{0};
     td::uint64 inactive{0};
     td::uint64 excluded{0};
@@ -488,6 +553,7 @@ class ExtMessagePool : public td::actor::Actor {
       direct_link_hits += other.direct_link_hits;
       direct_link_fallbacks += other.direct_link_fallbacks;
       selected += other.selected;
+      logical_selected += other.logical_selected;
       active += other.active;
       inactive += other.inactive;
       excluded += other.excluded;
@@ -522,9 +588,13 @@ class ExtMessagePool : public td::actor::Actor {
     int priority{0};
     NativeAddress source;
     td::uint64 nonce{0};
+    // Physical queue entries are one BOC per NativeQueueItem.  This is the
+    // number of source nonce steps / candidate slots represented by that BOC.
+    td::uint32 logical_count{1};
   };
   struct NativeQueueSelection {
     std::vector<NativeQueueItem> items;
+    std::size_t logical_count{0};
     td::optional<NativeAddress> cursor;
     td::Timestamp earliest_reactivation;
     NativeQueueCounters counters;
@@ -559,6 +629,7 @@ class ExtMessagePool : public td::actor::Actor {
     std::set<NativeAddress> native_dirty_sources;
     bool native_scheduler_rebuild{false};
     std::set<ExtMessage::Hash> delivered_native;
+    td::uint64 delivered_native_logical{0};
     td::optional<NativeAddress> native_cursor;
     std::size_t generic_selected{0};
     td::uint64 completion_epoch{0};
@@ -576,9 +647,9 @@ class ExtMessagePool : public td::actor::Actor {
       ShardIdFull shard, const std::vector<ExtMessage::Hash> &excluded_messages,
       const std::set<ExtMessage::Hash> &already_delivered, std::size_t limit,
       td::optional<NativeAddress> cursor, const std::set<NativeAddress> *source_filter = nullptr);
-  NativeQueueSelection select_callback_native_messages(
-      const std::shared_ptr<InstalledCallback> &callback, std::size_t limit,
-      const std::set<NativeAddress> *source_filter = nullptr);
+  NativeQueueSelection select_callback_native_messages(const std::shared_ptr<InstalledCallback> &callback,
+                                                       std::size_t logical_limit, std::size_t physical_limit,
+                                                       const std::set<NativeAddress> *source_filter = nullptr);
   void initialize_callback_native_scheduler(const std::shared_ptr<InstalledCallback> &callback,
                                             NativeQueueCounters &counters);
   void refresh_callback_native_source(const std::shared_ptr<InstalledCallback> &callback,
@@ -600,7 +671,8 @@ class ExtMessagePool : public td::actor::Actor {
                                     bool preserve_valid_ready_head = false);
   std::size_t reactivate_due_native_messages(td::Timestamp now);
   void enqueue_callback_item(const std::shared_ptr<InstalledCallback> &callback,
-                             std::pair<td::Ref<ExtMessage>, int> item, bool native);
+                             std::pair<td::Ref<ExtMessage>, int> item, bool native,
+                             td::uint32 native_logical_count = 1);
   void begin_callback_epoch(const std::shared_ptr<InstalledCallback> &callback);
   void start_callback_pump(const std::shared_ptr<InstalledCallback> &callback);
   void cancel_callback_delivery(const std::shared_ptr<InstalledCallback> &callback);

@@ -62,9 +62,11 @@ class ExtMessagePoolTestAccess {
   struct Selection {
     std::vector<NativeAddress> sources;
     std::vector<td::uint64> nonces;
+    std::vector<td::uint32> logical_counts;
     td::optional<NativeAddress> cursor;
     td::uint64 scanned{0};
     td::uint64 selected{0};
+    td::uint64 logical_selected{0};
     td::uint64 inactive{0};
     td::uint64 excluded{0};
     td::uint64 ready_sources{0};
@@ -234,6 +236,7 @@ class ExtMessagePoolTestAccess {
     auto message = td::make_ref<FakeExtMessage>(source.second, hash);
     auto mempool_message = std::make_shared<ExtMessagePool::MempoolMsg>(message);
     mempool_message->native_nonce = nonce;
+    mempool_message->native_nonce_count = 1;
     mempool_message->in_mempool = true;
     mempool_message->active = active;
     if (!active) {
@@ -250,6 +253,53 @@ class ExtMessagePoolTestAccess {
 
     auto &reservation = pool.native_accounts_[source].messages[nonce];
     reservation.hash = hash;
+    reservation.source = source;
+    reservation.logical_count = 1;
+    reservation.amount = amount;
+    reservation.fee = fee;
+    reservation.valid_until = std::numeric_limits<td::uint32>::max();
+    reservation.account_revision = pool.native_nonce_watermarks_[source].revision;
+    reservation.committed = committed;
+    if (link_direct) {
+      reservation.set_mempool_link(mempool_message, priority, id);
+    }
+    return hash;
+  }
+
+  // Test-only scaffolding for the inactive multi-transfer representation. It
+  // builds one physical pool object and one reservation keyed by the first
+  // nonce, exactly as a future NTRN admission path will do. Production NTFX
+  // admission continues to call add() above with logical_count == 1.
+  static ExtMessage::Hash add_work(ExtMessagePool &pool, NativeAddress source, td::uint64 first_nonce,
+                                   td::uint32 logical_count, int priority = 0, bool active = true,
+                                   bool committed = true, td::uint64 amount = 1, td::uint64 fee = 0,
+                                   bool link_direct = true) {
+    CHECK(logical_count != 0);
+    CHECK(first_nonce <= std::numeric_limits<td::uint64>::max() - (logical_count - 1));
+    auto hash =
+        make_bits(static_cast<td::uint32>(first_nonce + 1), static_cast<unsigned>(source.second.as_array()[0] + 64));
+    auto message = td::make_ref<FakeExtMessage>(source.second, hash);
+    auto mempool_message = std::make_shared<ExtMessagePool::MempoolMsg>(message);
+    mempool_message->native_nonce = first_nonce;
+    mempool_message->native_nonce_count = logical_count;
+    mempool_message->in_mempool = true;
+    mempool_message->active = active;
+    if (!active) {
+      mempool_message->reactivate_at = td::Timestamp::in(60.0);
+    }
+    ExtMessagePool::MessageId id{message->shard(), hash};
+    auto &messages = pool.ext_msgs_[priority];
+    messages.ext_messages_ = messages.ext_messages_.insert(id, mempool_message);
+    messages.native_messages_ = messages.native_messages_.insert(
+        ExtMessagePool::NativeMessageId{first_nonce, id.dst, id.hash}, mempool_message);
+    messages.ext_addr_messages_[source].emplace(hash, id);
+    pool.ext_messages_hashes_[hash] = {priority, id};
+    pool.ext_messages_hashes_norm_[hash].insert(ExtMessagePool::NormalizedMessageId{priority, id});
+
+    auto &reservation = pool.native_accounts_[source].messages[first_nonce];
+    reservation.hash = hash;
+    reservation.source = source;
+    reservation.logical_count = logical_count;
     reservation.amount = amount;
     reservation.fee = fee;
     reservation.valid_until = std::numeric_limits<td::uint32>::max();
@@ -276,9 +326,11 @@ class ExtMessagePoolTestAccess {
     for (const auto &item : selected.items) {
       result.sources.push_back(item.source);
       result.nonces.push_back(item.nonce);
+      result.logical_counts.push_back(item.logical_count);
     }
     result.scanned = selected.counters.scanned;
     result.selected = selected.counters.selected;
+    result.logical_selected = selected.counters.logical_selected;
     result.inactive = selected.counters.inactive;
     result.excluded = selected.counters.excluded;
     result.ready_sources = selected.counters.ready_sources;
@@ -353,6 +405,11 @@ class ExtMessagePoolTestAccess {
     return pool.native_accounts_.at(source).messages.at(nonce).account_revision;
   }
 
+  static td::uint64 reserved_amount_before(const ExtMessagePool &pool, NativeAddress source, td::uint64 native_nonce,
+                                           td::uint64 before_nonce) {
+    return pool.native_accounts_.at(source).reserved_amount_before(native_nonce, before_nonce);
+  }
+
   static void set_reservation_hash(ExtMessagePool &pool, NativeAddress source, td::uint64 nonce,
                                    ExtMessage::Hash hash) {
     pool.native_accounts_.at(source).messages.at(nonce).hash = hash;
@@ -425,6 +482,10 @@ class ExtMessagePoolTestAccess {
           .hash = hash, .workchain = source.first, .source = source.second, .nonce = nonce});
     }
     pool.track_locally_accepted_native_messages(std::move(tracked));
+  }
+
+  static void track_locally_accepted_records(ExtMessagePool &pool, std::vector<TrackedNativeExternalMessage> messages) {
+    pool.track_locally_accepted_native_messages(std::move(messages));
   }
 
   static bool contains(const ExtMessagePool &pool, const ExtMessage::Hash &hash) {
@@ -524,6 +585,15 @@ class ExtMessagePoolTestAccess {
     return hashes;
   }
 
+  static std::vector<td::uint32> callback_delivery_logical_counts(const ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    std::vector<td::uint32> counts;
+    for (const auto &entry : pool.callbacks_.front()->pending_native) {
+      counts.push_back(entry.logical_native_count());
+    }
+    return counts;
+  }
+
   static void clear_native_mempool_link(ExtMessagePool &pool, NativeAddress source, td::uint64 nonce) {
     pool.native_accounts_.at(source).messages.at(nonce).clear_mempool_link();
   }
@@ -580,9 +650,18 @@ class ExtMessagePoolTestAccess {
     return pool.callbacks_.front()->callback->queue_state->native_selected_ahead();
   }
 
+  static td::uint64 callback_logical_selected_ahead(ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    return pool.callbacks_.front()->callback->queue_state->native_logical_selected_ahead();
+  }
+
   static std::size_t callback_native_transport_selected_limit(const ExtMessagePool &pool) {
     CHECK(pool.callbacks_.size() == 1);
     return pool.native_transport_selected_limit(*pool.callbacks_.front());
+  }
+
+  static td::uint32 native_source_run_target() {
+    return static_cast<td::uint32>(ExtMessagePool::NATIVE_SOURCE_RUN_TARGET);
   }
 
   static bool callback_native_transport_has_refill_credit(const ExtMessagePool &pool) {
@@ -898,6 +977,33 @@ TEST(ExtMessagePoolScheduler, LocalAcceptDoesNotAdvanceWatermarkBeforeCanonicalA
   ASSERT_EQ(ExtMessagePoolTestAccess::first_unconsumed_nonce(pool, source), td::optional<td::uint64>(8));
   ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, hash));
   ASSERT_TRUE(!ExtMessagePoolTestAccess::tracked_nonce(pool, source));
+}
+
+TEST(ExtMessagePoolScheduler, NativeReconciliationTracksEitherRunOrChildMetadata) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(97);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 10);
+  auto hash = ExtMessagePoolTestAccess::add_work(pool, source, 10, 3);
+
+  // Eventual v5 metadata may describe one parent range, while the current
+  // candidate decoder emits one child record per nonce with the same parent
+  // hash. Both forms must register the same exclusive reconciliation target.
+  ExtMessagePoolTestAccess::track_locally_accepted_records(
+      pool, {TrackedNativeExternalMessage{
+                .hash = hash, .workchain = source.first, .source = source.second, .nonce = 10, .logical_count = 3}});
+  ASSERT_EQ(ExtMessagePoolTestAccess::tracked_nonce(pool, source), td::optional<td::uint64>(12));
+
+  auto child_pool = ExtMessagePoolTestAccess::make_pool();
+  ExtMessagePoolTestAccess::set_watermark(child_pool, source, 10);
+  auto child_hash = ExtMessagePoolTestAccess::add_work(child_pool, source, 10, 3);
+  ExtMessagePoolTestAccess::track_locally_accepted_records(
+      child_pool, {TrackedNativeExternalMessage{
+                       .hash = child_hash, .workchain = source.first, .source = source.second, .nonce = 10},
+                   TrackedNativeExternalMessage{
+                       .hash = child_hash, .workchain = source.first, .source = source.second, .nonce = 11},
+                   TrackedNativeExternalMessage{
+                       .hash = child_hash, .workchain = source.first, .source = source.second, .nonce = 12}});
+  ASSERT_EQ(ExtMessagePoolTestAccess::tracked_nonce(child_pool, source), td::optional<td::uint64>(12));
 }
 
 TEST(ExtMessagePoolScheduler, CancelledDuplicateSeqnoIsNotAnAppliedOutcome) {
@@ -1245,6 +1351,110 @@ TEST(ExtMessagePoolScheduler, RotatesBoundedSourceRunsFairly) {
                           [&](const auto &source) { return source == source_c; }));
   ASSERT_TRUE(std::all_of(second.sources.begin() + 16, second.sources.end(),
                           [&](const auto &source) { return source == source_a; }));
+}
+
+TEST(ExtMessagePoolScheduler, NativeWorkIntervalIsAtomicAndUsesLogicalCapacity) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(94);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  auto interval = ExtMessagePoolTestAccess::add_work(pool, source, 0, 3);
+  ExtMessagePoolTestAccess::add(pool, source, 3);
+
+  // The work is one BOC but represents three contiguous nonce slots. A
+  // candidate that only has two logical slots left must not split it.
+  auto too_small = ExtMessagePoolTestAccess::select(pool, {basechainId, shardIdAll}, 2);
+  ASSERT_TRUE(too_small.nonces.empty());
+  ASSERT_EQ(too_small.selected, 0u);
+  ASSERT_EQ(too_small.logical_selected, 0u);
+
+  auto ready = ExtMessagePoolTestAccess::select(pool, {basechainId, shardIdAll}, 4);
+  ASSERT_EQ(ready.nonces, (std::vector<td::uint64>{0, 3}));
+  ASSERT_EQ(ready.logical_counts, (std::vector<td::uint32>{3, 1}));
+  ASSERT_EQ(ready.selected, 2u);
+  ASSERT_EQ(ready.logical_selected, 4u);
+
+  // Excluding an atomic work advances the speculative source view by the full
+  // interval, not merely its first nonce.
+  auto excluded = ExtMessagePoolTestAccess::select(pool, {basechainId, shardIdAll}, 4, {}, {interval});
+  ASSERT_EQ(excluded.nonces, (std::vector<td::uint64>{3}));
+  ASSERT_EQ(excluded.logical_counts, (std::vector<td::uint32>{1}));
+  ASSERT_EQ(excluded.excluded, 1u);
+}
+
+TEST(ExtMessagePoolScheduler, OversizedNativeWorkCanUseAnEmptySourceRun) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(99);
+  const auto logical_count = ExtMessagePoolTestAccess::native_source_run_target() + 1;
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  ExtMessagePoolTestAccess::add_work(pool, source, 0, logical_count);
+
+  // Fairness may stop a source after its target-sized logical run, but a
+  // single atomic work is allowed to exceed that soft target. Otherwise a
+  // valid interval larger than 16 could never be selected by any candidate.
+  auto ready = ExtMessagePoolTestAccess::select(pool, {basechainId, shardIdAll}, logical_count);
+  ASSERT_EQ(ready.nonces, (std::vector<td::uint64>{0}));
+  ASSERT_EQ(ready.logical_counts, (std::vector<td::uint32>{logical_count}));
+  ASSERT_EQ(ready.selected, 1u);
+  ASSERT_EQ(ready.logical_selected, logical_count);
+}
+
+TEST(ExtMessagePoolScheduler, CanonicalAdvanceThroughNativeWorkDropsWholeAtomicSuffix) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(95);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  auto interval = ExtMessagePoolTestAccess::add_work(pool, source, 0, 4);
+  auto suffix = ExtMessagePoolTestAccess::add(pool, source, 4);
+
+  // Canonical state consumed nonces 0 and 1. The signed range 0..3 cannot be
+  // split into an unsigned suffix, so it and all following reservations are
+  // removed instead of leaving a nonce hole.
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reconcile_account(pool, source, 2));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, interval));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, suffix));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reservation_nonces(pool, source).empty());
+}
+
+TEST(ExtMessagePoolScheduler, NativeWorkReservesAggregateDebitWithoutPartialInterval) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(96);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  auto interval = ExtMessagePoolTestAccess::add_work(pool, source, 0, 3, 0, true, true, 10, 2);
+  auto suffix = ExtMessagePoolTestAccess::add(pool, source, 3, 0, true, true, 5, 1);
+
+  // NativeWork.amount/fee are aggregate debit totals for all its logical
+  // outputs. A caller asking for a boundary inside the interval receives the
+  // overflow sentinel rather than a fictional partial reservation.
+  ASSERT_EQ(ExtMessagePoolTestAccess::reserved_amount_before(pool, source, 0, 3), 12u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::reserved_amount_before(pool, source, 0, 4), 18u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::reserved_amount_before(pool, source, 0, 2),
+            std::numeric_limits<td::uint64>::max());
+
+  // With only the interval's aggregate debit available, canonical rebasing
+  // preserves that atomic work and removes the unaffordable suffix.
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reconcile_account(pool, source, 0, 12));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::contains(pool, interval));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, suffix));
+  ASSERT_EQ(ExtMessagePoolTestAccess::reservation_nonces(pool, source), (std::vector<td::uint64>{0}));
+}
+
+TEST(ExtMessagePoolScheduler, CallbackSchedulerKeepsNativeWorkAtomicAcrossLogicalWindow) {
+  auto too_small_pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(98);
+  ExtMessagePoolTestAccess::set_watermark(too_small_pool, source, 0);
+  ExtMessagePoolTestAccess::add_work(too_small_pool, source, 0, 3);
+  ExtMessagePoolTestAccess::install_live_waiting_callback(too_small_pool, 2);
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(too_small_pool), 0u);
+  ASSERT_TRUE(ExtMessagePoolTestAccess::callback_delivery_logical_counts(too_small_pool).empty());
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_selected_ahead(too_small_pool), 0u);
+
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  ExtMessagePoolTestAccess::add_work(pool, source, 0, 3);
+  ExtMessagePoolTestAccess::install_live_waiting_callback(pool, 3);
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_delivery_logical_counts(pool), (std::vector<td::uint32>{3}));
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_selected_ahead(pool), 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_logical_selected_ahead(pool), 3u);
 }
 
 TEST(ExtMessagePoolScheduler, ExclusionsAdvanceOnlySpeculativeView) {
@@ -1694,6 +1904,8 @@ TEST(ExtMessagePoolScheduler, CancellationAccountingReclassifiesLatePushAndDrain
   state.record_cancel_discarded();
   ASSERT_EQ(telemetry->unpushed_discarded.load(), 4u);
   ASSERT_EQ(telemetry->queued_discarded.load(), 4u);
+  ASSERT_EQ(telemetry->logical_unpushed_discarded.load(), 4u);
+  ASSERT_EQ(telemetry->logical_queued_discarded.load(), 4u);
 
   // Reserve the complete pump batch before it blocks. Cancellation initially
   // classifies the reservation as queue-owned; exact partial completion moves
@@ -1702,6 +1914,9 @@ TEST(ExtMessagePoolScheduler, CancellationAccountingReclassifiesLatePushAndDrain
   ASSERT_EQ(telemetry->push_reserved.load(), 4u);
   ASSERT_EQ(telemetry->unpushed_discarded.load(), 0u);
   ASSERT_EQ(telemetry->queued_discarded.load(), 8u);
+  ASSERT_EQ(telemetry->logical_push_reserved.load(), 4u);
+  ASSERT_EQ(telemetry->logical_unpushed_discarded.load(), 0u);
+  ASSERT_EQ(telemetry->logical_queued_discarded.load(), 8u);
   state.record_push_completed(4, 2);
   state.record_consumed(3);
   ASSERT_EQ(telemetry->selected.load(), 10u);
@@ -1710,9 +1925,41 @@ TEST(ExtMessagePoolScheduler, CancellationAccountingReclassifiesLatePushAndDrain
   ASSERT_EQ(telemetry->consumed.load(), 5u);
   ASSERT_EQ(telemetry->unpushed_discarded.load(), 2u);
   ASSERT_EQ(telemetry->queued_discarded.load(), 3u);
+  ASSERT_EQ(telemetry->logical_selected.load(), 10u);
+  ASSERT_EQ(telemetry->logical_pushed.load(), 8u);
+  ASSERT_EQ(telemetry->logical_push_reserved.load(), 0u);
+  ASSERT_EQ(telemetry->logical_consumed.load(), 5u);
+  ASSERT_EQ(telemetry->logical_unpushed_discarded.load(), 2u);
+  ASSERT_EQ(telemetry->logical_queued_discarded.load(), 3u);
   ASSERT_EQ(telemetry->selected.load(), telemetry->consumed.load() +
                                                     telemetry->unpushed_discarded.load() +
                                                     telemetry->queued_discarded.load());
+  ASSERT_EQ(telemetry->logical_selected.load(), telemetry->logical_consumed.load() +
+                                                    telemetry->logical_unpushed_discarded.load() +
+                                                    telemetry->logical_queued_discarded.load());
+}
+
+TEST(ExtMessagePoolScheduler, NativeQueueTracksPhysicalAndLogicalWorkSeparately) {
+  auto telemetry = std::make_shared<ExtMsgQueueTelemetry>();
+  ExtMsgQueueState state;
+  state.attach_telemetry(telemetry);
+
+  // Two BOCs represent four logical nonce/candidate slots: one three-output
+  // run and one scalar NTFX. The queue-facing accounting must retain both
+  // views without changing existing physical backpressure semantics.
+  state.record_selected(2, 4);
+  state.record_push_started(2, 4);
+  state.record_push_completed(2, 2, 4, 4);
+  state.record_consumed(2, 4);
+
+  ASSERT_EQ(telemetry->selected.load(), 2u);
+  ASSERT_EQ(telemetry->pushed.load(), 2u);
+  ASSERT_EQ(telemetry->consumed.load(), 2u);
+  ASSERT_EQ(telemetry->logical_selected.load(), 4u);
+  ASSERT_EQ(telemetry->logical_pushed.load(), 4u);
+  ASSERT_EQ(telemetry->logical_consumed.load(), 4u);
+  ASSERT_EQ(state.native_selected_ahead(), 0u);
+  ASSERT_EQ(state.native_logical_selected_ahead(), 0u);
 }
 
 }  // namespace ton::validator

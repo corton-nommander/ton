@@ -51,7 +51,12 @@ struct TrackedNativeExternalMessage {
   ExtMessage::Hash hash;
   WorkchainId workchain{basechainId};
   StdSmcAddress source;
+  // One physical native external may consume a contiguous sequence of source
+  // nonces.  Legacy NTFX metadata remains scalar (logical_count == 1).
+  // Consumers must treat the range atomically and never infer child hashes
+  // from it.
   td::uint64 nonce{0};
+  td::uint32 logical_count{1};
 };
 
 // Ordered result of admitting one element of a sendMessageBatch request.  This

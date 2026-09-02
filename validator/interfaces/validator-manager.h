@@ -536,6 +536,17 @@ struct ExtMsgQueueTelemetry {
   std::atomic<td::uint64> max_pop_batch{0};
   std::atomic<td::uint64> producer_empty{0};
   std::atomic<td::uint64> consumer_empty{0};
+  // Existing counters above are physical BOC/queue-entry counts.  Keep a
+  // parallel logical transfer view for source-signed runs, where one native
+  // BOC can consume several nonce slots.  Scalar NTFX records identical
+  // values in both sets.
+  std::atomic<td::uint64> logical_selected{0};
+  std::atomic<td::uint64> logical_pushed{0};
+  std::atomic<td::uint64> logical_push_reserved{0};
+  std::atomic<td::uint64> logical_consumed{0};
+  std::atomic<td::uint64> logical_queued_discarded{0};
+  std::atomic<td::uint64> logical_unpushed_discarded{0};
+  std::atomic<td::uint64> logical_high_water{0};
 
   static void update_max(std::atomic<td::uint64>& value, td::uint64 candidate) {
     auto current = value.load(std::memory_order_relaxed);
@@ -550,12 +561,18 @@ struct ExtMsgQueueTelemetry {
 struct ExtMsgQueueEntry {
   std::optional<std::pair<td::Ref<ExtMessage>, int>> message;
   bool native{false};
+  // Zero for generic messages and completion markers.  Native messages carry
+  // the number of source nonce slots they represent; NTFX always uses one.
+  td::uint32 native_logical_count{0};
   td::uint64 completed_epoch{0};
 
-  static ExtMsgQueueEntry make_message(std::pair<td::Ref<ExtMessage>, int> value, bool is_native) {
+  static ExtMsgQueueEntry make_message(std::pair<td::Ref<ExtMessage>, int> value, bool is_native,
+                                       td::uint32 native_logical_count = 1) {
+    CHECK(!is_native || native_logical_count != 0);
     ExtMsgQueueEntry entry;
     entry.message = std::move(value);
     entry.native = is_native;
+    entry.native_logical_count = is_native ? native_logical_count : 0;
     return entry;
   }
   static ExtMsgQueueEntry make_completion(td::uint64 epoch) {
@@ -565,6 +582,9 @@ struct ExtMsgQueueEntry {
   }
   bool is_completion() const {
     return !message.has_value();
+  }
+  td::uint32 logical_native_count() const {
+    return native ? native_logical_count : 0;
   }
 };
 
@@ -587,73 +607,112 @@ struct ExtMsgQueueState {
   void attach_telemetry(std::shared_ptr<ExtMsgQueueTelemetry> telemetry) {
     std::atomic_store_explicit(&telemetry_, std::move(telemetry), std::memory_order_release);
   }
-  void record_selected(std::size_t count) {
+  void record_selected(std::size_t count, td::optional<std::size_t> logical_count = {}) {
+    const auto logical = logical_count ? logical_count.value() : count;
+    CHECK((count == 0) == (logical == 0));
+    if (count == 0) {
+      return;
+    }
     std::lock_guard lock(accounting_mutex_);
     native_selected_ += count;
+    native_selected_logical_ += logical;
     if (auto telemetry = load_telemetry()) {
       std::lock_guard telemetry_lock(telemetry->accounting_mutex);
       telemetry->selected.fetch_add(count, std::memory_order_relaxed);
+      telemetry->logical_selected.fetch_add(logical, std::memory_order_relaxed);
       if (cancel_recorded_) {
         telemetry->unpushed_discarded.fetch_add(count, std::memory_order_relaxed);
+        telemetry->logical_unpushed_discarded.fetch_add(logical, std::memory_order_relaxed);
       }
     }
   }
-  void record_pushed(std::size_t count) {
-    record_push_started(count);
-    record_push_completed(count, count);
+  void record_pushed(std::size_t count, td::optional<std::size_t> logical_count = {}) {
+    const auto logical = logical_count ? logical_count.value() : count;
+    record_push_started(count, logical);
+    record_push_completed(count, count, logical, logical);
   }
-  void record_push_started(std::size_t count) {
+  void record_push_started(std::size_t count, td::optional<std::size_t> logical_count = {}) {
+    const auto logical = logical_count ? logical_count.value() : count;
+    CHECK((count == 0) == (logical == 0));
     if (count == 0) {
       return;
     }
     std::lock_guard lock(accounting_mutex_);
     CHECK(native_pushed_ + native_push_reserved_ + count <= native_selected_);
+    CHECK(native_pushed_logical_ + native_push_reserved_logical_ + logical <= native_selected_logical_);
     native_push_reserved_ += count;
+    native_push_reserved_logical_ += logical;
     auto published_depth = native_pushed_ + native_push_reserved_ - native_consumed_;
+    auto logical_published_depth = native_pushed_logical_ + native_push_reserved_logical_ - native_consumed_logical_;
     if (auto telemetry = load_telemetry()) {
       std::lock_guard telemetry_lock(telemetry->accounting_mutex);
       telemetry->push_reserved.fetch_add(count, std::memory_order_relaxed);
+      telemetry->logical_push_reserved.fetch_add(logical, std::memory_order_relaxed);
       // This is the safe publication high-water bound while push_many_bounded
       // can expose queue-sized prefixes before reporting its exact result.
       ExtMsgQueueTelemetry::update_max(telemetry->high_water, published_depth);
+      ExtMsgQueueTelemetry::update_max(telemetry->logical_high_water, logical_published_depth);
       if (cancel_recorded_) {
         telemetry->unpushed_discarded.fetch_sub(count, std::memory_order_relaxed);
+        telemetry->logical_unpushed_discarded.fetch_sub(logical, std::memory_order_relaxed);
         telemetry->queued_discarded.fetch_add(count, std::memory_order_relaxed);
+        telemetry->logical_queued_discarded.fetch_add(logical, std::memory_order_relaxed);
       }
     }
   }
-  void record_push_completed(std::size_t reserved_count, std::size_t pushed_count) {
+  void record_push_completed(std::size_t reserved_count, std::size_t pushed_count,
+                             td::optional<std::size_t> reserved_logical_count = {},
+                             td::optional<std::size_t> pushed_logical_count = {}) {
+    const auto reserved_logical = reserved_logical_count ? reserved_logical_count.value() : reserved_count;
+    const auto pushed_logical = pushed_logical_count ? pushed_logical_count.value() : pushed_count;
     CHECK(pushed_count <= reserved_count);
+    CHECK(pushed_logical <= reserved_logical);
+    CHECK((reserved_count == 0) == (reserved_logical == 0));
+    CHECK((pushed_count == 0) == (pushed_logical == 0));
     if (reserved_count == 0) {
       return;
     }
     std::lock_guard lock(accounting_mutex_);
     CHECK(reserved_count <= native_push_reserved_);
+    CHECK(reserved_logical <= native_push_reserved_logical_);
     native_push_reserved_ -= reserved_count;
+    native_push_reserved_logical_ -= reserved_logical;
     native_pushed_ += pushed_count;
+    native_pushed_logical_ += pushed_logical;
     // Any item observed by the consumer must belong to the prefix that the
     // queue reports as inserted. This also catches a broken partial-close
     // implementation instead of silently publishing inconsistent totals.
     CHECK(native_consumed_ <= native_pushed_ + native_push_reserved_);
+    CHECK(native_consumed_logical_ <= native_pushed_logical_ + native_push_reserved_logical_);
     auto depth = native_pushed_ > native_consumed_ ? native_pushed_ - native_consumed_ : 0;
+    auto logical_depth =
+        native_pushed_logical_ > native_consumed_logical_ ? native_pushed_logical_ - native_consumed_logical_ : 0;
     if (auto telemetry = load_telemetry()) {
       std::lock_guard telemetry_lock(telemetry->accounting_mutex);
       telemetry->push_reserved.fetch_sub(reserved_count, std::memory_order_relaxed);
+      telemetry->logical_push_reserved.fetch_sub(reserved_logical, std::memory_order_relaxed);
       telemetry->pushed.fetch_add(pushed_count, std::memory_order_relaxed);
+      telemetry->logical_pushed.fetch_add(pushed_logical, std::memory_order_relaxed);
       if (pushed_count != 0) {
         telemetry->push_batches.fetch_add(1, std::memory_order_relaxed);
         telemetry->push_batch_items.fetch_add(pushed_count, std::memory_order_relaxed);
         ExtMsgQueueTelemetry::update_max(telemetry->max_push_batch, pushed_count);
         ExtMsgQueueTelemetry::update_max(telemetry->high_water, depth);
+        ExtMsgQueueTelemetry::update_max(telemetry->logical_high_water, logical_depth);
       }
       if (cancel_recorded_) {
         auto failed = reserved_count - pushed_count;
+        auto logical_failed = reserved_logical - pushed_logical;
         telemetry->queued_discarded.fetch_sub(failed, std::memory_order_relaxed);
+        telemetry->logical_queued_discarded.fetch_sub(logical_failed, std::memory_order_relaxed);
         telemetry->unpushed_discarded.fetch_add(failed, std::memory_order_relaxed);
+        telemetry->logical_unpushed_discarded.fetch_add(logical_failed, std::memory_order_relaxed);
       }
     }
   }
-  void record_consumed(std::size_t count) {
+  void record_consumed(std::size_t count, td::optional<std::size_t> logical_count = {}) {
+    const auto logical = logical_count ? logical_count.value() : count;
+    CHECK((count == 0) == (logical == 0));
     if (count == 0) {
       return;
     }
@@ -662,15 +721,19 @@ struct ExtMsgQueueState {
     // resume and publish the exact push result. The pre-await reservation is
     // therefore part of the consumable bound.
     CHECK(native_consumed_ + count <= native_pushed_ + native_push_reserved_);
+    CHECK(native_consumed_logical_ + logical <= native_pushed_logical_ + native_push_reserved_logical_);
     native_consumed_ += count;
+    native_consumed_logical_ += logical;
     if (auto telemetry = load_telemetry()) {
       std::lock_guard telemetry_lock(telemetry->accounting_mutex);
       telemetry->consumed.fetch_add(count, std::memory_order_relaxed);
+      telemetry->logical_consumed.fetch_add(logical, std::memory_order_relaxed);
       telemetry->pop_batches.fetch_add(1, std::memory_order_relaxed);
       telemetry->pop_batch_items.fetch_add(count, std::memory_order_relaxed);
       ExtMsgQueueTelemetry::update_max(telemetry->max_pop_batch, count);
       if (cancel_recorded_) {
         telemetry->queued_discarded.fetch_sub(count, std::memory_order_relaxed);
+        telemetry->logical_queued_discarded.fetch_sub(logical, std::memory_order_relaxed);
       }
     }
   }
@@ -678,6 +741,11 @@ struct ExtMsgQueueState {
     std::lock_guard lock(accounting_mutex_);
     CHECK(native_consumed_ <= native_selected_);
     return native_selected_ - native_consumed_;
+  }
+  td::uint64 native_logical_selected_ahead() {
+    std::lock_guard lock(accounting_mutex_);
+    CHECK(native_consumed_logical_ <= native_selected_logical_);
+    return native_selected_logical_ - native_consumed_logical_;
   }
   void record_empty(bool producer_pending) {
     if (auto telemetry = load_telemetry()) {
@@ -691,12 +759,20 @@ struct ExtMsgQueueState {
       return;
     }
     cancel_recorded_ = true;
+    CHECK(native_pushed_ + native_push_reserved_ <= native_selected_);
+    CHECK(native_consumed_ <= native_pushed_ + native_push_reserved_);
+    CHECK(native_pushed_logical_ + native_push_reserved_logical_ <= native_selected_logical_);
+    CHECK(native_consumed_logical_ <= native_pushed_logical_ + native_push_reserved_logical_);
     if (auto telemetry = load_telemetry()) {
       std::lock_guard telemetry_lock(telemetry->accounting_mutex);
       telemetry->unpushed_discarded.fetch_add(native_selected_ - native_pushed_ - native_push_reserved_,
                                               std::memory_order_relaxed);
       telemetry->queued_discarded.fetch_add(native_pushed_ + native_push_reserved_ - native_consumed_,
                                             std::memory_order_relaxed);
+      telemetry->logical_unpushed_discarded.fetch_add(
+          native_selected_logical_ - native_pushed_logical_ - native_push_reserved_logical_, std::memory_order_relaxed);
+      telemetry->logical_queued_discarded.fetch_add(
+          native_pushed_logical_ + native_push_reserved_logical_ - native_consumed_logical_, std::memory_order_relaxed);
     }
   }
 
@@ -712,6 +788,10 @@ struct ExtMsgQueueState {
   td::uint64 native_pushed_{0};
   td::uint64 native_push_reserved_{0};
   td::uint64 native_consumed_{0};
+  td::uint64 native_selected_logical_{0};
+  td::uint64 native_pushed_logical_{0};
+  td::uint64 native_push_reserved_logical_{0};
+  td::uint64 native_consumed_logical_{0};
   bool cancel_recorded_{false};
   std::shared_ptr<ExtMsgQueueTelemetry> telemetry_;
 };

@@ -236,7 +236,7 @@ td::Result<td::optional<ExtMessagePool::CheckResult>> ExtMessagePool::check_exis
       auto existing_message = priority_it->second.ext_messages_.find(existing_id);
       CHECK(existing_message);
       bool stale_native_admission = false;
-      if (existing_message.value()->native_nonce) {
+      if (existing_message.value()->has_native_interval()) {
         auto address = existing_message.value()->address();
         auto account_it = native_accounts_.find(address);
         auto watermark_it = native_nonce_watermarks_.find(address);
@@ -248,6 +248,8 @@ td::Result<td::optional<ExtMessagePool::CheckResult>> ExtMessagePool::check_exis
               reservation_it == account_it->second.messages.end() ||
               (reservation_it != account_it->second.messages.end() &&
                (reservation_it->second.hash != existing_message.value()->message->hash() ||
+                reservation_it->second.logical_count != existing_message.value()->native_nonce_count ||
+                reservation_it->second.source != address ||
                 watermark_it->second.is_consumed(existing_message.value()->native_nonce.value()) ||
                 (!reservation_it->second.committed &&
                  reservation_it->second.account_revision != watermark_it->second.revision)));
@@ -911,12 +913,12 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
     return lhs.source < rhs.source;
   });
 
-  auto advance_nonce = [](SourceState &source) {
-    if (source.next_nonce == std::numeric_limits<td::uint64>::max()) {
+  auto advance_nonce = [](SourceState &source, td::uint32 logical_count) {
+    if (logical_count == 0 || source.next_nonce > std::numeric_limits<td::uint64>::max() - logical_count) {
       source.blocked = true;
       return false;
     }
-    ++source.next_nonce;
+    source.next_nonce += logical_count;
     return true;
   };
   auto probe = [&](SourceState &source) {
@@ -936,6 +938,12 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
       if (reservation_it->first != source.next_nonce) {
         ++selection.counters.head_gaps;
         ++selection.counters.head_missing_nonce;
+        source.blocked = true;
+        return;
+      }
+      if (!reservation_it->second.has_valid_interval(reservation_it->first)) {
+        ++selection.counters.head_gaps;
+        ++selection.counters.head_nonce_mismatch;
         source.blocked = true;
         return;
       }
@@ -968,7 +976,8 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
         source.blocked = true;
         return;
       }
-      if (!message.value()->native_nonce || message.value()->native_nonce.value() != source.next_nonce) {
+      if (!message.value()->has_native_interval() || message.value()->native_nonce.value() != source.next_nonce ||
+          message.value()->native_nonce_count != reservation_it->second.logical_count) {
         ++selection.counters.head_gaps;
         ++selection.counters.head_nonce_mismatch;
         source.blocked = true;
@@ -980,14 +989,14 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
       // and pool entry remain untouched so a losing fork can offer them again.
       if (std::binary_search(excluded_messages.begin(), excluded_messages.end(), hash)) {
         ++selection.counters.excluded;
-        if (!advance_nonce(source)) {
+        if (!advance_nonce(source, reservation_it->second.logical_count)) {
           return;
         }
         continue;
       }
       if (already_delivered.contains(hash)) {
         ++selection.counters.already_delivered;
-        if (!advance_nonce(source)) {
+        if (!advance_nonce(source, reservation_it->second.logical_count)) {
           return;
         }
         continue;
@@ -1016,7 +1025,8 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
       source.next = NativeQueueItem{.message = mempool_message.message,
                                     .priority = pool_it->second.first,
                                     .source = source.source,
-                                    .nonce = source.next_nonce};
+                                    .nonce = source.next_nonce,
+                                    .logical_count = reservation_it->second.logical_count};
       return;
     }
   };
@@ -1028,7 +1038,7 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
       ready_by_priority[sources[i].next.value().priority].push_back(i);
     }
   }
-  while (selection.items.size() < limit && !ready_by_priority.empty()) {
+  while (selection.logical_count < limit && !ready_by_priority.empty()) {
     int priority = ready_by_priority.rbegin()->first;
     auto &ready = ready_by_priority[priority];
     auto source_index = ready.front();
@@ -1038,14 +1048,25 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
     }
     auto &source = sources[source_index];
     std::size_t run_size = 0;
-    while (selection.items.size() < limit && run_size < NATIVE_SOURCE_RUN_TARGET && source.next &&
+    bool deferred_atomic_head = false;
+    while (selection.logical_count < limit && run_size < NATIVE_SOURCE_RUN_TARGET && source.next &&
            source.next.value().priority == priority) {
+      const auto logical_count = source.next.value().logical_count;
+      if (logical_count == 0 || logical_count > limit - selection.logical_count ||
+          (run_size != 0 && logical_count > NATIVE_SOURCE_RUN_TARGET - run_size)) {
+        // A source-signed interval is indivisible. Leave it at this source's
+        // head for a larger candidate instead of leaking a partial suffix.
+        deferred_atomic_head = true;
+        break;
+      }
       selection.items.push_back(std::move(source.next.value()));
       source.next = {};
       ++selection.counters.selected;
-      ++run_size;
+      selection.counters.logical_selected += logical_count;
+      selection.logical_count += logical_count;
+      run_size += logical_count;
       selection.cursor = source.source;
-      if (!advance_nonce(source)) {
+      if (!advance_nonce(source, logical_count)) {
         break;
       }
       probe(source);
@@ -1055,7 +1076,7 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
       selection.counters.run_messages += run_size;
       selection.counters.max_run_size = std::max<td::uint64>(selection.counters.max_run_size, run_size);
     }
-    if (source.next) {
+    if (source.next && !deferred_atomic_head) {
       ready_by_priority[source.next.value().priority].push_back(source_index);
     }
   }
@@ -1098,11 +1119,11 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
     return;
   }
   state.next_nonce = std::max(state.next_nonce, first_nonce.value());
-  auto advance_nonce = [&] {
-    if (state.next_nonce == std::numeric_limits<td::uint64>::max()) {
+  auto advance_nonce = [&](td::uint32 logical_count) {
+    if (logical_count == 0 || state.next_nonce > std::numeric_limits<td::uint64>::max() - logical_count) {
       return false;
     }
-    ++state.next_nonce;
+    state.next_nonce += logical_count;
     return true;
   };
 
@@ -1122,6 +1143,11 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
       ++counters.head_missing_nonce;
       return;
     }
+    if (!reservation_it->second.has_valid_interval(reservation_it->first)) {
+      ++counters.head_gaps;
+      ++counters.head_nonce_mismatch;
+      return;
+    }
     if (!reservation_it->second.committed) {
       ++counters.head_gaps;
       ++counters.head_uncommitted;
@@ -1134,10 +1160,10 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
     int priority = 0;
     auto *link = reservation.mempool_link ? &reservation.mempool_link.value() : nullptr;
     if (link && link->message && link->message->message.not_null() && link->message->in_mempool &&
-        link->id.hash == hash &&
-        link->id.dst == link->message->message->shard() && link->message->message->hash() == hash &&
-        link->message->native_nonce && link->message->native_nonce.value() == state.next_nonce &&
-        link->message->address() == source) {
+        link->id.hash == hash && link->id.dst == link->message->message->shard() &&
+        link->message->message->hash() == hash && link->message->has_native_interval() &&
+        link->message->native_nonce.value() == state.next_nonce &&
+        link->message->native_nonce_count == reservation.logical_count && link->message->address() == source) {
       mempool_message = link->message.get();
       priority = link->priority;
       ++counters.direct_link_hits;
@@ -1165,7 +1191,8 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
         ++counters.head_missing_message;
         return;
       }
-      if (!message.value()->native_nonce || message.value()->native_nonce.value() != state.next_nonce) {
+      if (!message.value()->has_native_interval() || message.value()->native_nonce.value() != state.next_nonce ||
+          message.value()->native_nonce_count != reservation.logical_count) {
         ++counters.head_gaps;
         ++counters.head_nonce_mismatch;
         return;
@@ -1180,14 +1207,14 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
     if (std::binary_search(callback->callback->excluded_messages.begin(),
                            callback->callback->excluded_messages.end(), hash)) {
       ++counters.excluded;
-      if (!advance_nonce()) {
+      if (!advance_nonce(reservation.logical_count)) {
         return;
       }
       continue;
     }
     if (callback->delivered_native.contains(hash)) {
       ++counters.already_delivered;
-      if (!advance_nonce()) {
+      if (!advance_nonce(reservation.logical_count)) {
         return;
       }
       continue;
@@ -1213,7 +1240,8 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
     state.next = NativeQueueItem{.message = mempool_message->message,
                                  .priority = priority,
                                  .source = source,
-                                 .nonce = state.next_nonce};
+                                 .nonce = state.next_nonce,
+                                 .logical_count = reservation.logical_count};
     if (enqueue_ready) {
       enqueue_callback_native_source(callback->native_scheduler, source, state);
     }
@@ -1277,11 +1305,11 @@ void ExtMessagePool::initialize_callback_native_scheduler(const std::shared_ptr<
 }
 
 ExtMessagePool::NativeQueueSelection ExtMessagePool::select_callback_native_messages(
-    const std::shared_ptr<InstalledCallback> &callback, std::size_t limit,
+    const std::shared_ptr<InstalledCallback> &callback, std::size_t logical_limit, std::size_t physical_limit,
     const std::set<NativeAddress> *source_filter) {
   NativeQueueSelection selection;
   selection.cursor = callback->native_cursor;
-  if (callback->callback->shard.workchain == masterchainId || limit == 0) {
+  if (callback->callback->shard.workchain == masterchainId || logical_limit == 0 || physical_limit == 0) {
     return selection;
   }
   auto &scheduler = callback->native_scheduler;
@@ -1293,7 +1321,9 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_callback_native_mess
     }
   }
 
-  while (selection.items.size() < limit && !scheduler.ready_by_priority.empty()) {
+  std::vector<NativeAddress> deferred_atomic_sources;
+  while (selection.logical_count < logical_limit && selection.items.size() < physical_limit &&
+         !scheduler.ready_by_priority.empty()) {
     auto priority_it = std::prev(scheduler.ready_by_priority.end());
     int priority = priority_it->first;
     auto token = priority_it->second.front();
@@ -1324,17 +1354,26 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_callback_native_mess
     }
 
     std::size_t run_size = 0;
-    while (selection.items.size() < limit && run_size < NATIVE_SOURCE_RUN_TARGET && state.next &&
-           state.next.value().priority == priority) {
+    bool deferred_atomic_head = false;
+    while (selection.logical_count < logical_limit && selection.items.size() < physical_limit &&
+           run_size < NATIVE_SOURCE_RUN_TARGET && state.next && state.next.value().priority == priority) {
+      const auto logical_count = state.next.value().logical_count;
+      if (logical_count == 0 || logical_count > logical_limit - selection.logical_count ||
+          (run_size != 0 && logical_count > NATIVE_SOURCE_RUN_TARGET - run_size)) {
+        deferred_atomic_head = true;
+        break;
+      }
       selection.items.push_back(std::move(state.next.value()));
       state.next = {};
       ++selection.counters.selected;
-      ++run_size;
+      selection.counters.logical_selected += logical_count;
+      selection.logical_count += logical_count;
+      run_size += logical_count;
       selection.cursor = token.source;
-      if (state.next_nonce == std::numeric_limits<td::uint64>::max()) {
+      if (state.next_nonce > std::numeric_limits<td::uint64>::max() - logical_count) {
         break;
       }
-      ++state.next_nonce;
+      state.next_nonce += logical_count;
       probe_callback_native_source(callback, token.source, state, selection.counters, false);
     }
     if (run_size != 0) {
@@ -1343,15 +1382,29 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_callback_native_mess
       selection.counters.max_run_size =
           std::max<td::uint64>(selection.counters.max_run_size, run_size);
     }
-    enqueue_callback_native_source(scheduler, token.source, state);
+    if (deferred_atomic_head) {
+      deferred_atomic_sources.push_back(token.source);
+    } else {
+      enqueue_callback_native_source(scheduler, token.source, state);
+    }
+  }
+  // Do not immediately recycle an oversized atomic work into this selection:
+  // that would spin forever when the remaining logical capacity is smaller
+  // than the work.  It remains queued for the next candidate/refill instead.
+  for (const auto &source : deferred_atomic_sources) {
+    auto source_it = scheduler.sources.find(source);
+    if (source_it != scheduler.sources.end()) {
+      enqueue_callback_native_source(scheduler, source, source_it->second);
+    }
   }
   return selection;
 }
 
 void ExtMessagePool::enqueue_callback_item(const std::shared_ptr<InstalledCallback> &callback,
-                                           std::pair<td::Ref<ExtMessage>, int> item, bool native) {
+                                           std::pair<td::Ref<ExtMessage>, int> item, bool native,
+                                           td::uint32 native_logical_count) {
   auto& pending = native ? callback->pending_native : callback->pending_generic;
-  pending.push_back(ExtMsgQueueEntry::make_message(std::move(item), native));
+  pending.push_back(ExtMsgQueueEntry::make_message(std::move(item), native, native_logical_count));
 }
 
 void ExtMessagePool::begin_callback_epoch(const std::shared_ptr<InstalledCallback> &callback) {
@@ -1412,23 +1465,29 @@ td::actor::Task<> ExtMessagePool::pump_callback(std::shared_ptr<InstalledCallbac
       }
       std::vector<ExtMsgQueueEntry> batch;
       std::vector<bool> native_entries;
+      std::vector<td::uint32> native_logical_counts;
       batch.reserve(batch_capacity);
       native_entries.reserve(batch_capacity);
+      native_logical_counts.reserve(batch_capacity);
       while (batch.size() < batch_capacity && !pending->empty()) {
         native_entries.push_back(pending->front().native);
+        native_logical_counts.push_back(pending->front().logical_native_count());
         batch.push_back(std::move(pending->front()));
         pending->pop_front();
       }
       auto batch_size = batch.size();
       std::size_t native_reserved = 0;
-      for (bool native : native_entries) {
+      std::size_t native_reserved_logical = 0;
+      for (std::size_t index = 0; index < native_entries.size(); ++index) {
+        const auto native = native_entries[index];
         native_reserved += native;
+        native_reserved_logical += native_logical_counts[index];
       }
       // Publish ownership of the whole native batch before the blocking push.
       // BackpressureQueue exposes inserted prefixes to a blocked consumer as
       // space becomes available, before this coroutine resumes with the final
       // prefix count. The reservation is therefore the consumer's safe bound.
-      callback->callback->queue_state->record_push_started(native_reserved);
+      callback->callback->queue_state->record_push_started(native_reserved, native_reserved_logical);
       std::size_t pushed;
       if (callback->callback->native_streaming) {
         pushed = co_await callback->callback->queue.push_many_bounded(
@@ -1439,10 +1498,13 @@ td::actor::Task<> ExtMessagePool::pump_callback(std::shared_ptr<InstalledCallbac
       // The pump only batches message entries. Count the native prefix that
       // actually entered the queue if cancellation closed it mid-batch.
       std::size_t native_pushed = 0;
+      std::size_t native_pushed_logical = 0;
       for (std::size_t i = 0; i < pushed; ++i) {
         native_pushed += native_entries[i];
+        native_pushed_logical += native_logical_counts[i];
       }
-      callback->callback->queue_state->record_push_completed(native_reserved, native_pushed);
+      callback->callback->queue_state->record_push_completed(native_reserved, native_pushed, native_reserved_logical,
+                                                             native_pushed_logical);
       if (pushed != batch_size) {
         // push_many returns a short prefix only when the queue was closed.
         cancel_callback_delivery(callback);
@@ -1493,16 +1555,18 @@ std::size_t ExtMessagePool::fill_callback_native(const std::shared_ptr<Installed
     return 0;
   }
   auto delivery_limit = std::min(native_collator_queue_limit_, callback->callback->queue_capacity);
-  if (callback->delivered_native.size() >= delivery_limit) {
+  if (callback->delivered_native_logical >= delivery_limit) {
     native_queue_counters_.add(counters);
     return 0;
   }
-  auto remaining = std::min({delivery_limit - callback->delivered_native.size(), NATIVE_DELIVERY_CHUNK, max_items});
-  if (remaining == 0) {
+  const auto remaining_logical =
+      std::min<std::size_t>(delivery_limit - callback->delivered_native_logical, NATIVE_DELIVERY_CHUNK);
+  const auto remaining_physical = std::min<std::size_t>(NATIVE_DELIVERY_CHUNK, max_items);
+  if (remaining_logical == 0 || remaining_physical == 0) {
     native_queue_counters_.add(counters);
     return 0;
   }
-  auto selection = select_callback_native_messages(callback, remaining, source_filter);
+  auto selection = select_callback_native_messages(callback, remaining_logical, remaining_physical, source_filter);
   selection.counters.add(counters);
   callback->native_cursor = selection.cursor;
   if (selection.earliest_reactivation) {
@@ -1510,10 +1574,12 @@ std::size_t ExtMessagePool::fill_callback_native(const std::shared_ptr<Installed
   }
   auto selected = selection.items.size();
   for (auto &item : selection.items) {
-    callback->delivered_native.insert(item.message->hash());
-    enqueue_callback_item(callback, {std::move(item.message), item.priority}, true);
+    auto [_, inserted] = callback->delivered_native.insert(item.message->hash());
+    CHECK(inserted);
+    callback->delivered_native_logical += item.logical_count;
+    enqueue_callback_item(callback, {std::move(item.message), item.priority}, true, item.logical_count);
   }
-  callback->callback->queue_state->record_selected(selected);
+  callback->callback->queue_state->record_selected(selected, selection.logical_count);
   native_queue_counters_.add(selection.counters);
   return selected;
 }
@@ -1604,7 +1670,7 @@ std::size_t ExtMessagePool::reactivate_due_native_messages(td::Timestamp now) {
       continue;
     }
     auto message = priority_it->second.ext_messages_.find(scheduled.second);
-    if (!message || !message.value()->native_nonce || message.value()->expired() || message.value()->active) {
+    if (!message || !message.value()->has_native_interval() || message.value()->expired() || message.value()->active) {
       continue;
     }
     if (!message.value()->reactivate_at.is_in_past(now)) {
@@ -1656,8 +1722,8 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
   auto generic_limit = shard.workchain == masterchainId ? STANDARD_COLLATOR_QUEUE_LIMIT
                                                         : std::numeric_limits<std::size_t>::max();
   if (installed->callback->sync_only) {
-    auto remaining_capacity = installed->callback->queue_capacity > installed->delivered_native.size()
-                                  ? installed->callback->queue_capacity - installed->delivered_native.size()
+    auto remaining_capacity = installed->callback->queue_capacity > installed->delivered_native_logical
+                                  ? installed->callback->queue_capacity - installed->delivered_native_logical
                                   : 0;
     generic_limit = std::min(generic_limit, remaining_capacity);
   }
@@ -1683,7 +1749,8 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
     }
   }
 
-  VLOG(VALIDATOR_DEBUG) << "install_collator_queue: selected_native=" << installed->delivered_native.size()
+  VLOG(VALIDATOR_DEBUG) << "install_collator_queue: selected_native_physical=" << installed->delivered_native.size()
+                        << " selected_native_logical=" << installed->delivered_native_logical
                         << " selected_generic=" << installed->generic_selected
                         << " excluded=" << installed->callback->excluded_messages.size()
                         << " native_limit=" << native_collator_queue_limit_ << " shard=" << shard;
@@ -1726,7 +1793,7 @@ void ExtMessagePool::complete_external_messages(std::vector<ExtMessage::Hash> to
       auto msg_id = it->second.second;
       auto &msgs = ext_msgs_[priority];
       auto msg_opt = msgs.ext_messages_.find(msg_id);
-      if (msg_opt && msg_opt.value()->native_nonce && !msg_opt.value()->expired()) {
+      if (msg_opt && msg_opt.value()->has_native_interval() && !msg_opt.value()->expired()) {
         // A native message may be delayed simply because the current candidate is
         // full, timed out, or lost consensus.  Never evict it for retry count or
         // soft-pool pressure: deleting one nonce permanently blocks later nonces.
@@ -1760,9 +1827,14 @@ void ExtMessagePool::track_locally_accepted_native_messages(
     if (account_it == native_accounts_.end() || account_it->second.messages.empty()) {
       continue;
     }
-    auto [it, inserted] = locally_accepted_native_nonces_.emplace(address, message.nonce);
+    if (message.logical_count == 0 ||
+        message.nonce > std::numeric_limits<td::uint64>::max() - (message.logical_count - 1)) {
+      continue;
+    }
+    const auto last_nonce = message.nonce + message.logical_count - 1;
+    auto [it, inserted] = locally_accepted_native_nonces_.emplace(address, last_nonce);
     if (!inserted) {
-      it->second = std::max(it->second, message.nonce);
+      it->second = std::max(it->second, last_nonce);
     }
   }
   // Do not rescan every pending source against an unchanged applied state for
@@ -1822,10 +1894,14 @@ void ExtMessagePool::register_pending_native_reconciliation_targets() {
     if (account.messages.empty()) {
       continue;
     }
-    const auto max_pending_nonce = account.messages.rbegin()->first;
-    auto [it, inserted] = locally_accepted_native_nonces_.emplace(address, max_pending_nonce);
+    const auto &last_work = account.messages.rbegin()->second;
+    auto max_pending_nonce = last_work.last_nonce(account.messages.rbegin()->first);
+    if (!max_pending_nonce) {
+      continue;
+    }
+    auto [it, inserted] = locally_accepted_native_nonces_.emplace(address, max_pending_nonce.value());
     if (!inserted) {
-      it->second = std::max(it->second, max_pending_nonce);
+      it->second = std::max(it->second, max_pending_nonce.value());
     }
   }
 }
@@ -2051,7 +2127,12 @@ td::uint64 ExtMessagePool::prune_expired_native_suffix(const NativeAddress &addr
   if (account == native_accounts_.end()) {
     return 0;
   }
-  for (auto it = account->second.messages.lower_bound(from_nonce); it != account->second.messages.end(); ++it) {
+  auto suffix_begin = account->second.messages.lower_bound(from_nonce);
+  auto covering = account->second.find_work_covering(from_nonce);
+  if (covering != account->second.messages.end()) {
+    suffix_begin = covering;
+  }
+  for (auto it = suffix_begin; it != account->second.messages.end(); ++it) {
     suffix.emplace_back(it->first, it->second.hash);
   }
 
@@ -2140,20 +2221,21 @@ td::Result<bool> ExtMessagePool::apply_canonical_native_account_state(const Nati
   if (account_it != native_accounts_.end()) {
     td::uint64 prefix_amount = 0;
     for (auto &[nonce, message] : account_it->second.messages) {
-      const auto required = message.amount + message.fee;
+      auto required = message.required_amount();
       if (tail_reason == TailReason::none && !message.committed &&
           message.account_revision != watermark.revision) {
         tail_reason = TailReason::stale_uncommitted;
       }
       if (tail_reason == TailReason::none &&
-          (required < message.amount || required > canonical_balance - prefix_amount)) {
+          (!message.has_valid_interval(nonce) || !required || prefix_amount > canonical_balance ||
+           required.value() > canonical_balance - prefix_amount)) {
         tail_reason = TailReason::unaffordable;
       }
       if (tail_reason != TailReason::none) {
         pruned_tail.emplace_back(nonce, message.hash);
         continue;
       }
-      prefix_amount += required;
+      prefix_amount += required.value();
       if (message.committed && message.account_revision != watermark.revision) {
         message.account_revision = watermark.revision;
         ++rebased;
@@ -2261,13 +2343,15 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id, bool prune
   mempool_message->in_mempool = false;
   auto address = msg_opt.value()->address();
   auto hash_norm = msg_opt.value()->hash_norm;
-  auto native_nonce = msg_opt.value()->native_nonce;
+  auto native_nonce =
+      msg_opt.value()->has_native_interval() ? msg_opt.value()->native_nonce : td::optional<td::uint64>{};
   if (prune_expired_suffix && native_nonce && msg_opt.value()->expired()) {
     auto native_it = native_accounts_.find(address);
     if (native_it != native_accounts_.end()) {
       auto reservation = native_it->second.messages.find(native_nonce.value());
       if (reservation != native_it->second.messages.end() &&
-          reservation->second.hash == msg_opt.value()->message->hash()) {
+          reservation->second.hash == msg_opt.value()->message->hash() &&
+          reservation->second.logical_count == msg_opt.value()->native_nonce_count) {
         return prune_expired_native_suffix(
                    address, native_nonce.value(),
                    "native transfer retention expired; removed this nonce and its pending suffix") != 0;
@@ -2285,7 +2369,8 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id, bool prune
             reservation_it->second.mempool_link.value().message.get() == mempool_message.get()) {
           reservation_it->second.clear_mempool_link();
         }
-        if (reservation_it->second.hash == msg_opt.value()->message->hash()) {
+        if (reservation_it->second.hash == msg_opt.value()->message->hash() &&
+            reservation_it->second.logical_count == msg_opt.value()->native_nonce_count) {
           reservation_it->second.insertion_failed("native message was removed from the mempool");
           native_it->second.messages.erase(reservation_it);
         }
@@ -2321,6 +2406,7 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
   td::uint64 mempool_total = 0;
   td::uint64 mempool_active = 0;
   td::uint64 mempool_native = 0;
+  td::uint64 mempool_native_logical = 0;
   for (const auto &[_, msgs] : ext_msgs_) {
     auto iterator = msgs.ext_messages_.in_order();
     while (auto item = iterator.next()) {
@@ -2329,14 +2415,21 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
       if (msg->active) {
         ++mempool_active;
       }
-      if (msg->native_nonce) {
+      if (msg->has_native_interval()) {
         ++mempool_native;
+        mempool_native_logical += msg->native_nonce_count;
       }
     }
   }
   td::uint64 native_pending = 0;
+  td::uint64 native_pending_logical = 0;
   for (const auto &[_, info] : native_accounts_) {
     native_pending += info.messages.size();
+    for (const auto &[first_nonce, work] : info.messages) {
+      if (work.has_valid_interval(first_nonce)) {
+        native_pending_logical += work.logical_count;
+      }
+    }
   }
   td::uint64 head_ready_sources = 0;
   td::uint64 head_missing_watermark_sources = 0;
@@ -2389,7 +2482,8 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
       ++head_missing_message_sources;
       continue;
     }
-    if (!message.value()->native_nonce || message.value()->native_nonce.value() != first_nonce.value()) {
+    if (!message.value()->has_native_interval() || message.value()->native_nonce.value() != first_nonce.value() ||
+        message.value()->native_nonce_count != reservation->second.logical_count) {
       ++head_nonce_mismatch_sources;
       continue;
     }
@@ -2400,12 +2494,12 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
     ++head_ready_sources;
   }
   vec.emplace_back("total.ext_msg_mempool", PSTRING() << "messages:" << mempool_total << " active:" << mempool_active
-                                                      << " native:" << mempool_native
-                                                      << " priorities:" << ext_msgs_.size());
-  vec.emplace_back("total.ext_msg_native_pending", PSTRING() << "accounts:" << native_accounts_.size()
-                                                             << " messages:" << native_pending
-                                                             << " nonce_watermarks:"
-                                                             << native_nonce_watermarks_.size());
+                                                      << " native:" << mempool_native << " native_logical:"
+                                                      << mempool_native_logical << " priorities:" << ext_msgs_.size());
+  vec.emplace_back("total.ext_msg_native_pending",
+                   PSTRING() << "accounts:" << native_accounts_.size() << " messages:" << native_pending
+                             << " logical_messages:" << native_pending_logical
+                             << " nonce_watermarks:" << native_nonce_watermarks_.size());
   vec.emplace_back(
       "total.ext_msg_native_head_state",
       PSTRING() << "ready_sources:" << head_ready_sources
@@ -2483,13 +2577,13 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
       PSTRING() << "installs:" << native_queue_counters_.installs
                 << " masterchain_installs:" << native_queue_counters_.masterchain_installs
                 << " scanned:" << native_queue_counters_.scanned << " selected:" << native_queue_counters_.selected
+                << " selected_logical:" << native_queue_counters_.logical_selected
                 << " direct_link_hits:" << native_queue_counters_.direct_link_hits
                 << " direct_link_fallbacks:" << native_queue_counters_.direct_link_fallbacks
                 << " active:" << native_queue_counters_.active << " inactive:" << native_queue_counters_.inactive
                 << " excluded:" << native_queue_counters_.excluded << " expired:" << native_queue_counters_.expired
-                << " delivered_skips:" << native_queue_counters_.already_delivered
-                << " ready_sources:" << native_queue_counters_.ready_sources
-                << " head_gaps:" << native_queue_counters_.head_gaps
+                << " delivered_skips:" << native_queue_counters_.already_delivered << " ready_sources:"
+                << native_queue_counters_.ready_sources << " head_gaps:" << native_queue_counters_.head_gaps
                 << " head_missing_watermark:" << native_queue_counters_.head_missing_watermark
                 << " head_missing_nonce:" << native_queue_counters_.head_missing_nonce
                 << " head_uncommitted:" << native_queue_counters_.head_uncommitted
@@ -2498,60 +2592,71 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                 << " head_missing_message:" << native_queue_counters_.head_missing_message
                 << " head_nonce_mismatch:" << native_queue_counters_.head_nonce_mismatch
                 << " speculative_exhausted:" << native_queue_counters_.speculative_exhausted
-                << " runs:" << native_queue_counters_.runs
-                << " run_messages:" << native_queue_counters_.run_messages
-                << " max_run_size:" << native_queue_counters_.max_run_size
-                << " delayed:" << native_queue_counters_.delayed
-                << " reactivated:" << native_queue_counters_.reactivated
-                << " reactivation_wakes:" << native_queue_counters_.reactivation_wakes
-                << " scheduler_builds:" << native_queue_counters_.scheduler_builds
-                << " source_scans:" << native_queue_counters_.source_scans
+                << " runs:" << native_queue_counters_.runs << " run_messages:" << native_queue_counters_.run_messages
+                << " max_run_size:" << native_queue_counters_.max_run_size << " delayed:"
+                << native_queue_counters_.delayed << " reactivated:" << native_queue_counters_.reactivated
+                << " reactivation_wakes:" << native_queue_counters_.reactivation_wakes << " scheduler_builds:"
+                << native_queue_counters_.scheduler_builds << " source_scans:" << native_queue_counters_.source_scans
                 << " source_refreshes:" << native_queue_counters_.source_refreshes
                 << " source_probes:" << native_queue_counters_.source_probes
                 << " stale_ready_tokens:" << native_queue_counters_.stale_ready_tokens);
   std::lock_guard transport_lock(native_transport_telemetry_->accounting_mutex);
   auto selected = native_transport_telemetry_->selected.load(std::memory_order_relaxed);
+  auto logical_selected = native_transport_telemetry_->logical_selected.load(std::memory_order_relaxed);
   auto push_completed = native_transport_telemetry_->pushed.load(std::memory_order_relaxed);
+  auto logical_push_completed = native_transport_telemetry_->logical_pushed.load(std::memory_order_relaxed);
   auto push_reserved = native_transport_telemetry_->push_reserved.load(std::memory_order_relaxed);
+  auto logical_push_reserved = native_transport_telemetry_->logical_push_reserved.load(std::memory_order_relaxed);
   // A reserved batch may already be visible to the consumer in queue-sized
   // prefixes even though push_many_bounded has not resumed to publish its exact
   // result. Export this publication bound as `pushed`; the monotonic exact
   // result remains available separately as `push_completed`.
   auto pushed = push_completed + push_reserved;
+  auto logical_pushed = logical_push_completed + logical_push_reserved;
   auto consumed = native_transport_telemetry_->consumed.load(std::memory_order_relaxed);
+  auto logical_consumed = native_transport_telemetry_->logical_consumed.load(std::memory_order_relaxed);
   auto queued_discarded = native_transport_telemetry_->queued_discarded.load(std::memory_order_relaxed);
+  auto logical_queued_discarded = native_transport_telemetry_->logical_queued_discarded.load(std::memory_order_relaxed);
   auto unpushed_discarded = native_transport_telemetry_->unpushed_discarded.load(std::memory_order_relaxed);
+  auto logical_unpushed_discarded =
+      native_transport_telemetry_->logical_unpushed_discarded.load(std::memory_order_relaxed);
   auto queued_total = pushed > consumed ? pushed - consumed : 0;
   auto unpushed_total = selected > pushed ? selected - pushed : 0;
   auto live_queued = queued_total > queued_discarded ? queued_total - queued_discarded : 0;
   auto live_unpushed = unpushed_total > unpushed_discarded ? unpushed_total - unpushed_discarded : 0;
   auto pending = live_queued + live_unpushed;
+  auto logical_queued_total = logical_pushed > logical_consumed ? logical_pushed - logical_consumed : 0;
+  auto logical_unpushed_total = logical_selected > logical_pushed ? logical_selected - logical_pushed : 0;
+  auto logical_live_queued =
+      logical_queued_total > logical_queued_discarded ? logical_queued_total - logical_queued_discarded : 0;
+  auto logical_live_unpushed =
+      logical_unpushed_total > logical_unpushed_discarded ? logical_unpushed_total - logical_unpushed_discarded : 0;
+  auto logical_pending = logical_live_queued + logical_live_unpushed;
   auto push_batches = native_transport_telemetry_->push_batches.load(std::memory_order_relaxed);
   auto pop_batches = native_transport_telemetry_->pop_batches.load(std::memory_order_relaxed);
   vec.emplace_back(
       "total.ext_msg_native_transport",
       PSTRING() << "selected:" << selected << " pushed:" << pushed << " consumed:" << consumed
-                << " push_completed:" << push_completed << " push_reserved:" << push_reserved
-                << " pending:" << pending << " live_queued:" << live_queued
-                << " live_unpushed:" << live_unpushed
-                << " queued_discarded:" << queued_discarded
-                << " unpushed_discarded:" << unpushed_discarded
+                << " push_completed:" << push_completed << " push_reserved:" << push_reserved << " pending:" << pending
+                << " live_queued:" << live_queued << " live_unpushed:" << live_unpushed
+                << " queued_discarded:" << queued_discarded << " unpushed_discarded:" << unpushed_discarded
                 << " cancel_discarded:" << queued_discarded + unpushed_discarded
                 << " high_water:" << native_transport_telemetry_->high_water.load(std::memory_order_relaxed)
                 << " push_batches:" << push_batches
-                << " push_batch_items:"
-                << native_transport_telemetry_->push_batch_items.load(std::memory_order_relaxed)
-                << " max_push_batch:"
-                << native_transport_telemetry_->max_push_batch.load(std::memory_order_relaxed)
+                << " push_batch_items:" << native_transport_telemetry_->push_batch_items.load(std::memory_order_relaxed)
+                << " max_push_batch:" << native_transport_telemetry_->max_push_batch.load(std::memory_order_relaxed)
                 << " pop_batches:" << pop_batches
-                << " pop_batch_items:"
-                << native_transport_telemetry_->pop_batch_items.load(std::memory_order_relaxed)
-                << " max_pop_batch:"
-                << native_transport_telemetry_->max_pop_batch.load(std::memory_order_relaxed)
-                << " producer_empty:"
-                << native_transport_telemetry_->producer_empty.load(std::memory_order_relaxed)
-                << " consumer_empty:"
-                << native_transport_telemetry_->consumer_empty.load(std::memory_order_relaxed));
+                << " pop_batch_items:" << native_transport_telemetry_->pop_batch_items.load(std::memory_order_relaxed)
+                << " max_pop_batch:" << native_transport_telemetry_->max_pop_batch.load(std::memory_order_relaxed)
+                << " producer_empty:" << native_transport_telemetry_->producer_empty.load(std::memory_order_relaxed)
+                << " consumer_empty:" << native_transport_telemetry_->consumer_empty.load(std::memory_order_relaxed)
+                << " logical_selected:" << logical_selected << " logical_pushed:" << logical_pushed
+                << " logical_consumed:" << logical_consumed << " logical_push_completed:" << logical_push_completed
+                << " logical_push_reserved:" << logical_push_reserved << " logical_pending:" << logical_pending
+                << " logical_live_queued:" << logical_live_queued << " logical_live_unpushed:" << logical_live_unpushed
+                << " logical_queued_discarded:" << logical_queued_discarded
+                << " logical_unpushed_discarded:" << logical_unpushed_discarded << " logical_high_water:"
+                << native_transport_telemetry_->logical_high_water.load(std::memory_order_relaxed));
   return vec;
 }
 
@@ -2596,6 +2701,7 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
   if (native_transfer != nullptr) {
     const auto &transfer = *native_transfer;
     msg->native_nonce = transfer.nonce;
+    msg->native_nonce_count = 1;
     auto watermark_it = native_nonce_watermarks_.find(address);
     if (watermark_it != native_nonce_watermarks_.end() && watermark_it->second.is_consumed(transfer.nonce)) {
       return td::Status::Error(PSTRING() << "native nonce " << transfer.nonce
@@ -2606,7 +2712,8 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
       return td::Status::Error("native message reservation disappeared before mempool insertion");
     }
     auto reservation_it = account_it->second.messages.find(transfer.nonce);
-    if (reservation_it == account_it->second.messages.end()) {
+    if (reservation_it == account_it->second.messages.end() || reservation_it->second.logical_count != 1 ||
+        reservation_it->second.source != address || reservation_it->second.hash != message->hash()) {
       return td::Status::Error("native message reservation disappeared before mempool insertion");
     }
     if (watermark_it == native_nonce_watermarks_.end() ||
@@ -2660,7 +2767,7 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
   }
   auto hash_norm = msg->hash_norm;
   msgs.ext_messages_ = msgs.ext_messages_.insert(id, msg);
-  if (msg->native_nonce) {
+  if (msg->has_native_interval()) {
     msgs.native_messages_ =
         msgs.native_messages_.insert(NativeMessageId{msg->native_nonce.value(), id.dst, id.hash}, msg);
   } else {
@@ -2670,7 +2777,7 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
   ext_messages_hashes_[id.hash] = {priority, id};
   ext_messages_hashes_norm_[hash_norm].insert(NormalizedMessageId{priority, id});
   msg->in_mempool = true;
-  if (msg->native_nonce) {
+  if (msg->has_native_interval()) {
     // The reservation was created by verified native admission before this
     // insertion. Attach the direct link only after every pool index above has
     // accepted the object; a callback still requires committed=true before it
@@ -2678,14 +2785,15 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
     auto account_it = native_accounts_.find(address);
     if (account_it != native_accounts_.end()) {
       auto reservation_it = account_it->second.messages.find(msg->native_nonce.value());
-      if (reservation_it != account_it->second.messages.end() && reservation_it->second.hash == id.hash) {
+      if (reservation_it != account_it->second.messages.end() && reservation_it->second.hash == id.hash &&
+          reservation_it->second.logical_count == msg->native_nonce_count) {
         reservation_it->second.set_mempool_link(msg, priority, id);
       }
     }
   }
   VLOG(VALIDATOR_DEBUG) << "adding message addr=" << wc << ":" << addr.to_hex() << " prio=" << priority
                         << " to mempool";
-  if (!msg->native_nonce) {
+  if (!msg->has_native_interval()) {
     std::erase_if(callbacks_, [&](const std::shared_ptr<InstalledCallback> &callback) -> bool {
       if (callback->callback->cancellation_token.check().is_error()) {
         cancel_callback_delivery(callback);
@@ -2731,7 +2839,8 @@ td::Status ExtMessagePool::commit_checked_message(td::Ref<ExtMessage> message,
       return td::Status::Error("native message reservation disappeared before mempool commit");
     }
     auto reservation_it = native_it->second.messages.find(native_transfer->nonce);
-    if (reservation_it == native_it->second.messages.end()) {
+    if (reservation_it == native_it->second.messages.end() || reservation_it->second.logical_count != 1 ||
+        reservation_it->second.source != address || reservation_it->second.hash != message->hash()) {
       return td::Status::Error("native message reservation disappeared before mempool commit");
     }
     if (watermark_it == native_nonce_watermarks_.end() ||
@@ -2775,7 +2884,8 @@ void ExtMessagePool::rollback_checked_message(td::Ref<ExtMessage> message,
     auto native_it = native_accounts_.find(address);
     if (native_it != native_accounts_.end()) {
       auto message_it = native_it->second.messages.find(native_transfer->nonce);
-      if (message_it != native_it->second.messages.end()) {
+      if (message_it != native_it->second.messages.end() && message_it->second.logical_count == 1 &&
+          message_it->second.source == address && message_it->second.hash == message->hash()) {
         if (message_it->second.allow_broadcast_promise) {
           message_it->second.allow_broadcast_promise.set_error(
               td::Status::Error("native message was not inserted into the mempool"));
@@ -2972,9 +3082,10 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
   td::actor::StartedTask<> wait_for_insertion;
   {
     auto &native_info = native_accounts_[native_address];
-    auto pending_it = native_info.messages.find(transfer.nonce);
+    auto pending_it = native_info.find_work_covering(transfer.nonce);
     if (pending_it != native_info.messages.end()) {
-      if (pending_it->second.hash != message->hash()) {
+      if (pending_it->first != transfer.nonce || pending_it->second.logical_count != 1 ||
+          pending_it->second.hash != message->hash()) {
         co_return td::Status::Error(PSTRING() << "Duplicate native nonce " << transfer.nonce);
       }
       if (pending_it->second.committed) {
@@ -2986,6 +3097,9 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
       pending_it->second.insertion_waiters.emplace_back(std::move(waiter_promise));
       wait_for_insertion = std::move(waiter);
     } else {
+      if (native_info.interval_overlaps(transfer.nonce, 1)) {
+        co_return td::Status::Error(PSTRING() << "Duplicate native nonce " << transfer.nonce);
+      }
       td::uint64 reserved_amount =
           native_info.reserved_amount_before(current_native_nonce.value(), transfer.nonce);
       if (reserved_amount + required_amount < reserved_amount) {
@@ -3008,6 +3122,8 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
       }
       auto &inserted = insert_result.first->second;
       inserted.hash = message->hash();
+      inserted.source = native_address;
+      inserted.logical_count = 1;
       inserted.amount = transfer.amount;
       inserted.fee = transfer.fee;
       inserted.valid_until = transfer.valid_until;
@@ -3022,13 +3138,13 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
         if (nonce < current_native_nonce.value()) {
           continue;
         }
-        td::uint64 amount = pending.amount + pending.fee;
-        if (tail_started || amount < pending.amount || prefix_amount + amount < prefix_amount ||
-            prefix_amount + amount > available_balance) {
+        auto amount = pending.required_amount();
+        if (tail_started || !amount || prefix_amount > available_balance ||
+            amount.value() > available_balance - prefix_amount) {
           tail_started = true;
           unaffordable_tail.emplace_back(nonce, pending.hash);
         } else {
-          prefix_amount += amount;
+          prefix_amount += amount.value();
         }
       }
       CHECK(std::none_of(unaffordable_tail.begin(), unaffordable_tail.end(),
@@ -3163,6 +3279,43 @@ bool ExtMessagePool::WalletInfo::commit_message(td::uint32 msg_seqno) {
   return true;
 }
 
+ExtMessagePool::NativeInfo::WorkIterator ExtMessagePool::NativeInfo::find_work_covering(td::uint64 nonce) {
+  auto it = messages.upper_bound(nonce);
+  if (it == messages.begin()) {
+    return messages.end();
+  }
+  --it;
+  return it->second.covers_nonce(it->first, nonce) ? it : messages.end();
+}
+
+ExtMessagePool::NativeInfo::ConstWorkIterator ExtMessagePool::NativeInfo::find_work_covering(td::uint64 nonce) const {
+  auto it = messages.upper_bound(nonce);
+  if (it == messages.begin()) {
+    return messages.end();
+  }
+  --it;
+  return it->second.covers_nonce(it->first, nonce) ? it : messages.end();
+}
+
+bool ExtMessagePool::NativeInfo::interval_overlaps(td::uint64 first_nonce, td::uint32 logical_count) const {
+  if (logical_count == 0 || first_nonce > std::numeric_limits<td::uint64>::max() - (logical_count - 1)) {
+    return true;
+  }
+  const auto last_nonce = first_nonce + logical_count - 1;
+  auto next = messages.lower_bound(first_nonce);
+  if (next != messages.end() && next->first <= last_nonce) {
+    return true;
+  }
+  if (next == messages.begin()) {
+    return false;
+  }
+  --next;
+  auto previous_last = next->second.last_nonce(next->first);
+  // An internally malformed range is unsafe to overlap or schedule, so make
+  // callers reject it just as they would a real collision.
+  return !previous_last || previous_last.value() >= first_nonce;
+}
+
 ExtMessagePool::NativeMessageProcessResult ExtMessagePool::NativeInfo::process_messages(td::uint64 native_nonce,
                                                                                          UnixTime utime) {
   NativeMessageProcessResult result;
@@ -3171,38 +3324,64 @@ ExtMessagePool::NativeMessageProcessResult ExtMessagePool::NativeInfo::process_m
   native_nonce = observed_nonce;
   utime = observed_utime;
   bool expired_suffix = false;
+  bool canonical_overlap_suffix = false;
   for (auto it = messages.begin(); it != messages.end();) {
     auto &[nonce, message] = *it;
-    if (nonce < native_nonce) {
+    auto last_nonce = message.last_nonce(nonce);
+    if (!last_nonce) {
+      // This is unreachable for admitted work, but do not leave a malformed
+      // interval wedged at a source head if an invariant is ever violated.
       result.obsolete_hashes.push_back(message.hash);
       if (message.allow_broadcast_promise) {
-        message.allow_broadcast_promise.set_error(
-            td::Status::Error(PSTRING() << "Too old native nonce: msg_nonce=" << nonce
-                                        << ", account_nonce=" << native_nonce));
+        message.allow_broadcast_promise.set_error(td::Status::Error("native work has an invalid nonce interval"));
       }
-      message.insertion_failed("native message nonce became obsolete before insertion");
+      message.insertion_failed("native work has an invalid nonce interval");
       message.clear_mempool_link();
       it = messages.erase(it);
       continue;
     }
+    if (last_nonce.value() < native_nonce) {
+      result.obsolete_hashes.push_back(message.hash);
+      if (message.allow_broadcast_promise) {
+        message.allow_broadcast_promise.set_error(td::Status::Error(
+            PSTRING() << "Too old native nonce interval: first_nonce=" << nonce << ", last_nonce=" << last_nonce.value()
+                      << ", account_nonce=" << native_nonce));
+      }
+      message.insertion_failed("native work nonce interval became obsolete before insertion");
+      message.clear_mempool_link();
+      it = messages.erase(it);
+      continue;
+    }
+    if (!canonical_overlap_suffix && nonce < native_nonce) {
+      // A canonical account update consumed only a prefix of an atomic work.
+      // The remainder cannot be reintroduced as a new work (its signature and
+      // BOC identity cover the original range), so delete this complete work
+      // and every later reservation rather than creating a nonce hole.
+      canonical_overlap_suffix = true;
+    }
     if (!expired_suffix && message.valid_until <= utime) {
       expired_suffix = true;
     }
-    if (expired_suffix) {
+    if (canonical_overlap_suffix || expired_suffix) {
       result.obsolete_hashes.push_back(message.hash);
-      ++result.expired_suffix_pruned;
-      if (message.allow_broadcast_promise) {
-        message.allow_broadcast_promise.set_error(
-            td::Status::Error("native transfer suffix removed after a nonce expired"));
+      if (expired_suffix) {
+        ++result.expired_suffix_pruned;
       }
-      message.insertion_failed("native transfer suffix removed after a nonce expired");
+      const auto suffix_reason =
+          canonical_overlap_suffix
+              ? td::Slice("native work suffix removed after canonical state consumed part of its interval")
+              : td::Slice("native transfer suffix removed after a nonce expired");
+      if (message.allow_broadcast_promise) {
+        message.allow_broadcast_promise.set_error(td::Status::Error(suffix_reason));
+      }
+      message.insertion_failed(suffix_reason);
       message.clear_mempool_link();
       it = messages.erase(it);
       continue;
     }
     ++it;
   }
-  for (td::uint64 nonce = native_nonce;; ++nonce) {
+  for (td::uint64 nonce = native_nonce;;) {
     auto it = messages.find(nonce);
     if (it == messages.end() || !it->second.committed) {
       break;
@@ -3210,9 +3389,11 @@ ExtMessagePool::NativeMessageProcessResult ExtMessagePool::NativeInfo::process_m
     if (it->second.allow_broadcast_promise) {
       it->second.allow_broadcast_promise.set_value(td::Unit{});
     }
-    if (nonce == std::numeric_limits<td::uint64>::max()) {
+    auto last_nonce = it->second.last_nonce(nonce);
+    if (!last_nonce || last_nonce.value() == std::numeric_limits<td::uint64>::max()) {
       break;
     }
+    nonce = last_nonce.value() + 1;
   }
   return result;
 }
@@ -3220,7 +3401,7 @@ ExtMessagePool::NativeMessageProcessResult ExtMessagePool::NativeInfo::process_m
 bool ExtMessagePool::NativeInfo::commit_message(td::uint64 native_nonce,
                                                 NativeMessageProcessResult &processed) {
   auto it = messages.find(native_nonce);
-  if (it == messages.end()) {
+  if (it == messages.end() || !it->second.has_valid_interval(native_nonce)) {
     return false;
   }
   it->second.committed = true;
@@ -3236,17 +3417,27 @@ td::uint64 ExtMessagePool::NativeInfo::reserved_amount_before(td::uint64 native_
                                                                td::uint64 before_nonce) const {
   td::uint64 reserved = 0;
   for (const auto &[nonce, message] : messages) {
-    if (nonce < native_nonce) {
+    auto last_nonce = message.last_nonce(nonce);
+    if (!last_nonce) {
+      return std::numeric_limits<td::uint64>::max();
+    }
+    if (last_nonce.value() < native_nonce) {
       continue;
+    }
+    if (nonce < native_nonce) {
+      return std::numeric_limits<td::uint64>::max();
     }
     if (nonce >= before_nonce) {
       break;
     }
-    td::uint64 amount = message.amount + message.fee;
-    if (amount < message.amount || reserved + amount < reserved) {
+    if (last_nonce.value() >= before_nonce) {
       return std::numeric_limits<td::uint64>::max();
     }
-    reserved += amount;
+    auto amount = message.required_amount();
+    if (!amount || reserved > std::numeric_limits<td::uint64>::max() - amount.value()) {
+      return std::numeric_limits<td::uint64>::max();
+    }
+    reserved += amount.value();
   }
   return reserved;
 }

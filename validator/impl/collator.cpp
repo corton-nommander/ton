@@ -8250,6 +8250,7 @@ td::actor::Task<Collator::ExtMsgPopBatch> Collator::pop_external_message_batch(s
   }
   ExtMsgPopBatch batch;
   std::size_t native_consumed = 0;
+  std::size_t native_logical_consumed = 0;
   for (auto& entry : result.move_as_ok()) {
     if (entry.is_completion()) {
       if (ext_msg_queue_state_) {
@@ -8259,10 +8260,11 @@ td::actor::Task<Collator::ExtMsgPopBatch> Collator::pop_external_message_batch(s
       continue;
     }
     native_consumed += entry.native;
+    native_logical_consumed += entry.logical_native_count();
     batch.messages.push_back(std::move(*entry.message));
   }
   if (ext_msg_queue_state_) {
-    ext_msg_queue_state_->record_consumed(native_consumed);
+    ext_msg_queue_state_->record_consumed(native_consumed, native_logical_consumed);
   }
   co_return std::move(batch);
 }

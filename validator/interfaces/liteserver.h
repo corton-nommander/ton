@@ -18,11 +18,18 @@
 */
 #pragma once
 
+#include <cstddef>
+
 #include "common/bitstring.h"
 #include "td/actor/actor.h"
+#include "td/utils/Time.h"
 #include "td/utils/buffer.h"
 
 namespace ton::validator {
+
+// Keep the native-only probe and the cache admission queue bounded before the
+// message reaches the normal external-message size/depth validation path.
+inline constexpr std::size_t native_send_message_coalescing_max_message_bytes = 4 << 10;
 
 class LiteServerCache : public td::actor::Actor {
  public:
@@ -36,6 +43,13 @@ class LiteServerCache : public td::actor::Actor {
   // erasing the original query's entry.
   virtual void process_send_message(td::Bits256 key, td::uint64 owner, td::Promise<td::Unit> promise) = 0;
   virtual void drop_send_message_from_cache(td::Bits256 key, td::uint64 owner) = 0;
+
+  // Individual native transfers can share the manager's bounded batch
+  // admission path. The deadline belongs to this request, rather than to the
+  // coalescing window: implementations must never admit it after this point.
+  // Non-native sendMessage requests retain their historical direct path.
+  virtual void process_native_send_message(td::BufferSlice data, td::Timestamp deadline,
+                                           td::Promise<td::Unit> promise) = 0;
 };
 
 }  // namespace ton::validator

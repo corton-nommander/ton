@@ -16,6 +16,7 @@
 
     Copyright 2017-2020 Telegram Systems LLP
 */
+#include <algorithm>
 #include <ctime>
 
 #include "adnl/utils.hpp"
@@ -26,6 +27,7 @@
 #include "block/block.h"
 #include "block/check-proof.h"
 #include "block/signature-set.h"
+#include "block/transaction.h"
 #include "block/validator-set.h"
 #include "td/actor/SharedFuture.h"
 #include "td/actor/MultiPromise.h"
@@ -58,6 +60,23 @@ using namespace std::literals::string_literals;
 td::int32 get_tl_tag(td::Slice slice) {
   return slice.size() >= 4 ? td::as<td::int32>(slice.data()) : -1;
 }
+
+namespace {
+
+bool is_bounded_native_send_message(td::Slice data) {
+  // NativeTransfer begins with a byte-aligned `NTXF` tag. Most ordinary
+  // externals should retain their legacy path without paying a second BOC
+  // decode merely because they are small enough for the microbatch lane.
+  static constexpr char native_magic[] = "NTXF";
+  if (data.size() > native_send_message_coalescing_max_message_bytes ||
+      std::search(data.begin(), data.end(), native_magic, native_magic + 4) == data.end()) {
+    return false;
+  }
+  auto root = vm::std_boc_deserialize(data);
+  return root.is_ok() && block::NativeTransfer::unpack_external(root.move_as_ok()).is_ok();
+}
+
+}  // namespace
 
 void LiteQuery::run_query(td::BufferSlice data, td::actor::ActorId<ValidatorManager> manager,
                           td::actor::ActorId<LiteServerCache> cache, td::Promise<td::BufferSlice> promise) {
@@ -113,6 +132,11 @@ bool LiteQuery::fatal_error(int err_code, std::string err_msg) {
 }
 
 void LiteQuery::alarm() {
+  if (native_send_message_active_) {
+    native_send_message_active_ = false;
+    fatal_error(ErrorCode::timeout, "native sendMessage admission deadline expired");
+    return;
+  }
   if (send_message_batch_active_) {
     // Detaching the local waiter is safe because each manager/pool admission
     // carries an earlier deadline and checks it after every asynchronous step
@@ -594,6 +618,26 @@ void LiteQuery::continue_getZeroState(BlockIdExt blkid, td::BufferSlice state) {
 
 void LiteQuery::perform_sendMessage(td::BufferSlice data) {
   LOG(INFO) << "started a sendMessage(<" << data.size() << " bytes>) liteserver query";
+  if (!cache_.empty() && is_bounded_native_send_message(data.as_slice())) {
+    native_send_message_active_ = true;
+    auto deadline = td::Timestamp::in(native_send_message_item_timeout_msec * 0.001);
+    // timeout_ starts when this LiteQuery actor is created, whereas this path
+    // may be reached only after the duplicate-query cache has waited. Never
+    // let the coalescer/manager retain work past this query's own response
+    // horizon; keep a small response margin for propagating the result.
+    deadline.relax(td::Timestamp::in(-native_send_message_response_reserve_msec * 0.001, timeout_));
+    if (deadline.is_in_past()) {
+      native_send_message_active_ = false;
+      abort_query(td::Status::Error(ErrorCode::timeout, "native sendMessage admission deadline expired"));
+      return;
+    }
+    td::actor::send_closure(
+        cache_, &LiteServerCache::process_native_send_message, std::move(data), deadline,
+        td::PromiseCreator::lambda([Self = actor_id(this)](td::Result<td::Unit> res) mutable {
+          td::actor::send_closure(Self, &LiteQuery::complete_native_send_message, std::move(res));
+        }));
+    return;
+  }
   td::actor::send_closure(
       manager_, &ValidatorManager::new_external_message_query, std::move(data),
       td::PromiseCreator::lambda(
@@ -606,6 +650,19 @@ void LiteQuery::perform_sendMessage(td::BufferSlice data) {
               td::actor::send_closure(Self, &LiteQuery::finish_query, std::move(b), false);
             }
           }));
+}
+
+void LiteQuery::complete_native_send_message(td::Result<td::Unit> result) {
+  if (!native_send_message_active_) {
+    return;
+  }
+  native_send_message_active_ = false;
+  if (result.is_error()) {
+    abort_query(result.move_as_error_prefix("cannot apply external message to current state : "s));
+    return;
+  }
+  auto response = ton::create_serialize_tl_object<ton::lite_api::liteServer_sendMsgStatus>(1);
+  finish_query(std::move(response), false);
 }
 
 void LiteQuery::perform_sendMessageBatch(std::vector<td::BufferSlice> messages) {

@@ -48,7 +48,7 @@ td::actor::ActorOwn<Db> create_db_actor(td::actor::ActorId<ValidatorManager> man
 
 td::actor::ActorOwn<LiteServerCache> create_liteserver_cache_actor(td::actor::ActorId<ValidatorManager> manager,
                                                                    std::string db_root) {
-  return td::actor::create_actor<LiteServerCacheImpl>("cache");
+  return td::actor::create_actor<LiteServerCacheImpl>("cache", std::move(manager));
 }
 
 td::Result<td::Ref<BlockData>> create_block(BlockIdExt block_id, td::BufferSlice data) {

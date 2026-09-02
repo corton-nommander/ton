@@ -50,6 +50,7 @@ class LiteQuery : public td::actor::Actor {
   td::Bits256 cache_key_;
   td::uint64 send_message_cache_owner_{0};
   bool send_message_cache_active_{false};
+  bool native_send_message_active_{false};
   bool send_message_batch_active_{false};
   td::actor::StartedTask<> send_message_batch_task_;
 
@@ -87,6 +88,13 @@ class LiteQuery : public td::actor::Actor {
   constexpr static double send_message_batch_item_timeout_msec = 7000;
   constexpr static double send_message_batch_response_timeout_msec = 8000;
   static_assert(send_message_batch_item_timeout_msec + 500 <= send_message_batch_response_timeout_msec);
+  // The individual native path leaves a full second before the traditional
+  // 4.5s liteserver response alarm. This bounds queued/coalesced admission
+  // without changing generic sendMessage timing.
+  constexpr static double native_send_message_item_timeout_msec = 3500;
+  constexpr static double native_send_message_response_reserve_msec = 500;
+  static_assert(native_send_message_item_timeout_msec + native_send_message_response_reserve_msec <=
+                default_timeout_msec);
   enum {
     max_transaction_count = 16,       // fetch at most 16 transactions in one query
     client_method_gas_limit = 300000  // gas limit for liteServer.runSmcMethod
@@ -120,6 +128,7 @@ class LiteQuery : public td::actor::Actor {
   void tear_down() override;
   void release_send_message_cache();
   void perform_after_send_message_cache_acquired();
+  void complete_native_send_message(td::Result<td::Unit> result);
   bool use_cache();
   void perform();
   void perform_getTime();

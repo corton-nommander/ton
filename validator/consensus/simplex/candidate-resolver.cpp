@@ -369,11 +369,14 @@ class CandidateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::acto
       co_return {};
     }
 
-    auto contents_key = create_serialize_tl_object<tl::db_key_candidate>(id.to_tl());
-    co_await bus.db->set(std::move(contents_key), (*candidate)->serialize());
-
-    auto index_key = create_serialize_tl_object<tl::db_key_candidateResolver_candidateInfo>(id.to_tl());
-    co_await bus.db->set(std::move(index_key), td::BufferSlice());
+    // On restart the candidate-info key is treated as proof that the body is
+    // available. Keep the body and marker in one durable publication.
+    ton::validator::consensus::Db::SetBatch entries;
+    entries.reserve(2);
+    entries.emplace_back(create_serialize_tl_object<tl::db_key_candidate>(id.to_tl()), (*candidate)->serialize());
+    entries.emplace_back(create_serialize_tl_object<tl::db_key_candidateResolver_candidateInfo>(id.to_tl()),
+                         td::BufferSlice());
+    co_await bus.db->set_many(std::move(entries));
 
     state.candidate_stored = true;
     co_return {};

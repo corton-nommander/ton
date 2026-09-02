@@ -159,6 +159,9 @@ struct PrecheckCandidateBroadcast {
 
 class Db {
  public:
+  using SetEntry = std::pair<td::BufferSlice, td::BufferSlice>;
+  using SetBatch = std::vector<SetEntry>;
+
   virtual ~Db() = default;
 
   // Note: `get` and `get_by_prefix` use db snapshot from the start
@@ -166,6 +169,14 @@ class Db {
   virtual std::optional<td::BufferSlice> get(td::Slice key) const = 0;
   virtual std::vector<std::pair<td::BufferSlice, td::BufferSlice>> get_by_prefix(td::uint32 prefix) const = 0;
   virtual td::actor::Task<> set(td::BufferSlice key, td::BufferSlice value) = 0;
+  // Default preserves ordered single-write semantics for lightweight/test
+  // backends. The durable bridge overrides this with one atomic publication.
+  virtual td::actor::Task<> set_many(SetBatch entries) {
+    for (auto& [key, value] : entries) {
+      co_await set(std::move(key), std::move(value));
+    }
+    co_return {};
+  }
   virtual td::actor::Task<> close() = 0;
 };
 

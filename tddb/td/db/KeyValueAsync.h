@@ -18,6 +18,9 @@
 */
 #pragma once
 
+#include <utility>
+#include <vector>
+
 #include "td/actor/PromiseFuture.h"
 #include "td/actor/actor.h"
 #include "td/actor/coro_utils.h"
@@ -32,6 +35,8 @@ template <class KeyT, class ValueT>
 class KeyValueAsync {
  public:
   using ActorType = KeyValueActor<KeyT, ValueT>;
+  using SetEntry = std::pair<KeyT, ValueT>;
+  using SetBatch = std::vector<SetEntry>;
   struct GetResult {
     KeyValue::GetStatus status;
     ValueT value;
@@ -39,10 +44,15 @@ class KeyValueAsync {
   KeyValueAsync(std::shared_ptr<KeyValue> key_value);
   void get(KeyT key, Promise<GetResult> promise) const;
   void set(KeyT key, ValueT value, Promise<Unit> promise, double sync_delay = 0) const;
+  // Writes all entries in one durable write batch. Existing asynchronous writes
+  // are flushed first, so a failed batch cannot expose only a suffix/prefix of
+  // this batch through the KeyValueActor.
+  void set_many(SetBatch entries, Promise<Unit> promise) const;
   void erase(KeyT key, Promise<Unit> promise, double sync_delay = 0) const;
 
   actor::Task<GetResult> get(KeyT key) const;
   actor::Task<> set(KeyT key, ValueT value, double sync_delay = 0) const;
+  actor::Task<> set_many(SetBatch entries) const;
   actor::Task<> erase(KeyT key, double sync_delay = 0) const;
 
   actor::Task<> close() const;
@@ -89,6 +99,40 @@ class KeyValueActor : public actor::Actor {
     TRY_STATUS_PROMISE(promise, key_value_->set(as_slice(key), as_slice(value)));
     pending_promises_.push_back(std::move(promise));
   }
+  void set_many(typename KeyValueAsync<KeyT, ValueT>::SetBatch entries, Promise<Unit> promise) {
+    if (!key_value_) {
+      promise.set_error(Status::Error(/* cancelled */ 653, "db is closed"));
+      return;
+    }
+    if (entries.empty()) {
+      promise.set_value(Unit{});
+      return;
+    }
+
+    // A queued single-key write may still own the current transaction. Commit it
+    // before opening this exclusive batch, so a failure below can be aborted
+    // without affecting an unrelated write.
+    auto pending_status = sync();
+    if (pending_status.is_error()) {
+      promise.set_error(std::move(pending_status));
+      return;
+    }
+
+    auto status = key_value_->begin_write_batch();
+    if (status.is_error()) {
+      promise.set_error(std::move(status));
+      return;
+    }
+    for (auto& [key, value] : entries) {
+      status = key_value_->set(as_slice(key), as_slice(value));
+      if (status.is_error()) {
+        key_value_->abort_write_batch().ignore();
+        promise.set_error(std::move(status));
+        return;
+      }
+    }
+    promise.set_result(key_value_->commit_write_batch());
+  }
   void erase(KeyT key, double sync_delay, Promise<Unit> promise) {
     if (!key_value_) {
       promise.set_error(Status::Error(/* cancelled */ 653, "db is closed"));
@@ -117,17 +161,19 @@ class KeyValueActor : public actor::Actor {
   void tear_down() override {
     sync();
   }
-  void sync() {
+  Status sync() {
     if (!need_sync_) {
-      return;
+      return Status::OK();
     }
     need_sync_ = false;
     sync_active_ = false;
+    alarm_timestamp() = Timestamp::never();
     auto status = key_value_->commit_transaction();
     for (auto &promise : pending_promises_) {
       promise.set_result(status.clone());
     }
     pending_promises_.clear();
+    return status;
   }
   Status schedule_sync(double sync_delay) {
     if (!need_sync_) {
@@ -178,6 +224,10 @@ void KeyValueAsync<KeyT, ValueT>::set(KeyT key, ValueT value, Promise<Unit> prom
   send_closure_later(actor_, &ActorType::set, std::move(key), std::move(value), sync_delay, std::move(promise));
 }
 template <class KeyT, class ValueT>
+void KeyValueAsync<KeyT, ValueT>::set_many(SetBatch entries, Promise<Unit> promise) const {
+  send_closure_later(actor_, &ActorType::set_many, std::move(entries), std::move(promise));
+}
+template <class KeyT, class ValueT>
 void KeyValueAsync<KeyT, ValueT>::erase(KeyT key, Promise<Unit> promise, double sync_delay) const {
   send_closure_later(actor_, &ActorType::erase, std::move(key), sync_delay, std::move(promise));
 }
@@ -190,6 +240,11 @@ actor::Task<typename KeyValueAsync<KeyT, ValueT>::GetResult> KeyValueAsync<KeyT,
 template <class KeyT, class ValueT>
 actor::Task<> KeyValueAsync<KeyT, ValueT>::set(KeyT key, ValueT value, double sync_delay) const {
   co_return co_await actor::ask(actor_, &ActorType::set, std::move(key), std::move(value), sync_delay);
+}
+
+template <class KeyT, class ValueT>
+actor::Task<> KeyValueAsync<KeyT, ValueT>::set_many(SetBatch entries) const {
+  co_return co_await actor::ask(actor_, &ActorType::set_many, std::move(entries));
 }
 
 template <class KeyT, class ValueT>

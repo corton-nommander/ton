@@ -157,6 +157,13 @@ class DbImpl : public Db {
     }
     co_return std::move(result);
   }
+  td::actor::Task<> set_many(SetBatch entries) override {
+    auto result = co_await writer_.set_many(std::move(entries)).wrap();
+    if (result.is_error() && result.error().code() != ErrorCode::cancelled) {
+      result.ensure();
+    }
+    co_return std::move(result);
+  }
   td::actor::Task<> close() override {
     co_return co_await writer_.close();
   }

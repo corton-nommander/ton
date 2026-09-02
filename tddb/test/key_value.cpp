@@ -16,14 +16,98 @@
 
     Copyright 2017-2020 Telegram Systems LLP
 */
+#include "td/actor/TestScheduler.h"
 #include "td/db/KeyValue.h"
 #include "td/db/KeyValueAsync.h"
+#include "td/db/MemoryKeyValue.h"
 #include "td/db/RocksDb.h"
 #include "td/utils/UInt.h"
 #include "td/utils/benchmark.h"
 #include "td/utils/buffer.h"
 #include "td/utils/optional.h"
 #include "td/utils/tests.h"
+
+#include <map>
+
+namespace {
+
+class CountingWriteBatchKeyValue : public td::MemoryKeyValue {
+ public:
+  td::Status begin_transaction() override {
+    ++begin_transaction_count;
+    return td::MemoryKeyValue::begin_transaction();
+  }
+  td::Status commit_transaction() override {
+    ++commit_transaction_count;
+    return td::MemoryKeyValue::commit_transaction();
+  }
+  td::Status begin_write_batch() override {
+    ++begin_write_batch_count;
+    return td::MemoryKeyValue::begin_write_batch();
+  }
+  td::Status commit_write_batch() override {
+    ++commit_write_batch_count;
+    return td::MemoryKeyValue::commit_write_batch();
+  }
+  td::Status abort_write_batch() override {
+    ++abort_write_batch_count;
+    return td::Status::OK();
+  }
+
+  size_t begin_write_batch_count{0};
+  size_t commit_write_batch_count{0};
+  size_t abort_write_batch_count{0};
+  size_t begin_transaction_count{0};
+  size_t commit_transaction_count{0};
+};
+
+class FailingWriteBatchKeyValue final : public td::MemoryKeyValue {
+ public:
+  td::Status begin_write_batch() override {
+    CHECK(!batch_active_);
+    ++begin_write_batch_count;
+    batch_active_ = true;
+    staged_.clear();
+    return td::Status::OK();
+  }
+  td::Status set(td::Slice key, td::Slice value) override {
+    CHECK(batch_active_);
+    ++set_count;
+    if (set_count == 2) {
+      return td::Status::Error("injected batch write failure");
+    }
+    staged_[key.str()] = value.str();
+    return td::Status::OK();
+  }
+  td::Status commit_write_batch() override {
+    CHECK(batch_active_);
+    ++commit_write_batch_count;
+    for (const auto& [key, value] : staged_) {
+      td::MemoryKeyValue::set(key, value).ensure();
+    }
+    staged_.clear();
+    batch_active_ = false;
+    return td::Status::OK();
+  }
+  td::Status abort_write_batch() override {
+    CHECK(batch_active_);
+    ++abort_write_batch_count;
+    staged_.clear();
+    batch_active_ = false;
+    return td::Status::OK();
+  }
+
+  size_t set_count{0};
+  size_t begin_write_batch_count{0};
+  size_t commit_write_batch_count{0};
+  size_t abort_write_batch_count{0};
+
+ private:
+  bool batch_active_{false};
+  std::map<std::string, std::string> staged_;
+};
+
+}  // namespace
 
 TEST(KeyValue, simple) {
   td::Slice db_name = "testdb";
@@ -178,6 +262,117 @@ class KeyValueBenchmark : public td::Benchmark {
 
 TEST(KeyValue, Bench) {
   td::bench(KeyValueBenchmark());
+}
+
+TEST(KeyValue, async_set_many_is_one_durable_write_batch) {
+  auto db = std::make_shared<CountingWriteBatchKeyValue>();
+  td::actor::TestScheduler scheduler;
+
+  scheduler.run([&]() -> td::actor::Task<> {
+    td::KeyValueAsync<td::BufferSlice, td::BufferSlice> async_db(db);
+    td::KeyValueAsync<td::BufferSlice, td::BufferSlice>::SetBatch entries;
+    entries.emplace_back("candidate", "contents");
+    entries.emplace_back("candidate-index", "");
+
+    co_await async_db.set_many(std::move(entries));
+
+    ASSERT_EQ(db->begin_write_batch_count, 1u);
+    ASSERT_EQ(db->commit_write_batch_count, 1u);
+    ASSERT_EQ(db->abort_write_batch_count, 0u);
+
+    std::string contents;
+    ASSERT_EQ(db->get("candidate", contents).move_as_ok(), td::KeyValue::GetStatus::Ok);
+    ASSERT_EQ(contents, "contents");
+    std::string index;
+    ASSERT_EQ(db->get("candidate-index", index).move_as_ok(), td::KeyValue::GetStatus::Ok);
+    ASSERT_EQ(index, "");
+
+    co_await async_db.close();
+    co_return {};
+  });
+}
+
+TEST(KeyValue, async_set_many_aborts_after_a_staging_failure) {
+  auto db = std::make_shared<FailingWriteBatchKeyValue>();
+  td::actor::TestScheduler scheduler;
+
+  scheduler.run([&]() -> td::actor::Task<> {
+    td::KeyValueAsync<td::BufferSlice, td::BufferSlice> async_db(db);
+    td::KeyValueAsync<td::BufferSlice, td::BufferSlice>::SetBatch entries;
+    entries.emplace_back("candidate", "contents");
+    entries.emplace_back("candidate-index", "");
+
+    auto result = co_await async_db.set_many(std::move(entries)).wrap();
+    ASSERT_TRUE(result.is_error());
+    ASSERT_EQ(db->set_count, 2u);
+    ASSERT_EQ(db->begin_write_batch_count, 1u);
+    ASSERT_EQ(db->commit_write_batch_count, 0u);
+    ASSERT_EQ(db->abort_write_batch_count, 1u);
+    std::string value;
+    ASSERT_EQ(db->get("candidate", value).move_as_ok(), td::KeyValue::GetStatus::NotFound);
+    ASSERT_EQ(db->get("candidate-index", value).move_as_ok(), td::KeyValue::GetStatus::NotFound);
+
+    co_await async_db.close();
+    co_return {};
+  });
+}
+
+TEST(KeyValue, async_set_many_flushes_a_prior_delayed_write) {
+  auto db = std::make_shared<CountingWriteBatchKeyValue>();
+  td::actor::TestScheduler scheduler;
+
+  scheduler.run([&]() -> td::actor::Task<> {
+    td::KeyValueAsync<td::BufferSlice, td::BufferSlice> async_db(db);
+    auto prior = async_db.set(td::BufferSlice("prior"), td::BufferSlice("value"), 10.0).start_immediate();
+
+    td::KeyValueAsync<td::BufferSlice, td::BufferSlice>::SetBatch entries;
+    entries.emplace_back("candidate", "contents");
+    entries.emplace_back("candidate-index", "");
+    co_await async_db.set_many(std::move(entries));
+    co_await std::move(prior);
+
+    ASSERT_EQ(db->begin_transaction_count, 1u);
+    ASSERT_EQ(db->commit_transaction_count, 1u);
+    ASSERT_EQ(db->begin_write_batch_count, 1u);
+    ASSERT_EQ(db->commit_write_batch_count, 1u);
+    std::string value;
+    ASSERT_EQ(db->get("prior", value).move_as_ok(), td::KeyValue::GetStatus::Ok);
+    ASSERT_EQ(value, "value");
+
+    co_await async_db.close();
+    co_return {};
+  });
+}
+
+TEST(KeyValue, async_set_many_is_durable_after_reopen) {
+  td::Slice db_name = "testdb-set-many";
+  td::RocksDb::destroy(db_name).ignore();
+
+  {
+    auto db = std::make_shared<td::RocksDb>(td::RocksDb::open(db_name.str()).move_as_ok());
+    td::actor::TestScheduler scheduler;
+    scheduler.run([&]() -> td::actor::Task<> {
+      td::KeyValueAsync<td::BufferSlice, td::BufferSlice> async_db(db);
+      td::KeyValueAsync<td::BufferSlice, td::BufferSlice>::SetBatch entries;
+      entries.emplace_back("candidate", "contents");
+      entries.emplace_back("candidate-index", "");
+      co_await async_db.set_many(std::move(entries));
+      co_await async_db.close();
+      co_return {};
+    });
+    db.reset();
+  }
+
+  {
+    auto reopened = td::RocksDb::open(db_name.str()).move_as_ok();
+    std::string contents;
+    ASSERT_EQ(reopened.get("candidate", contents).move_as_ok(), td::KeyValue::GetStatus::Ok);
+    ASSERT_EQ(contents, "contents");
+    std::string index;
+    ASSERT_EQ(reopened.get("candidate-index", index).move_as_ok(), td::KeyValue::GetStatus::Ok);
+    ASSERT_EQ(index, "");
+  }
+  td::RocksDb::destroy(db_name).ignore();
 }
 
 TEST(KeyValue, Stress) {

@@ -882,6 +882,8 @@ class NativeLoadWorker final : public td::actor::Actor {
   void fail(td::Status error);
   void alarm() override;
   void update_phase(double now);
+  double pacing_rate_at(double at) const;
+  double pacing_burst_cap_at(double at) const;
   void update_tokens(double now);
   bool is_measure_phase(double now) const;
   bool can_issue(double now) const;
@@ -2685,23 +2687,27 @@ void NativeLoadWorker::update_phase(double now) {
   }
 }
 
+double NativeLoadWorker::pacing_rate_at(double at) const {
+  auto elapsed = std::max(0.0, at - start_at_);
+  if (options_.ramp_seconds && elapsed < options_.ramp_seconds) {
+    return options_.target_tps * elapsed / options_.ramp_seconds;
+  }
+  return options_.target_tps;
+}
+
+double NativeLoadWorker::pacing_burst_cap_at(double at) const {
+  return std::max(1.0, pacing_rate_at(at) * 0.10);
+}
+
 void NativeLoadWorker::update_tokens(double now) {
   if (options_.target_tps <= 0.0 || now <= last_token_at_) {
     last_token_at_ = now;
     return;
   }
-  auto rate_at = [&](double at) {
-    auto elapsed = std::max(0.0, at - start_at_);
-    if (options_.ramp_seconds && elapsed < options_.ramp_seconds) {
-      return options_.target_tps * elapsed / options_.ramp_seconds;
-    }
-    return options_.target_tps;
-  };
-  auto old_rate = rate_at(last_token_at_);
-  auto new_rate = rate_at(now);
+  auto old_rate = pacing_rate_at(last_token_at_);
+  auto new_rate = pacing_rate_at(now);
   pacing_tokens_ += (old_rate + new_rate) * 0.5 * (now - last_token_at_);
-  auto burst_cap = std::max(1.0, new_rate * 0.10);
-  pacing_tokens_ = std::min(pacing_tokens_, burst_cap);
+  pacing_tokens_ = std::min(pacing_tokens_, pacing_burst_cap_at(now));
   last_token_at_ = now;
 }
 
@@ -2951,21 +2957,31 @@ void NativeLoadWorker::pump() {
         // capacity (for example, 16 global slots split across two clients).
         auto largest_client_window = largest_client_available_capacity();
         logical_available = std::min<td::uint64>(logical_available, largest_client_window);
-        if (options_.target_tps > 0.0) {
-          logical_available = std::min<td::uint64>(
-              logical_available, static_cast<td::uint64>(std::floor(pacing_tokens_)));
-        }
-        auto plan = native_load::make_native_signed_run_plan(
-            wallet.next_nonce, static_cast<std::size_t>(logical_available), options_.native_signed_runs);
-        if (plan.is_valid() &&
-            plan.first_nonce <= std::numeric_limits<td::uint64>::max() - plan.logical_count) {
-          bool measured = is_measure_phase(now);
-          wallet.next_nonce += plan.logical_count;
-          canonical_backlog_ += plan.logical_count;
-          create_signed_run(wallet_idx.value(), plan, measured, false);
-          burst_size = plan.logical_count;
+        auto preferred_run = native_load::bounded_native_signed_run_pacing_target(
+            static_cast<std::size_t>(logical_available), options_.native_signed_runs.entries_per_run,
+            static_cast<std::size_t>(std::floor(pacing_burst_cap_at(now))));
+        if (native_load::should_hold_native_signed_run_for_pacing(
+                options_.target_tps > 0.0, static_cast<std::size_t>(std::floor(pacing_tokens_)), preferred_run)) {
+          // Leave this source queued for the next 10 ms tick.  Its token
+          // credit is retained, so the eventual parent remains fair and is
+          // never split just to satisfy an early callback wake.
+        } else {
           if (options_.target_tps > 0.0) {
-            pacing_tokens_ -= plan.logical_count;
+            logical_available = std::min<td::uint64>(
+                logical_available, static_cast<td::uint64>(std::floor(pacing_tokens_)));
+          }
+          auto plan = native_load::make_native_signed_run_plan(
+              wallet.next_nonce, static_cast<std::size_t>(logical_available), options_.native_signed_runs);
+          if (plan.is_valid() &&
+              plan.first_nonce <= std::numeric_limits<td::uint64>::max() - plan.logical_count) {
+            bool measured = is_measure_phase(now);
+            wallet.next_nonce += plan.logical_count;
+            canonical_backlog_ += plan.logical_count;
+            create_signed_run(wallet_idx.value(), plan, measured, false);
+            burst_size = plan.logical_count;
+            if (options_.target_tps > 0.0) {
+              pacing_tokens_ -= plan.logical_count;
+            }
           }
         }
       }

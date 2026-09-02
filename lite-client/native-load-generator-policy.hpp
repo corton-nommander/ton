@@ -363,6 +363,24 @@ inline bool valid_native_signed_run_settings(const NativeSignedRunSettings& sett
   return valid_native_signed_run_entries_per_run(settings.entries_per_run);
 }
 
+// Pacing still owns the logical transfer rate, but a signed parent is only
+// useful when it can carry the largest interval already allowed by that
+// pacing burst.  This target never expands the established burst cap, source
+// fairness, or the configured run bound.
+inline std::size_t bounded_native_signed_run_pacing_target(std::size_t logical_capacity,
+                                                           std::size_t configured_run_size,
+                                                           std::size_t pacing_burst_cap) {
+  return std::min({logical_capacity, configured_run_size, pacing_burst_cap});
+}
+
+// A paced signed run with a useful multi-transfer target waits for its carried
+// token credit instead of immediately spending a one-to-few-transfer parent.
+// Scalar submissions and unpaced signed runs retain their existing behavior.
+inline bool should_hold_native_signed_run_for_pacing(bool paced, std::size_t available_tokens,
+                                                     std::size_t preferred_run) {
+  return paced && preferred_run > 1 && available_tokens < preferred_run;
+}
+
 // A requested run consumes only a consecutive sequence which fits both the
 // configured run bound and the nonce range. A short tail is valid, but the
 // returned plan is always one indivisible authorization: later integration

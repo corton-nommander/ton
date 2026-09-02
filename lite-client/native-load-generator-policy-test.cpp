@@ -278,6 +278,19 @@ TEST(NativeLoadGeneratorPolicy, NativeSignedRunPlanIsBoundedAndAllowsShortTail) 
   ASSERT_TRUE(tail.is_valid());
 }
 
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunPacingWaitsForTheBoundedAtomicTarget) {
+  ASSERT_EQ(native_load::bounded_native_signed_run_pacing_target(16, 16, 50), 16u);
+  ASSERT_TRUE(native_load::should_hold_native_signed_run_for_pacing(true, 9, 16));
+  ASSERT_TRUE(!native_load::should_hold_native_signed_run_for_pacing(true, 16, 16));
+
+  ASSERT_EQ(native_load::bounded_native_signed_run_pacing_target(7, 16, 50), 7u);
+  ASSERT_TRUE(!native_load::should_hold_native_signed_run_for_pacing(true, 7, 7));
+
+  ASSERT_EQ(native_load::bounded_native_signed_run_pacing_target(16, 16, 7), 7u);
+  ASSERT_TRUE(native_load::should_hold_native_signed_run_for_pacing(true, 6, 7));
+  ASSERT_TRUE(!native_load::should_hold_native_signed_run_for_pacing(false, 1, 16));
+}
+
 TEST(NativeLoadGeneratorPolicy, NativeSignedRunPlanCannotOverflowItsNonceInterval) {
   native_load::NativeSignedRunSettings settings;
   settings.requested = true;

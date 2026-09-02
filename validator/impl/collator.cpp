@@ -80,9 +80,11 @@ static constexpr std::size_t NATIVE_ACCOUNT_STATE_RESERVE =
 static constexpr double NATIVE_QUEUE_COALESCING_GRACE_SECONDS = 0.010;
 // Once a native fragment has committed its exact checkpoint, use a separate,
 // still bounded window to pack the next fragment before sealing the candidate.
-// Keeping it equal to the partial-fragment grace favors prompt publication in
-// the three-block-per-second desktop cadence experiment.
-static constexpr double NATIVE_POST_COMMIT_PACK_GRACE_SECONDS = 0.010;
+// Half the partial-fragment grace here: direct reservation links made the
+// 10-ms policy consistently over-pack at 15k, falling below the requested
+// three-block-per-second desktop cadence. This remains a bounded
+// post-checkpoint packing hint rather than a consensus period.
+static constexpr double NATIVE_POST_COMMIT_PACK_GRACE_SECONDS = 0.005;
 
 static constexpr int MAX_ATTEMPTS = 5;
 

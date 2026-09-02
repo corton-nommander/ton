@@ -423,6 +423,14 @@ struct WorkerStats {
   td::uint64 repair_submitted{0};
   td::uint64 sign_operations{0};
   td::uint64 sign_errors{0};
+  // NTRN-specific counters remain zero for the legacy scalar NTFX path.
+  // Logical counts intentionally count outputs, while *_messages and
+  // *_attempts count the one source-signed parent BOC.
+  td::uint64 native_signed_run_messages{0};
+  td::uint64 native_signed_run_logical_transfers{0};
+  td::uint64 native_signed_run_submission_attempts{0};
+  td::uint64 native_signed_run_proof_resolutions{0};
+  td::uint64 max_native_signed_run_size{0};
   td::uint64 wire_attempts{0};
   td::uint64 wire_queries{0};
   td::uint64 wire_batches{0};
@@ -620,6 +628,31 @@ class NativeLoadWorker final : public td::actor::Actor {
         promise.set_value(SignedTransfer{boc.move_as_ok(), external_hash});
       }
     }
+
+    void sign_run(block::NativeTransferRun run, ton::Bits256 chain_domain,
+                  std::shared_ptr<const td::Ed25519::PreparedPrivateKey> private_key,
+                  td::Promise<SignedTransfer> promise) {
+      auto signature =
+          td::Ed25519::PrivateKey::sign(*private_key, run.signing_payload(chain_domain));
+      if (signature.is_error()) {
+        promise.set_error(signature.move_as_error());
+        return;
+      }
+      run.signature = signature.move_as_ok().as_slice().str();
+      vm::CellBuilder builder;
+      td::Ref<vm::Cell> root;
+      if (!(run.store_external(builder) && builder.finalize_to(root))) {
+        promise.set_error(td::Status::Error("failed to serialize native transfer run"));
+        return;
+      }
+      auto external_hash = ton::Bits256{root->get_hash().bits()};
+      auto boc = vm::std_boc_serialize(std::move(root));
+      if (boc.is_error()) {
+        promise.set_error(boc.move_as_error());
+      } else {
+        promise.set_value(SignedTransfer{boc.move_as_ok(), external_hash});
+      }
+    }
   };
 
   enum class TaskState { signing, ready, dispatching, inflight, retry_wait, resolved };
@@ -627,7 +660,12 @@ class NativeLoadWorker final : public td::actor::Actor {
 
   struct TransferTask {
     std::size_t wallet_idx{0};
+    // Scalar mode retains the established NTFX object byte-for-byte.  In
+    // --native-signed-runs mode this task instead owns one indivisible NTRN
+    // authorization and represents all of its logical child transfers.
+    bool signed_run{false};
     block::NativeTransfer transfer;
+    block::NativeTransferRun run;
     td::BufferSlice boc;
     TaskState state{TaskState::signing};
     TaskErrorReason retry_reason{TaskErrorReason::server_other};
@@ -644,6 +682,84 @@ class NativeLoadWorker final : public td::actor::Actor {
     bool admission_counted{false};
     bool retry_exhaustion_counted{false};
     bool resigned_after_expiry{false};
+    std::vector<bool> proof_observed;
+    td::uint32 proof_observed_count{0};
+    // A signed run must resolve from one canonical NTRN parent.  During an
+    // expiry handover, expected_hashes can intentionally contain both old
+    // and replacement parent hashes; never combine child observations from
+    // those distinct authorizations into an apparent whole-run proof.
+    td::optional<ton::Bits256> proof_parent_hash;
+
+    td::uint64 first_nonce() const {
+      return signed_run ? run.first_nonce : transfer.nonce;
+    }
+
+    td::uint32 logical_count() const {
+      return signed_run ? static_cast<td::uint32>(run.outputs.size()) : 1;
+    }
+
+    native_load::NativeSignedRunPlan nonce_interval() const {
+      return {first_nonce(), logical_count()};
+    }
+
+    bool contains_nonce(td::uint64 nonce) const {
+      return nonce_interval().contains(nonce);
+    }
+
+    bool completed_before(td::uint64 observed_next_nonce) const {
+      return nonce_interval().completed_before(observed_next_nonce);
+    }
+
+    bool bisected_by(td::uint64 observed_next_nonce) const {
+      return nonce_interval().bisected_by(observed_next_nonce);
+    }
+
+    ton::UnixTime valid_until() const {
+      return signed_run ? run.valid_until : transfer.valid_until;
+    }
+
+    void set_valid_until(ton::UnixTime value) {
+      if (signed_run) {
+        run.valid_until = value;
+      } else {
+        transfer.valid_until = value;
+      }
+    }
+
+    void clear_signature() {
+      if (signed_run) {
+        run.signature.clear();
+      } else {
+        transfer.signature.clear();
+      }
+    }
+
+    bool proof_parent_matches(const ton::Bits256& external_hash) const {
+      return !signed_run || !proof_parent_hash || proof_parent_hash.value() == external_hash;
+    }
+
+    bool mark_proof_observed(td::uint64 nonce, const ton::Bits256& external_hash) {
+      if (!contains_nonce(nonce)) {
+        return false;
+      }
+      if (!proof_parent_matches(external_hash)) {
+        return false;
+      }
+      auto offset = static_cast<std::size_t>(nonce - first_nonce());
+      if (offset >= proof_observed.size() || proof_observed[offset]) {
+        return false;
+      }
+      if (signed_run) {
+        proof_parent_hash = external_hash;
+      }
+      proof_observed[offset] = true;
+      ++proof_observed_count;
+      return true;
+    }
+
+    bool proof_complete() const {
+      return proof_observed_count == logical_count();
+    }
   };
 
   struct AnchorSample {
@@ -775,10 +891,13 @@ class NativeLoadWorker final : public td::actor::Actor {
   void enqueue_ready_wallet(std::size_t wallet_idx);
   void invalidate_ready_wallet(std::size_t wallet_idx);
   void create_transfer(std::size_t wallet_idx, td::uint64 nonce, bool measured, bool repair);
+  void create_signed_run(std::size_t wallet_idx, native_load::NativeSignedRunPlan plan,
+                         bool measured, bool repair);
   void sign_task(std::shared_ptr<TransferTask> task, bool resign);
   void on_signed(std::shared_ptr<TransferTask> task, td::Result<SignedTransfer> message);
-  td::optional<std::size_t> select_client() const;
+  td::optional<std::size_t> select_client(td::uint32 required_logical_capacity = 1) const;
   td::uint32 client_available_capacity(std::size_t client_idx) const;
+  td::uint32 largest_client_available_capacity() const;
   td::optional<std::size_t> select_full_batch_client() const;
   bool query_credit_blocks_dispatch() const;
   std::size_t count_dispatchable_fresh_heads(std::size_t limit) const;
@@ -820,6 +939,13 @@ class NativeLoadWorker final : public td::actor::Actor {
   void finish_scan();
   void apply_anchored_nonce(std::size_t wallet_idx, td::uint64 nonce, ScanKind kind, double observed_at);
   void repair_gaps();
+  std::shared_ptr<TransferTask> find_task_covering(
+      const std::map<td::uint64, std::shared_ptr<TransferTask>>& tasks,
+      td::uint64 nonce) const;
+  void remember_expected_hash(const std::shared_ptr<TransferTask>& task,
+                              const ton::Bits256& external_hash);
+  void forget_expected_hashes(const std::shared_ptr<TransferTask>& task);
+  td::uint64 active_logical_tasks(const Wallet& wallet) const;
   td::uint64 count_anchored(bool end_snapshot) const;
   td::uint64 count_total_anchored(bool end_snapshot) const;
 };
@@ -1127,6 +1253,10 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(repair_submitted);
       ADD_FIELD(sign_operations);
       ADD_FIELD(sign_errors);
+      ADD_FIELD(native_signed_run_messages);
+      ADD_FIELD(native_signed_run_logical_transfers);
+      ADD_FIELD(native_signed_run_submission_attempts);
+      ADD_FIELD(native_signed_run_proof_resolutions);
       ADD_FIELD(wire_attempts);
       ADD_FIELD(wire_queries);
       ADD_FIELD(wire_batches);
@@ -1201,6 +1331,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       total.initial_congestion_window += value.initial_congestion_window;
       total.effective_cwnd_cap += value.effective_cwnd_cap;
       total.max_wire_batch_size = std::max(total.max_wire_batch_size, value.max_wire_batch_size);
+      total.max_native_signed_run_size =
+          std::max(total.max_native_signed_run_size, value.max_native_signed_run_size);
       total.max_wire_batch_source_run =
           std::max(total.max_wire_batch_source_run, value.max_wire_batch_source_run);
       total.max_source_issue_burst =
@@ -1423,7 +1555,18 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"steady_submitted\":" << total.steady_submitted << ",\"repair_submitted\":" << total.repair_submitted
         << ",\"sign_operations\":" << total.sign_operations
         << ",\"sign_tps\":" << rate(total.sign_operations, previous_.sign_operations)
-        << ",\"sign_errors\":" << total.sign_errors << ",\"wire_attempts\":" << total.wire_attempts
+        << ",\"sign_errors\":" << total.sign_errors
+        << ",\"native_signed_runs_enabled\":"
+        << (options_.native_signed_runs.requested ? "true" : "false")
+        << ",\"native_signed_run_target_size\":" << options_.native_signed_runs.entries_per_run
+        << ",\"native_signed_run_messages\":" << total.native_signed_run_messages
+        << ",\"native_signed_run_logical_transfers\":" << total.native_signed_run_logical_transfers
+        << ",\"native_signed_run_submission_attempts\":"
+        << total.native_signed_run_submission_attempts
+        << ",\"native_signed_run_proof_resolutions\":"
+        << total.native_signed_run_proof_resolutions
+        << ",\"native_signed_run_max_size\":" << total.max_native_signed_run_size
+        << ",\"wire_attempts\":" << total.wire_attempts
         << ",\"wire_tps\":" << rate(total.wire_attempts, previous_.wire_attempts)
         << ",\"wire_queries\":" << total.wire_queries
         << ",\"wire_query_tps\":" << rate(total.wire_queries, previous_.wire_queries)
@@ -1678,6 +1821,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     }
     std::cout << ",\"finalized\":null,\"finalized_semantics\":\"not_independently_observed\""
               << ",\"admission_semantics\":\"liteServer.sendMessage status=1; not block inclusion\""
+              << ",\"native_signed_run_semantics\":\"when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash\""
               << ",\"wire_batch_source_run_semantics\":\"adjacent ascending nonces from one source in a sendMessageBatch; each source appears in at most one bounded run per batch and seed selection remains globally fair\""
               << ",\"source_issue_burst_semantics\":\"fair round-robin sources issue up to submit_source_run_size contiguous nonces per turn, bounded by pacing, worker inflight, and canonical backlog limits\""
               << ",\"head_blocked_ready_notifications_semantics\":\"O(1) ready-state notifications for non-head same-source tasks; they do not enter or rotate through the dispatch queue\""
@@ -1763,6 +1907,8 @@ void NativeLoadCoordinator::maybe_begin() {
                << " connections=" << options_.connections << " signers=" << options_.signers
                << " max_inflight=" << options_.max_inflight << " submit_batch=" << options_.submit_batch_size
                << " source_run=" << options_.submit_source_run_size
+               << " native_signed_runs=" << options_.native_signed_runs.requested
+               << " native_signed_run_size=" << options_.native_signed_runs.entries_per_run
                << " submit_coalesce_ms=" << options_.submit_coalesce_ms
                << " submit_max_queries_per_client=" << options_.submit_max_queries_per_client
                << " target_tps=" << options_.target_tps
@@ -2048,20 +2194,45 @@ void NativeLoadCoordinator::on_follower_block(ton::BlockIdExt requested,
                                native_batch.entries.size());
       follower_poll_measure_second_counts_[block_info.gen_utime] += native_batch.entries.size();
     }
-    for (const auto& entry : native_batch.entries) {
-      auto route = source_routes_.find(entry.transfer.src);
-      if (route == source_routes_.end() || entry.transfer.nonce == std::numeric_limits<td::uint64>::max()) {
-        continue;
+    if (native_batch.version == block::NativeTransferBatch::runs_version) {
+      // A v5 batch derives its logical entries from NTRN cells.  Track the
+      // canonical parent hash for every output nonce; reconstructing a
+      // synthetic NTFX child hash here would incorrectly require sixteen
+      // unrelated scalar signatures and defeat exact run attribution.
+      for (const auto& run : native_batch.runs) {
+        auto route = source_routes_.find(run.src);
+        if (route == source_routes_.end()) {
+          continue;
+        }
+        auto external_hash = run.external_hash();
+        if (external_hash.is_error()) {
+          follower_fatal_error(external_hash.move_as_error_prefix(
+              "cannot hash decoded canonical native transfer run: "));
+          return;
+        }
+        auto parent_hash = external_hash.move_as_ok();
+        for (std::size_t offset = 0; offset < run.outputs.size(); ++offset) {
+          auto nonce = run.first_nonce + static_cast<td::uint64>(offset);
+          follower_observations_[route->second.worker_id].push_back(
+              CanonicalTransferObservation{route->second.wallet_idx, nonce, parent_hash});
+        }
       }
-      auto external_hash = entry.transfer.external_hash();
-      if (external_hash.is_error()) {
-        follower_fatal_error(external_hash.move_as_error_prefix(
-            "cannot hash decoded canonical native transfer: "));
-        return;
+    } else {
+      for (const auto& entry : native_batch.entries) {
+        auto route = source_routes_.find(entry.transfer.src);
+        if (route == source_routes_.end() || entry.transfer.nonce == std::numeric_limits<td::uint64>::max()) {
+          continue;
+        }
+        auto external_hash = entry.transfer.external_hash();
+        if (external_hash.is_error()) {
+          follower_fatal_error(external_hash.move_as_error_prefix(
+              "cannot hash decoded canonical native transfer: "));
+          return;
+        }
+        follower_observations_[route->second.worker_id].push_back(
+            CanonicalTransferObservation{route->second.wallet_idx, entry.transfer.nonce,
+                                         external_hash.move_as_ok()});
       }
-      follower_observations_[route->second.worker_id].push_back(
-          CanonicalTransferObservation{route->second.wallet_idx, entry.transfer.nonce,
-                                       external_hash.move_as_ok()});
     }
   }
   std::vector<ton::BlockIdExt> previous;
@@ -2543,13 +2714,16 @@ bool NativeLoadWorker::task_is_active(const std::shared_ptr<TransferTask>& task)
     return false;
   }
   const auto& tasks = wallets_[task->wallet_idx].tasks;
-  auto it = tasks.find(task->transfer.nonce);
+  auto it = tasks.find(task->first_nonce());
   return it != tasks.end() && it->second == task;
 }
 
 bool NativeLoadWorker::is_fresh_normal_submission(
     const std::shared_ptr<TransferTask>& task) const {
-  return options_.submit_batch_size > 1 && task && !task->repair &&
+  // NTRN already is the source-local authorization bundle.  Do not hold it
+  // behind the scalar sendMessageBatch coalescer: one whole run is sent as
+  // one physical message and never split merely to fill a legacy batch.
+  return !options_.native_signed_runs.requested && options_.submit_batch_size > 1 && task && !task->repair &&
          !task->ever_submitted && task->first_retry_at < 0.0;
 }
 
@@ -2710,7 +2884,7 @@ void NativeLoadWorker::pump() {
     }
     if (task->boc.empty()) {
       sign_task(std::move(task), false);
-    } else if (task->transfer.valid_until <= static_cast<ton::UnixTime>(td::Clocks::system() + 1)) {
+    } else if (task->valid_until() <= static_cast<ton::UnixTime>(td::Clocks::system() + 1)) {
       sign_task(std::move(task), true);
     } else {
       mark_task_ready(task);
@@ -2725,24 +2899,71 @@ void NativeLoadWorker::pump() {
     }
     auto& wallet = wallets_[wallet_idx.value()];
     td::uint64 burst_size = 0;
-    while (burst_size < options_.submit_source_run_size &&
-           active_tasks_ < options_.max_inflight && !source_backlog_full(wallet)) {
-      // `find_available_wallet()` and callback traffic can straddle the exact
-      // end timestamp. Re-read time before consuming every nonce so a burst
-      // cannot leak offers past the half-open measurement boundary.
+    if (options_.native_signed_runs.requested) {
+      // A source turn issues at most one NTRN.  Its output count is bounded
+      // by the signed-run setting, remaining logical window, source backlog,
+      // and pacing credit.  This keeps the selected interval atomic from
+      // issuance through retry and canonical proof resolution.
       now = td::Time::now();
       update_phase(now);
       update_tokens(now);
-      if (!can_issue(now)) {
-        break;
+      if (can_issue(now) && !source_backlog_full(wallet)) {
+        auto source_limit = options_.max_source_canonical_backlog
+                                ? std::min<td::uint64>(options_.max_source_canonical_backlog,
+                                                       max_native_nonce_diff)
+                                : max_native_nonce_diff;
+        auto source_outstanding = wallet.next_nonce >= wallet.anchored_nonce
+                                      ? wallet.next_nonce - wallet.anchored_nonce
+                                      : 0;
+        auto source_available = source_outstanding < source_limit
+                                    ? source_limit - source_outstanding
+                                    : 0;
+        auto logical_available = std::min<td::uint64>(
+            static_cast<td::uint64>(options_.max_inflight - active_tasks_), source_available);
+        // A parent NTRN is indivisible at submission time. Limit its logical
+        // output count to one currently available client window so a valid
+        // run cannot be created only to wait forever behind per-client
+        // capacity (for example, 16 global slots split across two clients).
+        auto largest_client_window = largest_client_available_capacity();
+        logical_available = std::min<td::uint64>(logical_available, largest_client_window);
+        if (options_.target_tps > 0.0) {
+          logical_available = std::min<td::uint64>(
+              logical_available, static_cast<td::uint64>(std::floor(pacing_tokens_)));
+        }
+        auto plan = native_load::make_native_signed_run_plan(
+            wallet.next_nonce, static_cast<std::size_t>(logical_available), options_.native_signed_runs);
+        if (plan.is_valid() &&
+            plan.first_nonce <= std::numeric_limits<td::uint64>::max() - plan.logical_count) {
+          bool measured = is_measure_phase(now);
+          wallet.next_nonce += plan.logical_count;
+          canonical_backlog_ += plan.logical_count;
+          create_signed_run(wallet_idx.value(), plan, measured, false);
+          burst_size = plan.logical_count;
+          if (options_.target_tps > 0.0) {
+            pacing_tokens_ -= plan.logical_count;
+          }
+        }
       }
-      bool measured = is_measure_phase(now);
-      auto nonce = wallet.next_nonce++;
-      ++canonical_backlog_;
-      create_transfer(wallet_idx.value(), nonce, measured, false);
-      ++burst_size;
-      if (options_.target_tps > 0.0) {
-        pacing_tokens_ -= 1.0;
+    } else {
+      while (burst_size < options_.submit_source_run_size &&
+             active_tasks_ < options_.max_inflight && !source_backlog_full(wallet)) {
+        // `find_available_wallet()` and callback traffic can straddle the exact
+        // end timestamp. Re-read time before consuming every nonce so a burst
+        // cannot leak offers past the half-open measurement boundary.
+        now = td::Time::now();
+        update_phase(now);
+        update_tokens(now);
+        if (!can_issue(now)) {
+          break;
+        }
+        bool measured = is_measure_phase(now);
+        auto nonce = wallet.next_nonce++;
+        ++canonical_backlog_;
+        create_transfer(wallet_idx.value(), nonce, measured, false);
+        ++burst_size;
+        if (options_.target_tps > 0.0) {
+          pacing_tokens_ -= 1.0;
+        }
       }
     }
     if (burst_size) {
@@ -2781,6 +3002,7 @@ void NativeLoadWorker::create_transfer(std::size_t wallet_idx, td::uint64 nonce,
   task->first_issued_at = td::Time::now();
   task->measured = measured;
   task->repair = repair;
+  task->proof_observed.assign(1, false);
   wallet.tasks.emplace(nonce, task);
   ++active_tasks_;
   if (repair) {
@@ -2808,18 +3030,81 @@ void NativeLoadWorker::create_transfer(std::size_t wallet_idx, td::uint64 nonce,
   sign_task(std::move(task), false);
 }
 
+void NativeLoadWorker::create_signed_run(std::size_t wallet_idx,
+                                         native_load::NativeSignedRunPlan plan,
+                                         bool measured, bool repair) {
+  auto& wallet = wallets_[wallet_idx];
+  CHECK(options_.native_signed_runs.requested && plan.is_valid());
+  // `Wallet::next_nonce` is an exclusive cursor.  Do not wrap it after a
+  // legal wire-level final UINT64_MAX nonce: the generator cannot safely
+  // represent a follow-on source nonce in that case.
+  if (plan.first_nonce > std::numeric_limits<td::uint64>::max() - plan.logical_count) {
+    fail(td::Status::Error("native signed-run issuance reaches an unrepresentable next nonce"));
+    return;
+  }
+  CHECK(!wallet.disabled && !wallet.tasks.count(plan.first_nonce));
+  auto task = std::make_shared<TransferTask>();
+  task->wallet_idx = wallet_idx;
+  task->signed_run = true;
+  task->run.src = wallet.source;
+  task->run.first_nonce = plan.first_nonce;
+  task->run.outputs.reserve(plan.logical_count);
+  for (td::uint32 i = 0; i < plan.logical_count; ++i) {
+    task->run.outputs.push_back(
+        block::NativeTransferRunOutput{wallet.destination, options_.amount, options_.fee});
+  }
+  auto expires = td::Clocks::system() + options_.valid_for_seconds;
+  if (expires >= std::numeric_limits<ton::UnixTime>::max()) {
+    fail(td::Status::Error("valid_until overflows uint32"));
+    return;
+  }
+  task->set_valid_until(static_cast<ton::UnixTime>(expires));
+  task->first_issued_at = td::Time::now();
+  task->measured = measured;
+  task->repair = repair;
+  task->proof_observed.assign(plan.logical_count, false);
+  wallet.tasks.emplace(plan.first_nonce, task);
+  active_tasks_ += plan.logical_count;
+  ++stats_.native_signed_run_messages;
+  stats_.native_signed_run_logical_transfers += plan.logical_count;
+  stats_.max_native_signed_run_size =
+      std::max<td::uint64>(stats_.max_native_signed_run_size, plan.logical_count);
+  if (repair) {
+    wallet.last_repair_nonce = plan.first_nonce;
+    wallet.last_repair_at = task->first_issued_at;
+    stats_.repair_offered += plan.logical_count;
+  } else {
+    stats_.offered += plan.logical_count;
+    if (measured) {
+      wallet.steady_end_nonce = std::max(wallet.steady_end_nonce,
+                                         plan.first_nonce + plan.logical_count);
+      CHECK(steady_started_ &&
+            nonce_in_half_open_cohort(plan.first_nonce, wallet.steady_start_nonce,
+                                      wallet.steady_end_nonce));
+      stats_.steady_offered += plan.logical_count;
+      if (wallet.sampled) {
+        for (td::uint32 i = 0; i < plan.logical_count; ++i) {
+          wallet.samples.push_back(
+              AnchorSample{plan.first_nonce + i, task->first_issued_at});
+        }
+      }
+    }
+  }
+  sign_task(std::move(task), false);
+}
+
 void NativeLoadWorker::sign_task(std::shared_ptr<TransferTask> task, bool resign) {
   task->state = TaskState::signing;
   task->sign_started_at = td::Time::now();
   task->boc = {};
-  task->transfer.signature.clear();
+  task->clear_signature();
   if (resign) {
     auto expires = td::Clocks::system() + options_.valid_for_seconds;
     if (expires >= std::numeric_limits<ton::UnixTime>::max()) {
       fail(td::Status::Error("valid_until overflows uint32"));
       return;
     }
-    task->transfer.valid_until = static_cast<ton::UnixTime>(expires);
+    task->set_valid_until(static_cast<ton::UnixTime>(expires));
     task->attempts = 0;
     task->retry_exhaustion_counted = false;
     task->resigned_after_expiry = true;
@@ -2830,9 +3115,15 @@ void NativeLoadWorker::sign_task(std::shared_ptr<TransferTask> task, bool resign
         td::actor::send_closure(self, &NativeLoadWorker::on_signed, std::move(task), std::move(message));
       });
   auto& signer = signers_[signer_cursor_++ % signers_.size()];
-  td::actor::send_closure(signer, &Signer::sign, task->transfer,
-                          options_.chain_domain,
-                          wallets_[task->wallet_idx].private_key, std::move(promise));
+  if (task->signed_run) {
+    td::actor::send_closure(signer, &Signer::sign_run, task->run,
+                            options_.chain_domain,
+                            wallets_[task->wallet_idx].private_key, std::move(promise));
+  } else {
+    td::actor::send_closure(signer, &Signer::sign, task->transfer,
+                            options_.chain_domain,
+                            wallets_[task->wallet_idx].private_key, std::move(promise));
+  }
   ++signing_;
 }
 
@@ -2851,7 +3142,7 @@ void NativeLoadWorker::on_signed(std::shared_ptr<TransferTask> task, td::Result<
   bool fresh_ready = false;
   if (message.is_error()) {
     ++stats_.sign_errors;
-    LOG(ERROR) << "worker " << worker_id_ << " signing failed for nonce " << task->transfer.nonce << ": "
+    LOG(ERROR) << "worker " << worker_id_ << " signing failed for nonce " << task->first_nonce() << ": "
                << message.error();
     stats_.task_errors_by_reason.add(TaskErrorReason::signing);
     schedule_retry(std::move(task), std::max(0.001, options_.retry_backoff_ms / 1000.0),
@@ -2859,10 +3150,7 @@ void NativeLoadWorker::on_signed(std::shared_ptr<TransferTask> task, td::Result<
   } else {
     auto signed_transfer = message.move_as_ok();
     task->boc = std::move(signed_transfer.boc);
-    auto& hashes = wallets_[task->wallet_idx].expected_hashes[task->transfer.nonce];
-    if (std::find(hashes.begin(), hashes.end(), signed_transfer.external_hash) == hashes.end()) {
-      hashes.push_back(signed_transfer.external_hash);
-    }
+    remember_expected_hash(task, signed_transfer.external_hash);
     fresh_ready = is_fresh_normal_submission(task);
     mark_task_ready(task);
   }
@@ -2875,7 +3163,7 @@ void NativeLoadWorker::on_signed(std::shared_ptr<TransferTask> task, td::Result<
   maybe_finish();
 }
 
-td::optional<std::size_t> NativeLoadWorker::select_client() const {
+td::optional<std::size_t> NativeLoadWorker::select_client(td::uint32 required_logical_capacity) const {
   td::optional<std::size_t> selected;
   double best_load = std::numeric_limits<double>::infinity();
   for (std::size_t i = 0; i < clients_.size(); ++i) {
@@ -2884,7 +3172,8 @@ td::optional<std::size_t> NativeLoadWorker::select_client() const {
                         : clients_[i].hard_limit;
     capacity = std::min(capacity, clients_[i].hard_limit);
     auto message_capacity = clients_[i].inflight < capacity ? capacity - clients_[i].inflight : 0;
-    if (!native_load::client_can_dispatch_admission_query(
+    if (message_capacity < required_logical_capacity ||
+        !native_load::client_can_dispatch_admission_query(
             message_capacity, options_.submit_max_queries_per_client,
             clients_[i].admission_queries_inflight)) {
       continue;
@@ -2904,6 +3193,14 @@ td::uint32 NativeLoadWorker::client_available_capacity(std::size_t client_idx) c
                       : clients_[client_idx].hard_limit;
   capacity = std::min(capacity, clients_[client_idx].hard_limit);
   return clients_[client_idx].inflight < capacity ? capacity - clients_[client_idx].inflight : 0;
+}
+
+td::uint32 NativeLoadWorker::largest_client_available_capacity() const {
+  td::uint32 result = 0;
+  for (std::size_t client_idx = 0; client_idx < clients_.size(); ++client_idx) {
+    result = std::max(result, client_available_capacity(client_idx));
+  }
+  return result;
 }
 
 td::optional<std::size_t> NativeLoadWorker::select_full_batch_client() const {
@@ -2990,7 +3287,7 @@ NativeLoadWorker::take_dispatchable_ready_task(
     }
     auto task = wallet.tasks.begin()->second;
     if (!task || task->state != TaskState::ready || !task_is_active(task) ||
-        !source_task_can_seed_batch(task->transfer.nonce, wallet.tasks.begin()->first)) {
+        !source_task_can_seed_batch(task->first_nonce(), wallet.tasks.begin()->first)) {
       ++stats_.ready_source_queue_stale_entries;
       continue;
     }
@@ -3041,6 +3338,35 @@ std::size_t NativeLoadWorker::append_ready_source_run(
 }
 
 void NativeLoadWorker::dispatch_ready() {
+  if (options_.native_signed_runs.requested) {
+    // A signed run is a complete authorization unit.  Keep its physical NTRN
+    // message on the individual sendMessage path (which may still be
+    // server-side coalesced) rather than flattening it into a scalar batch or
+    // permitting a partial client-window reservation.
+    while (!ready_wallets_.empty() && inflight_ < options_.max_inflight) {
+      auto task = take_dispatchable_ready_task(true);
+      if (!task) {
+        break;
+      }
+      // NTRN cannot be split to consume a partial remaining worker window.
+      // Leave the whole authorization queued until enough logical-transfer
+      // capacity has returned rather than overcommitting max_inflight.
+      if (task->logical_count() > options_.max_inflight - inflight_) {
+        enqueue_ready_wallet(task->wallet_idx);
+        break;
+      }
+      auto client_idx = select_client(task->logical_count());
+      if (!client_idx) {
+        enqueue_ready_wallet(task->wallet_idx);
+        if (query_credit_blocks_dispatch()) {
+          ++stats_.query_credit_stalls;
+        }
+        break;
+      }
+      send_task(std::move(task), client_idx.value());
+    }
+    return;
+  }
   auto now = td::Time::now();
   auto bypass_fresh_gate = options_.submit_batch_size == 1 || sending_done_;
   std::size_t dispatchable_fresh = 0;
@@ -3131,7 +3457,11 @@ void NativeLoadWorker::dispatch_ready() {
 
 void NativeLoadWorker::send_task(std::shared_ptr<TransferTask> task, std::size_t client_idx) {
   CHECK(task && task->state == TaskState::ready && task_is_active(task));
-  CHECK(client_idx < clients_.size() && client_available_capacity(client_idx) != 0);
+  CHECK(inflight_ <= options_.max_inflight);
+  auto logical_count = task->logical_count();
+  CHECK(logical_count != 0 && logical_count <= options_.max_inflight - inflight_ &&
+        client_idx < clients_.size() &&
+        client_available_capacity(client_idx) >= logical_count);
   auto& client = clients_[client_idx];
   // select_client() proved the independent admission-query credit is
   // available. Reserve it before changing task state so an invariant failure
@@ -3152,19 +3482,22 @@ void NativeLoadWorker::send_task(std::shared_ptr<TransferTask> task, std::size_t
   if (!task->ever_submitted) {
     task->ever_submitted = true;
     if (task->repair) {
-      ++stats_.repair_submitted;
+      stats_.repair_submitted += logical_count;
     } else {
-      ++stats_.submitted;
+      stats_.submitted += logical_count;
       if (task->measured) {
-        ++stats_.steady_submitted;
+        stats_.steady_submitted += logical_count;
       }
     }
   }
   ++task->attempts;
-  ++stats_.wire_attempts;
+  if (task->signed_run) {
+    ++stats_.native_signed_run_submission_attempts;
+  }
+  stats_.wire_attempts += logical_count;
   ++stats_.wire_queries;
-  ++inflight_;
-  ++client.inflight;
+  inflight_ += logical_count;
+  client.inflight += logical_count;
   CHECK(client.admission_queries_inflight <= client.inflight);
   td::actor::send_closure(client.actor, &liteclient::ExtClient::send_query, "native-load",
                           envelope_query(std::move(query)), td::Timestamp::in(options_.query_timeout),
@@ -3174,10 +3507,16 @@ void NativeLoadWorker::send_task(std::shared_ptr<TransferTask> task, std::size_t
 void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tasks,
                                   std::size_t client_idx) {
   CHECK(!tasks.empty() && tasks.size() <= options_.submit_batch_size);
-  CHECK(client_idx < clients_.size() && client_available_capacity(client_idx) >= tasks.size());
+  CHECK(inflight_ <= options_.max_inflight);
+  td::uint32 logical_count = 0;
   for (const auto& task : tasks) {
     CHECK(task && task->state == TaskState::ready && task_is_active(task));
+    CHECK(task->logical_count() <= std::numeric_limits<td::uint32>::max() - logical_count);
+    logical_count += task->logical_count();
   }
+  CHECK(logical_count != 0 && logical_count <= options_.max_inflight - inflight_ &&
+        client_idx < clients_.size() &&
+        client_available_capacity(client_idx) >= logical_count);
   auto& client = clients_[client_idx];
   // select_client()/select_full_batch_client() made this an actor-local
   // precondition. Acquiring before moving any task out of ready state keeps a
@@ -3210,11 +3549,11 @@ void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tas
     if (!task->ever_submitted) {
       task->ever_submitted = true;
       if (task->repair) {
-        ++stats_.repair_submitted;
+        stats_.repair_submitted += task->logical_count();
       } else {
-        ++stats_.submitted;
+        stats_.submitted += task->logical_count();
         if (task->measured) {
-          ++stats_.steady_submitted;
+          stats_.steady_submitted += task->logical_count();
         }
       }
     }
@@ -3227,7 +3566,7 @@ void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tas
         td::actor::send_closure(self, &NativeLoadWorker::on_batch_result, std::move(tasks), client_idx,
                                 std::move(result));
       });
-  stats_.wire_attempts += tasks.size();
+  stats_.wire_attempts += logical_count;
   ++stats_.wire_queries;
   ++stats_.wire_batches;
   stats_.wire_batch_messages += tasks.size();
@@ -3235,8 +3574,8 @@ void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tas
   stats_.wire_batch_source_runs += source_runs;
   stats_.max_wire_batch_source_run =
       std::max(stats_.max_wire_batch_source_run, max_source_run);
-  inflight_ += tasks.size();
-  client.inflight += tasks.size();
+  inflight_ += logical_count;
+  client.inflight += logical_count;
   CHECK(client.admission_queries_inflight <= client.inflight);
   td::actor::send_closure(client.actor, &liteclient::ExtClient::send_query,
                           "native-load-batch", envelope_query(std::move(query)),
@@ -3245,14 +3584,19 @@ void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tas
 
 void NativeLoadWorker::on_result(std::shared_ptr<TransferTask> task, std::size_t client_idx,
                                  td::Result<td::BufferSlice> result) {
-  CHECK(inflight_ > 0 && client_idx < clients_.size() && clients_[client_idx].inflight > 0 &&
+  auto logical_count = task->logical_count();
+  CHECK(logical_count != 0 && inflight_ >= logical_count && client_idx < clients_.size() &&
+        clients_[client_idx].inflight >= logical_count &&
         clients_[client_idx].admission_queries_inflight > 0 &&
         clients_[client_idx].admission_queries_inflight <= clients_[client_idx].inflight);
-  --inflight_;
-  --clients_[client_idx].inflight;
+  inflight_ -= logical_count;
+  clients_[client_idx].inflight -= logical_count;
   CHECK(native_load::release_admission_query_credit(
       clients_[client_idx].admission_queries_inflight));
-  stats_.request_latency.observe_seconds(td::Time::now() - task->last_sent_at);
+  auto latency = td::Time::now() - task->last_sent_at;
+  for (td::uint32 i = 0; i < logical_count; ++i) {
+    stats_.request_latency.observe_seconds(latency);
+  }
   if (finished_) {
     return;
   }
@@ -3273,7 +3617,12 @@ void NativeLoadWorker::on_result(std::shared_ptr<TransferTask> task, std::size_t
       ++stats_.parse_errors;
       handle_task_error(std::move(task), client_idx, parsed.move_as_error(), ErrorOrigin::parse);
     } else if (parsed.move_as_ok()->status_ == 1) {
-      increase_client_cwnd(client_idx);
+      // Client windows are expressed in logical transfers. One successful
+      // NTRN response therefore acknowledges each authorized output even
+      // though it arrived in a single physical sendMessage reply.
+      for (td::uint32 i = 0; i < logical_count; ++i) {
+        increase_client_cwnd(client_idx);
+      }
       accept_task(std::move(task), TaskResolution::admitted);
     } else {
       ++stats_.rejected_other;
@@ -3287,17 +3636,25 @@ void NativeLoadWorker::on_result(std::shared_ptr<TransferTask> task, std::size_t
 
 void NativeLoadWorker::on_batch_result(std::vector<std::shared_ptr<TransferTask>> tasks,
                                        std::size_t client_idx, td::Result<td::BufferSlice> result) {
-  CHECK(!tasks.empty() && client_idx < clients_.size() && inflight_ >= tasks.size() &&
-        clients_[client_idx].inflight >= tasks.size() &&
+  td::uint32 logical_count = 0;
+  for (const auto& task : tasks) {
+    CHECK(task);
+    CHECK(task->logical_count() <= std::numeric_limits<td::uint32>::max() - logical_count);
+    logical_count += task->logical_count();
+  }
+  CHECK(!tasks.empty() && logical_count != 0 && client_idx < clients_.size() && inflight_ >= logical_count &&
+        clients_[client_idx].inflight >= logical_count &&
         clients_[client_idx].admission_queries_inflight > 0 &&
         clients_[client_idx].admission_queries_inflight <= clients_[client_idx].inflight);
-  inflight_ -= tasks.size();
-  clients_[client_idx].inflight -= tasks.size();
+  inflight_ -= logical_count;
+  clients_[client_idx].inflight -= logical_count;
   CHECK(native_load::release_admission_query_credit(
       clients_[client_idx].admission_queries_inflight));
   auto now = td::Time::now();
   for (const auto& task : tasks) {
-    stats_.request_latency.observe_seconds(now - task->last_sent_at);
+    for (td::uint32 i = 0; i < task->logical_count(); ++i) {
+      stats_.request_latency.observe_seconds(now - task->last_sent_at);
+    }
   }
   if (finished_) {
     return;
@@ -3555,8 +3912,9 @@ void NativeLoadWorker::abandon_wallet_after_retry_horizon(std::shared_ptr<Transf
   wallet.disabled = true;
   invalidate_available_wallet(task->wallet_idx);
   invalidate_ready_wallet(task->wallet_idx);
-  CHECK(active_tasks_ >= wallet.tasks.size());
-  active_tasks_ = native_load::active_tasks_after_source_quarantine(active_tasks_, wallet.tasks.size());
+  auto pending_logical = active_logical_tasks(wallet);
+  CHECK(active_tasks_ >= pending_logical);
+  active_tasks_ = native_load::active_tasks_after_source_quarantine(active_tasks_, pending_logical);
   for (auto& [nonce, pending] : wallet.tasks) {
     static_cast<void>(nonce);
     pending->state = TaskState::resolved;
@@ -3564,42 +3922,43 @@ void NativeLoadWorker::abandon_wallet_after_retry_horizon(std::shared_ptr<Transf
   auto elapsed = std::max(0.0, td::Time::now() - task->first_retry_at);
   wallet.tasks.clear();
   LOG(ERROR) << "worker " << worker_id_ << " quarantined native source " << wallet.source.to_hex()
-             << " after retry horizon elapsed at nonce " << task->transfer.nonce << ": elapsed_s=" << elapsed
+             << " after retry horizon elapsed at nonce " << task->first_nonce() << ": elapsed_s=" << elapsed
              << " canonical_state_lag=" << (reason == TaskErrorReason::canonical_state_lag);
   update_backpressure_state(td::Time::now());
 }
 
 void NativeLoadWorker::accept_task(std::shared_ptr<TransferTask> task, TaskResolution resolution) {
   auto& wallet = wallets_[task->wallet_idx];
-  auto it = wallet.tasks.find(task->transfer.nonce);
+  auto it = wallet.tasks.find(task->first_nonce());
   if (it == wallet.tasks.end() || it->second != task) {
     return;
   }
+  auto logical_count = task->logical_count();
   if (resolution != TaskResolution::admitted) {
-    ++stats_.accepted_inferred;
-    ++stats_.proof_observed_resolved;
-    wallet.admitted_tasks.erase(task->transfer.nonce);
+    stats_.accepted_inferred += logical_count;
+    stats_.proof_observed_resolved += logical_count;
+    wallet.admitted_tasks.erase(task->first_nonce());
   } else {
     if (!task->admission_counted) {
       task->admission_counted = true;
-      ++stats_.mempool_accepted;
+      stats_.mempool_accepted += logical_count;
       if (task->repair) {
-        ++stats_.repair_accepted;
+        stats_.repair_accepted += logical_count;
       } else if (task->measured) {
-        ++stats_.steady_mempool_accepted;
+        stats_.steady_mempool_accepted += logical_count;
       }
     } else {
-      ++stats_.repeat_admission_successes;
+      stats_.repeat_admission_successes += logical_count;
     }
     // A successful response for a replacement means the new exact bytes now
     // own the admission. Future duplicate-nonce responses are conflicts again,
     // not part of the bounded old-hash expiry handover.
     task->resigned_after_expiry = false;
-    wallet.admitted_tasks[task->transfer.nonce] = task;
+    wallet.admitted_tasks[task->first_nonce()] = task;
   }
   task->state = TaskState::resolved;
-  CHECK(active_tasks_ > 0);
-  --active_tasks_;
+  CHECK(active_tasks_ >= task->logical_count());
+  active_tasks_ -= task->logical_count();
   wallet.tasks.erase(it);
   enqueue_ready_wallet(task->wallet_idx);
   enqueue_available_wallet(task->wallet_idx);
@@ -3616,8 +3975,9 @@ void NativeLoadWorker::disable_wallet_for_conflict(std::size_t wallet_idx, td::S
   wallet.disabled = true;
   invalidate_available_wallet(wallet_idx);
   invalidate_ready_wallet(wallet_idx);
-  CHECK(active_tasks_ >= wallet.tasks.size());
-  active_tasks_ = native_load::active_tasks_after_source_quarantine(active_tasks_, wallet.tasks.size());
+  auto pending_logical = active_logical_tasks(wallet);
+  CHECK(active_tasks_ >= pending_logical);
+  active_tasks_ = native_load::active_tasks_after_source_quarantine(active_tasks_, pending_logical);
   for (auto& [nonce, pending] : wallet.tasks) {
     static_cast<void>(nonce);
     pending->state = TaskState::resolved;
@@ -3630,7 +3990,7 @@ void NativeLoadWorker::disable_wallet_for_conflict(std::size_t wallet_idx, td::S
 
 void NativeLoadWorker::reject_task(std::shared_ptr<TransferTask> task, td::Slice reason) {
   auto& wallet = wallets_[task->wallet_idx];
-  auto it = wallet.tasks.find(task->transfer.nonce);
+  auto it = wallet.tasks.find(task->first_nonce());
   if (it == wallet.tasks.end() || it->second != task) {
     return;
   }
@@ -3638,15 +3998,16 @@ void NativeLoadWorker::reject_task(std::shared_ptr<TransferTask> task, td::Slice
   wallet.disabled = true;
   invalidate_available_wallet(task->wallet_idx);
   invalidate_ready_wallet(task->wallet_idx);
-  CHECK(active_tasks_ >= wallet.tasks.size());
-  active_tasks_ = native_load::active_tasks_after_source_quarantine(active_tasks_, wallet.tasks.size());
+  auto pending_logical = active_logical_tasks(wallet);
+  CHECK(active_tasks_ >= pending_logical);
+  active_tasks_ = native_load::active_tasks_after_source_quarantine(active_tasks_, pending_logical);
   for (auto& [nonce, pending] : wallet.tasks) {
     static_cast<void>(nonce);
     pending->state = TaskState::resolved;
   }
   wallet.tasks.clear();
   LOG(ERROR) << "worker " << worker_id_ << " permanently rejected source " << wallet.source.to_hex()
-             << " nonce " << task->transfer.nonce << ": " << reason;
+             << " nonce " << task->first_nonce() << ": " << reason;
 }
 
 void NativeLoadWorker::begin_drain(double now) {
@@ -3793,7 +4154,7 @@ void NativeLoadWorker::refresh_stats() {
     stats_.max_source_canonical_backlog_current =
         std::max(stats_.max_source_canonical_backlog_current, source_backlog);
     stats_.max_active_tasks_per_source =
-        std::max<td::uint64>(stats_.max_active_tasks_per_source, wallet.tasks.size());
+        std::max<td::uint64>(stats_.max_active_tasks_per_source, active_logical_tasks(wallet));
     if (wallet.tasks.empty()) {
       continue;
     }
@@ -3801,9 +4162,9 @@ void NativeLoadWorker::refresh_stats() {
     for (const auto& [nonce, task] : wallet.tasks) {
       static_cast<void>(nonce);
       if (task->state == TaskState::ready) {
-        ++stats_.ready;
+        stats_.ready += task->logical_count();
       } else if (task->state == TaskState::retry_wait) {
-        ++stats_.retry_wait;
+        stats_.retry_wait += task->logical_count();
       }
     }
   }
@@ -4060,6 +4421,48 @@ void NativeLoadWorker::finish_scan() {
   maybe_finish();
 }
 
+std::shared_ptr<NativeLoadWorker::TransferTask> NativeLoadWorker::find_task_covering(
+    const std::map<td::uint64, std::shared_ptr<TransferTask>>& tasks,
+    td::uint64 nonce) const {
+  auto upper = tasks.upper_bound(nonce);
+  if (upper == tasks.begin()) {
+    return {};
+  }
+  --upper;
+  const auto& task = upper->second;
+  return task && task->contains_nonce(nonce) ? task : std::shared_ptr<TransferTask>{};
+}
+
+void NativeLoadWorker::remember_expected_hash(const std::shared_ptr<TransferTask>& task,
+                                              const ton::Bits256& external_hash) {
+  auto& expected_hashes = wallets_[task->wallet_idx].expected_hashes;
+  for (td::uint32 offset = 0; offset < task->logical_count(); ++offset) {
+    auto nonce = task->first_nonce() + offset;
+    auto& hashes = expected_hashes[nonce];
+    if (std::find(hashes.begin(), hashes.end(), external_hash) == hashes.end()) {
+      hashes.push_back(external_hash);
+    }
+  }
+}
+
+void NativeLoadWorker::forget_expected_hashes(const std::shared_ptr<TransferTask>& task) {
+  auto& expected_hashes = wallets_[task->wallet_idx].expected_hashes;
+  for (td::uint32 offset = 0; offset < task->logical_count(); ++offset) {
+    expected_hashes.erase(task->first_nonce() + offset);
+  }
+}
+
+td::uint64 NativeLoadWorker::active_logical_tasks(const Wallet& wallet) const {
+  td::uint64 result = 0;
+  for (const auto& [nonce, task] : wallet.tasks) {
+    static_cast<void>(nonce);
+    if (task) {
+      result += task->logical_count();
+    }
+  }
+  return result;
+}
+
 void NativeLoadWorker::apply_anchored_nonce(std::size_t wallet_idx, td::uint64 nonce, ScanKind kind,
                                             double observed_at) {
   auto& wallet = wallets_[wallet_idx];
@@ -4087,6 +4490,23 @@ void NativeLoadWorker::apply_anchored_nonce(std::size_t wallet_idx, td::uint64 n
     wallet.end_snapshot_nonce = wallet.next_nonce;
     return;
   }
+  if (options_.native_signed_runs.requested && nonce != 0) {
+    // Account-state progress must cross a source-signed run as a whole.  A
+    // next nonce inside its interval would otherwise tempt repair_gaps() to
+    // manufacture a second authorization for only the suffix.
+    auto covered_nonce = nonce - 1;
+    auto task = find_task_covering(wallet.tasks, covered_nonce);
+    if (!task) {
+      task = find_task_covering(wallet.admitted_tasks, covered_nonce);
+    }
+    if (task && task->signed_run && task->bisected_by(nonce)) {
+      ++stats_.canonical_hash_conflicts;
+      ++stats_.external_nonce_conflicts;
+      disable_wallet_for_conflict(wallet_idx,
+                                  "canonical account progress bisected a source-signed run");
+      return;
+    }
+  }
   auto old_anchored = std::min(wallet.anchored_nonce, wallet.next_nonce);
   auto new_anchored = std::min(std::max(wallet.anchored_nonce, nonce), wallet.next_nonce);
   auto newly_anchored = new_anchored - old_anchored;
@@ -4108,9 +4528,25 @@ void NativeLoadWorker::apply_anchored_nonce(std::size_t wallet_idx, td::uint64 n
   }
   if (!options_.canonical_block_follower) {
     while (!wallet.tasks.empty() && wallet.tasks.begin()->first < nonce) {
-      accept_task(wallet.tasks.begin()->second, TaskResolution::proof_observed);
+      auto task = wallet.tasks.begin()->second;
+      if (!task->completed_before(nonce)) {
+        ++stats_.canonical_hash_conflicts;
+        ++stats_.external_nonce_conflicts;
+        disable_wallet_for_conflict(wallet_idx,
+                                    "account nonce advanced through only part of a signed run");
+        return;
+      }
+      accept_task(std::move(task), TaskResolution::proof_observed);
     }
     while (!wallet.admitted_tasks.empty() && wallet.admitted_tasks.begin()->first < nonce) {
+      auto task = wallet.admitted_tasks.begin()->second;
+      if (!task->completed_before(nonce)) {
+        ++stats_.canonical_hash_conflicts;
+        ++stats_.external_nonce_conflicts;
+        disable_wallet_for_conflict(wallet_idx,
+                                    "account nonce advanced through only part of an admitted signed run");
+        return;
+      }
       wallet.admitted_tasks.erase(wallet.admitted_tasks.begin());
     }
   }
@@ -4147,6 +4583,31 @@ void NativeLoadWorker::observe_canonical_transfers(
                        std::find(expected_it->second.begin(), expected_it->second.end(),
                                  observation.external_hash) != expected_it->second.end();
     if (exact_match) {
+      auto task = find_task_covering(wallet.tasks, observation.nonce);
+      if (!task) {
+        task = find_task_covering(wallet.admitted_tasks, observation.nonce);
+      }
+      if (!task) {
+        ++stats_.canonical_hash_conflicts;
+        ++stats_.external_nonce_conflicts;
+        disable_wallet_for_conflict(observation.wallet_idx,
+                                    "canonical signed message hash has no live source interval");
+        continue;
+      }
+      // A run's one parent hash may appear in an observation for each logical
+      // output.  Count every child for TPS, but retain the parent and task
+      // until every interval member was proven.  This is what prevents a
+      // checkpoint, repair, or retry from splitting a signed authorization.
+      if (!task->proof_parent_matches(observation.external_hash)) {
+        ++stats_.canonical_hash_conflicts;
+        ++stats_.external_nonce_conflicts;
+        disable_wallet_for_conflict(observation.wallet_idx,
+                                    "canonical run children matched different parent hashes");
+        continue;
+      }
+      if (!task->mark_proof_observed(observation.nonce, observation.external_hash)) {
+        continue;
+      }
       ++wallet.canonical_total_matched;
       if (nonce_in_half_open_cohort(observation.nonce, wallet.steady_start_nonce,
                                     wallet.steady_end_nonce)) {
@@ -4158,11 +4619,17 @@ void NativeLoadWorker::observe_canonical_transfers(
       CHECK(wallet.canonical_steady_matched <=
             wallet.steady_end_nonce - wallet.steady_start_nonce);
       CHECK(wallet.canonical_total_matched <= wallet.next_nonce - wallet.run_start_nonce);
-      wallet.expected_hashes.erase(expected_it);
-      wallet.admitted_tasks.erase(observation.nonce);
-      auto task_it = wallet.tasks.find(observation.nonce);
-      if (task_it != wallet.tasks.end()) {
-        accept_task(task_it->second, TaskResolution::proof_observed);
+      if (task->proof_complete()) {
+        if (task->signed_run) {
+          ++stats_.native_signed_run_proof_resolutions;
+        }
+        forget_expected_hashes(task);
+        auto active_it = wallet.tasks.find(task->first_nonce());
+        if (active_it != wallet.tasks.end() && active_it->second == task) {
+          accept_task(task, TaskResolution::proof_observed);
+        } else {
+          wallet.admitted_tasks.erase(task->first_nonce());
+        }
       }
     } else if (observation.nonce >= wallet.run_start_nonce) {
       ++stats_.canonical_hash_conflicts;
@@ -4257,11 +4724,17 @@ void NativeLoadWorker::repair_gaps() {
         continue;
       }
       invalidate_available_wallet(i);
-      auto admitted_it = wallet.admitted_tasks.find(wallet.anchored_nonce);
-      if (admitted_it != wallet.admitted_tasks.end()) {
-        auto task = admitted_it->second;
+      auto task = find_task_covering(wallet.admitted_tasks, wallet.anchored_nonce);
+      if (task) {
+        if (task->first_nonce() != wallet.anchored_nonce) {
+          ++stats_.canonical_hash_conflicts;
+          ++stats_.external_nonce_conflicts;
+          disable_wallet_for_conflict(i,
+                                      "repair would start inside an admitted source-signed run");
+          continue;
+        }
         CHECK(task && task->state == TaskState::resolved && !task->boc.empty() &&
-              task->transfer.nonce == wallet.anchored_nonce &&
+              task->first_nonce() == wallet.anchored_nonce &&
               wallet.expected_hashes.count(wallet.anchored_nonce));
         task->state = TaskState::ready;
         task->repair = true;
@@ -4271,16 +4744,39 @@ void NativeLoadWorker::repair_gaps() {
         task->retry_exhaustion_counted = false;
         task->ever_submitted = false;
         task->first_issued_at = now;
-        wallet.tasks.emplace(wallet.anchored_nonce, task);
-        ++active_tasks_;
-        ++stats_.repair_offered;
+        wallet.tasks.emplace(task->first_nonce(), task);
+        active_tasks_ += task->logical_count();
+        stats_.repair_offered += task->logical_count();
         wallet.last_repair_nonce = wallet.anchored_nonce;
         wallet.last_repair_at = now;
         mark_task_ready(task);
       } else {
         // No admission was ever observed for this nonce, so there is no known
         // pending hash to preserve and a freshly signed repair is appropriate.
-        create_transfer(i, wallet.anchored_nonce, false, true);
+        if (options_.native_signed_runs.requested) {
+          auto remaining = wallet.next_nonce - wallet.anchored_nonce;
+          auto logical_capacity = std::min<td::uint64>(
+              remaining, static_cast<td::uint64>(options_.max_inflight - active_tasks_));
+          auto largest_client_window = largest_client_available_capacity();
+          if (largest_client_window == 0) {
+            continue;
+          }
+          logical_capacity = std::min<td::uint64>(logical_capacity, largest_client_window);
+          auto plan = native_load::make_native_signed_run_plan(
+              wallet.anchored_nonce, static_cast<std::size_t>(logical_capacity),
+              options_.native_signed_runs);
+          if (!plan.is_valid() ||
+              plan.first_nonce > std::numeric_limits<td::uint64>::max() - plan.logical_count) {
+            ++stats_.canonical_hash_conflicts;
+            ++stats_.external_nonce_conflicts;
+            disable_wallet_for_conflict(i,
+                                        "cannot construct an atomic signed-run repair interval");
+            continue;
+          }
+          create_signed_run(i, plan, false, true);
+        } else {
+          create_transfer(i, wallet.anchored_nonce, false, true);
+        }
       }
     }
   }
@@ -4385,10 +4881,10 @@ int main(int argc, char* argv[]) {
                                                "submit-source-run-size must be 1..1024");
                             });
   parser.add_option(0, "native-signed-runs",
-                    "request v5 NTRN source-signed runs (currently fail-closed until protocol activation)",
+                    "emit v5 NTRN source-signed runs instead of scalar NTFX messages",
                     [&] { options.native_signed_runs.requested = true; });
   parser.add_checked_option(0, "native-signed-run-size",
-                            "logical transfers per requested v5 NTRN run (1..16; inactive until activation)",
+                            "logical transfers per v5 NTRN run (1..16; used with --native-signed-runs)",
                             [&](td::Slice value) {
                               options.native_signed_runs.entries_per_run = td::to_integer<td::uint32>(value);
                               return native_load::valid_native_signed_run_settings(options.native_signed_runs)
@@ -4619,12 +5115,9 @@ int main(int argc, char* argv[]) {
   if (options.canonical_state_lag_retry_max_backoff_ms < options.canonical_state_lag_retry_backoff_ms) {
     LOG(FATAL) << "canonical state-lag retry max backoff must be at least the initial backoff";
   }
-  if (options.submit_source_run_size > options.submit_batch_size) {
+  if (!options.native_signed_runs.requested &&
+      options.submit_source_run_size > options.submit_batch_size) {
     LOG(FATAL) << "submit-source-run-size must not exceed submit-batch-size";
-  }
-  if (options.native_signed_runs.requested) {
-    LOG(FATAL) << "native-signed-runs requires v5 pool, collator, validator, follower, and genesis activation; "
-                  "this generator build intentionally emits only legacy NTFX messages";
   }
   if (options.workers > options.sources || options.workers > options.connections ||
       options.workers > options.signers || options.workers > options.max_inflight) {
@@ -4638,7 +5131,7 @@ int main(int argc, char* argv[]) {
   if (options.max_canonical_backlog && options.max_canonical_backlog < options.workers) {
     LOG(FATAL) << "max-canonical-backlog must be zero or at least the worker count";
   }
-  if (options.submit_batch_size > 1 && options.query_timeout < 9.0) {
+  if (!options.native_signed_runs.requested && options.submit_batch_size > 1 && options.query_timeout < 9.0) {
     LOG(FATAL) << "batched submission requires query-timeout >= 9 seconds; the server owns "
                   "admission work for at most 8 seconds";
   }

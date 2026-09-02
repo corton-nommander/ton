@@ -283,15 +283,15 @@ inline bool retry_entry_can_wake(bool task_is_active, bool task_is_waiting, doub
 
 // A NativeTransferRun has one source signature for a contiguous, ordered
 // nonce interval. Keep this small model independent from the wire codec so
-// generator policy tests can protect the eventual dispatcher without turning
-// on the v5 message format. The generator has a compile-time guard against
+// generator policy tests can protect dispatcher range rules without needing
+// to serialize a v5 message. The generator has a compile-time guard against
 // this value drifting from block::NativeTransferRun::max_entries.
 constexpr std::uint32_t max_native_signed_run_entries = 16;
 
 struct NativeSignedRunSettings {
-  // This records an operator's requested future wire mode. It is deliberately
-  // false by default; the current generator fails closed if it is set because
-  // its pool/collator/validator integration is not active yet.
+  // Keep this opt-in so the established scalar NTFX generator remains the
+  // default. When requested, the generator emits one NTRN authorization for
+  // each plan rather than expanding that interval into scalar messages.
   bool requested{false};
   std::uint32_t entries_per_run{max_native_signed_run_entries};
 };
@@ -303,6 +303,28 @@ struct NativeSignedRunPlan {
   bool is_valid() const {
     return logical_count != 0 && logical_count <= max_native_signed_run_entries &&
            first_nonce <= std::numeric_limits<std::uint64_t>::max() - (logical_count - 1);
+  }
+
+  // Keep all range arithmetic overflow-safe.  A run may legally include
+  // UINT64_MAX as its final nonce, so callers must not manufacture an
+  // exclusive uint64 end marker merely to test containment or completion.
+  bool contains(std::uint64_t nonce) const {
+    return is_valid() && nonce >= first_nonce &&
+           nonce - first_nonce < static_cast<std::uint64_t>(logical_count);
+  }
+
+  // `observed_next_nonce` is the account's next expected nonce.  It proves
+  // this run only when it is strictly beyond every member of the interval.
+  // A progress value inside the interval is a protocol violation for an
+  // atomic NTRN run and must never cause a child-only retry or resolution.
+  bool completed_before(std::uint64_t observed_next_nonce) const {
+    return is_valid() && observed_next_nonce > first_nonce &&
+           observed_next_nonce - first_nonce >= static_cast<std::uint64_t>(logical_count);
+  }
+
+  bool bisected_by(std::uint64_t observed_next_nonce) const {
+    return is_valid() && observed_next_nonce > first_nonce &&
+           !completed_before(observed_next_nonce);
   }
 };
 

@@ -298,6 +298,28 @@ TEST(NativeLoadGeneratorPolicy, NativeSignedRunPlanCannotOverflowItsNonceInterva
   ASSERT_TRUE(final_nonce.is_valid());
 }
 
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunRangeMustResolveAsOneWholeInterval) {
+  native_load::NativeSignedRunSettings settings;
+  settings.requested = true;
+  settings.entries_per_run = 4;
+  auto plan = native_load::make_native_signed_run_plan(40, 4, settings);
+
+  ASSERT_TRUE(plan.is_valid());
+  ASSERT_TRUE(plan.contains(40));
+  ASSERT_TRUE(plan.contains(43));
+  ASSERT_TRUE(!plan.contains(39));
+  ASSERT_TRUE(!plan.contains(44));
+
+  // A canonical/account-progress update through only child nonces 40..42 is
+  // not a valid resolution point for a source-signed run.
+  ASSERT_TRUE(!plan.completed_before(40));
+  ASSERT_TRUE(plan.bisected_by(41));
+  ASSERT_TRUE(plan.bisected_by(43));
+  ASSERT_TRUE(!plan.completed_before(43));
+  ASSERT_TRUE(plan.completed_before(44));
+  ASSERT_TRUE(!plan.bisected_by(44));
+}
+
 TEST(NativeLoadGeneratorPolicy, NativeSignedRunSettingsRejectInvalidBounds) {
   native_load::NativeSignedRunSettings settings;
   settings.requested = true;

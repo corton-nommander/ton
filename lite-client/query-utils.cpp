@@ -39,14 +39,30 @@ namespace {
 
 td::Result<std::vector<ShardIdFull>> external_message_routing_shards(const td::BufferSlice& body) {
   TRY_RESULT(root, vm::std_boc_deserialize(body.clone()));
-  auto native = block::NativeTransfer::unpack_external(root);
-  if (native.is_ok()) {
-    auto transfer = native.move_as_ok();
+  auto native_cs = vm::load_cell_slice(root);
+  auto native_tag = native_cs.prefetch_ulong(32);
+  if (native_tag == block::NativeTransfer::magic) {
+    TRY_RESULT(transfer, block::NativeTransfer::unpack_external(std::move(root)));
     std::vector<ShardIdFull> result;
     result.push_back(extract_addr_prefix(basechainId, transfer.src).as_leaf_shard());
     auto destination = extract_addr_prefix(basechainId, transfer.dst).as_leaf_shard();
     if (destination != result.front()) {
       result.push_back(destination);
+    }
+    return result;
+  }
+  if (native_tag == block::NativeTransferRun::magic) {
+    // NativeTransferRun::unpack_external also verifies that the output tree is
+    // canonical.  Routing must not accept an alternate encoding whose
+    // semantically equivalent outputs would have a different external hash.
+    TRY_RESULT(run, block::NativeTransferRun::unpack_external(std::move(root)));
+    std::vector<ShardIdFull> result;
+    result.push_back(extract_addr_prefix(basechainId, run.src).as_leaf_shard());
+    for (const auto& output : run.outputs) {
+      auto destination = extract_addr_prefix(basechainId, output.dst).as_leaf_shard();
+      if (std::find(result.begin(), result.end(), destination) == result.end()) {
+        result.push_back(destination);
+      }
     }
     return result;
   }

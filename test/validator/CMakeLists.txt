@@ -5,6 +5,20 @@ target_include_directories(test-native-admission-batch PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(test-native-admission-batch PRIVATE td-test-main tdutils ton_validator)
 ton_test(test-native-admission-batch)
 
+add_executable(test-external-message-routing test-external-message-routing.cpp)
+target_include_directories(test-external-message-routing PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+                                                             ${CMAKE_SOURCE_DIR}/common
+                                                             ${CMAKE_SOURCE_DIR}/crypto
+                                                             ${CMAKE_SOURCE_DIR}/tdactor
+                                                             ${CMAKE_SOURCE_DIR}/tddb
+                                                             ${CMAKE_SOURCE_DIR}/tdnet
+                                                             ${CMAKE_SOURCE_DIR}/tdfec
+                                                             ${CMAKE_SOURCE_DIR}/tl
+                                                             ${CMAKE_SOURCE_DIR}/tl/generate
+                                                             ${CMAKE_SOURCE_DIR}/third-party/rocksdb/include)
+target_link_libraries(test-external-message-routing PRIVATE td-test-main tdutils ton_validator)
+ton_test(test-external-message-routing)
+
 add_executable(test-collator-external-wait-stats test-collator-external-wait-stats.cpp)
 target_include_directories(test-collator-external-wait-stats PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
                                                                     ${CMAKE_SOURCE_DIR}/common

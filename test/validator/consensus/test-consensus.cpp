@@ -69,6 +69,8 @@ static_assert(native_ext_msg_transport_prefetch_fragments == 2);
 static_assert(native_ext_msg_transport_prefetch_capacity == 1'024);
 static_assert(native_checkpoint_coalesce_max_entries == 2'048);
 static_assert(native_checkpoint_coalesce_fanout_limit == 3'072);
+// A transient empty queue probe does not end a checkpoint group; the caller
+// passes true only after the bounded refill wait actually expires.
 static_assert(!should_flush_native_checkpoint(512, 1, 1'024, false, false, false, false));
 static_assert(should_flush_native_checkpoint(2'048, 4, 2'000, false, false, false, false));
 static_assert(should_flush_native_checkpoint(1'024, 2, 1'024, true, false, false, false));
@@ -116,6 +118,20 @@ static_assert(select_native_intake_deadline_action(true, false, false) == Native
 static_assert(select_native_intake_deadline_action(true, true, true) == NativeIntakeDeadlineAction::seal_committed);
 static_assert(select_native_intake_deadline_action(true, false, true) ==
               NativeIntakeDeadlineAction::commit_first_fragment);
+// A completed refill continues the exact checkpoint. A real empty refill
+// seals it only at its existing boundary; if that boundary is the intake
+// deadline, an earlier exact checkpoint wins and the speculative group rolls
+// back instead.
+static_assert(select_native_checkpoint_refill_boundary_action(true, true, false, true) ==
+              NativeCheckpointRefillBoundaryAction::retain);
+static_assert(select_native_checkpoint_refill_boundary_action(true, false, false, true) ==
+              NativeCheckpointRefillBoundaryAction::flush);
+static_assert(select_native_checkpoint_refill_boundary_action(true, false, true, true) ==
+              NativeCheckpointRefillBoundaryAction::seal_committed);
+static_assert(select_native_checkpoint_refill_boundary_action(true, false, true, false) ==
+              NativeCheckpointRefillBoundaryAction::commit_first_fragment);
+static_assert(select_native_checkpoint_refill_boundary_action(false, false, true, true) ==
+              NativeCheckpointRefillBoundaryAction::retain);
 static_assert(select_native_queue_refill_action(
                   {.work_driven = true, .has_staged_fragment = true, .fragment_window_open = true}) ==
               NativeQueueRefillAction::wait_fragment);

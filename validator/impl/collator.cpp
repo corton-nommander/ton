@@ -5066,8 +5066,6 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     bool queue_exhausted = false;
     bool saw_item = false;
     bool intake_deadline_before_batch = false;
-    bool checkpoint_ingress_boundary = false;
-    bool checkpoint_refill_boundary = false;
     std::optional<td::Timestamp> fragment_refill_until;
     std::optional<td::Timestamp> post_commit_idle_until;
     auto bounded_coalescing_deadline = [&] {
@@ -5097,6 +5095,11 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
       std::pair<td::Ref<ExtMessage>, int> item;
       if (pending_ext_msgs_.empty()) {
+        // This flag belongs to one actual await, not the whole outer
+        // execution fragment. A marker-only wake is allowed to re-enter the
+        // nonblocking probe without making a later probe miss look like an
+        // expired checkpoint refill wait in telemetry.
+        bool checkpoint_waited = false;
         td::Result<ExtMsgPopBatch> maybe;
         td::Timer wait_timer;
         auto wait_kind = ExternalWaitKind::native_probe;
@@ -5109,31 +5112,12 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
             co_return false;
           }
           if (maybe.is_error()) {
-            // Never retain a speculative checkpoint while waiting for the
-            // producer. Flush completed earlier fragments before either the
-            // normal post-commit idle grace or a partial-fragment refill. A
-            // partial batch has not executed yet, so this cannot split an
-            // ordered native state transition.
-            if (!pending_checkpoint.empty()) {
-              if (!flush_pending_checkpoint(NativeCheckpointFlushReason::ingress)) {
-                co_return false;
-              }
-              full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
-                     !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
-                                                                consensus_max_block_size);
-              block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
-              if (batch.empty()) {
-                checkpoint_ingress_boundary = true;
-                record_external_wait(wait_kind, wait_timer.elapsed());
-                break;
-              }
-              if (full) {
-                queue_exhausted = true;
-                record_external_wait(wait_kind, wait_timer.elapsed());
-                break;
-              }
-            }
-            checkpoint_refill_boundary = checkpoint_refill_boundary || !batch.empty();
+            // An empty nonblocking probe can be the actor hand-off gap
+            // between a queue-sized producer prefix and its next refill. The
+            // checkpoint is fully journaled and has not changed live
+            // candidate state, so retain it through one existing bounded
+            // wait. Only a real wait expiry (or a hard existing boundary)
+            // forces the exact checkpoint below.
             auto producer_pending = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
             if (batch.empty() && !native_transfer_batch_entries_.empty() && !post_commit_idle_until) {
               post_commit_idle_until = bounded_post_commit_pack_deadline();
@@ -5166,6 +5150,9 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
               case consensus::NativeQueueRefillAction::stop:
                 break;
             }
+            if (!pending_checkpoint.empty() && pending_checkpoint.latency_deadline) {
+              wait_until.relax(*pending_checkpoint.latency_deadline);
+            }
             if (refill_action != consensus::NativeQueueRefillAction::stop && wait_until && !wait_until.is_in_past()) {
               switch (refill_action) {
                 case consensus::NativeQueueRefillAction::wait_first_work:
@@ -5185,6 +5172,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
               } else if (refill_action == consensus::NativeQueueRefillAction::wait_post_commit_idle) {
                 ++stats_.native_post_commit_idle_waits;
               }
+              checkpoint_waited = !pending_checkpoint.empty();
               maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), true, wait_until).wrap();
             }
           }
@@ -5215,13 +5203,56 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
               ++stats_.native_post_commit_idle_timeouts;
             }
           }
-          if (native_intake_timeout_reached() && !native_transfer_batch_entries_.empty() && batch.empty()) {
-            record_deadline_seal(0);
+          if (checkpoint_waited && maybe.error().code() == td::actor::AWAIT_TIMEOUT_CODE) {
+            ++stats_.native_checkpoint_refill_expirations;
+          }
+          if (batch.empty()) {
+            switch (consensus::select_native_checkpoint_refill_boundary_action(
+                !pending_checkpoint.empty(), false, native_intake_timeout_reached(),
+                !native_transfer_batch_entries_.empty())) {
+              case consensus::NativeCheckpointRefillBoundaryAction::retain:
+                break;
+              case consensus::NativeCheckpointRefillBoundaryAction::seal_committed: {
+                // A prior exact checkpoint already makes a useful candidate.
+                // Never let a refill wait cross the intake deadline and commit
+                // this unpreflighted group on the normal exit path.
+                auto deferred = rollback_pending_checkpoint();
+                record_deadline_seal(deferred);
+                break;
+              }
+              case consensus::NativeCheckpointRefillBoundaryAction::commit_first_fragment:
+                // The bounded first-fragment exception remains exactly that:
+                // a single initial checkpoint, never a coalesced group.
+                if (pending_checkpoint.fragments != 1) {
+                  co_return fatal_error(
+                      "native refill deadline attempted to commit more than the first checkpoint fragment");
+                }
+                if (!flush_pending_checkpoint(NativeCheckpointFlushReason::deadline)) {
+                  co_return false;
+                }
+                break;
+              case consensus::NativeCheckpointRefillBoundaryAction::flush: {
+                const bool latency_expired = pending_checkpoint.latency_deadline &&
+                                             pending_checkpoint.latency_deadline->is_in_past(td::Timestamp::now());
+                if (!flush_pending_checkpoint(latency_expired ? NativeCheckpointFlushReason::latency
+                                                              : NativeCheckpointFlushReason::ingress)) {
+                  co_return false;
+                }
+                full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
+                       !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+                                                                  consensus_max_block_size);
+                block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+                break;
+              }
+            }
           }
           queue_exhausted = true;
           break;
         }
         auto popped = maybe.move_as_ok();
+        if (checkpoint_waited && !popped.messages.empty()) {
+          ++stats_.native_checkpoint_refill_continuations;
+        }
         if (refill_action == consensus::NativeQueueRefillAction::wait_fragment) {
           stats_.native_fragment_refill_messages += popped.messages.size();
         }
@@ -5281,16 +5312,6 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     }
 
     if (batch.empty()) {
-      if (checkpoint_ingress_boundary) {
-        if (!flush_pending_checkpoint(NativeCheckpointFlushReason::ingress)) {
-          co_return false;
-        }
-        full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
-               !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
-                                                          consensus_max_block_size);
-        block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
-        continue;
-      }
       if (intake_deadline_before_batch) {
         auto deferred = rollback_pending_checkpoint();
         record_deadline_seal(deferred);
@@ -5637,7 +5658,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
 
     if (!pending_checkpoint.empty()) {
       const bool initial_checkpoint = native_transfer_batch_entries_.empty();
-      const bool ingress_boundary = checkpoint_refill_boundary || queue_exhausted || batch.size() < batch_capacity;
+      const bool ingress_boundary = queue_exhausted || batch.size() < batch_capacity;
       const bool headroom_limited = full;
       const bool latency_expired = pending_checkpoint.latency_deadline &&
                                    pending_checkpoint.latency_deadline->is_in_past(td::Timestamp::now());

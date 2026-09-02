@@ -106,10 +106,11 @@ inline constexpr std::size_t native_checkpoint_coalesce_fanout_limit =
 inline constexpr double native_checkpoint_coalesce_max_latency_seconds = 0.025;
 
 // The checkpoint policy is pure so its safety boundaries remain independently
-// testable.  `ingress_boundary` means the next fragment would need to wait or
-// the current fragment was partial; do not keep speculative state across that
-// boundary.  `headroom_limited` is raised by the conservative deferred-size
-// reservation before another transfer is staged.
+// testable. `ingress_boundary` means the bounded refill wait actually ended
+// without another fragment (or the current source snapshot was partial), not
+// a transient empty nonblocking queue probe. `headroom_limited` is raised by
+// the conservative deferred-size reservation before another transfer is
+// staged.
 constexpr bool should_flush_native_checkpoint(std::size_t staged_entries, std::size_t staged_fragments,
                                               std::size_t staged_dirty_accounts, bool deadline_reached,
                                               bool ingress_boundary, bool headroom_limited,
@@ -270,6 +271,29 @@ constexpr NativeIntakeDeadlineAction select_native_intake_deadline_action(bool d
     return NativeIntakeDeadlineAction::commit_first_fragment;
   }
   return NativeIntakeDeadlineAction::idle;
+}
+
+enum class NativeCheckpointRefillBoundaryAction { retain, flush, seal_committed, commit_first_fragment };
+
+// The collator only asks this after a queue probe or bounded refill returns no
+// messages. A successful refill (including a marker-only wake, which is
+// retried against the same fixed deadline) keeps the journaled checkpoint.
+constexpr NativeCheckpointRefillBoundaryAction select_native_checkpoint_refill_boundary_action(
+    bool has_pending_checkpoint, bool refill_returned_messages, bool intake_deadline_reached,
+    bool has_committed_fragment) {
+  if (!has_pending_checkpoint || refill_returned_messages) {
+    return NativeCheckpointRefillBoundaryAction::retain;
+  }
+  switch (select_native_intake_deadline_action(intake_deadline_reached, has_committed_fragment, true)) {
+    case NativeIntakeDeadlineAction::continue_work:
+    case NativeIntakeDeadlineAction::idle:
+      return NativeCheckpointRefillBoundaryAction::flush;
+    case NativeIntakeDeadlineAction::seal_committed:
+      return NativeCheckpointRefillBoundaryAction::seal_committed;
+    case NativeIntakeDeadlineAction::commit_first_fragment:
+      return NativeCheckpointRefillBoundaryAction::commit_first_fragment;
+  }
+  return NativeCheckpointRefillBoundaryAction::flush;
 }
 
 enum class NativeQueueRefillAction { stop, wait_first_work, wait_fragment, wait_post_commit_idle };

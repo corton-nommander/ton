@@ -160,6 +160,39 @@ TEST(NativeLoadGeneratorPolicy, DetectsOnlyExplicitCanonicalStateLag) {
   ASSERT_TRUE(!native_load::is_canonical_state_lag_diagnostic("mempool is full"));
 }
 
+TEST(NativeLoadGeneratorPolicy, SignedRunSnapshotRevisionRacesAvoidOnlyAimdDecrease) {
+  auto is_race = [](std::string_view diagnostic, bool signed_run_task = true) {
+    return native_load::is_native_signed_run_admission_snapshot_or_revision_race_diagnostic(
+        signed_run_task, diagnostic);
+  };
+  ASSERT_TRUE(is_race("error 651: native transfer run admission snapshot changed; retry"));
+  ASSERT_TRUE(is_race("native account changed during signature verification; retry admission"));
+  ASSERT_TRUE(is_race("native account changed before mempool insertion; retry admission"));
+  ASSERT_TRUE(is_race("native account changed before mempool commit; retry admission"));
+
+  // Do not turn a broad native/not-ready phrase into an AIMD exemption, and
+  // retain the scalar generator's historical response to these diagnostics.
+  ASSERT_TRUE(!is_race("native transfer run admission snapshot changed"));
+  ASSERT_TRUE(!is_race("native account changed during signature verification; retry"));
+  ASSERT_TRUE(!is_race("native account changed before mempool insertion; retry"));
+  ASSERT_TRUE(!is_race("native account changed before mempool insertion; retry admission", false));
+  ASSERT_TRUE(!is_race("not ready"));
+  ASSERT_TRUE(!is_race("still in flight"));
+  ASSERT_TRUE(!is_race("mempool is full"));
+
+  auto should_decrease = [](bool timeout, bool full, bool rate_limit, bool not_ready,
+                            bool canonical_state_lag, bool signed_run_race) {
+    return native_load::should_decrease_adaptive_cwnd_for_admission_failure(
+        timeout, full, rate_limit, not_ready, canonical_state_lag, signed_run_race);
+  };
+  ASSERT_TRUE(!should_decrease(false, false, false, true, false, true));
+  ASSERT_TRUE(!should_decrease(false, false, false, true, true, false));
+  ASSERT_TRUE(should_decrease(false, false, false, true, false, false));
+  ASSERT_TRUE(should_decrease(true, false, false, true, false, true));
+  ASSERT_TRUE(should_decrease(false, true, false, true, false, true));
+  ASSERT_TRUE(should_decrease(false, false, true, true, false, true));
+}
+
 TEST(NativeLoadGeneratorPolicy, CanonicalLagBackoffIsBounded) {
   auto delay = [](std::uint32_t failures) {
     return native_load::canonical_state_lag_retry_delay_seconds(failures, 250, 2000);

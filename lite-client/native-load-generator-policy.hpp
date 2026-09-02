@@ -95,6 +95,43 @@ inline bool is_canonical_state_lag_diagnostic(std::string_view lowercase_diagnos
          lowercase_diagnostic.find(canonical_watermark_marker) != std::string_view::npos;
 }
 
+// These exact diagnostics describe an NTRN admission snapshot or account
+// revision race after work has already been verified. They are recoverable,
+// but they are not generic admission pressure and therefore must not make the
+// signed-run generator halve its AIMD window. Keep the scalar path unchanged:
+// the same native-account revision checks can be reached by a legacy NTFX,
+// but only a concrete NTRN task receives this narrow exemption. The
+// caller lower-cases the server diagnostic before classification.
+inline bool is_native_signed_run_admission_snapshot_or_revision_race_diagnostic(
+    bool native_signed_run_task, std::string_view lowercase_diagnostic) {
+  if (!native_signed_run_task) {
+    return false;
+  }
+  constexpr std::string_view snapshot_changed_marker =
+      "native transfer run admission snapshot changed; retry";
+  constexpr std::string_view signature_revision_marker =
+      "native account changed during signature verification; retry admission";
+  constexpr std::string_view insertion_revision_marker =
+      "native account changed before mempool insertion; retry admission";
+  constexpr std::string_view commit_revision_marker =
+      "native account changed before mempool commit; retry admission";
+  return lowercase_diagnostic.find(snapshot_changed_marker) != std::string_view::npos ||
+         lowercase_diagnostic.find(signature_revision_marker) != std::string_view::npos ||
+         lowercase_diagnostic.find(insertion_revision_marker) != std::string_view::npos ||
+         lowercase_diagnostic.find(commit_revision_marker) != std::string_view::npos;
+}
+
+// Preserve the existing congestion response for timeouts, explicit pressure,
+// and every unclassified not-ready response. Snapshot/revision races retain
+// their existing retry path; this decision only avoids treating that narrow
+// NTRN race as a congestion signal.
+inline bool should_decrease_adaptive_cwnd_for_admission_failure(
+    bool timeout, bool full, bool rate_limit, bool not_ready, bool canonical_state_lag,
+    bool native_signed_run_snapshot_or_revision_race) {
+  return timeout || full || rate_limit ||
+         (not_ready && !canonical_state_lag && !native_signed_run_snapshot_or_revision_race);
+}
+
 inline double canonical_state_lag_retry_delay_seconds(std::uint32_t consecutive_failures,
                                                       std::uint32_t initial_backoff_ms,
                                                       std::uint32_t maximum_backoff_ms) {

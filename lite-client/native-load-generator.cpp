@@ -3814,6 +3814,9 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
   bool expired = contains("valid_until") || contains("expired");
   bool too_new = contains("too new native nonce");
   bool canonical_state_lag = native_load::is_canonical_state_lag_diagnostic(lower);
+  bool native_signed_run_snapshot_or_revision_race =
+      native_load::is_native_signed_run_admission_snapshot_or_revision_race_diagnostic(
+          task && task->signed_run, lower);
   bool not_ready = canonical_state_lag || error.code() == ton::ErrorCode::notready || contains("not ready") ||
                    contains("still in flight");
   // ErrorCode::notready may explain that the canonical account state has not
@@ -3845,7 +3848,9 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
   } else if (origin == ErrorOrigin::transport) {
     ++stats_.transport_errors;
   }
-  if (options_.adaptive_inflight && (timeout || full || rate_limit || (not_ready && !canonical_state_lag))) {
+  if (options_.adaptive_inflight && native_load::should_decrease_adaptive_cwnd_for_admission_failure(
+                                       timeout, full, rate_limit, not_ready, canonical_state_lag,
+                                       native_signed_run_snapshot_or_revision_race)) {
     auto now = td::Time::now();
     auto& client = clients_[client_idx];
     // A burst of failures from one old window is one congestion event, not

@@ -22,6 +22,7 @@
 #include "td/utils/port/signals.h"
 #include "tl-utils/lite-utils.hpp"
 #include "ton/lite-tl.hpp"
+#include "ton/ton-shard.h"
 #include "vm/boc.h"
 #include "vm/cells/MerkleProof.h"
 #include "vm/vm.h"
@@ -35,6 +36,7 @@
 #include <cmath>
 #include <csignal>
 #include <deque>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -48,6 +50,17 @@ namespace {
 volatile std::sig_atomic_t stop_requested = 0;
 std::atomic<int> process_exit_code{0};
 constexpr td::uint64 max_native_nonce_diff = 4096;
+
+// Payment lanes are address-prefix lanes.  This is deliberately a generator
+// preflight only: consensus remains responsible for enforcing the configured
+// lane policy when it admits a transfer.  Keeping the check here prevents a
+// benchmark from spending its run window on known-invalid, cross-lane wallet
+// pairs.
+bool same_native_payment_lane(const ton::StdSmcAddress& source,
+                              const ton::StdSmcAddress& destination,
+                              td::uint32 depth) {
+  return depth == 0 || ton::shard_prefix(source, depth) == ton::shard_prefix(destination, depth);
+}
 
 constexpr td::int64 whole_second_bucket_begin(td::int64 unix_milliseconds) {
   return (unix_milliseconds + 999) / 1000;
@@ -172,6 +185,7 @@ struct Options {
   td::uint32 adaptive_max_cwnd{0};
   td::uint32 submit_batch_size{1};
   td::uint32 submit_source_run_size{1};
+  td::uint32 native_payment_lane_depth{0};
   native_load::NativeSignedRunSettings native_signed_runs;
   td::uint32 submit_coalesce_ms{2};
   td::uint32 submit_max_queries_per_client{0};
@@ -1052,6 +1066,19 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     std::size_t wallet_idx{0};
   };
 
+  // A follower poll is committed atomically.  Each fixed basechain leaf
+  // walks backwards from the newest proof-anchored tip to the last committed
+  // tip, and observations are delivered only after every changed leaf has
+  // completed that walk.  That preserves the old single-shard all-or-nothing
+  // retry semantics while allowing independent payment lanes to progress in
+  // parallel.
+  struct ShardFollowPath {
+    ton::BlockIdExt followed;
+    ton::BlockIdExt target;
+    ton::BlockIdExt pending;
+    bool complete{false};
+  };
+
   Options options_;
   std::vector<td::actor::ActorOwn<NativeLoadWorker>> workers_;
   std::vector<bool> worker_ready_;
@@ -1079,6 +1106,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
   bool startup_discovery_dispatched_{false};
   bool follower_query_active_{false};
   bool follower_retry_pending_{false};
+  bool follower_topology_wait_pending_{false};
   bool follower_retry_baseline_{false};
   bool follower_transient_recovery_pending_{false};
   bool workers_complete_{false};
@@ -1091,9 +1119,11 @@ class NativeLoadCoordinator final : public td::actor::Actor {
   double last_report_at_{0.0};
   double next_follower_poll_at_{0.0};
   double follower_retry_at_{0.0};
+  double follower_topology_wait_at_{0.0};
   double follower_poll_started_system_at_{0.0};
-  ton::BlockIdExt followed_shard_block_;
-  ton::BlockIdExt follower_target_block_;
+  std::map<ton::ShardIdFull, ton::BlockIdExt> followed_shard_blocks_;
+  std::map<ton::ShardIdFull, ShardFollowPath> follower_paths_;
+  td::uint64 follower_poll_generation_{0};
   ton::BlockIdExt startup_discovery_mc_block_;
   std::vector<std::vector<CanonicalTransferObservation>> follower_observations_;
   std::map<ton::UnixTime, td::uint64> follower_measure_second_counts_;
@@ -1107,10 +1137,14 @@ class NativeLoadCoordinator final : public td::actor::Actor {
   void maybe_begin();
   void maybe_start_fixed_startup_discovery();
   void request_follower_poll(bool baseline);
-  void on_follower_masterchain(bool baseline, td::Result<td::BufferSlice> result);
-  void on_follower_shards(bool baseline, ton::BlockIdExt mc_block, td::Result<td::BufferSlice> result);
-  void request_follower_block(ton::BlockIdExt block_id);
-  void on_follower_block(ton::BlockIdExt requested, td::Result<td::BufferSlice> result);
+  void on_follower_masterchain(bool baseline, td::uint64 generation,
+                               td::Result<td::BufferSlice> result);
+  void on_follower_shards(bool baseline, td::uint64 generation, ton::BlockIdExt mc_block,
+                          td::Result<td::BufferSlice> result);
+  void request_follower_block(ton::BlockIdExt block_id, td::uint64 generation);
+  void on_follower_block(td::uint64 generation, ton::BlockIdExt requested,
+                         td::Result<td::BufferSlice> result);
+  void maybe_complete_follower_paths();
   void complete_follower_poll();
   void mark_follower_recovered();
   void discard_follower_poll();
@@ -1220,6 +1254,10 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       }
     }
     auto now = td::Time::now();
+    if (follower_topology_wait_pending_ && !follower_query_active_ && now >= follower_topology_wait_at_) {
+      follower_topology_wait_pending_ = false;
+      request_follower_poll(true);
+    }
     if (follower_retry_pending_ && !follower_query_active_ && now >= follower_retry_at_) {
       auto baseline = follower_retry_baseline_;
       follower_retry_pending_ = false;
@@ -1574,6 +1612,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"native_signed_runs_enabled\":"
         << (options_.native_signed_runs.requested ? "true" : "false")
         << ",\"native_signed_run_target_size\":" << options_.native_signed_runs.entries_per_run
+        << ",\"native_payment_lane_depth\":" << options_.native_payment_lane_depth
         << ",\"native_signed_run_messages\":" << total.native_signed_run_messages
         << ",\"native_signed_run_logical_transfers\":" << total.native_signed_run_logical_transfers
         << ",\"native_signed_run_submission_attempts\":"
@@ -1784,6 +1823,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"canonical_follower_retry_max_backoff_s\":" << options_.canonical_retry_max_backoff_seconds
         << ",\"canonical_follower_query_timeout_s\":" << options_.canonical_query_timeout
         << ",\"canonical_follower_reorgs\":" << follower_stats_.reorgs
+        << ",\"canonical_follower_basechain_leaf_shards\":" << followed_shard_blocks_.size()
         << ",\"canonical_follower_lag_blocks\":" << follower_stats_.lag_blocks
         << ",\"canonical_follower_max_lag_blocks\":" << follower_stats_.max_lag_blocks
         << ",\"canonical_follower_enabled\":" << (options_.canonical_block_follower ? "true" : "false")
@@ -1847,6 +1887,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     std::cout << ",\"finalized\":null,\"finalized_semantics\":\"not_independently_observed\""
               << ",\"admission_semantics\":\"liteServer.sendMessage status=1; not block inclusion\""
               << ",\"native_signed_run_semantics\":\"when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash\""
+              << ",\"native_payment_lane_depth_semantics\":\"client-side source/destination address-prefix preflight depth; zero disables the check and consensus remains authoritative\""
               << ",\"wire_attempts_semantics\":\"physical external BOC bodies submitted to liteServer; an NTRN parent contributes one even when it authorizes multiple logical transfers\""
               << ",\"logical_submission_attempts_semantics\":\"logical transfers represented by every admission attempt, including retries; use alongside wire_attempts to measure NTRN message amortization\""
               << ",\"wire_batch_source_run_semantics\":\"adjacent ascending nonces from one source in a sendMessageBatch; each source appears in at most one bounded run per batch and seed selection remains globally fair\""
@@ -1872,6 +1913,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"canonical_follower_reconnects_semantics\":\"forced resets of the dedicated follower liteserver client after timeout, cancellation, or not-ready availability response\""
               << ",\"canonical_follower_retry_exhausted_semantics\":\"transient failure streaks exceeding canonical_follower_retry_limit; any exhausted streak invalidates the benchmark even if later polling recovers\""
               << ",\"canonical_follower_final_catchup_complete_semantics\":\"final poll atomically verified every basechain block back to the previously committed tip before workers were finalized\""
+              << ",\"canonical_follower_basechain_leaf_shards_semantics\":\"number of proof-anchored basechain leaf tips followed as one fixed topology; changed topology is a correctness failure rather than an unobserved history transition\""
               << ",\"repeat_admission_successes_semantics\":\"status=1 responses for a nonce whose admission was already counted; excluded from mempool_accepted and TPS\""
               << ",\"duplicate_semantics\":\"different or concurrently unresolved message owns the nonce; conflict, never admission or canonical proof\""
               << ",\"accepted_inferred_semantics\":\"deprecated proof-resolution counter; do not use as TPS\""
@@ -1936,6 +1978,7 @@ void NativeLoadCoordinator::maybe_begin() {
                << " source_run=" << options_.submit_source_run_size
                << " native_signed_runs=" << options_.native_signed_runs.requested
                << " native_signed_run_size=" << options_.native_signed_runs.entries_per_run
+               << " native_payment_lane_depth=" << options_.native_payment_lane_depth
                << " submit_coalesce_ms=" << options_.submit_coalesce_ms
                << " submit_max_queries_per_client=" << options_.submit_max_queries_per_client
                << " target_tps=" << options_.target_tps
@@ -1979,12 +2022,13 @@ void NativeLoadCoordinator::request_follower_poll(bool baseline) {
     return;
   }
   follower_query_active_ = true;
+  const auto generation = ++follower_poll_generation_;
   follower_poll_started_system_at_ = td::Clocks::system();
   auto query = ton::serialize_tl_object(
       ton::create_tl_object<ton::lite_api::liteServer_getMasterchainInfo>(), true);
   auto promise = td::PromiseCreator::lambda(
-      [self = actor_id(this), baseline](td::Result<td::BufferSlice> result) mutable {
-        td::actor::send_closure(self, &NativeLoadCoordinator::on_follower_masterchain, baseline,
+      [self = actor_id(this), baseline, generation](td::Result<td::BufferSlice> result) mutable {
+        td::actor::send_closure(self, &NativeLoadCoordinator::on_follower_masterchain, baseline, generation,
                                 std::move(result));
       });
   td::actor::send_closure(follower_client_, &liteclient::ExtClient::send_query, "native-load-follow-mc",
@@ -1993,7 +2037,11 @@ void NativeLoadCoordinator::request_follower_poll(bool baseline) {
                           std::move(promise));
 }
 
-void NativeLoadCoordinator::on_follower_masterchain(bool baseline, td::Result<td::BufferSlice> result) {
+void NativeLoadCoordinator::on_follower_masterchain(bool baseline, td::uint64 generation,
+                                                     td::Result<td::BufferSlice> result) {
+  if (!follower_query_active_ || generation != follower_poll_generation_) {
+    return;
+  }
   auto data = unwrap_lite_result(std::move(result));
   if (data.is_error()) {
     follower_query_error(baseline,
@@ -2011,8 +2059,8 @@ void NativeLoadCoordinator::on_follower_masterchain(bool baseline, td::Result<td
           ton::create_tl_lite_block_id(mc_block)),
       true);
   auto promise = td::PromiseCreator::lambda(
-      [self = actor_id(this), baseline, mc_block](td::Result<td::BufferSlice> shard_result) mutable {
-        td::actor::send_closure(self, &NativeLoadCoordinator::on_follower_shards, baseline, mc_block,
+      [self = actor_id(this), baseline, generation, mc_block](td::Result<td::BufferSlice> shard_result) mutable {
+        td::actor::send_closure(self, &NativeLoadCoordinator::on_follower_shards, baseline, generation, mc_block,
                                 std::move(shard_result));
       });
   td::actor::send_closure(follower_client_, &liteclient::ExtClient::send_query, "native-load-follow-shards",
@@ -2021,8 +2069,12 @@ void NativeLoadCoordinator::on_follower_masterchain(bool baseline, td::Result<td
                           std::move(promise));
 }
 
-void NativeLoadCoordinator::on_follower_shards(bool baseline, ton::BlockIdExt mc_block,
+void NativeLoadCoordinator::on_follower_shards(bool baseline, td::uint64 generation,
+                                                ton::BlockIdExt mc_block,
                                                 td::Result<td::BufferSlice> result) {
+  if (!follower_query_active_ || generation != follower_poll_generation_) {
+    return;
+  }
   auto data = unwrap_lite_result(std::move(result));
   if (data.is_error()) {
     follower_query_error(
@@ -2096,15 +2148,61 @@ void NativeLoadCoordinator::on_follower_shards(bool baseline, ton::BlockIdExt mc
     follower_fatal_error(td::Status::Error("cannot unpack proof-checked ShardHashes"));
     return;
   }
-  auto shard = shard_config.get_shard_hash(ton::ShardIdFull{ton::basechainId, ton::shardIdAll});
-  if (shard.is_null()) {
-    follower_fatal_error(td::Status::Error("masterchain has no unsplit basechain shard"));
+  // ShardHashes describes leaf basechain shards.  A lane topology has more
+  // than one leaf, so querying shardIdAll here would only work before the
+  // first split.  Every returned descriptor is authenticated by the
+  // getAllShardsInfo proof above, and its full top block id becomes one
+  // independently followed branch of this canonical poll.
+  std::map<ton::ShardIdFull, ton::BlockIdExt> current_tips;
+  const auto shard_ids = shard_config.get_shard_hash_ids(
+      std::function<bool(ton::ShardIdFull, bool)>{
+          [](ton::ShardIdFull shard, bool) { return shard.workchain == ton::basechainId; }});
+  if (shard_ids.empty()) {
+    follower_fatal_error(td::Status::Error("masterchain has no basechain shard leaves"));
     return;
   }
-  auto top = shard->top_block_id();
-  if (baseline || !followed_shard_block_.is_valid_full()) {
+  for (const auto& shard_id : shard_ids) {
+    auto shard = shard_config.get_shard_hash(shard_id.shard_full());
+    if (shard.is_null()) {
+      follower_fatal_error(td::Status::Error(
+          PSLICE() << "cannot resolve proof-checked basechain shard " << shard_id.to_str()));
+      return;
+    }
+    auto top = shard->top_block_id();
+    if (!top.is_valid_full() || top.id != shard_id || top.shard_full() != shard_id.shard_full()) {
+      follower_fatal_error(td::Status::Error(
+          PSLICE() << "invalid proof-checked basechain shard tip " << top.to_str()));
+      return;
+    }
+    if (!current_tips.emplace(top.shard_full(), top).second) {
+      follower_fatal_error(td::Status::Error(
+          PSLICE() << "duplicate proof-checked basechain shard tip " << top.shard_full().to_str()));
+      return;
+    }
+  }
+  const bool requested_lane_topology_ready =
+      options_.native_payment_lane_depth == 0 ||
+      std::all_of(current_tips.begin(), current_tips.end(), [this](const auto& item) {
+        return item.first.pfx_len() == static_cast<int>(options_.native_payment_lane_depth);
+      });
+  if ((baseline || followed_shard_blocks_.empty()) && !requested_lane_topology_ready) {
+    // Do not establish a root-shard baseline and later silently span the
+    // root-to-lane split.  A lane-enabled benchmark waits until the exact
+    // proof-anchored fixed-depth topology is live, then begins all nonce
+    // discovery and canonical observation from that stable point.
+    follower_query_active_ = false;
+    follower_topology_wait_pending_ = true;
+    follower_topology_wait_at_ = td::Time::now() + options_.canonical_poll_seconds;
+    LOG(WARNING) << "waiting for proof-anchored basechain payment-lane topology at depth "
+                 << options_.native_payment_lane_depth << "; current leaf count=" << current_tips.size();
+    alarm_timestamp().relax(td::Timestamp::in(options_.canonical_poll_seconds));
+    return;
+  }
+  if (baseline || followed_shard_blocks_.empty()) {
     mark_follower_recovered();
-    followed_shard_block_ = top;
+    followed_shard_blocks_ = std::move(current_tips);
+    follower_paths_.clear();
+    follower_topology_wait_pending_ = false;
     startup_discovery_mc_block_ = mc_block;
     startup_discovery_anchor_ready_ = true;
     follower_stats_.lag_blocks = 0;
@@ -2115,21 +2213,46 @@ void NativeLoadCoordinator::on_follower_shards(bool baseline, ton::BlockIdExt mc
     maybe_begin();
     return;
   }
-  if (top == followed_shard_block_) {
+  bool same_topology = current_tips.size() == followed_shard_blocks_.size();
+  if (same_topology) {
+    auto current_it = current_tips.begin();
+    auto followed_it = followed_shard_blocks_.begin();
+    for (; current_it != current_tips.end(); ++current_it, ++followed_it) {
+      if (current_it->first != followed_it->first) {
+        same_topology = false;
+        break;
+      }
+    }
+  }
+  if (!same_topology) {
+    ++follower_stats_.reorgs;
+    follower_fatal_error(
+        td::Status::Error("proof-anchored basechain leaf topology changed while following fixed payment lanes"));
+    return;
+  }
+  follower_paths_.clear();
+  td::uint64 lag_blocks = 0;
+  for (const auto& [shard, top] : current_tips) {
+    const auto& followed = followed_shard_blocks_.at(shard);
+    if (top == followed) {
+      continue;
+    }
+    if (top.seqno() <= followed.seqno()) {
+      ++follower_stats_.reorgs;
+      follower_fatal_error(
+          td::Status::Error(PSLICE() << "anchored basechain leaf tip does not extend followed tip: old="
+                                    << followed.to_str() << " new=" << top.to_str()));
+      return;
+    }
+    lag_blocks += static_cast<td::uint64>(top.seqno() - followed.seqno());
+    follower_paths_.emplace(shard, ShardFollowPath{followed, top, top, false});
+  }
+  if (follower_paths_.empty()) {
     follower_stats_.lag_blocks = 0;
     complete_follower_poll();
     return;
   }
-  if (top.shard_full() != followed_shard_block_.shard_full() ||
-      top.seqno() <= followed_shard_block_.seqno()) {
-    ++follower_stats_.reorgs;
-    follower_fatal_error(
-        td::Status::Error(PSLICE() << "anchored basechain tip does not extend followed tip: old="
-                                  << followed_shard_block_.to_str() << " new=" << top.to_str()));
-    return;
-  }
-  follower_target_block_ = top;
-  follower_stats_.lag_blocks = top.seqno() - followed_shard_block_.seqno();
+  follower_stats_.lag_blocks = lag_blocks;
   follower_stats_.max_lag_blocks =
       std::max(follower_stats_.max_lag_blocks, follower_stats_.lag_blocks);
   follower_poll_delta_ = {};
@@ -2138,15 +2261,21 @@ void NativeLoadCoordinator::on_follower_shards(bool baseline, ton::BlockIdExt mc
   for (auto& observations : follower_observations_) {
     observations.clear();
   }
-  request_follower_block(top);
+  // Every leaf walks its own history in order; separate lanes can be fetched
+  // concurrently through the dedicated follower client.
+  for (const auto& [shard, path] : follower_paths_) {
+    static_cast<void>(shard);
+    request_follower_block(path.pending, generation);
+  }
 }
 
-void NativeLoadCoordinator::request_follower_block(ton::BlockIdExt block_id) {
+void NativeLoadCoordinator::request_follower_block(ton::BlockIdExt block_id, td::uint64 generation) {
   auto query = ton::serialize_tl_object(
       ton::create_tl_object<ton::lite_api::liteServer_getBlock>(ton::create_tl_lite_block_id(block_id)), true);
   auto promise = td::PromiseCreator::lambda(
-      [self = actor_id(this), block_id](td::Result<td::BufferSlice> result) mutable {
-        td::actor::send_closure(self, &NativeLoadCoordinator::on_follower_block, block_id, std::move(result));
+      [self = actor_id(this), generation, block_id](td::Result<td::BufferSlice> result) mutable {
+        td::actor::send_closure(self, &NativeLoadCoordinator::on_follower_block, generation, block_id,
+                                std::move(result));
       });
   td::actor::send_closure(follower_client_, &liteclient::ExtClient::send_query, "native-load-follow-block",
                           envelope_query(std::move(query)),
@@ -2154,8 +2283,17 @@ void NativeLoadCoordinator::request_follower_block(ton::BlockIdExt block_id) {
                           std::move(promise));
 }
 
-void NativeLoadCoordinator::on_follower_block(ton::BlockIdExt requested,
+void NativeLoadCoordinator::on_follower_block(td::uint64 generation, ton::BlockIdExt requested,
                                                td::Result<td::BufferSlice> result) {
+  if (!follower_query_active_ || generation != follower_poll_generation_) {
+    return;
+  }
+  auto path_it = follower_paths_.find(requested.shard_full());
+  if (path_it == follower_paths_.end() || path_it->second.complete || path_it->second.pending != requested) {
+    follower_fatal_error(td::Status::Error(
+        PSLICE() << "unexpected basechain leaf block callback " << requested.to_str()));
+    return;
+  }
   auto data = unwrap_lite_result(std::move(result));
   if (data.is_error()) {
     follower_query_error(
@@ -2221,10 +2359,10 @@ void NativeLoadCoordinator::on_follower_block(ton::BlockIdExt requested,
                                native_batch.entries.size());
       follower_poll_measure_second_counts_[block_info.gen_utime] += native_batch.entries.size();
     }
-    if (native_batch.version == block::NativeTransferBatch::runs_version) {
-      // A v5 batch derives its logical entries from NTRN cells.  Track the
-      // canonical parent hash for every output nonce; reconstructing a
-      // synthetic NTFX child hash here would incorrectly require sixteen
+    if (block::NativeTransferBatch::is_direct_run_version(native_batch.version)) {
+      // A v5+ direct-run batch derives its logical entries from NTRN cells.
+      // Track the canonical parent hash for every output nonce; reconstructing
+      // a synthetic NTFX child hash here would incorrectly require sixteen
       // unrelated scalar signatures and defeat exact run attribution.
       for (const auto& run : native_batch.runs) {
         auto route = source_routes_.find(run.src);
@@ -2266,28 +2404,50 @@ void NativeLoadCoordinator::on_follower_block(ton::BlockIdExt requested,
   ton::BlockIdExt referenced_mc;
   bool after_split = false;
   auto prev_status = block::unpack_block_prev_blk_try(root, requested, previous, referenced_mc, after_split);
-  if (prev_status.is_error() || previous.size() != 1) {
+  if (prev_status.is_error() || previous.size() != 1 || after_split ||
+      (previous.size() == 1 && previous[0].shard_full() != requested.shard_full())) {
     follower_fatal_error(
         prev_status.is_error()
             ? prev_status.move_as_error_prefix("cannot follow anchored basechain ancestry: ")
-            : td::Status::Error("canonical follower supports exactly one unsplit basechain shard"));
+            : td::Status::Error(
+                  "proof-anchored basechain leaf ancestry changed topology while following fixed payment lanes"));
     return;
   }
-  if (previous[0] == followed_shard_block_) {
-    followed_shard_block_ = follower_target_block_;
-    complete_follower_poll();
+  auto& path = path_it->second;
+  if (previous[0] == path.followed) {
+    path.complete = true;
+    maybe_complete_follower_paths();
     return;
   }
-  if (previous[0].seqno() >= requested.seqno() || previous[0].seqno() <= followed_shard_block_.seqno()) {
+  if (previous[0].seqno() >= requested.seqno() || previous[0].seqno() <= path.followed.seqno()) {
     ++follower_stats_.reorgs;
     follower_fatal_error(
         td::Status::Error("anchored basechain ancestry does not reach the followed tip"));
     return;
   }
-  request_follower_block(previous[0]);
+  path.pending = previous[0];
+  request_follower_block(path.pending, generation);
+}
+
+void NativeLoadCoordinator::maybe_complete_follower_paths() {
+  if (follower_paths_.empty()) {
+    return;
+  }
+  for (const auto& [shard, path] : follower_paths_) {
+    static_cast<void>(shard);
+    if (!path.complete) {
+      return;
+    }
+  }
+  for (const auto& [shard, path] : follower_paths_) {
+    followed_shard_blocks_[shard] = path.target;
+  }
+  follower_paths_.clear();
+  complete_follower_poll();
 }
 
 void NativeLoadCoordinator::complete_follower_poll() {
+  CHECK(follower_paths_.empty());
   mark_follower_recovered();
   follower_stats_.blocks += follower_poll_delta_.blocks;
   follower_stats_.native_blocks += follower_poll_delta_.native_blocks;
@@ -2371,6 +2531,7 @@ void NativeLoadCoordinator::mark_follower_recovered() {
 }
 
 void NativeLoadCoordinator::discard_follower_poll() {
+  follower_paths_.clear();
   follower_poll_delta_ = {};
   follower_poll_measure_second_counts_.clear();
   follower_poll_block_second_counts_.clear();
@@ -2597,6 +2758,12 @@ td::Status NativeLoadWorker::initialize() {
     }
     TRY_RESULT(prepared, private_key.prepare());
     TRY_RESULT(destination_address, read_address(destination));
+    if (!same_native_payment_lane(source, destination_address, options_.native_payment_lane_depth)) {
+      return td::Status::Error(
+          PSLICE() << "source/destination pair " << source_index
+                   << " does not share native payment lane depth "
+                   << options_.native_payment_lane_depth);
+    }
     Wallet wallet;
     wallet.source = source;
     wallet.destination = destination_address;
@@ -4954,6 +5121,15 @@ int main(int argc, char* argv[]) {
                               return native_load::valid_native_signed_run_settings(options.native_signed_runs)
                                          ? td::Status::OK()
                                          : td::Status::Error("native-signed-run-size must be 1..16");
+                            });
+  parser.add_checked_option(0, "native-payment-lane-depth",
+                            "require every source/destination pair to share this address-prefix lane (zero disables preflight)",
+                            [&](td::Slice value) {
+                              options.native_payment_lane_depth = td::to_integer<td::uint32>(value);
+                              return options.native_payment_lane_depth <= ton::max_shard_pfx_len
+                                         ? td::Status::OK()
+                                         : td::Status::Error(
+                                               "native-payment-lane-depth must be 0..60");
                             });
   parser.add_checked_option(0, "submit-coalesce-ms",
                             "bounded signer-completion coalescing delay in milliseconds",

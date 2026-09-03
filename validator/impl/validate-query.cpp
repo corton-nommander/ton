@@ -1620,6 +1620,12 @@ bool ValidateQuery::split_prev_state(block::ShardState& ss) {
     return fatal_error(res1.move_as_error());
   }
   sibling_out_msg_queue_ = res1.move_as_ok();
+  // Mirror collation: the initial sibling queue is derived from the parent
+  // state before a sibling block can supply a proof.  Native validation skips
+  // inbound queues, so only an empty derived sibling queue is supported.
+  if (use_native_fast_path() && !sibling_out_msg_queue_->is_empty()) {
+    return reject_query("native fast path requires an empty sibling outbound message queue after split");
+  }
   auto res2 = ss.compute_split_processed_upto(sib_shard);
   if (res2.is_error()) {
     return fatal_error(res2.move_as_error());

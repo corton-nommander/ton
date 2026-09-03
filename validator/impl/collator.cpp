@@ -1442,6 +1442,13 @@ bool Collator::split_last_state(block::ShardState& ss) {
     return fatal_error(res1.move_as_error());
   }
   sibling_out_msg_queue_ = res1.move_as_ok();
+  // The first post-split block derives its sibling queue from the parent
+  // state, before a sibling block exists from which to request a proof.  The
+  // native path does not process inbound queues, so it must not accept that
+  // shortcut when the derived sibling queue contains real messages.
+  if (use_native_fast_path() && !sibling_out_msg_queue_->is_empty()) {
+    return fatal_error("native fast path requires an empty sibling outbound message queue after split");
+  }
   auto res2 = ss.compute_split_processed_upto(sib_shard);
   if (res2.is_error()) {
     return fatal_error(res2.move_as_error());

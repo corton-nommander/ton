@@ -1836,12 +1836,33 @@ td::Result<std::vector<NativeTransferBatchEntry>> NativeTransferBatch::flatten_r
       entry.transfer.valid_until = run.valid_until;
       // This retains the signed bytes for diagnostics and deterministic
       // flattening only.  It is not an individual NativeTransfer signature;
-      // validation of a v5 entry must use its enclosing NativeTransferRun.
+      // validation of a direct-run entry must use its enclosing NativeTransferRun.
       entry.transfer.signature = run.signature;
       entries.push_back(std::move(entry));
     }
   }
   return entries;
+}
+
+td::Result<NativePaymentLanePolicy> NativePaymentLanePolicy::from_fixed_split_depth(td::uint32 min_split,
+                                                                                       td::uint32 max_split) {
+  if (min_split != max_split || min_split < min_depth || min_split > max_depth) {
+    return td::Status::Error(PSTRING() << "native payment lanes require a fixed basechain split depth in ["
+                                       << min_depth << ", " << max_depth << "]");
+  }
+  return NativePaymentLanePolicy{min_split};
+}
+
+bool NativePaymentLanePolicy::contains(const ton::StdSmcAddress& source,
+                                       const ton::StdSmcAddress& destination) const {
+  const auto lane = ton::shard_prefix(ton::extract_addr_prefix(ton::basechainId, source), depth_);
+  return ton::shard_contains(lane, ton::extract_addr_prefix(ton::basechainId, destination));
+}
+
+bool NativePaymentLanePolicy::contains(const NativeTransferRun& run) const {
+  return !run.outputs.empty() && std::all_of(run.outputs.begin(), run.outputs.end(), [&](const auto& output) {
+    return contains(run.src, output.dst);
+  });
 }
 
 bool NativeTransferCredit::store_description(vm::CellBuilder& cb) const {
@@ -1869,13 +1890,13 @@ td::Result<NativeTransferCredit> NativeTransferCredit::unpack_description(Ref<vm
 }
 
 bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
-  if ((version != 1 && version != 2 && version != 3 && version != 4 && version != runs_version) ||
-      entries.size() > max_entries || (version != runs_version && !runs.empty())) {
+  if ((version != 1 && version != 2 && version != 3 && version != 4 && !is_direct_run_version(version)) ||
+      entries.size() > max_entries || (!is_direct_run_version(version) && !runs.empty())) {
     return false;
   }
   const std::vector<NativeTransferBatchEntry>* entries_to_store = &entries;
   std::vector<NativeTransferBatchEntry> flattened_entries;
-  if (version == runs_version) {
+  if (is_direct_run_version(version)) {
     auto flattened = flatten_runs(runs);
     if (flattened.is_error()) {
       return false;
@@ -1883,7 +1904,7 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
     flattened_entries = flattened.move_as_ok();
     // A caller may retain the decoder's flattened view and reserialize it,
     // but may not smuggle a different logical sequence beside the signed
-    // runs.  runs are the v5 source of truth.
+    // runs.  runs are the v5/v6 source of truth.
     if (!entries.empty() && (entries.size() != flattened_entries.size())) {
       return false;
     }
@@ -1923,10 +1944,10 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
     if (!entry.transfer.is_valid() || (version == 1 && (!entry.debit_lt || !entry.credit_lt))) {
       return false;
     }
-    // A v5 run already contains its source and every destination. Repeating
+    // A direct signed run already contains its source and every destination. Repeating
     // the v4 account table would only make the block larger; accounts remain
     // a derived in-memory view after decoding.
-    if (version == runs_version) {
+    if (is_direct_run_version(version)) {
       continue;
     }
     if ((!have_last_src || entry.transfer.src != last_src) && !add_account(entry.transfer.src)) {
@@ -2031,7 +2052,7 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
     account_root = account_tree.move_as_ok();
 
     std::vector<TreeNode> transfer_leaves;
-    if (version == runs_version) {
+    if (is_direct_run_version(version)) {
       transfer_leaves.reserve(runs.size());
       for (const auto& run : runs) {
         vm::CellBuilder run_builder;
@@ -2067,7 +2088,7 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
       }
     }
     auto transfer_tree = combine_level(std::move(transfer_leaves),
-                                       version == runs_version ? runs_node_magic : transfers_node_magic);
+                                       is_direct_run_version(version) ? runs_node_magic : transfers_node_magic);
     if (transfer_tree.is_error()) {
       return false;
     }
@@ -2131,7 +2152,8 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
   auto accounts_count = cs.fetch_ulong(32);
   auto entries_count = cs.fetch_ulong(32);
   Ref<vm::Cell> account_root, transfer_root;
-  if (tag != magic || (version != 1 && version != 2 && version != 3 && version != 4 && version != runs_version) ||
+  if (tag != magic || (version != 1 && version != 2 && version != 3 && version != 4 &&
+                       !is_direct_run_version(static_cast<td::uint8>(version))) ||
       accounts_count < 0 ||
       entries_count < 0 ||
       !cs.fetch_maybe_ref(account_root) || !cs.fetch_maybe_ref(transfer_root) || !cs.empty_ext()) {
@@ -2141,14 +2163,14 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
   const auto entries_count_u32 = static_cast<td::uint32>(entries_count);
   if (entries_count_u32 > max_entries || accounts_count_u32 > max_accounts ||
       static_cast<td::uint64>(accounts_count_u32) > static_cast<td::uint64>(entries_count_u32) * 2 ||
-      (version == runs_version ? (accounts_count_u32 != 0 || account_root.not_null())
+      (is_direct_run_version(static_cast<td::uint8>(version)) ? (accounts_count_u32 != 0 || account_root.not_null())
                                : ((accounts_count_u32 == 0) != account_root.is_null())) ||
       (entries_count_u32 == 0) != transfer_root.is_null()) {
     return td::Status::Error("Native transfer batch counts or roots exceed protocol limits");
   }
   batch.version = static_cast<td::uint8>(version);
 
-  if (batch.version != runs_version) {
+  if (!is_direct_run_version(batch.version)) {
     batch.accounts.reserve(accounts_count_u32);
     if (batch.version >= 3 && account_root.not_null()) {
       std::vector<std::pair<Ref<vm::Cell>, td::uint32>> stack;
@@ -2239,7 +2261,7 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
     return td::Status::OK();
   };
   batch.entries.reserve(entries_count_u32);
-  if (batch.version == runs_version && transfer_root.not_null()) {
+  if (is_direct_run_version(batch.version) && transfer_root.not_null()) {
     batch.runs.reserve(entries_count_u32);
     std::vector<std::pair<Ref<vm::Cell>, td::uint32>> stack;
     stack.emplace_back(std::move(transfer_root), entries_count_u32);
@@ -2318,7 +2340,7 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
   if (batch.entries.size() != entries_count_u32) {
     return td::Status::Error("Native transfer vector length mismatch");
   }
-  if (batch.version == runs_version) {
+  if (is_direct_run_version(batch.version)) {
     std::set<ton::StdSmcAddress> seen_accounts;
     batch.accounts.reserve(std::min<std::size_t>(max_accounts, batch.entries.size() * 2));
     for (const auto& entry : batch.entries) {
@@ -2333,7 +2355,7 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
   if (batch.entries.empty() != batch.accounts.empty()) {
     return td::Status::Error("Native transfer batch account table is inconsistent with transfer vector");
   }
-  if (batch.version == runs_version) {
+  if (is_direct_run_version(batch.version)) {
     // The run signatures bind their own canonical output trees, and the batch
     // must likewise have exactly one ordered tree representation.  Otherwise
     // an equivalent run sequence could be encoded under multiple block roots.

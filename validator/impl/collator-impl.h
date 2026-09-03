@@ -54,7 +54,7 @@ class Collator final : public td::actor::Actor {
   static constexpr long long supported_capabilities() {
     return ton::capCreateStatsEnabled | ton::capBounceMsgBody | ton::capReportVersion | ton::capShortDequeue |
            ton::capStoreOutMsgQueueSize | ton::capMsgMetadata | ton::capDeferMessages | ton::capFullCollatedData |
-           ton::capNativeTransferRuns;
+           ton::capNativeTransferRuns | ton::capNativePaymentLanes;
   }
 
  private:
@@ -230,7 +230,7 @@ class Collator final : public td::actor::Actor {
   std::vector<ExtMessage::Hash> bad_ext_msgs_, delay_ext_msgs_;
   Ref<vm::Cell> shard_account_blocks_;  // ShardAccountBlocks
   std::vector<block::NativeTransferBatchEntry> native_transfer_batch_entries_;
-  // v5 keeps its authenticated NTRN objects alongside the derived logical
+  // Direct-run batches keep authenticated NTRN objects alongside the derived logical
   // entries above.  The latter still drives state/accounting; only this
   // vector is authoritative when serializing a source-signed run batch.
   std::vector<block::NativeTransferRun> native_transfer_batch_runs_;
@@ -360,6 +360,19 @@ class Collator final : public td::actor::Actor {
     return use_native_fast_path() && config_ &&
            global_version_ >= block::NativeTransferBatch::runs_global_version &&
            config_->has_capability(block::NativeTransferBatch::runs_capability);
+  }
+  bool native_payment_lanes_enabled() const {
+    return use_native_fast_path() && config_ && config_->has_capabilities() &&
+           block::NativeTransferBatch::payment_lanes_enabled(global_version_, config_->get_capabilities());
+  }
+  td::Result<block::NativePaymentLanePolicy> native_payment_lane_policy() const {
+    if (!native_payment_lanes_enabled()) {
+      return td::Status::Error("native payment lanes are disabled by the current protocol configuration");
+    }
+    if (wc_info_.is_null()) {
+      return td::Status::Error("native payment lanes require a basechain workchain configuration");
+    }
+    return block::NativePaymentLanePolicy::from_fixed_split_depth(wc_info_->min_split, wc_info_->max_split);
   }
   int prev_block_idx(const BlockIdExt& id) const {
     for (size_t i = 0; i < prev_blocks.size(); ++i) {

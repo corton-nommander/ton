@@ -319,3 +319,25 @@ __Enabled in mainnet on 2026-04-03__
 
 ### Transaction changes
 - When the action phase fails with bounce-on-fail, bounce now returns the whole remaining message balance before action phase.
+
+## Version 15
+
+The optional `capNativeTransferRuns` capability enables the run-only compact
+native-transfer batch. An `NTRN` source signature covers a contiguous nonce
+range and its ordered output vector.
+
+## Version 16
+
+The optional `capNativePaymentLanes` capability, together with
+`capNativeTransferRuns`, enables fixed-depth native payment lanes. A lane is a
+basechain address-prefix shard at a ConfigParam-12 workchain configuration
+where `min_split == max_split` and the depth is non-zero. Every output of an
+`NTRN` run must stay in its source lane and in the current source leaf shard.
+Lane batches use compact batch header version 6 (while retaining the signed
+run tree codec), so a v15 implementation rejects them rather than treating a
+lane-era block as an ordinary run batch.
+
+This is deliberately a same-lane execution feature. Cross-lane transfers need
+a separate authenticated receipt, source-finality, idempotency, expiry, and
+refund protocol; enabling the capability does not make cross-lane credits
+valid.

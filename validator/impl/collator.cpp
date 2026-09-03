@@ -4632,16 +4632,18 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   auto start_rejected = stats_.ext_msgs_rejected;
   auto start_compact_entries = native_transfer_batch_entries_.size();
   const bool native_runs_enabled = native_transfer_runs_enabled();
+  const bool native_payment_lanes = native_payment_lanes_enabled();
+  td::optional<block::NativePaymentLanePolicy> payment_lane_policy;
   if (native_runs_enabled) {
-    // This processor may be re-entered after a previous v5 checkpoint has
+    // This processor may be re-entered after a previous direct-run checkpoint has
     // committed, so nonempty derived entries alone do not prove scalar work.
     // The two committed vectors must instead be populated together; an entry
     // vector without authenticated runs is the only forbidden scalar mix.
     if (!native_transfer_batch_entries_.empty() && native_transfer_batch_runs_.empty()) {
-      co_return fatal_error("cannot enter v5 native run collation after scalar compact transfers");
+      co_return fatal_error("cannot enter source-signed native run collation after scalar compact transfers");
     }
     if (native_transfer_batch_entries_.empty() != native_transfer_batch_runs_.empty()) {
-      co_return fatal_error("v5 native candidate has inconsistent run and logical-entry state");
+      co_return fatal_error("source-signed native candidate has inconsistent run and logical-entry state");
     }
   } else if (!native_transfer_batch_runs_.empty()) {
     co_return fatal_error("scalar native collation encountered committed source-signed runs");
@@ -5400,13 +5402,29 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       if (native_runs_enabled) {
         auto native_run_res = block::NativeTransferRun::unpack_external(ext_msg);
         if (native_run_res.is_error()) {
-          LOG(DEBUG) << "v5 native fast path rejected non-NTRN external message";
+          LOG(DEBUG) << "source-signed native fast path rejected non-NTRN external message";
           ++stats_.ext_msgs_rejected;
           bad_ext_msgs_.emplace_back(native_external.ext_msg->hash());
           continue;
         }
         native_external.run = native_run_res.move_as_ok();
         const auto& run = native_external.run.value();
+        if (native_payment_lanes && !payment_lane_policy) {
+          auto policy = native_payment_lane_policy();
+          if (policy.is_error()) {
+            LOG(DEBUG) << "native payment lane rejected run: " << policy.error().to_string();
+            ++stats_.ext_msgs_rejected;
+            bad_ext_msgs_.emplace_back(native_external.ext_msg->hash());
+            continue;
+          }
+          payment_lane_policy = policy.move_as_ok();
+        }
+        if (payment_lane_policy && !payment_lane_policy.value().contains(run)) {
+          LOG(DEBUG) << "native payment lane rejected run with a destination outside its source lane";
+          ++stats_.ext_msgs_rejected;
+          bad_ext_msgs_.emplace_back(native_external.ext_msg->hash());
+          continue;
+        }
         native_external.transfers.reserve(run.outputs.size());
         for (std::size_t output_index = 0; output_index < run.outputs.size(); ++output_index) {
           const auto& output = run.outputs[output_index];
@@ -5803,7 +5821,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         // Keep the authenticated ExtMessage reference alongside the ordered
         // physical work so a rejected group returns the exact identities to
         // the mempool instead of reconstructing them from nonce/account
-        // fields. In v5 this remains one whole source-signed run.
+        // fields. In a direct-run batch this remains one whole source-signed run.
         pending_checkpoint.logical_entries += batch[index].logical_count();
         pending_checkpoint.entries.push_back(batch[index]);
       }
@@ -7861,9 +7879,10 @@ bool Collator::create_block_extra(Ref<vm::Cell>& block_extra) {
     block::NativeTransferBatch batch;
     if (native_transfer_runs_enabled()) {
       if (native_transfer_batch_runs_.empty()) {
-        return fatal_error("v5 native candidate has logical entries but no source-signed runs");
+        return fatal_error("source-signed native candidate has logical entries but no signed runs");
       }
-      batch.version = block::NativeTransferBatch::runs_version;
+      batch.version = native_payment_lanes_enabled() ? block::NativeTransferBatch::lanes_version
+                                                      : block::NativeTransferBatch::runs_version;
       batch.runs = native_transfer_batch_runs_;
     } else if (!native_transfer_batch_runs_.empty()) {
       return fatal_error("scalar native candidate unexpectedly contains source-signed runs");
@@ -8375,7 +8394,7 @@ td::Status Collator::register_external_message(Ref<ExtMessage> ext_msg, int prio
   vm::CellSlice cs{vm::NoVmOrd{}, ext_msg_cell};
   if (cs.prefetch_ulong(32) == block::NativeTransfer::magic) {
     if (native_transfer_runs_enabled()) {
-      return td::Status::Error("scalar native transfers are disabled by the v5 run capability");
+      return td::Status::Error("scalar native transfers are disabled by the source-signed run capability");
     }
     if (registered_ext_msgs_.contains(hash)) {
       return td::Status::Error("external message has been registered before");
@@ -8398,6 +8417,12 @@ td::Status Collator::register_external_message(Ref<ExtMessage> ext_msg, int prio
       return td::Status::Error("external message has been registered before");
     }
     TRY_RESULT(run, block::NativeTransferRun::unpack_external(ext_msg_cell));
+    if (native_payment_lanes_enabled()) {
+      TRY_RESULT(policy, native_payment_lane_policy());
+      if (!policy.contains(run)) {
+        return td::Status::Error("native transfer run destination is outside its source payment lane");
+      }
+    }
     if (!ton::shard_contains(shard_, ton::extract_addr_prefix(basechainId, run.src))) {
       return td::Status::Error("native transfer run source address is not in this shard");
     }

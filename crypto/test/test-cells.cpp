@@ -1774,6 +1774,22 @@ TEST(NativeStateEngine, native_transfer_batch_v5_keeps_signed_runs_atomic_and_fl
   ASSERT_TRUE(alternate_batch_builder.store_maybe_ref(td::Ref<vm::Cell>{}));
   ASSERT_TRUE(alternate_batch_builder.store_maybe_ref(alternate_root));
   ASSERT_TRUE(block::NativeTransferBatch::unpack(alternate_batch_builder.finalize()).is_error());
+
+  // v6 deliberately keeps the direct NTRN tree codec but changes the batch
+  // header. This makes a lane candidate undecodable to a v15 implementation,
+  // preventing an old validator from accepting a pre-split cross-lane run.
+  auto lane_batch = batch;
+  lane_batch.version = block::NativeTransferBatch::lanes_version;
+  vm::CellBuilder lane_builder;
+  ASSERT_TRUE(lane_batch.store(lane_builder));
+  auto lane_root = lane_builder.finalize();
+  auto lane_header = vm::load_cell_slice(lane_root);
+  ASSERT_EQ(lane_header.fetch_ulong(32), block::NativeTransferBatch::magic);
+  ASSERT_EQ(lane_header.fetch_ulong(8), block::NativeTransferBatch::lanes_version);
+  auto lane_decoded = block::NativeTransferBatch::unpack(lane_root).move_as_ok();
+  ASSERT_EQ(lane_decoded.version, block::NativeTransferBatch::lanes_version);
+  ASSERT_EQ(lane_decoded.runs.size(), batch.runs.size());
+  ASSERT_EQ(lane_decoded.entries.size(), 3u);
 }
 
 TEST(NativeStateEngine, compact_batch_v3_balanced_tree) {
@@ -1956,7 +1972,8 @@ TEST(NativeStateEngine, compact_batch_rejects_unbounded_header_counts) {
 }
 
 TEST(NativeStateEngine, compact_batch_version_and_run_capability_activation) {
-  ASSERT_EQ(ton::SUPPORTED_VERSION, block::NativeTransferBatch::runs_global_version);
+  ASSERT_TRUE(ton::SUPPORTED_VERSION >= block::NativeTransferBatch::runs_global_version);
+  ASSERT_EQ(ton::SUPPORTED_VERSION, block::NativeTransferBatch::payment_lanes_global_version);
   ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version(3, 13));
   ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version(4, 13));
   ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version(
@@ -1993,4 +2010,63 @@ TEST(NativeStateEngine, compact_batch_version_and_run_capability_activation) {
       4, 15, ton::capNativeTransferRuns));
   ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(3, 15,
                                                                                                   ton::capNativeTransferRuns));
+
+  const auto lane_capabilities =
+      block::NativeTransferBatch::runs_capability | block::NativeTransferBatch::payment_lanes_capability;
+  ASSERT_TRUE(!block::NativeTransferBatch::payment_lanes_enabled(
+      block::NativeTransferBatch::payment_lanes_global_version - 1, lane_capabilities));
+  ASSERT_TRUE(!block::NativeTransferBatch::payment_lanes_enabled(
+      block::NativeTransferBatch::payment_lanes_global_version, block::NativeTransferBatch::runs_capability));
+  ASSERT_TRUE(!block::NativeTransferBatch::payment_lanes_enabled(
+      block::NativeTransferBatch::payment_lanes_global_version, block::NativeTransferBatch::payment_lanes_capability));
+  ASSERT_TRUE(block::NativeTransferBatch::payment_lanes_enabled(
+      block::NativeTransferBatch::payment_lanes_global_version, lane_capabilities));
+  ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(
+      block::NativeTransferBatch::lanes_version, block::NativeTransferBatch::runs_global_version,
+      block::NativeTransferBatch::runs_capability));
+  ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(
+      block::NativeTransferBatch::runs_version, block::NativeTransferBatch::payment_lanes_global_version,
+      lane_capabilities));
+  ASSERT_TRUE(!block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(
+      block::NativeTransferBatch::lanes_version, block::NativeTransferBatch::payment_lanes_global_version,
+      block::NativeTransferBatch::runs_capability));
+  ASSERT_TRUE(block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(
+      block::NativeTransferBatch::lanes_version, block::NativeTransferBatch::payment_lanes_global_version,
+      lane_capabilities));
+}
+
+TEST(NativeStateEngine, native_payment_lanes_are_fixed_depth_and_atomic_per_run) {
+  ASSERT_TRUE(block::NativePaymentLanePolicy::from_fixed_split_depth(0, 0).is_error());
+  ASSERT_TRUE(block::NativePaymentLanePolicy::from_fixed_split_depth(1, 2).is_error());
+  ASSERT_TRUE(block::NativePaymentLanePolicy::from_fixed_split_depth(
+                  block::NativePaymentLanePolicy::max_depth + 1,
+                  block::NativePaymentLanePolicy::max_depth + 1)
+                  .is_error());
+
+  auto policy = block::NativePaymentLanePolicy::from_fixed_split_depth(2, 2).move_as_ok();
+  auto address = [](unsigned char first_byte) {
+    std::string bytes(32, '\0');
+    bytes[0] = static_cast<char>(first_byte);
+    ton::StdSmcAddress result;
+    result.as_slice().copy_from(bytes);
+    return result;
+  };
+  const auto source = address(0x40);       // 01......
+  const auto same_lane = address(0x7f);    // 01......
+  const auto other_lane = address(0x80);   // 10......
+  const auto other_lane_2 = address(0xc0); // 11......
+
+  ASSERT_EQ(policy.depth(), 2u);
+  ASSERT_TRUE(policy.contains(source, same_lane));
+  ASSERT_TRUE(!policy.contains(source, other_lane));
+  ASSERT_TRUE(!policy.contains(source, other_lane_2));
+
+  block::NativeTransferRun run;
+  run.src = source;
+  run.outputs.push_back(block::NativeTransferRunOutput{same_lane, 1, 0});
+  ASSERT_TRUE(policy.contains(run));
+  run.outputs.push_back(block::NativeTransferRunOutput{other_lane, 1, 0});
+  // A run is its signed atomic authorization unit: a single cross-lane
+  // output invalidates the full interval rather than leaving a local prefix.
+  ASSERT_TRUE(!policy.contains(run));
 }

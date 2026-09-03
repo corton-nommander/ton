@@ -69,7 +69,11 @@ enum GlobalCapabilities {
   // Reserved for the source-signed NativeTransferRun wire format.  The
   // codec can inspect v5 before activation, but block production/validation
   // must require this bit together with its global-version gate.
-  capNativeTransferRuns = 1024
+  capNativeTransferRuns = 1024,
+  // Enables fixed-depth basechain payment lanes for source-signed native
+  // transfer runs.  A lane is an address-prefix shard at the configured
+  // fixed split depth; all outputs of a run must remain in its source lane.
+  capNativePaymentLanes = 2048
 };
 
 inline int shard_pfx_len(ShardId shard) {

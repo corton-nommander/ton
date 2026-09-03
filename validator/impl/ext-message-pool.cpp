@@ -151,17 +151,22 @@ td::Result<ExtMessagePool::NativeAdmissionSnapshot> ExtMessagePool::pin_native_a
   TRY_RESULT(state, pin_native_admission_masterchain_state());
   const auto block_id = state->get_block_id();
   auto config_result =
-      block::ConfigInfo::extract_config(state->root_cell(), block_id, block::ConfigInfo::needCapabilities);
+      block::ConfigInfo::extract_config(state->root_cell(), block_id,
+                                        block::ConfigInfo::needCapabilities | block::ConfigInfo::needWorkchainInfo);
   if (config_result.is_error()) {
     return config_result.move_as_error();
   }
   const auto &config = *config_result.ok();
   const bool runs_enabled = native_transfer_runs_enabled(config);
+  TRY_RESULT(payment_lane_policy, native_payment_lane_policy(config));
   update_native_transfer_runs_mode(runs_enabled);
+  update_native_payment_lane_depth(payment_lane_policy ? td::optional<td::uint32>{payment_lane_policy.value().depth()}
+                                                       : td::optional<td::uint32>{});
   return NativeAdmissionSnapshot{.state = std::move(state),
                                  .block_id = block_id,
                                  .chain_domain = config.get_zerostate_id().root_hash,
-                                 .runs_enabled = runs_enabled};
+                                 .runs_enabled = runs_enabled,
+                                 .payment_lane_policy = std::move(payment_lane_policy)};
 }
 
 td::Status ExtMessagePool::validate_native_admission_mode(const NativeAdmissionSnapshot &snapshot,
@@ -184,11 +189,26 @@ void ExtMessagePool::update_native_transfer_runs_mode(bool enabled) {
   purge_incompatible_native_messages(enabled);
 }
 
-void ExtMessagePool::purge_incompatible_native_messages(bool runs_enabled) {
+void ExtMessagePool::update_native_payment_lane_depth(td::optional<td::uint32> payment_lane_depth) {
+  if (native_payment_lane_depth_ == payment_lane_depth) {
+    return;
+  }
+  native_payment_lane_depth_ = std::move(payment_lane_depth);
+  // Disabling lane mode does not invalidate a previously same-lane parent,
+  // but enabling it (or changing depth) must evict pre-lane run work before its
+  // exact hash can be retried under the new topology policy.
+  if (native_payment_lane_depth_ && native_transfer_runs_mode_initialized_) {
+    purge_incompatible_native_messages(native_transfer_runs_mode_enabled_, native_payment_lane_depth_);
+  }
+}
+
+void ExtMessagePool::purge_incompatible_native_messages(bool runs_enabled,
+                                                         td::optional<td::uint32> payment_lane_depth) {
   std::vector<std::tuple<NativeAddress, td::uint64, ExtMessage::Hash>> incompatible;
   for (const auto &[address, account] : native_accounts_) {
     for (const auto &[nonce, work] : account.messages) {
-      if (work.is_run != runs_enabled) {
+      if (work.is_run != runs_enabled ||
+          (payment_lane_depth && work.is_run && work.payment_lane_depth != payment_lane_depth.value())) {
         incompatible.emplace_back(address, nonce, work.hash);
       }
     }
@@ -197,9 +217,13 @@ void ExtMessagePool::purge_incompatible_native_messages(bool runs_enabled) {
     return;
   }
 
-  const td::Slice reason = runs_enabled
-                               ? td::Slice("scalar native transfer was evicted after source-signed runs were enabled")
-                               : td::Slice("native transfer run was evicted after source-signed runs were disabled");
+  const td::Slice reason = payment_lane_depth
+                               ? td::Slice("native transfer was evicted after native payment-lane activation")
+                               : (runs_enabled
+                                      ? td::Slice("scalar native transfer was evicted after source-signed runs were "
+                                                  "enabled")
+                                      : td::Slice("native transfer run was evicted after source-signed runs were "
+                                                  "disabled"));
   std::set<NativeAddress> changed_sources;
   for (const auto &[address, nonce, hash] : incompatible) {
     auto account_it = native_accounts_.find(address);
@@ -208,7 +232,9 @@ void ExtMessagePool::purge_incompatible_native_messages(bool runs_enabled) {
     }
     auto reservation_it = account_it->second.messages.find(nonce);
     if (reservation_it == account_it->second.messages.end() || reservation_it->second.hash != hash ||
-        reservation_it->second.is_run == runs_enabled) {
+        (reservation_it->second.is_run == runs_enabled &&
+         (!payment_lane_depth || !reservation_it->second.is_run ||
+          reservation_it->second.payment_lane_depth == payment_lane_depth.value()))) {
       continue;
     }
     if (reservation_it->second.allow_broadcast_promise) {
@@ -226,7 +252,9 @@ void ExtMessagePool::purge_incompatible_native_messages(bool runs_enabled) {
       if (account_it != native_accounts_.end()) {
         reservation_it = account_it->second.messages.find(nonce);
         if (reservation_it != account_it->second.messages.end() && reservation_it->second.hash == hash &&
-            reservation_it->second.is_run != runs_enabled) {
+            (reservation_it->second.is_run != runs_enabled ||
+             (payment_lane_depth && reservation_it->second.is_run &&
+              reservation_it->second.payment_lane_depth != payment_lane_depth.value()))) {
           reservation_it->second.clear_mempool_link();
           account_it->second.messages.erase(reservation_it);
           if (account_it->second.messages.empty()) {
@@ -252,12 +280,20 @@ void ExtMessagePool::refresh_native_transfer_runs_mode_from_applied_state() {
     return;
   }
   const auto block_id = state->get_block_id();
-  auto config_result =
-      block::ConfigInfo::extract_config(state->root_cell(), block_id, block::ConfigInfo::needCapabilities);
+  auto config_result = block::ConfigInfo::extract_config(state->root_cell(), block_id,
+                                                          block::ConfigInfo::needCapabilities |
+                                                              block::ConfigInfo::needWorkchainInfo);
   if (config_result.is_error()) {
     return;
   }
-  update_native_transfer_runs_mode(native_transfer_runs_enabled(*config_result.ok()));
+  const auto &config = *config_result.ok();
+  update_native_transfer_runs_mode(native_transfer_runs_enabled(config));
+  auto payment_lane_policy = native_payment_lane_policy(config);
+  if (payment_lane_policy.is_ok()) {
+    const auto &policy = payment_lane_policy.ok();
+    update_native_payment_lane_depth(policy ? td::optional<td::uint32>{policy.value().depth()}
+                                            : td::optional<td::uint32>{});
+  }
 }
 
 void ExtMessagePool::reset_native_admission_cache_generation(const BlockIdExt &masterchain_block_id) {
@@ -445,28 +481,79 @@ bool ExtMessagePool::native_transfer_runs_enabled(const block::ConfigInfo &confi
                                       config.has_capabilities() ? config.get_capabilities() : 0);
 }
 
-td::Status ExtMessagePool::validate_native_transfer_run_locality(const block::NativeTransferRun &run,
-                                                                  const MasterchainState &state) {
+bool ExtMessagePool::native_payment_lanes_enabled(const block::ConfigInfo &config) {
+  return config.has_capabilities() &&
+         block::NativeTransferBatch::payment_lanes_enabled(config.get_global_version(), config.get_capabilities());
+}
+
+td::Result<td::optional<block::NativePaymentLanePolicy>> ExtMessagePool::native_payment_lane_policy(
+    const block::ConfigInfo &config) {
+  if (!native_payment_lanes_enabled(config)) {
+    return td::optional<block::NativePaymentLanePolicy>{};
+  }
+  auto workchain = config.get_workchain_info(basechainId);
+  if (workchain.is_null()) {
+    return td::Status::Error("native payment lanes require an active basechain workchain configuration");
+  }
+  TRY_RESULT(policy, block::NativePaymentLanePolicy::from_fixed_split_depth(workchain->min_split,
+                                                                               workchain->max_split));
+  return td::optional<block::NativePaymentLanePolicy>{std::move(policy)};
+}
+
+namespace {
+
+td::Status validate_native_transfer_destinations(
+    const StdSmcAddress &source, const std::vector<StdSmcAddress> &destinations, const MasterchainState &state,
+    const td::optional<block::NativePaymentLanePolicy> &policy) {
+  if (destinations.empty()) {
+    return td::Status::Error("native transfer has no destinations");
+  }
+  if (policy) {
+    for (const auto &destination : destinations) {
+      if (!policy.value().contains(source, destination)) {
+        return td::Status::Error("native transfer destination is outside its source payment lane");
+      }
+    }
+  }
   auto source_shard =
-      state.get_shard_from_config(extract_addr_prefix(basechainId, run.src).as_leaf_shard(), false);
+      state.get_shard_from_config(extract_addr_prefix(basechainId, source).as_leaf_shard(), false);
   if (source_shard.is_null()) {
     return td::Status::Error(ErrorCode::notready,
-                             "cannot locate native transfer run source shard in applied masterchain state");
+                             "cannot locate native transfer source shard in applied masterchain state");
   }
   const auto source_top = source_shard->top_block_id();
-  for (const auto &output : run.outputs) {
+  for (const auto &destination : destinations) {
     auto destination_shard =
-        state.get_shard_from_config(extract_addr_prefix(basechainId, output.dst).as_leaf_shard(), false);
+        state.get_shard_from_config(extract_addr_prefix(basechainId, destination).as_leaf_shard(), false);
     if (destination_shard.is_null()) {
       return td::Status::Error(ErrorCode::notready,
-                               "cannot locate native transfer run destination shard in applied masterchain state");
+                               "cannot locate native transfer destination shard in applied masterchain state");
     }
     if (destination_shard->top_block_id() != source_top) {
-      return td::Status::Error(
-          "native transfer run destination is not local to its source shard; cross-shard runs are unsupported");
+      return td::Status::Error("native transfer destination is not local to its source shard; "
+                               "cross-lane native transfers are unsupported");
     }
   }
   return td::Status::OK();
+}
+
+}  // namespace
+
+td::Status ExtMessagePool::validate_native_transfer_locality(
+    const block::NativeTransfer &transfer, const MasterchainState &state,
+    const td::optional<block::NativePaymentLanePolicy> &policy) {
+  return validate_native_transfer_destinations(transfer.src, {transfer.dst}, state, policy);
+}
+
+td::Status ExtMessagePool::validate_native_transfer_locality(
+    const block::NativeTransferRun &run, const MasterchainState &state,
+    const td::optional<block::NativePaymentLanePolicy> &policy) {
+  std::vector<StdSmcAddress> destinations;
+  destinations.reserve(run.outputs.size());
+  for (const auto &output : run.outputs) {
+    destinations.push_back(output.dst);
+  }
+  return validate_native_transfer_destinations(run.src, destinations, state, policy);
 }
 
 td::Result<td::optional<ExtMessagePool::CheckResult>> ExtMessagePool::check_existing_external_message(
@@ -494,6 +581,8 @@ td::Result<td::optional<ExtMessagePool::CheckResult>> ExtMessagePool::check_exis
                (reservation_it->second.hash != existing_message.value()->message->hash() ||
                 reservation_it->second.logical_count != existing_message.value()->native_nonce_count ||
                 reservation_it->second.is_run != existing_message.value()->native_is_run ||
+                reservation_it->second.payment_lane_depth !=
+                    existing_message.value()->native_payment_lane_depth ||
                 reservation_it->second.source != address ||
                 watermark_it->second.is_consumed(existing_message.value()->native_nonce.value()) ||
                 (!reservation_it->second.committed &&
@@ -600,6 +689,30 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_parsed_ex
     auto mode_status = validate_native_admission_mode(snapshot.ok(), native_tag == block::NativeTransferRun::magic);
     if (mode_status.is_error()) {
       co_return std::move(mode_status);
+    }
+    // Reject a non-local endpoint before the raw-hash idempotence lookup. A
+    // native message retained across a shard split must not gain a free pass
+    // merely because an older admission left it in the pool.
+    if (native_tag == block::NativeTransfer::magic) {
+      auto transfer = block::NativeTransfer::unpack_external(message->root_cell());
+      if (transfer.is_error()) {
+        co_return transfer.move_as_error();
+      }
+      auto locality = validate_native_transfer_locality(transfer.ok(), *snapshot.ok().state,
+                                                        snapshot.ok().payment_lane_policy);
+      if (locality.is_error()) {
+        co_return locality.move_as_error();
+      }
+    } else {
+      auto run = block::NativeTransferRun::unpack_external(message->root_cell());
+      if (run.is_error()) {
+        co_return run.move_as_error();
+      }
+      auto locality = validate_native_transfer_locality(run.ok(), *snapshot.ok().state,
+                                                        snapshot.ok().payment_lane_policy);
+      if (locality.is_error()) {
+        co_return locality.move_as_error();
+      }
     }
   }
   auto r_existing = check_existing_external_message(message, priority, add_to_mempool);
@@ -745,6 +858,25 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
                                                           items[index].native_admission.value().is_run);
         if (mode_status.is_error()) {
           reject(index, std::move(mode_status));
+          continue;
+        }
+        // The batch path must make the same pre-idempotence locality decision
+        // as the single-message path. Otherwise an exact retry retained from
+        // before a split or lane activation could bypass the new policy.
+        auto locality = items[index].native_transfer
+                            ? validate_native_transfer_locality(items[index].native_transfer.value(),
+                                                               *native_snapshot.value().state,
+                                                               native_snapshot.value().payment_lane_policy)
+                            : validate_native_transfer_locality(items[index].native_transfer_run.value(),
+                                                               *native_snapshot.value().state,
+                                                               native_snapshot.value().payment_lane_policy);
+        if (locality.is_error()) {
+          reject(index, locality.move_as_error());
+          continue;
+        }
+        if (native_snapshot.value().payment_lane_policy) {
+          items[index].native_admission.value().payment_lane_depth =
+              native_snapshot.value().payment_lane_policy.value().depth();
         }
       }
     }
@@ -863,13 +995,10 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
             if (status_set[index]) {
               continue;
             }
-            if (items[index].native_transfer_run) {
-              auto locality = validate_native_transfer_run_locality(items[index].native_transfer_run.value(), *mc_state);
-              if (locality.is_error()) {
-                reject(index, locality.move_as_error());
-                continue;
-              }
-            }
+            // Locality and the optional fixed-lane predicate were checked
+            // before the exact-hash lookup, against this same immutable
+            // snapshot. Do not repeat shard-map lookups on the hot batch
+            // path merely to derive the source-state fetch grouping.
             has_admissible_item = true;
           }
           if (!has_admissible_item) {
@@ -1085,7 +1214,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
 
   if (!verify_indices.empty() && native_snapshot) {
     // Shard reads and signature workers can suspend this actor while the
-    // applied MC topology/config advances. v5 locality and its signature
+    // applied MC topology/config advances. Direct-run locality and its signature
     // domain are bound to the exact snapshot above, so never reserve a run
     // after that snapshot changed. Legacy scalar admission retains its old
     // behavior unless the newly applied config has switched to run-only.
@@ -1372,7 +1501,8 @@ ExtMessagePool::NativeQueueSelection ExtMessagePool::select_native_messages(
       }
       if (!message.value()->has_native_interval() || message.value()->native_nonce.value() != source.next_nonce ||
           message.value()->native_nonce_count != reservation_it->second.logical_count ||
-          message.value()->native_is_run != reservation_it->second.is_run) {
+          message.value()->native_is_run != reservation_it->second.is_run ||
+          message.value()->native_payment_lane_depth != reservation_it->second.payment_lane_depth) {
         ++selection.counters.head_gaps;
         ++selection.counters.head_nonce_mismatch;
         source.blocked = true;
@@ -1559,7 +1689,9 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
         link->message->message->hash() == hash && link->message->has_native_interval() &&
         link->message->native_nonce.value() == state.next_nonce &&
         link->message->native_nonce_count == reservation.logical_count &&
-        link->message->native_is_run == reservation.is_run && link->message->address() == source) {
+        link->message->native_is_run == reservation.is_run &&
+        link->message->native_payment_lane_depth == reservation.payment_lane_depth &&
+        link->message->address() == source) {
       mempool_message = link->message.get();
       priority = link->priority;
       ++counters.direct_link_hits;
@@ -1589,7 +1721,8 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
       }
       if (!message.value()->has_native_interval() || message.value()->native_nonce.value() != state.next_nonce ||
           message.value()->native_nonce_count != reservation.logical_count ||
-          message.value()->native_is_run != reservation.is_run) {
+          message.value()->native_is_run != reservation.is_run ||
+          message.value()->native_payment_lane_depth != reservation.payment_lane_depth) {
         ++counters.head_gaps;
         ++counters.head_nonce_mismatch;
         return;
@@ -2821,7 +2954,8 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id, bool prune
       if (reservation != native_it->second.messages.end() &&
           reservation->second.hash == msg_opt.value()->message->hash() &&
           reservation->second.logical_count == msg_opt.value()->native_nonce_count &&
-          reservation->second.is_run == msg_opt.value()->native_is_run) {
+          reservation->second.is_run == msg_opt.value()->native_is_run &&
+          reservation->second.payment_lane_depth == msg_opt.value()->native_payment_lane_depth) {
         return prune_expired_native_suffix(
                    address, native_nonce.value(),
                    "native transfer retention expired; removed this nonce and its pending suffix") != 0;
@@ -2841,7 +2975,8 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id, bool prune
         }
         if (reservation_it->second.hash == msg_opt.value()->message->hash() &&
             reservation_it->second.logical_count == msg_opt.value()->native_nonce_count &&
-            reservation_it->second.is_run == msg_opt.value()->native_is_run) {
+            reservation_it->second.is_run == msg_opt.value()->native_is_run &&
+            reservation_it->second.payment_lane_depth == msg_opt.value()->native_payment_lane_depth) {
           reservation_it->second.insertion_failed("native message was removed from the mempool");
           native_it->second.messages.erase(reservation_it);
         }
@@ -2955,7 +3090,8 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
     }
     if (!message.value()->has_native_interval() || message.value()->native_nonce.value() != first_nonce.value() ||
         message.value()->native_nonce_count != reservation->second.logical_count ||
-        message.value()->native_is_run != reservation->second.is_run) {
+        message.value()->native_is_run != reservation->second.is_run ||
+        message.value()->native_payment_lane_depth != reservation->second.payment_lane_depth) {
       ++head_nonce_mismatch_sources;
       continue;
     }
@@ -3180,6 +3316,7 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
     msg->native_nonce = native_admission->first_nonce;
     msg->native_nonce_count = native_admission->logical_count;
     msg->native_is_run = native_admission->is_run;
+    msg->native_payment_lane_depth = native_admission->payment_lane_depth;
     auto watermark_it = native_nonce_watermarks_.find(address);
     if (watermark_it != native_nonce_watermarks_.end() &&
         watermark_it->second.is_consumed(native_admission->first_nonce)) {
@@ -3194,6 +3331,7 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
     if (reservation_it == account_it->second.messages.end() ||
         reservation_it->second.logical_count != native_admission->logical_count ||
         reservation_it->second.is_run != native_admission->is_run ||
+        reservation_it->second.payment_lane_depth != native_admission->payment_lane_depth ||
         reservation_it->second.source != address || reservation_it->second.hash != message->hash()) {
       return td::Status::Error("native message reservation disappeared before mempool insertion");
     }
@@ -3268,7 +3406,8 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
       auto reservation_it = account_it->second.messages.find(msg->native_nonce.value());
       if (reservation_it != account_it->second.messages.end() && reservation_it->second.hash == id.hash &&
           reservation_it->second.logical_count == msg->native_nonce_count &&
-          reservation_it->second.is_run == msg->native_is_run) {
+          reservation_it->second.is_run == msg->native_is_run &&
+          reservation_it->second.payment_lane_depth == msg->native_payment_lane_depth) {
         reservation_it->second.set_mempool_link(msg, priority, id);
       }
     }
@@ -3330,6 +3469,7 @@ td::Status ExtMessagePool::commit_checked_message(td::Ref<ExtMessage> message,
     if (reservation_it == native_it->second.messages.end() ||
         reservation_it->second.logical_count != native_admission->logical_count ||
         reservation_it->second.is_run != native_admission->is_run ||
+        reservation_it->second.payment_lane_depth != native_admission->payment_lane_depth ||
         reservation_it->second.source != address || reservation_it->second.hash != message->hash()) {
       return td::Status::Error("native message reservation disappeared before mempool commit");
     }
@@ -3378,6 +3518,7 @@ void ExtMessagePool::rollback_checked_message(td::Ref<ExtMessage> message,
       if (message_it != native_it->second.messages.end() &&
           message_it->second.logical_count == native_admission->logical_count &&
           message_it->second.is_run == native_admission->is_run &&
+          message_it->second.payment_lane_depth == native_admission->payment_lane_depth &&
           message_it->second.source == address && message_it->second.hash == message->hash()) {
         if (message_it->second.allow_broadcast_promise) {
           message_it->second.allow_broadcast_promise.set_error(
@@ -3466,11 +3607,19 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
         co_return parsed_transfer.move_as_error();
       }
       transfer = parsed_transfer.move_as_ok();
+      auto locality = validate_native_transfer_locality(transfer.value(), *admission_snapshot.state,
+                                                        admission_snapshot.payment_lane_policy);
+      if (locality.is_error()) {
+        co_return locality.move_as_error();
+      }
       auto parsed_admission = make_native_admission(transfer.value());
       if (parsed_admission.is_error()) {
         co_return parsed_admission.move_as_error();
       }
       admission = parsed_admission.move_as_ok();
+      if (admission_snapshot.payment_lane_policy) {
+        admission.payment_lane_depth = admission_snapshot.payment_lane_policy.value().depth();
+      }
       source = transfer.value().src;
     } else {
       auto parsed_run = block::NativeTransferRun::unpack_external(message->root_cell());
@@ -3478,7 +3627,8 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
         co_return parsed_run.move_as_error();
       }
       run = parsed_run.move_as_ok();
-      auto locality = validate_native_transfer_run_locality(run.value(), *admission_snapshot.state);
+      auto locality = validate_native_transfer_locality(run.value(), *admission_snapshot.state,
+                                                        admission_snapshot.payment_lane_policy);
       if (locality.is_error()) {
         co_return locality.move_as_error();
       }
@@ -3487,6 +3637,9 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
         co_return parsed_admission.move_as_error();
       }
       admission = parsed_admission.move_as_ok();
+      if (admission_snapshot.payment_lane_policy) {
+        admission.payment_lane_depth = admission_snapshot.payment_lane_policy.value().depth();
+      }
       source = run.value().src;
     }
     if (wc != basechainId || source != addr) {
@@ -3567,9 +3720,9 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     }
 
     // A signature worker can yield while the applied MC config or shard map
-    // advances. Runs are tied to the exact v5 snapshot; scalar work may only
+    // advances. Runs are tied to the exact signed-run snapshot; scalar work may only
     // continue across that yield while the current applied config remains
-    // scalar-compatible.
+    // scalar-compatible and both endpoints remain in one current leaf.
     auto current_snapshot_result = pin_native_admission_snapshot();
     if (current_snapshot_result.is_error()) {
       co_return current_snapshot_result.move_as_error();
@@ -3582,6 +3735,14 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     mode_status = validate_native_admission_mode(current_snapshot, is_run);
     if (mode_status.is_error()) {
       co_return std::move(mode_status);
+    }
+    auto current_locality = transfer
+                                ? validate_native_transfer_locality(transfer.value(), *current_snapshot.state,
+                                                                   current_snapshot.payment_lane_policy)
+                                : validate_native_transfer_locality(run.value(), *current_snapshot.state,
+                                                                   current_snapshot.payment_lane_policy);
+    if (current_locality.is_error()) {
+      co_return current_locality.move_as_error();
     }
 
     co_return co_await reserve_verified_native_message(message, std::move(admission), available_balance.value(),
@@ -3662,6 +3823,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
       if (pending_it->first != native_admission.first_nonce ||
           pending_it->second.logical_count != native_admission.logical_count ||
           pending_it->second.is_run != native_admission.is_run ||
+          pending_it->second.payment_lane_depth != native_admission.payment_lane_depth ||
           pending_it->second.hash != message->hash()) {
         co_return td::Status::Error(PSTRING() << "Duplicate native nonce " << native_admission.first_nonce);
       }
@@ -3706,6 +3868,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
       inserted.fee = native_admission.fee;
       inserted.valid_until = native_admission.valid_until;
       inserted.is_run = native_admission.is_run;
+      inserted.payment_lane_depth = native_admission.payment_lane_depth;
       inserted.account_revision = account_revision;
       inserted.allow_broadcast_promise = std::move(allow_broadcast_promise);
       inserted.committed = false;

@@ -125,8 +125,8 @@ td::Result<std::vector<TrackedNativeExternalMessage>> get_candidate_native_exter
 
   TRY_RESULT(batch, block::NativeTransferBatch::unpack(std::move(custom)));
   messages.reserve(batch.entries.size());
-  if (batch.version == block::NativeTransferBatch::runs_version) {
-    // `entries` is a derived execution view for v5. Its copied signature bytes
+  if (block::NativeTransferBatch::is_direct_run_version(batch.version)) {
+    // `entries` is a derived execution view for v5/v6. Its copied signature bytes
     // are not an NTFX authorization, so its synthetic external hashes must
     // never become mempool identity. Track the canonical NTRN parent once per
     // child nonce instead.

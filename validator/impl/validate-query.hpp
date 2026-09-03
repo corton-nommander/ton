@@ -121,7 +121,7 @@ class ValidateQuery : public td::actor::Actor {
   }
   static constexpr long long supported_capabilities() {
     return capCreateStatsEnabled | capBounceMsgBody | capReportVersion | capShortDequeue | capStoreOutMsgQueueSize |
-           capMsgMetadata | capDeferMessages | capFullCollatedData | capNativeTransferRuns;
+           capMsgMetadata | capDeferMessages | capFullCollatedData | capNativeTransferRuns | capNativePaymentLanes;
   }
 
  public:

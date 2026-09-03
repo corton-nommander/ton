@@ -107,6 +107,25 @@ The benchmark records this as `validator-pool-summary.json` canonical
 reconciliation telemetry and requires admitted/proof totals plus pending-source
 and nonce-gap counts to settle before accepting a run.
 
+### Fixed native payment-lane benchmark (protocol v16)
+
+The optional Step 6 profile exercises two fixed basechain payment lanes. Build
+this branch into the same native image, then run the guarded launcher from the
+sibling Docker checkout:
+
+```bash
+cd ../MyLocalTonDocker
+sudo ./benchmark/run-native-payment-lanes-cycle.sh .env.physical
+```
+
+It enables global version 16 with `capNativeTransferRuns` and
+`capNativePaymentLanes`, fixes basechain splitting at depth 1, and verifies
+that every signed run stays inside one lane before it is admitted or collated.
+The result bundle records both proof-anchored leaf histories and their aggregate
+TPS. This is a same-lane, single-host functional benchmark; cross-lane credits
+and claims of multi-validator linear scaling require a separate receipt and
+finality protocol.
+
 ## The Open Network
 
 __The Open Network (TON)__ is a fast, secure, scalable blockchain focused on handling _millions of transactions per second_ (TPS) with the goal of reaching hundreds of millions of blockchain users.

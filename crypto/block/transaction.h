@@ -146,6 +146,33 @@ struct NativeTransferRun {
   static td::Result<NativeTransferRun> unpack_external(Ref<vm::Cell> cell);
 };
 
+// A payment lane is a fixed-depth basechain shard selected solely by an
+// account's high address bits.  The policy deliberately has no mutable shard
+// state: callers bind it to a ConfigParam-12 workchain whose min/max split
+// depths are equal, then retain the existing current-leaf locality checks as
+// the execution invariant.  This prevents a run that is local before a split
+// from becoming a cross-lane transfer afterwards.
+class NativePaymentLanePolicy {
+ public:
+  static constexpr td::uint32 min_depth = 1;
+  static constexpr td::uint32 max_depth = ton::max_shard_pfx_len;
+
+  static td::Result<NativePaymentLanePolicy> from_fixed_split_depth(td::uint32 min_split,
+                                                                      td::uint32 max_split);
+
+  td::uint32 depth() const {
+    return depth_;
+  }
+  bool contains(const ton::StdSmcAddress& source, const ton::StdSmcAddress& destination) const;
+  bool contains(const NativeTransferRun& run) const;
+
+ private:
+  explicit NativePaymentLanePolicy(td::uint32 depth) : depth_(depth) {
+  }
+
+  td::uint32 depth_;
+};
+
 struct NativeTransferCredit {
   ton::StdSmcAddress src;
   ton::LogicalTime debit_lt{0};
@@ -187,11 +214,13 @@ struct NativeTransferBatch {
   // state changes.  Per-account AccountBlock/HASH_UPDATE records are omitted.
   //
   // v5 is deliberately opt-in while its activation capability is wired by the
-  // validator.  Keep current_version at v4 so existing producers retain their
+  // validator. v6 is the fixed-depth payment-lane form of the same signed-run
+  // codec. Keep current_version at v4 so existing producers retain their
   // exact wire format until that activation lands; store()/unpack() can still
-  // encode and inspect a requested v5 batch for the protocol tests below.
+  // encode and inspect requested v5/v6 batches for the protocol tests below.
   static constexpr td::uint8 current_version = 4;
   static constexpr td::uint8 runs_version = 5;
+  static constexpr td::uint8 lanes_version = 6;
   static constexpr int domain_signatures_global_version = 14;
   // Keep the new wire format inactive unless both gates are present. The
   // existing two-argument policy intentionally remains v1-v4-only; callers
@@ -201,6 +230,20 @@ struct NativeTransferBatch {
   // fresh v15 chain would make mempool identity and replay policy ambiguous.
   static constexpr int runs_global_version = 15;
   static constexpr long long runs_capability = ton::capNativeTransferRuns;
+  // v16 activates a distinct batch version for the fixed-depth same-lane
+  // policy. The direct-run tree codec is shared with v5, but the version
+  // boundary is consensus-critical: a v15 decoder must reject a v16 lane
+  // block instead of accepting an otherwise valid v5-shaped cross-lane run.
+  static constexpr int payment_lanes_global_version = 16;
+  static constexpr long long payment_lanes_capability = ton::capNativePaymentLanes;
+
+  static bool payment_lanes_enabled(int global_version, long long capabilities) {
+    const auto required = runs_capability | payment_lanes_capability;
+    return global_version >= payment_lanes_global_version && (capabilities & required) == required;
+  }
+  static bool is_direct_run_version(td::uint8 candidate_version) {
+    return candidate_version == runs_version || candidate_version == lanes_version;
+  }
 
   static bool version_allowed_for_global_version(td::uint8 candidate_version, int global_version) {
     return candidate_version >= 1 && candidate_version <= current_version &&
@@ -208,12 +251,15 @@ struct NativeTransferBatch {
   }
   static bool version_allowed_for_global_version_and_capabilities(td::uint8 candidate_version, int global_version,
                                                                    long long capabilities) {
+    if (payment_lanes_enabled(global_version, capabilities)) {
+      return candidate_version == lanes_version;
+    }
     const bool runs_enabled = global_version >= runs_global_version &&
                               (capabilities & runs_capability) == runs_capability;
     if (runs_enabled) {
       return candidate_version == runs_version;
     }
-    if (candidate_version == runs_version) {
+    if (is_direct_run_version(candidate_version)) {
       return false;
     }
     return version_allowed_for_global_version(candidate_version, global_version);

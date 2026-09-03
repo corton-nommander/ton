@@ -39,8 +39,8 @@ class ExtMessagePool : public td::actor::Actor {
       : opts_(opts), manager_(manager) {
   }
 
-  // The pool schedules one physical native external at a time, but a v5
-  // NativeTransferRun owns an indivisible contiguous source-nonce interval.
+  // The pool schedules one physical native external at a time, but a
+  // source-signed NativeTransferRun owns an indivisible contiguous source-nonce interval.
   // Keep the admission facts independent from the wire type so all pool
   // lifecycle paths (insert, commit, rollback, expiry and reconciliation)
   // use the same first-nonce/count pair for NTFX and NTRN.
@@ -54,6 +54,10 @@ class ExtMessagePool : public td::actor::Actor {
     // a source-signed run may legitimately contain one output. Keep the mode
     // explicit so a capability transition can evict only incompatible work.
     bool is_run{false};
+    // Zero is legacy/no-lane admission. A live lane capability records its
+    // fixed split depth so a queued pre-lane parent cannot survive a v16 topology
+    // activation or depth change.
+    td::uint32 payment_lane_depth{0};
 
     bool has_valid_interval() const {
       return logical_count != 0 &&
@@ -189,6 +193,9 @@ class ExtMessagePool : public td::actor::Actor {
     td::optional<td::uint64> native_nonce;
     td::uint32 native_nonce_count{0};
     bool native_is_run{false};
+    // Mirrors NativeWork::payment_lane_depth so every persistent pool link is
+    // bound to the fixed-lane policy that admitted it.
+    td::uint32 native_payment_lane_depth{0};
 
     auto address() const {
       return std::make_pair(message->wc(), message->addr());
@@ -355,6 +362,10 @@ class ExtMessagePool : public td::actor::Actor {
     BlockIdExt block_id;
     Bits256 chain_domain;
     bool runs_enabled{false};
+    // Present only under the v16 payment-lane capability.  It is derived from
+    // the same pinned ConfigParam-12 revision as `state`, so admission never
+    // compares address prefixes against a moving split topology.
+    td::optional<block::NativePaymentLanePolicy> payment_lane_policy;
   };
 
   td::Timestamp cleanup_mempool_at_ = td::Timestamp::now();
@@ -414,6 +425,7 @@ class ExtMessagePool : public td::actor::Actor {
     td::uint64 fee;
     td::uint32 valid_until;
     bool is_run{false};
+    td::uint32 payment_lane_depth{0};
     td::uint64 account_revision{0};
     td::Promise<td::Unit> allow_broadcast_promise;
     std::vector<td::Promise<td::Unit>> insertion_waiters;
@@ -530,6 +542,7 @@ class ExtMessagePool : public td::actor::Actor {
   // length when clearing an incompatible mode after a config transition.
   bool native_transfer_runs_mode_initialized_{false};
   bool native_transfer_runs_mode_enabled_{false};
+  td::optional<td::uint32> native_payment_lane_depth_;
   // Do not discard a watermark when an account has no pending messages: an
   // older account-state fetch can still be suspended in a signature worker.
   std::map<NativeAddress, NativeNonceWatermark> native_nonce_watermarks_;
@@ -739,13 +752,22 @@ class ExtMessagePool : public td::actor::Actor {
   static td::Result<td::optional<NativeAdmission>> parse_native_admission(td::Ref<vm::Cell> root);
   static bool native_transfer_runs_enabled(int global_version, bool has_capabilities, long long capabilities);
   static bool native_transfer_runs_enabled(const block::ConfigInfo &config);
-  static td::Status validate_native_transfer_run_locality(const block::NativeTransferRun &run,
-                                                           const MasterchainState &state);
+  static bool native_payment_lanes_enabled(const block::ConfigInfo &config);
+  static td::Result<td::optional<block::NativePaymentLanePolicy>> native_payment_lane_policy(
+      const block::ConfigInfo &config);
+  static td::Status validate_native_transfer_locality(const block::NativeTransfer &transfer,
+                                                       const MasterchainState &state,
+                                                       const td::optional<block::NativePaymentLanePolicy> &policy);
+  static td::Status validate_native_transfer_locality(const block::NativeTransferRun &run,
+                                                       const MasterchainState &state,
+                                                       const td::optional<block::NativePaymentLanePolicy> &policy);
   td::Result<td::Ref<MasterchainState>> pin_native_admission_masterchain_state() const;
   td::Result<NativeAdmissionSnapshot> pin_native_admission_snapshot();
   td::Status validate_native_admission_mode(const NativeAdmissionSnapshot &snapshot, bool is_run) const;
   void update_native_transfer_runs_mode(bool enabled);
-  void purge_incompatible_native_messages(bool runs_enabled);
+  void update_native_payment_lane_depth(td::optional<td::uint32> payment_lane_depth);
+  void purge_incompatible_native_messages(bool runs_enabled,
+                                          td::optional<td::uint32> payment_lane_depth = {});
   void refresh_native_transfer_runs_mode_from_applied_state();
   void reset_native_admission_cache_generation(const BlockIdExt &masterchain_block_id);
   NativeAdmissionShardViewPtr lookup_native_admission_shard_view(

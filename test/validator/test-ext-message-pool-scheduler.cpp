@@ -275,7 +275,8 @@ class ExtMessagePoolTestAccess {
   static ExtMessage::Hash add_work(ExtMessagePool &pool, NativeAddress source, td::uint64 first_nonce,
                                    td::uint32 logical_count, int priority = 0, bool active = true,
                                    bool committed = true, td::uint64 amount = 1, td::uint64 fee = 0,
-                                   bool link_direct = true, bool is_run = true) {
+                                   bool link_direct = true, bool is_run = true,
+                                   td::uint32 payment_lane_depth = 0) {
     CHECK(logical_count != 0);
     CHECK(first_nonce <= std::numeric_limits<td::uint64>::max() - (logical_count - 1));
     auto hash =
@@ -285,6 +286,7 @@ class ExtMessagePoolTestAccess {
     mempool_message->native_nonce = first_nonce;
     mempool_message->native_nonce_count = logical_count;
     mempool_message->native_is_run = is_run;
+    mempool_message->native_payment_lane_depth = payment_lane_depth;
     mempool_message->in_mempool = true;
     mempool_message->active = active;
     if (!active) {
@@ -304,6 +306,7 @@ class ExtMessagePoolTestAccess {
     reservation.source = source;
     reservation.logical_count = logical_count;
     reservation.is_run = is_run;
+    reservation.payment_lane_depth = payment_lane_depth;
     reservation.amount = amount;
     reservation.fee = fee;
     reservation.valid_until = std::numeric_limits<td::uint32>::max();
@@ -803,6 +806,11 @@ class ExtMessagePoolTestAccess {
     pool.update_native_transfer_runs_mode(runs_enabled);
   }
 
+  static void update_native_payment_lane_depth(ExtMessagePool &pool,
+                                               td::optional<td::uint32> payment_lane_depth) {
+    pool.update_native_payment_lane_depth(std::move(payment_lane_depth));
+  }
+
   static bool has_exact_native_retry(ExtMessagePool &pool, NativeAddress source, const ExtMessage::Hash &hash) {
     auto message = td::make_ref<FakeExtMessage>(source.second, hash);
     auto existing = pool.check_existing_external_message(std::move(message), 0, true);
@@ -904,6 +912,37 @@ TEST(ExtMessagePoolScheduler, NativeRunModeTransitionsPurgeOnlyIncompatibleReser
   ExtMessagePoolTestAccess::update_native_transfer_runs_mode(pool, false);
   ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, run_hash));
   ASSERT_TRUE(!ExtMessagePoolTestAccess::has_native_reservation(pool, run_source, 30));
+}
+
+TEST(ExtMessagePoolScheduler, NativePaymentLaneActivationPurgesOldRunReservations) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto old_lane_source = ExtMessagePoolTestAccess::source(117);
+  auto current_lane_source = ExtMessagePoolTestAccess::source(118);
+  ExtMessagePoolTestAccess::set_watermark(pool, old_lane_source, 50);
+  ExtMessagePoolTestAccess::set_watermark(pool, current_lane_source, 60);
+  ExtMessagePoolTestAccess::update_native_transfer_runs_mode(pool, true);
+
+  // A v5 reservation has no lane-depth tag. As soon as a v16 fixed-lane
+  // policy is installed, the exact hash and the nonce reservation must both
+  // disappear before a retry can observe them.
+  auto old_hash =
+      ExtMessagePoolTestAccess::add_work(pool, old_lane_source, 50, 2, 0, true, true, 7, 3, true, true);
+  ExtMessagePoolTestAccess::update_native_payment_lane_depth(pool, 1);
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, old_hash));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_native_reservation(pool, old_lane_source, 50));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_exact_native_retry(pool, old_lane_source, old_hash));
+
+  // A reservation admitted under the current depth survives a refresh of the
+  // same policy, but a depth change clears it atomically as well.
+  auto current_hash =
+      ExtMessagePoolTestAccess::add_work(pool, current_lane_source, 60, 2, 0, true, true, 11, 5, true, true, 1);
+  ExtMessagePoolTestAccess::update_native_payment_lane_depth(pool, 1);
+  ASSERT_TRUE(ExtMessagePoolTestAccess::contains(pool, current_hash));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::has_native_reservation(pool, current_lane_source, 60));
+
+  ExtMessagePoolTestAccess::update_native_payment_lane_depth(pool, 2);
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, current_hash));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_native_reservation(pool, current_lane_source, 60));
 }
 
 TEST(ExtMessagePoolScheduler, NativeRunReservationKeepsAggregateDebitAndIntervalAtomic) {

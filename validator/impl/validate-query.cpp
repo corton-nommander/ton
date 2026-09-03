@@ -6709,6 +6709,25 @@ bool ValidateQuery::check_native_transfer_batch() {
   if (!use_native_fast_path()) {
     return reject_query("compact native transfer batch is only allowed in native fast path");
   }
+  const auto config_capabilities = config_->has_capabilities() ? config_->get_capabilities() : 0;
+  if (block::NativeTransferBatch::payment_lanes_enabled(global_version_, config_capabilities)) {
+    if (native_transfer_batch_.value().version != block::NativeTransferBatch::lanes_version) {
+      return reject_query("native payment lanes require source-signed native transfer runs");
+    }
+    if (wc_info_.is_null()) {
+      return reject_query("native payment lanes require a basechain workchain configuration");
+    }
+    auto policy = block::NativePaymentLanePolicy::from_fixed_split_depth(wc_info_->min_split, wc_info_->max_split);
+    if (policy.is_error()) {
+      return reject_query("invalid native payment-lane configuration: "s + policy.error().to_string());
+    }
+    auto payment_lane_policy = policy.move_as_ok();
+    for (const auto &run : native_transfer_batch_.value().runs) {
+      if (!payment_lane_policy.contains(run)) {
+        return reject_query("native transfer run destination is outside its source payment lane");
+      }
+    }
+  }
   td::ScopedRealCpuTimer replay_timer{stats_.work_time.native_batch_replay};
   struct NativeAddressHash {
     NativeAddressHash() : seed_(td::Random::secure_uint64()) {
@@ -6769,7 +6788,7 @@ bool ValidateQuery::check_native_transfer_batch() {
     return result;
   };
 
-  if (native_transfer_batch_.value().version == block::NativeTransferBatch::runs_version) {
+  if (block::NativeTransferBatch::is_direct_run_version(native_transfer_batch_.value().version)) {
     const auto& runs = native_transfer_batch_.value().runs;
     std::vector<const block::NativeTransferRun*> signed_runs;
     signed_runs.reserve(runs.size());
@@ -6783,7 +6802,7 @@ bool ValidateQuery::check_native_transfer_batch() {
           signed_runs, config_->get_zerostate_id().root_hash);
     }
     if (signature_status.is_error()) {
-      return reject_query("v5 native transfer run signature verification failed: "s + signature_status.to_string());
+      return reject_query("native transfer run signature verification failed: "s + signature_status.to_string());
     }
   } else if (native_transfer_batch_.value().version >= 4) {
     const auto& entries = native_transfer_batch_.value().entries;
@@ -6803,7 +6822,7 @@ bool ValidateQuery::check_native_transfer_batch() {
     }
   }
 
-  // v5 entries are the canonical flattened execution view of the signed
+  // Direct-run entries are the canonical flattened execution view of the signed
   // runs. Their copied signature bytes are deliberately not individual NTFX
   // authorizations, so signature verification above is one-per-run; the
   // ordered state replay below is otherwise identical to v4.

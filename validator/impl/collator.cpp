@@ -1050,7 +1050,21 @@ bool Collator::request_neighbor_msg_queues() {
     }
     neighbors_.emplace_back(*shard_ptr);
   }
-  if (use_native_fast_path()) {
+  // A native basechain leaf normally has only its own predecessor (and the
+  // masterchain) as a neighbor, which can be initialized from local state.
+  // Once it splits, however, its sibling is a genuine non-local neighbor.
+  // Fetch that sibling's queue and ProcessedUpto through the ordinary
+  // proof-backed path rather than treating them as local.
+  bool native_fast_path_can_skip_neighbor_queues = use_native_fast_path();
+  if (native_fast_path_can_skip_neighbor_queues) {
+    for (const auto& descr : neighbors_) {
+      if (!descr.blk_.is_masterchain() && !shard_intersects(descr.shard(), shard_)) {
+        native_fast_path_can_skip_neighbor_queues = false;
+        break;
+      }
+    }
+  }
+  if (native_fast_path_can_skip_neighbor_queues) {
     LOG(INFO) << "native fast path: skipping neighbor OutMsgQueue proof requests";
     stats_.neighbors.resize(neighbors_.size());
     for (std::size_t i = 0; i < neighbors_.size(); ++i) {
@@ -1109,11 +1123,11 @@ bool Collator::request_neighbor_msg_queues() {
         }
         continue;
       }
-      return fatal_error(PSTRING() << "native fast path does not support non-local neighbor message queues: neighbor="
-                                   << descr.blk_ << " neighbor_shard=" << descr.shard()
-                                   << " collating_shard=" << shard_);
     }
     return true;
+  }
+  if (use_native_fast_path()) {
+    LOG(INFO) << "native fast path: fetching proof-backed non-local neighbor message queues";
   }
   std::vector<BlockIdExt> top_blocks;
   unsigned i = 0;
@@ -1253,6 +1267,11 @@ void Collator::got_neighbor_msg_queue(unsigned i, Ref<OutMsgQueueProof> res) {
   }
   auto queue_root = qinfo.out_queue->prefetch_ref(0);
   descr.set_queue_root(queue_root);
+  if (use_native_fast_path() && !block_id.is_masterchain() && !shard_intersects(block_id.shard_full(), shard_) &&
+      !descr.out_msg_queue->is_empty()) {
+    fatal_error("native fast path requires an empty non-local neighbor outbound message queue");
+    return;
+  }
   if (res->msg_count_ != -1) {
     LOG(INFO) << "neighbor " << descr.shard() << " has msg_limit=" << res->msg_count_;
     neighbor_msg_queues_limits_[block_id.shard_full()] = res->msg_count_;

@@ -1689,7 +1689,19 @@ bool ValidateQuery::request_neighbor_queues() {
     }
     neighbors_.emplace_back(*shard_ptr);
   }
-  if (use_native_fast_path()) {
+  // Mirror the collator rule exactly. A depth-1 native leaf has a sibling
+  // whose queue and ProcessedUpto must remain proof-backed; only fully local
+  // neighbor sets may use the no-proof shortcut.
+  bool native_fast_path_can_skip_neighbor_queues = use_native_fast_path();
+  if (native_fast_path_can_skip_neighbor_queues) {
+    for (const auto& descr : neighbors_) {
+      if (!descr.blk_.is_masterchain() && !shard_intersects(descr.shard(), shard_)) {
+        native_fast_path_can_skip_neighbor_queues = false;
+        break;
+      }
+    }
+  }
+  if (native_fast_path_can_skip_neighbor_queues) {
     LOG(INFO) << "native fast path: skipping neighbor OutMsgQueue proof requests during validation";
     for (block::McShardDescr& descr : neighbors_) {
       if (descr.blk_.is_masterchain()) {
@@ -1739,11 +1751,11 @@ bool ValidateQuery::request_neighbor_queues() {
         }
         continue;
       }
-      return reject_query(PSTRING()
-                          << "native fast path does not support non-local neighbor message queues: neighbor="
-                          << descr.blk_ << " neighbor_shard=" << descr.shard() << " validating_shard=" << shard_);
     }
     return true;
+  }
+  if (use_native_fast_path()) {
+    LOG(INFO) << "native fast path: validating proof-backed non-local neighbor message queues";
   }
   int i = 0;
   if (full_collated_data_) {
@@ -1828,6 +1840,11 @@ void ValidateQuery::got_neighbor_out_queue(int i, td::Result<Ref<MessageQueue>> 
       return;
     }
     descr.set_queue_root(qinfo.out_queue->prefetch_ref(0));
+    if (use_native_fast_path() && !descr.blk_.is_masterchain() && !shard_intersects(descr.shard(), shard_) &&
+        !descr.out_msg_queue->is_empty()) {
+      reject_query("native fast path requires an empty non-local neighbor outbound message queue");
+      return;
+    }
     // unpack ProcessedUpto
     LOG(DEBUG) << "unpacking ProcessedUpto of neighbor " << descr.blk_;
     if (verbosity >= 2) {

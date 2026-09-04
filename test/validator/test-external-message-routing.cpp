@@ -3,6 +3,7 @@
 #include "crypto/Ed25519.h"
 #include "td/utils/tests.h"
 #include "validator/impl/external-message.hpp"
+#include "validator/impl/shard.hpp"
 #include "vm/boc.h"
 
 namespace {
@@ -44,4 +45,26 @@ TEST(ExternalMessageRouting, MalformedNativeTransferRunDoesNotFallBackToOrdinary
       make_malformed_native_transfer_run_boc(), block::SizeLimitsConfig::ExtMsgLimits{});
   ASSERT_TRUE(result.is_error());
   ASSERT_TRUE(result.error().message().str().find("native transfer run") != std::string::npos);
+}
+
+TEST(ExternalMessageRouting, NativeNeighborLocalStateReuseRequiresExactShard) {
+  const ton::ShardIdFull root{ton::basechainId, ton::shardIdAll};
+  const ton::ShardIdFull left{ton::basechainId, ton::shard_child(root.shard, true)};
+  const ton::ShardIdFull right{ton::basechainId, ton::shard_child(root.shard, false)};
+  const ton::ShardIdFull left_left{ton::basechainId, ton::shard_child(left.shard, true)};
+  const ton::ShardIdFull left_right{ton::basechainId, ton::shard_child(left.shard, false)};
+  const ton::ShardIdFull masterchain{ton::masterchainId, ton::shardIdAll};
+
+  ASSERT_TRUE(ton::validator::native_neighbor_can_reuse_current_shard_state(root, root));
+  ASSERT_TRUE(ton::validator::native_neighbor_can_reuse_current_shard_state(left, left));
+  ASSERT_TRUE(ton::validator::native_neighbor_can_reuse_current_shard_state(left_left, left_left));
+
+  ASSERT_TRUE(!ton::validator::native_neighbor_can_reuse_current_shard_state(left, root));
+  ASSERT_TRUE(!ton::validator::native_neighbor_can_reuse_current_shard_state(root, left));
+  ASSERT_TRUE(!ton::validator::native_neighbor_can_reuse_current_shard_state(left, right));
+  ASSERT_TRUE(!ton::validator::native_neighbor_can_reuse_current_shard_state(left_left, left));
+  ASSERT_TRUE(!ton::validator::native_neighbor_can_reuse_current_shard_state(left, left_left));
+  ASSERT_TRUE(!ton::validator::native_neighbor_can_reuse_current_shard_state(left_left, left_right));
+  ASSERT_TRUE(!ton::validator::native_neighbor_can_reuse_current_shard_state(masterchain, masterchain));
+  ASSERT_TRUE(!ton::validator::native_neighbor_can_reuse_current_shard_state(left, masterchain));
 }

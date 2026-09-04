@@ -1050,15 +1050,15 @@ bool Collator::request_neighbor_msg_queues() {
     }
     neighbors_.emplace_back(*shard_ptr);
   }
-  // A native basechain leaf normally has only its own predecessor (and the
-  // masterchain) as a neighbor, which can be initialized from local state.
-  // Once it splits, however, its sibling is a genuine non-local neighbor.
-  // Fetch that sibling's queue and ProcessedUpto through the ordinary
-  // proof-backed path rather than treating them as local.
+  // A native basechain leaf may initialize only an exact-shard predecessor
+  // (and the masterchain) from local state. During a split transition the
+  // masterchain may still advertise an intersecting parent; after the split it
+  // advertises siblings. Fetch either topology from authenticated state rather
+  // than rebasing its queue and ProcessedUpto onto the current leaf.
   bool native_fast_path_can_skip_neighbor_queues = use_native_fast_path();
   if (native_fast_path_can_skip_neighbor_queues) {
     for (const auto& descr : neighbors_) {
-      if (!descr.blk_.is_masterchain() && !shard_intersects(descr.shard(), shard_)) {
+      if (!descr.blk_.is_masterchain() && !native_neighbor_can_reuse_current_shard_state(shard_, descr.shard())) {
         native_fast_path_can_skip_neighbor_queues = false;
         break;
       }
@@ -1112,7 +1112,12 @@ bool Collator::request_neighbor_msg_queues() {
         }
         continue;
       }
-      if (shard_intersects(descr.shard(), shard_)) {
+      if (native_neighbor_can_reuse_current_shard_state(shard_, descr.shard())) {
+        if (!processed_upto_ || processed_upto_->owner != descr.shard()) {
+          return fatal_error(PSTRING() << "native fast path current-shard ProcessedUpto owner mismatch: owner="
+                                       << (processed_upto_ ? processed_upto_->owner.to_str() : "null")
+                                       << " neighbor_shard=" << descr.shard() << " collating_shard=" << shard_);
+        }
         descr.set_queue_root(out_msg_queue_->get_root_cell());
         descr.processed_upto = processed_upto_;
         for (const auto& entry : descr.processed_upto->list) {
@@ -1267,9 +1272,10 @@ void Collator::got_neighbor_msg_queue(unsigned i, Ref<OutMsgQueueProof> res) {
   }
   auto queue_root = qinfo.out_queue->prefetch_ref(0);
   descr.set_queue_root(queue_root);
-  if (use_native_fast_path() && !block_id.is_masterchain() && !shard_intersects(block_id.shard_full(), shard_) &&
+  if (use_native_fast_path() && !block_id.is_masterchain() &&
+      !native_neighbor_can_reuse_current_shard_state(shard_, block_id.shard_full()) &&
       !descr.out_msg_queue->is_empty()) {
-    fatal_error("native fast path requires an empty non-local neighbor outbound message queue");
+    fatal_error("native fast path requires an empty proof-backed neighbor outbound message queue");
     return;
   }
   if (res->msg_count_ != -1) {

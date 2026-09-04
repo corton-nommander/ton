@@ -39,6 +39,7 @@
 #include "common/refcnt.hpp"
 #include "common/refint.h"
 #include "common/util.h"
+#include "block/block.h"
 #include "block/block-parse.h"
 #include "block/transaction.h"
 #include "crypto/Ed25519.h"
@@ -57,6 +58,27 @@ static std::stringstream create_ss() {
   return ss;
 }
 static std::stringstream os = create_ss();
+
+TEST(Block, MsgProcessedUptoSplitRequiresAncestorOwner) {
+  const ton::ShardIdFull root{ton::basechainId, ton::shardIdAll};
+  const ton::ShardIdFull left{ton::basechainId, ton::shard_child(root.shard, true)};
+  const ton::ShardIdFull right{ton::basechainId, ton::shard_child(root.shard, false)};
+
+  block::MsgProcessedUptoCollection parent_to_left{root};
+  parent_to_left.valid = true;
+  ASSERT_TRUE(parent_to_left.split(left));
+  ASSERT_EQ(parent_to_left.owner, left);
+
+  block::MsgProcessedUptoCollection parent_to_right{root};
+  parent_to_right.valid = true;
+  ASSERT_TRUE(parent_to_right.split(right));
+  ASSERT_EQ(parent_to_right.owner, right);
+
+  block::MsgProcessedUptoCollection child_to_sibling{left};
+  child_to_sibling.valid = true;
+  ASSERT_TRUE(!child_to_sibling.split(right));
+  ASSERT_EQ(child_to_sibling.owner, left);
+}
 
 void show_total_cells(std::ostream& stream) {
   stream << "total cells = " << vm::DataCell::get_total_data_cells() << std::endl;

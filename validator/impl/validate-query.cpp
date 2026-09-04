@@ -1695,13 +1695,13 @@ bool ValidateQuery::request_neighbor_queues() {
     }
     neighbors_.emplace_back(*shard_ptr);
   }
-  // Mirror the collator rule exactly. A depth-1 native leaf has a sibling
-  // whose queue and ProcessedUpto must remain proof-backed; only fully local
-  // neighbor sets may use the no-proof shortcut.
+  // Mirror the collator rule exactly. Intersecting parents and siblings have
+  // their own queue and ProcessedUpto ownership; only exact-shard predecessors
+  // may use the local-state shortcut.
   bool native_fast_path_can_skip_neighbor_queues = use_native_fast_path();
   if (native_fast_path_can_skip_neighbor_queues) {
     for (const auto& descr : neighbors_) {
-      if (!descr.blk_.is_masterchain() && !shard_intersects(descr.shard(), shard_)) {
+      if (!descr.blk_.is_masterchain() && !native_neighbor_can_reuse_current_shard_state(shard_, descr.shard())) {
         native_fast_path_can_skip_neighbor_queues = false;
         break;
       }
@@ -1744,9 +1744,14 @@ bool ValidateQuery::request_neighbor_queues() {
         }
         continue;
       }
-      if (shard_intersects(descr.shard(), shard_)) {
+      if (native_neighbor_can_reuse_current_shard_state(shard_, descr.shard())) {
         REJECT_UNLESS(ps_.out_msg_queue_);
         REJECT_UNLESS(ps_.processed_upto_);
+        if (ps_.processed_upto_->owner != descr.shard()) {
+          return reject_query(PSTRING() << "native fast path current-shard ProcessedUpto owner mismatch: owner="
+                                        << ps_.processed_upto_->owner << " neighbor_shard=" << descr.shard()
+                                        << " validating_shard=" << shard_);
+        }
         descr.set_queue_root(ps_.out_msg_queue_->get_root_cell());
         descr.processed_upto = ps_.processed_upto_;
         for (const auto& entry : descr.processed_upto->list) {
@@ -1846,9 +1851,9 @@ void ValidateQuery::got_neighbor_out_queue(int i, td::Result<Ref<MessageQueue>> 
       return;
     }
     descr.set_queue_root(qinfo.out_queue->prefetch_ref(0));
-    if (use_native_fast_path() && !descr.blk_.is_masterchain() && !shard_intersects(descr.shard(), shard_) &&
-        !descr.out_msg_queue->is_empty()) {
-      reject_query("native fast path requires an empty non-local neighbor outbound message queue");
+    if (use_native_fast_path() && !descr.blk_.is_masterchain() &&
+        !native_neighbor_can_reuse_current_shard_state(shard_, descr.shard()) && !descr.out_msg_queue->is_empty()) {
+      reject_query("native fast path requires an empty proof-backed neighbor outbound message queue");
       return;
     }
     // unpack ProcessedUpto

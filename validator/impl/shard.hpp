@@ -29,6 +29,13 @@ namespace ton {
 namespace validator {
 using td::Ref;
 
+// A native neighbor descriptor may reuse the current shard state's queue only
+// when it describes that exact shard.  An intersecting parent or child has a
+// different ProcessedUpto owner and must stay on the proof-backed path.
+inline bool native_neighbor_can_reuse_current_shard_state(ShardIdFull current, ShardIdFull neighbor) {
+  return !neighbor.is_masterchain() && neighbor == current;
+}
+
 class ShardStateQ : virtual public ShardState {
  protected:
   BlockIdExt blkid;

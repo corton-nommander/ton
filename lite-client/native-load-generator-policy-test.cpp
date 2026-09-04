@@ -33,6 +33,25 @@ TEST(NativeLoadGeneratorPolicy, ZeroAdaptiveCwndCeilingPreservesHardLimit) {
   ASSERT_TRUE(hard_limited.limited);
 }
 
+TEST(NativeLoadGeneratorPolicy, AdaptiveCwndLossPreservesAtomicDispatchQuantum) {
+  auto ordinary_loss = native_load::adaptive_cwnd_after_loss(64.0, 16.0);
+  ASSERT_TRUE(std::abs(ordinary_loss.cwnd - 32.0) < 1e-9);
+  ASSERT_TRUE(!ordinary_loss.minimum_limited);
+
+  auto bounded_loss = native_load::adaptive_cwnd_after_loss(20.0, 16.0);
+  ASSERT_TRUE(std::abs(bounded_loss.cwnd - 16.0) < 1e-9);
+  ASSERT_TRUE(bounded_loss.minimum_limited);
+
+  auto floor_loss = native_load::adaptive_cwnd_after_loss(16.0, 16.0);
+  ASSERT_TRUE(std::abs(floor_loss.cwnd - 16.0) < 1e-9);
+  ASSERT_TRUE(floor_loss.minimum_limited);
+
+  // A client whose static ceiling is below the configured run size uses its
+  // bounded effective quantum, while scalar admission retains a floor of one.
+  ASSERT_TRUE(std::abs(native_load::adaptive_cwnd_after_loss(8.0, 8.0).cwnd - 8.0) < 1e-9);
+  ASSERT_TRUE(std::abs(native_load::adaptive_cwnd_after_loss(1.0, 1.0).cwnd - 1.0) < 1e-9);
+}
+
 TEST(NativeLoadGeneratorPolicy, AdaptiveCwndDistributionConservesGlobalCap) {
   std::uint32_t worker_total = 0;
   std::uint32_t client_total = 0;
@@ -311,34 +330,123 @@ TEST(NativeLoadGeneratorPolicy, NativeSignedRunPlanIsBoundedAndAllowsShortTail) 
   ASSERT_TRUE(tail.is_valid());
 }
 
-TEST(NativeLoadGeneratorPolicy, NativeSignedRunPacingWaitsForTheBoundedAtomicTarget) {
-  ASSERT_EQ(native_load::bounded_native_signed_run_pacing_target(16, 16, 50), 16u);
-  ASSERT_TRUE(native_load::should_hold_native_signed_run_for_pacing(true, 9, 16));
-  ASSERT_TRUE(!native_load::should_hold_native_signed_run_for_pacing(true, 16, 16));
-
-  ASSERT_EQ(native_load::bounded_native_signed_run_pacing_target(7, 16, 50), 7u);
-  ASSERT_TRUE(!native_load::should_hold_native_signed_run_for_pacing(true, 7, 7));
-
-  ASSERT_EQ(native_load::bounded_native_signed_run_pacing_target(16, 16, 7), 7u);
-  ASSERT_TRUE(native_load::should_hold_native_signed_run_for_pacing(true, 6, 7));
-  ASSERT_TRUE(!native_load::should_hold_native_signed_run_for_pacing(false, 1, 16));
-}
-
-TEST(NativeLoadGeneratorPolicy, NativeSignedRunNeverOverfillsCanonicalBacklogBudget) {
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunNormalQuantumIsStableAndDispatchable) {
   native_load::NativeSignedRunSettings settings;
   settings.requested = true;
   settings.entries_per_run = 16;
 
-  // A paced 16-output parent must shrink to the one remaining canonical
-  // slot rather than wait for and then consume all sixteen token credits.
+  ASSERT_EQ(native_load::effective_native_signed_run_quantum(settings, 64), 16u);
+  ASSERT_EQ(native_load::effective_native_signed_run_quantum(settings, 8), 8u);
+  ASSERT_EQ(native_load::effective_native_signed_run_quantum(settings, 0), 0u);
+
+  auto full = native_load::make_native_signed_run_quantum_plan(100, 64, 16);
+  ASSERT_TRUE(full.is_valid());
+  ASSERT_EQ(full.logical_count, 16u);
+
+  // Transient residual budgets do not resize an ordinary authorization.
+  auto held = native_load::make_native_signed_run_quantum_plan(100, 15, 16);
+  ASSERT_TRUE(!held.is_valid());
+  ASSERT_EQ(held.logical_count, 0u);
+
+  settings.requested = false;
+  ASSERT_EQ(native_load::effective_native_signed_run_quantum(settings, 64), 0u);
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunSourceEligibilityRequiresWholeQuantum) {
+  ASSERT_TRUE(!native_load::native_signed_run_source_capacity_exhausted(47, 63, 16));
+  ASSERT_TRUE(native_load::native_signed_run_source_capacity_exhausted(48, 63, 16));
+  ASSERT_TRUE(native_load::native_signed_run_source_capacity_exhausted(63, 63, 16));
+  ASSERT_TRUE(native_load::native_signed_run_source_capacity_exhausted(0, 63, 0));
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunNormalPlanHandlesTerminalNonceTail) {
+  auto max_nonce = std::numeric_limits<std::uint64_t>::max();
+  auto terminal = native_load::make_native_signed_run_quantum_plan(
+      max_nonce - 3, 3, 16);
+  ASSERT_TRUE(terminal.is_valid());
+  ASSERT_EQ(terminal.first_nonce, max_nonce - 3);
+  ASSERT_EQ(terminal.logical_count, 3u);
+  ASSERT_TRUE(!native_load::native_signed_run_nonce_cursor_exhausted(
+      terminal.first_nonce));
+  auto advanced_cursor = terminal.first_nonce + terminal.logical_count;
+  ASSERT_EQ(advanced_cursor, max_nonce);
+  ASSERT_TRUE(native_load::native_signed_run_nonce_cursor_exhausted(
+      advanced_cursor));
+
+  ASSERT_TRUE(!native_load::make_native_signed_run_quantum_plan(
+                   max_nonce - 3, 2, 16)
+                   .is_valid());
+  ASSERT_TRUE(!native_load::make_native_signed_run_quantum_plan(
+                   max_nonce, 16, 16)
+                   .is_valid());
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunIssueHoldsUseOneOrderedReason) {
+  using Reason = native_load::NativeSignedRunIssueHoldReason;
+  constexpr std::uint32_t quantum = 16;
+
+  ASSERT_TRUE(native_load::native_signed_run_issue_hold_reason(
+                  quantum, 15, 15, 15, true, 15, 15, 15) ==
+              Reason::active_capacity);
+  ASSERT_TRUE(native_load::native_signed_run_issue_hold_reason(
+                  quantum, 16, 15, 15, true, 15, 15, 15) ==
+              Reason::source_capacity);
+  ASSERT_TRUE(native_load::native_signed_run_issue_hold_reason(
+                  quantum, 16, 16, 15, true, 15, 15, 15) ==
+              Reason::canonical_capacity);
+  ASSERT_TRUE(native_load::native_signed_run_issue_hold_reason(
+                  quantum, 16, 16, 16, true, 15, 15, 15) ==
+              Reason::pacing_credit);
+  ASSERT_TRUE(native_load::native_signed_run_issue_hold_reason(
+                  quantum, 16, 16, 16, true, 16, 15, 15) ==
+              Reason::client_capacity);
+  ASSERT_TRUE(native_load::native_signed_run_issue_hold_reason(
+                  quantum, 16, 16, 16, true, 16, 16, 15) ==
+              Reason::query_credit);
+  ASSERT_TRUE(native_load::native_signed_run_issue_hold_reason(
+                  quantum, 16, 16, 16, true, 16, 16, 16) == Reason::none);
+
+  // Occupancy can temporarily leave one free slot in a 64-slot client. The
+  // decision waits for sixteen; it never turns that residue into a 1-run.
+  ASSERT_TRUE(native_load::native_signed_run_issue_hold_reason(
+                  quantum, 64, 64, 64, false, 0, 1, 1) ==
+              Reason::client_capacity);
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunRepairAloneMayUseFiniteTail) {
+  auto full = native_load::make_native_signed_run_repair_plan(100, 64, 16);
+  ASSERT_TRUE(full.is_valid());
+  ASSERT_EQ(full.logical_count, 16u);
+
+  auto tail = native_load::make_native_signed_run_repair_plan(116, 3, 16);
+  ASSERT_TRUE(tail.is_valid());
+  ASSERT_EQ(tail.logical_count, 3u);
+
+  auto empty = native_load::make_native_signed_run_repair_plan(119, 0, 16);
+  ASSERT_TRUE(!empty.is_valid());
+
+  ASSERT_TRUE(native_load::native_signed_run_repair_capacity_available(
+      16, 16, 16));
+  ASSERT_TRUE(!native_load::native_signed_run_repair_capacity_available(
+      16, 15, 16));
+  ASSERT_TRUE(!native_load::native_signed_run_repair_capacity_available(
+      16, 16, 15));
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunPacingBucketFitsOneQuantum) {
+  ASSERT_TRUE(std::abs(native_load::native_signed_run_pacing_burst_cap(1.0, 16) - 16.0) < 1e-9);
+  ASSERT_TRUE(std::abs(native_load::native_signed_run_pacing_burst_cap(500.0, 16) - 500.0) < 1e-9);
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeSignedRunHoldsAtCanonicalBacklogTail) {
+  // One remaining canonical slot cannot admit part of a 16-output normal
+  // quantum. Progress will free the rest of the quantum; repair owns tails.
   auto remaining = native_load::bounded_native_signed_run_canonical_capacity(16, 0, 1, true);
   ASSERT_EQ(remaining, 1u);
-  auto preferred = native_load::bounded_native_signed_run_pacing_target(remaining, 16, 16);
-  ASSERT_EQ(preferred, 1u);
-  ASSERT_TRUE(!native_load::should_hold_native_signed_run_for_pacing(true, 1, preferred));
-  auto tail = native_load::make_native_signed_run_plan(100, remaining, settings);
-  ASSERT_TRUE(tail.is_valid());
-  ASSERT_EQ(tail.logical_count, 1u);
+  ASSERT_TRUE(native_load::native_signed_run_issue_hold_reason(
+                  16, 16, 16, remaining, true, 16, 16, 16) ==
+              native_load::NativeSignedRunIssueHoldReason::canonical_capacity);
+  ASSERT_TRUE(!native_load::make_native_signed_run_quantum_plan(100, remaining, 16).is_valid());
 
   ASSERT_EQ(native_load::bounded_native_signed_run_canonical_capacity(16, 15, 16, true), 1u);
   ASSERT_EQ(native_load::bounded_native_signed_run_canonical_capacity(16, 16, 16, true), 0u);

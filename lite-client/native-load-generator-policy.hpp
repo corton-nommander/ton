@@ -15,6 +15,11 @@ struct AdaptiveCwndAckResult {
   bool limited{false};
 };
 
+struct AdaptiveCwndLossResult {
+  double cwnd{1.0};
+  bool minimum_limited{false};
+};
+
 // AIMD windows count messages, not wire queries. A zero configured limit keeps
 // the historical hard-limit-only behavior; otherwise every ACK grows toward
 // the independently distributed admission ceiling without changing decrease
@@ -23,6 +28,17 @@ inline AdaptiveCwndAckResult adaptive_cwnd_after_ack(double current, double hard
   auto limit = configured_limit > 0.0 ? std::min(hard_limit, configured_limit) : hard_limit;
   auto wanted = current + 1.0 / std::max(1.0, current);
   return {.cwnd = std::min(limit, wanted), .limited = wanted > limit};
+}
+
+// Keep the loss response usable by indivisible logical-message quanta.  The
+// caller bounds minimum_dispatch_window by that client's configured ceiling;
+// scalar admission therefore retains the historical floor of one.
+inline AdaptiveCwndLossResult adaptive_cwnd_after_loss(
+    double current, double minimum_dispatch_window) {
+  auto minimum = std::max(1.0, minimum_dispatch_window);
+  auto halved = current * 0.5;
+  return {.cwnd = std::max(minimum, halved),
+          .minimum_limited = halved < minimum};
 }
 
 inline std::uint32_t distributed_share(std::uint32_t total, std::uint32_t index, std::uint32_t count) {
@@ -552,6 +568,16 @@ struct NativeSignedRunPlan {
   }
 };
 
+enum class NativeSignedRunIssueHoldReason {
+  none,
+  active_capacity,
+  source_capacity,
+  canonical_capacity,
+  pacing_credit,
+  client_capacity,
+  query_credit,
+};
+
 inline bool valid_native_signed_run_entries_per_run(std::uint32_t entries_per_run) {
   return entries_per_run >= 1 && entries_per_run <= max_native_signed_run_entries;
 }
@@ -560,19 +586,74 @@ inline bool valid_native_signed_run_settings(const NativeSignedRunSettings& sett
   return valid_native_signed_run_entries_per_run(settings.entries_per_run);
 }
 
-// Pacing still owns the logical transfer rate, but a signed parent is only
-// useful when it can carry the largest interval already allowed by that
-// pacing burst.  This target never expands the established burst cap, source
-// fairness, or the configured run bound.
-inline std::size_t bounded_native_signed_run_pacing_target(std::size_t logical_capacity,
-                                                           std::size_t configured_run_size,
-                                                           std::size_t pacing_burst_cap) {
-  return std::min({logical_capacity, configured_run_size, pacing_burst_cap});
+// Normal source issuance uses one stable authorization quantum. The caller
+// combines static worker, source, canonical, and per-client ceilings so an
+// oversized configuration is reduced once instead of creating work which can
+// never be issued or dispatched.
+inline std::uint32_t effective_native_signed_run_quantum(
+    const NativeSignedRunSettings& settings, std::uint32_t static_capacity_ceiling) {
+  if (!settings.requested || !valid_native_signed_run_settings(settings) ||
+      static_capacity_ceiling == 0) {
+    return 0;
+  }
+  return std::min(settings.entries_per_run, static_capacity_ceiling);
+}
+
+inline bool native_signed_run_source_capacity_exhausted(
+    std::uint64_t outstanding, std::uint64_t source_limit,
+    std::uint32_t quantum) {
+  return quantum == 0 || outstanding >= source_limit ||
+         source_limit - outstanding < quantum;
+}
+
+// Wallet::next_nonce is an exclusive uint64 cursor. Once a legal terminal
+// tail advances it to UINT64_MAX, no further nonce can be represented without
+// wrapping; the source remains live for proof and drain but not new issuance.
+inline bool native_signed_run_nonce_cursor_exhausted(
+    std::uint64_t next_nonce) {
+  return next_nonce == std::numeric_limits<std::uint64_t>::max();
+}
+
+// Hold rather than resize an ordinary NTRN when a transient budget has fewer
+// slots than its stable quantum.  The ordered reason is also a mutually
+// exclusive telemetry taxonomy for one source-issue turn.
+inline NativeSignedRunIssueHoldReason native_signed_run_issue_hold_reason(
+    std::uint32_t required_logical_count, std::uint64_t active_capacity,
+    std::uint64_t source_capacity, std::uint64_t canonical_capacity,
+    bool paced, std::uint64_t pacing_credit,
+    std::uint32_t largest_client_available_capacity,
+    std::uint32_t largest_query_dispatchable_capacity) {
+  if (required_logical_count == 0 || active_capacity < required_logical_count) {
+    return NativeSignedRunIssueHoldReason::active_capacity;
+  }
+  if (source_capacity < required_logical_count) {
+    return NativeSignedRunIssueHoldReason::source_capacity;
+  }
+  if (canonical_capacity < required_logical_count) {
+    return NativeSignedRunIssueHoldReason::canonical_capacity;
+  }
+  if (paced && pacing_credit < required_logical_count) {
+    return NativeSignedRunIssueHoldReason::pacing_credit;
+  }
+  if (largest_client_available_capacity < required_logical_count) {
+    return NativeSignedRunIssueHoldReason::client_capacity;
+  }
+  if (largest_query_dispatchable_capacity < required_logical_count) {
+    return NativeSignedRunIssueHoldReason::query_credit;
+  }
+  return NativeSignedRunIssueHoldReason::none;
+}
+
+// The token bucket must be able to accumulate at least one indivisible run,
+// including at low target rates and during the start of a linear ramp.
+inline double native_signed_run_pacing_burst_cap(double ordinary_burst_cap,
+                                                  std::uint32_t quantum) {
+  return std::max(ordinary_burst_cap, static_cast<double>(quantum));
 }
 
 // A signed parent cannot be split after signing, so its candidate interval
 // must fit the remaining proof-observed canonical backlog budget before the
-// pacing target chooses its atomic size.  A disabled backlog control retains
+// issue decision admits its stable quantum. A disabled backlog control retains
 // the established capacity calculation.
 inline std::uint64_t bounded_native_signed_run_canonical_capacity(
     std::uint64_t logical_capacity, std::uint64_t canonical_backlog,
@@ -584,14 +665,6 @@ inline std::uint64_t bounded_native_signed_run_canonical_capacity(
     return 0;
   }
   return std::min(logical_capacity, configured_backlog_limit - canonical_backlog);
-}
-
-// A paced signed run with a useful multi-transfer target waits for its carried
-// token credit instead of immediately spending a one-to-few-transfer parent.
-// Scalar submissions and unpaced signed runs retain their existing behavior.
-inline bool should_hold_native_signed_run_for_pacing(bool paced, std::size_t available_tokens,
-                                                     std::size_t preferred_run) {
-  return paced && preferred_run > 1 && available_tokens < preferred_run;
 }
 
 // A requested run consumes only a consecutive sequence which fits both the
@@ -610,6 +683,42 @@ inline NativeSignedRunPlan make_native_signed_run_plan(std::uint64_t first_nonce
     --count;
   }
   return {first_nonce, static_cast<std::uint32_t>(count)};
+}
+
+// Ordinary generation is full-quantum except for the finite nonce-domain tail.
+// Wallet::next_nonce is an exclusive uint64 cursor, so UINT64_MAX itself is
+// not issuable: the last representable plan advances the cursor exactly to it.
+inline NativeSignedRunPlan make_native_signed_run_quantum_plan(
+    std::uint64_t first_nonce, std::size_t logical_capacity,
+    std::uint32_t quantum) {
+  if (quantum == 0 || quantum > max_native_signed_run_entries ||
+      first_nonce == std::numeric_limits<std::uint64_t>::max()) {
+    return {first_nonce, 0};
+  }
+  auto nonce_capacity = std::numeric_limits<std::uint64_t>::max() - first_nonce;
+  auto count = static_cast<std::uint32_t>(
+      std::min<std::uint64_t>(quantum, nonce_capacity));
+  if (logical_capacity < count) {
+    return {first_nonce, 0};
+  }
+  return {first_nonce, count};
+}
+
+inline NativeSignedRunPlan make_native_signed_run_repair_plan(
+    std::uint64_t first_nonce, std::size_t remaining_logical,
+    std::uint32_t quantum) {
+  if (quantum == 0 || quantum > max_native_signed_run_entries) {
+    return {first_nonce, 0};
+  }
+  NativeSignedRunSettings settings{true, quantum};
+  return make_native_signed_run_plan(first_nonce, remaining_logical, settings);
+}
+
+inline bool native_signed_run_repair_capacity_available(
+    std::uint32_t logical_count, std::uint64_t active_capacity,
+    std::uint32_t largest_query_dispatchable_capacity) {
+  return logical_count != 0 && active_capacity >= logical_count &&
+         largest_query_dispatchable_capacity >= logical_count;
 }
 
 }  // namespace native_load

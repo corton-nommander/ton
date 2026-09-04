@@ -445,6 +445,24 @@ struct WorkerStats {
   td::uint64 native_signed_run_submission_attempts{0};
   td::uint64 native_signed_run_proof_resolutions{0};
   td::uint64 max_native_signed_run_size{0};
+  td::uint64 native_signed_run_normal_messages{0};
+  td::uint64 native_signed_run_normal_logical_transfers{0};
+  td::uint64 native_signed_run_normal_quantum_violations{0};
+  td::uint64 native_signed_run_repair_messages{0};
+  td::uint64 native_signed_run_repair_logical_transfers{0};
+  td::uint64 native_signed_run_repair_tail_messages{0};
+  td::uint64 native_signed_run_repair_tail_logical_transfers{0};
+  td::uint64 native_signed_run_terminal_tail_messages{0};
+  td::uint64 native_signed_run_terminal_tail_logical_transfers{0};
+  td::uint64 native_signed_run_hold_active_capacity{0};
+  td::uint64 native_signed_run_hold_source_capacity{0};
+  td::uint64 native_signed_run_hold_canonical_capacity{0};
+  td::uint64 native_signed_run_hold_pacing_credit{0};
+  td::uint64 native_signed_run_hold_client_capacity{0};
+  td::uint64 native_signed_run_hold_query_credit{0};
+  td::uint64 native_signed_run_cwnd_floor_clamps{0};
+  td::uint64 native_signed_run_effective_quantum_min{0};
+  td::uint64 native_signed_run_effective_quantum_max{0};
   // Physical external BOC bodies submitted to liteServer. This preserves the
   // historical transport meaning of wire_attempts when one NTRN carries many
   // logical transfers.
@@ -905,6 +923,7 @@ class NativeLoadWorker final : public td::actor::Actor {
   double next_drain_scan_at_{0.0};
   double last_token_at_{0.0};
   double pacing_tokens_{0.0};
+  td::uint32 native_signed_run_quantum_{0};
   ScanKind scan_kind_{ScanKind::none};
   ScanKind pending_scan_{ScanKind::none};
   ton::BlockIdExt scan_ref_mc_;
@@ -913,6 +932,7 @@ class NativeLoadWorker final : public td::actor::Actor {
   td::uint32 scan_failures_{0};
   bool end_snapshot_finished_{false};
   bool canonical_backpressure_paused_{false};
+  bool native_signed_run_repair_capacity_held_{false};
   double canonical_backpressure_started_at_{0.0};
   double canonical_backpressure_accumulated_{0.0};
   td::uint64 measure_canonical_backpressure_events_{0};
@@ -945,13 +965,17 @@ class NativeLoadWorker final : public td::actor::Actor {
   void create_transfer(std::size_t wallet_idx, td::uint64 nonce, bool measured, bool repair);
   void create_signed_run(std::size_t wallet_idx, native_load::NativeSignedRunPlan plan,
                          bool measured, bool repair);
+  void note_native_signed_run_hold(native_load::NativeSignedRunIssueHoldReason reason);
   void sign_task(std::shared_ptr<TransferTask> task, bool resign);
   void on_signed(std::shared_ptr<TransferTask> task, td::Result<SignedTransfer> message);
   td::optional<std::size_t> select_client(td::uint32 required_logical_capacity = 1) const;
+  td::uint32 client_dispatch_ceiling(std::size_t client_idx) const;
+  td::uint32 smallest_client_dispatch_ceiling() const;
   td::uint32 client_available_capacity(std::size_t client_idx) const;
   td::uint32 largest_client_available_capacity() const;
+  td::uint32 largest_client_query_dispatchable_capacity() const;
   td::optional<std::size_t> select_full_batch_client() const;
-  bool query_credit_blocks_dispatch() const;
+  bool query_credit_blocks_dispatch(td::uint32 required_logical_capacity = 1) const;
   std::size_t count_dispatchable_fresh_heads(std::size_t limit) const;
   std::shared_ptr<TransferTask>
   take_dispatchable_ready_task(bool allow_fresh,
@@ -1335,6 +1359,22 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(native_signed_run_logical_transfers);
       ADD_FIELD(native_signed_run_submission_attempts);
       ADD_FIELD(native_signed_run_proof_resolutions);
+      ADD_FIELD(native_signed_run_normal_messages);
+      ADD_FIELD(native_signed_run_normal_logical_transfers);
+      ADD_FIELD(native_signed_run_normal_quantum_violations);
+      ADD_FIELD(native_signed_run_repair_messages);
+      ADD_FIELD(native_signed_run_repair_logical_transfers);
+      ADD_FIELD(native_signed_run_repair_tail_messages);
+      ADD_FIELD(native_signed_run_repair_tail_logical_transfers);
+      ADD_FIELD(native_signed_run_terminal_tail_messages);
+      ADD_FIELD(native_signed_run_terminal_tail_logical_transfers);
+      ADD_FIELD(native_signed_run_hold_active_capacity);
+      ADD_FIELD(native_signed_run_hold_source_capacity);
+      ADD_FIELD(native_signed_run_hold_canonical_capacity);
+      ADD_FIELD(native_signed_run_hold_pacing_credit);
+      ADD_FIELD(native_signed_run_hold_client_capacity);
+      ADD_FIELD(native_signed_run_hold_query_credit);
+      ADD_FIELD(native_signed_run_cwnd_floor_clamps);
       ADD_FIELD(wire_attempts);
       ADD_FIELD(logical_submission_attempts);
       ADD_FIELD(wire_queries);
@@ -1413,6 +1453,16 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       total.max_wire_batch_size = std::max(total.max_wire_batch_size, value.max_wire_batch_size);
       total.max_native_signed_run_size =
           std::max(total.max_native_signed_run_size, value.max_native_signed_run_size);
+      if (value.native_signed_run_effective_quantum_min != 0) {
+        total.native_signed_run_effective_quantum_min =
+            total.native_signed_run_effective_quantum_min == 0
+                ? value.native_signed_run_effective_quantum_min
+                : std::min(total.native_signed_run_effective_quantum_min,
+                           value.native_signed_run_effective_quantum_min);
+      }
+      total.native_signed_run_effective_quantum_max =
+          std::max(total.native_signed_run_effective_quantum_max,
+                   value.native_signed_run_effective_quantum_max);
       total.max_wire_batch_source_run =
           std::max(total.max_wire_batch_source_run, value.max_wire_batch_source_run);
       total.max_source_issue_burst =
@@ -1731,6 +1781,37 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"native_signed_run_proof_resolutions\":"
         << total.native_signed_run_proof_resolutions
         << ",\"native_signed_run_max_size\":" << total.max_native_signed_run_size
+        << ",\"native_signed_run_normal_messages\":"
+        << total.native_signed_run_normal_messages
+        << ",\"native_signed_run_normal_logical_transfers\":"
+        << total.native_signed_run_normal_logical_transfers
+        << ",\"native_signed_run_normal_quantum_violations\":"
+        << total.native_signed_run_normal_quantum_violations
+        << ",\"native_signed_run_repair_messages\":"
+        << total.native_signed_run_repair_messages
+        << ",\"native_signed_run_repair_logical_transfers\":"
+        << total.native_signed_run_repair_logical_transfers
+        << ",\"native_signed_run_repair_tail_messages\":"
+        << total.native_signed_run_repair_tail_messages
+        << ",\"native_signed_run_repair_tail_logical_transfers\":"
+        << total.native_signed_run_repair_tail_logical_transfers
+        << ",\"native_signed_run_terminal_tail_messages\":"
+        << total.native_signed_run_terminal_tail_messages
+        << ",\"native_signed_run_terminal_tail_logical_transfers\":"
+        << total.native_signed_run_terminal_tail_logical_transfers
+        << ",\"native_signed_run_effective_quantum_min\":"
+        << total.native_signed_run_effective_quantum_min
+        << ",\"native_signed_run_effective_quantum_max\":"
+        << total.native_signed_run_effective_quantum_max
+        << ",\"native_signed_run_cwnd_floor_clamps\":"
+        << total.native_signed_run_cwnd_floor_clamps
+        << ",\"native_signed_run_issue_holds\":{\"active_capacity\":"
+        << total.native_signed_run_hold_active_capacity
+        << ",\"source_capacity\":" << total.native_signed_run_hold_source_capacity
+        << ",\"canonical_capacity\":" << total.native_signed_run_hold_canonical_capacity
+        << ",\"pacing_credit\":" << total.native_signed_run_hold_pacing_credit
+        << ",\"client_capacity\":" << total.native_signed_run_hold_client_capacity
+        << ",\"query_credit\":" << total.native_signed_run_hold_query_credit << '}'
         << ",\"wire_attempts\":" << total.wire_attempts
         << ",\"wire_tps\":" << rate(total.wire_attempts, previous_.wire_attempts)
         << ",\"logical_submission_attempts\":" << total.logical_submission_attempts
@@ -2087,6 +2168,11 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     std::cout << ",\"finalized\":null,\"finalized_semantics\":\"not_independently_observed\""
               << ",\"admission_semantics\":\"liteServer.sendMessage status=1; not block inclusion\""
               << ",\"native_signed_run_semantics\":\"when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash\""
+              << ",\"native_signed_run_normal_quantum_semantics\":\"ordinary NTRN issuance uses one fixed logical quantum capped once by static worker, source, canonical-backlog, and the smallest per-client dispatch ceiling; transient residuals hold instead of shrinking it\""
+              << ",\"native_signed_run_repair_tail_semantics\":\"only a freshly signed finite drain-repair suffix may contain fewer outputs than the normal quantum; admitted repairs reuse their original exact parent\""
+              << ",\"native_signed_run_terminal_tail_semantics\":\"the sole ordinary short-run exception advances the exclusive uint64 nonce cursor exactly to UINT64_MAX without wrapping it\""
+              << ",\"native_signed_run_cwnd_floor_clamps_semantics\":\"AIMD loss responses whose halved window was raised to one effective signed-run quantum\""
+              << ",\"native_signed_run_issue_holds_semantics\":\"blocked normal issue opportunities; issue decisions use active, source, canonical, pacing, current free-client capacity, then admission-query credit precedence, while source also counts quantum-ineligible queue suppression\""
               << ",\"native_payment_lane_depth_semantics\":\"client-side source/destination address-prefix preflight depth; zero disables the check and consensus remains authoritative\""
               << ",\"wire_attempts_semantics\":\"physical external BOC bodies submitted to liteServer; an NTRN parent contributes one even when it authorizes multiple logical transfers\""
               << ",\"logical_submission_attempts_semantics\":\"logical transfers represented by every admission attempt, including retries; use alongside wire_attempts to measure NTRN message amortization\""
@@ -2095,6 +2181,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"head_blocked_ready_notifications_semantics\":\"O(1) ready-state notifications for non-head same-source tasks; they do not enter or rotate through the dispatch queue\""
               << ",\"head_blocked_ready_scans_semantics\":\"deprecated compatibility counter; source-head scheduling avoids blocked-task scans and leaves this at zero\""
               << ",\"ready_source_queue_semantics\":\"at most one live dispatch entry per source; stale generation entries and bounded same-batch source exclusions are reported separately\""
+              << ",\"sources_at_canonical_backlog_cap_semantics\":\"sources unable to issue one more scalar transfer, one full effective NTRN quantum, or any NTRN after the exclusive uint64 nonce cursor is exhausted\""
               << ",\"task_errors_by_reason_semantics\":\"one mutually exclusive typed classification per failed admission result; canonical_state_lag requires an explicit canonical-watermark snapshot-lag diagnostic\""
               << ",\"retries_by_reason_semantics\":\"retry schedules by the typed error that caused them; counts schedules, not distinct transfers\""
               << ",\"retry_exhausted_semantics\":\"source-head retry horizon expirations, not short max_retries backoff cycles; the source is quarantined because later native nonces cannot safely skip the unresolved head\""
@@ -2975,6 +3062,30 @@ td::Status NativeLoadWorker::initialize() {
     stats_.initial_congestion_window += slot.cwnd;
     clients_.push_back(std::move(slot));
   }
+  if (options_.native_signed_runs.requested) {
+    auto static_quantum_ceiling = std::min<td::uint64>(
+        options_.max_inflight, smallest_client_dispatch_ceiling());
+    auto source_limit = options_.max_source_canonical_backlog
+                            ? std::min<td::uint64>(
+                                  options_.max_source_canonical_backlog,
+                                  max_native_nonce_diff)
+                            : max_native_nonce_diff;
+    static_quantum_ceiling = std::min(static_quantum_ceiling, source_limit);
+    if (options_.max_canonical_backlog &&
+        (options_.auto_nonce || options_.canonical_block_follower)) {
+      static_quantum_ceiling = std::min(
+          static_quantum_ceiling, options_.max_canonical_backlog);
+    }
+    native_signed_run_quantum_ = native_load::effective_native_signed_run_quantum(
+        options_.native_signed_runs,
+        static_cast<td::uint32>(static_quantum_ceiling));
+    if (native_signed_run_quantum_ == 0) {
+      return td::Status::Error(
+          "native signed-run mode has no per-client dispatch capacity");
+    }
+    stats_.native_signed_run_effective_quantum_min = native_signed_run_quantum_;
+    stats_.native_signed_run_effective_quantum_max = native_signed_run_quantum_;
+  }
   signers_.reserve(options_.signers);
   for (td::uint32 i = 0; i < options_.signers; ++i) {
     signers_.push_back(td::actor::create_actor<Signer>(PSTRING() << "native-load-signer-" << worker_id_));
@@ -3105,7 +3216,11 @@ double NativeLoadWorker::pacing_rate_at(double at) const {
 }
 
 double NativeLoadWorker::pacing_burst_cap_at(double at) const {
-  return std::max(1.0, pacing_rate_at(at) * 0.10);
+  auto ordinary_cap = std::max(1.0, pacing_rate_at(at) * 0.10);
+  return options_.native_signed_runs.requested
+             ? native_load::native_signed_run_pacing_burst_cap(
+                   ordinary_cap, native_signed_run_quantum_)
+             : ordinary_cap;
 }
 
 void NativeLoadWorker::update_tokens(double now) {
@@ -3139,6 +3254,11 @@ bool NativeLoadWorker::can_issue(double now) const {
 }
 
 bool NativeLoadWorker::source_backlog_full(const Wallet& wallet) const {
+  if (options_.native_signed_runs.requested &&
+      native_load::native_signed_run_nonce_cursor_exhausted(
+          wallet.next_nonce)) {
+    return true;
+  }
   if (wallet.next_nonce < wallet.anchored_nonce) {
     return false;
   }
@@ -3146,7 +3266,16 @@ bool NativeLoadWorker::source_backlog_full(const Wallet& wallet) const {
                    ? std::min<td::uint64>(options_.max_source_canonical_backlog,
                                           max_native_nonce_diff)
                    : max_native_nonce_diff;
-  return wallet.next_nonce - wallet.anchored_nonce >= limit;
+  auto outstanding = wallet.next_nonce - wallet.anchored_nonce;
+  if (outstanding >= limit) {
+    return true;
+  }
+  // Do not keep an NTRN source in the available queue when only a residual
+  // fraction of its normal quantum fits. Canonical progress re-enqueues that
+  // source as soon as a whole quantum is available again.
+  return options_.native_signed_runs.requested &&
+         native_load::native_signed_run_source_capacity_exhausted(
+             outstanding, limit, native_signed_run_quantum_);
 }
 
 bool NativeLoadWorker::task_is_active(const std::shared_ptr<TransferTask>& task) const {
@@ -3231,7 +3360,13 @@ td::optional<std::size_t> NativeLoadWorker::find_available_wallet() {
 
 void NativeLoadWorker::enqueue_available_wallet(std::size_t wallet_idx) {
   auto& wallet = wallets_[wallet_idx];
-  if (wallet.disabled || wallet.available_queued || source_backlog_full(wallet)) {
+  if (wallet.disabled || wallet.available_queued) {
+    return;
+  }
+  if (source_backlog_full(wallet)) {
+    if (options_.native_signed_runs.requested) {
+      ++stats_.native_signed_run_hold_source_capacity;
+    }
     return;
   }
   wallet.available_queued = true;
@@ -3340,10 +3475,9 @@ void NativeLoadWorker::pump() {
     auto& wallet = wallets_[wallet_idx.value()];
     td::uint64 burst_size = 0;
     if (options_.native_signed_runs.requested) {
-      // A source turn issues at most one NTRN.  Its output count is bounded
-      // by the signed-run setting, remaining logical window, source backlog,
-      // and pacing credit.  This keeps the selected interval atomic from
-      // issuance through retry and canonical proof resolution.
+      // A source turn issues at most one fixed-quantum NTRN. Transient
+      // residual budgets hold that authorization instead of resizing it;
+      // this keeps physical-message amortization stable through saturation.
       now = td::Time::now();
       update_phase(now);
       update_tokens(now);
@@ -3358,36 +3492,31 @@ void NativeLoadWorker::pump() {
         auto source_available = source_outstanding < source_limit
                                     ? source_limit - source_outstanding
                                     : 0;
-        auto logical_available = std::min<td::uint64>(
-            static_cast<td::uint64>(options_.max_inflight - active_tasks_), source_available);
-        // NTRN is atomic after signing. Bound it by the still-free global
-        // proof-observed backlog budget before choosing a full paced run, or
-        // the final parent below a cap could overfill that cap by up to 15
-        // logical transfers.
-        logical_available = native_load::bounded_native_signed_run_canonical_capacity(
-            logical_available, canonical_backlog_, options_.max_canonical_backlog,
+        auto active_capacity =
+            static_cast<td::uint64>(options_.max_inflight - active_tasks_);
+        auto canonical_capacity = native_load::bounded_native_signed_run_canonical_capacity(
+            std::numeric_limits<td::uint64>::max(), canonical_backlog_,
+            options_.max_canonical_backlog,
             options_.auto_nonce || options_.canonical_block_follower);
-        // A parent NTRN is indivisible at submission time. Limit its logical
-        // output count to one currently available client window so a valid
-        // run cannot be created only to wait forever behind per-client
-        // capacity (for example, 16 global slots split across two clients).
-        auto largest_client_window = largest_client_available_capacity();
-        logical_available = std::min<td::uint64>(logical_available, largest_client_window);
-        auto preferred_run = native_load::bounded_native_signed_run_pacing_target(
-            static_cast<std::size_t>(logical_available), options_.native_signed_runs.entries_per_run,
-            static_cast<std::size_t>(std::floor(pacing_burst_cap_at(now))));
-        if (native_load::should_hold_native_signed_run_for_pacing(
-                options_.target_tps > 0.0, static_cast<std::size_t>(std::floor(pacing_tokens_)), preferred_run)) {
-          // Leave this source queued for the next 10 ms tick.  Its token
-          // credit is retained, so the eventual parent remains fair and is
-          // never split just to satisfy an early callback wake.
+        auto pacing_credit = options_.target_tps > 0.0
+                                 ? static_cast<td::uint64>(std::floor(pacing_tokens_))
+                                 : std::numeric_limits<td::uint64>::max();
+        auto plan = native_load::make_native_signed_run_quantum_plan(
+            wallet.next_nonce, native_signed_run_quantum_,
+            native_signed_run_quantum_);
+        if (!plan.is_valid()) {
+          fail(td::Status::Error(
+              "native signed-run source exhausted the representable nonce cursor"));
+          return;
+        }
+        auto hold_reason = native_load::native_signed_run_issue_hold_reason(
+            plan.logical_count, active_capacity, source_available,
+            canonical_capacity, options_.target_tps > 0.0, pacing_credit,
+            largest_client_available_capacity(),
+            largest_client_query_dispatchable_capacity());
+        if (hold_reason != native_load::NativeSignedRunIssueHoldReason::none) {
+          note_native_signed_run_hold(hold_reason);
         } else {
-          if (options_.target_tps > 0.0) {
-            logical_available = std::min<td::uint64>(
-                logical_available, static_cast<td::uint64>(std::floor(pacing_tokens_)));
-          }
-          auto plan = native_load::make_native_signed_run_plan(
-              wallet.next_nonce, static_cast<std::size_t>(logical_available), options_.native_signed_runs);
           if (plan.is_valid() &&
               plan.first_nonce <= std::numeric_limits<td::uint64>::max() - plan.logical_count) {
             bool measured = is_measure_phase(now);
@@ -3494,6 +3623,32 @@ void NativeLoadWorker::create_transfer(std::size_t wallet_idx, td::uint64 nonce,
   sign_task(std::move(task), false);
 }
 
+void NativeLoadWorker::note_native_signed_run_hold(
+    native_load::NativeSignedRunIssueHoldReason reason) {
+  using Reason = native_load::NativeSignedRunIssueHoldReason;
+  switch (reason) {
+    case Reason::none: return;
+    case Reason::active_capacity:
+      ++stats_.native_signed_run_hold_active_capacity;
+      return;
+    case Reason::source_capacity:
+      ++stats_.native_signed_run_hold_source_capacity;
+      return;
+    case Reason::canonical_capacity:
+      ++stats_.native_signed_run_hold_canonical_capacity;
+      return;
+    case Reason::pacing_credit:
+      ++stats_.native_signed_run_hold_pacing_credit;
+      return;
+    case Reason::client_capacity:
+      ++stats_.native_signed_run_hold_client_capacity;
+      return;
+    case Reason::query_credit:
+      ++stats_.native_signed_run_hold_query_credit;
+      return;
+  }
+}
+
 void NativeLoadWorker::create_signed_run(std::size_t wallet_idx,
                                          native_load::NativeSignedRunPlan plan,
                                          bool measured, bool repair) {
@@ -3534,10 +3689,30 @@ void NativeLoadWorker::create_signed_run(std::size_t wallet_idx,
   stats_.max_native_signed_run_size =
       std::max<td::uint64>(stats_.max_native_signed_run_size, plan.logical_count);
   if (repair) {
+    ++stats_.native_signed_run_repair_messages;
+    stats_.native_signed_run_repair_logical_transfers += plan.logical_count;
+    if (plan.logical_count < native_signed_run_quantum_) {
+      ++stats_.native_signed_run_repair_tail_messages;
+      stats_.native_signed_run_repair_tail_logical_transfers +=
+          plan.logical_count;
+    }
     wallet.last_repair_nonce = plan.first_nonce;
     wallet.last_repair_at = task->first_issued_at;
     stats_.repair_offered += plan.logical_count;
   } else {
+    ++stats_.native_signed_run_normal_messages;
+    stats_.native_signed_run_normal_logical_transfers += plan.logical_count;
+    auto terminal_nonce_tail =
+        plan.logical_count < native_signed_run_quantum_ &&
+        plan.first_nonce == std::numeric_limits<td::uint64>::max() -
+                                plan.logical_count;
+    if (terminal_nonce_tail) {
+      ++stats_.native_signed_run_terminal_tail_messages;
+      stats_.native_signed_run_terminal_tail_logical_transfers +=
+          plan.logical_count;
+    } else if (plan.logical_count != native_signed_run_quantum_) {
+      ++stats_.native_signed_run_normal_quantum_violations;
+    }
     stats_.offered += plan.logical_count;
     if (measured) {
       wallet.steady_end_nonce = std::max(wallet.steady_end_nonce,
@@ -3627,14 +3802,36 @@ void NativeLoadWorker::on_signed(std::shared_ptr<TransferTask> task, td::Result<
   maybe_finish();
 }
 
+td::uint32 NativeLoadWorker::client_dispatch_ceiling(std::size_t client_idx) const {
+  CHECK(client_idx < clients_.size());
+  const auto& client = clients_[client_idx];
+  if (!options_.adaptive_inflight) {
+    return client.hard_limit;
+  }
+  return std::min(
+      client.hard_limit,
+      std::max<td::uint32>(1, static_cast<td::uint32>(std::floor(client.cwnd_limit))));
+}
+
+td::uint32 NativeLoadWorker::smallest_client_dispatch_ceiling() const {
+  if (clients_.empty()) {
+    return 0;
+  }
+  td::uint32 result = std::numeric_limits<td::uint32>::max();
+  for (std::size_t client_idx = 0; client_idx < clients_.size(); ++client_idx) {
+    result = std::min(result, client_dispatch_ceiling(client_idx));
+  }
+  return result;
+}
+
 td::optional<std::size_t> NativeLoadWorker::select_client(td::uint32 required_logical_capacity) const {
   td::optional<std::size_t> selected;
   double best_load = std::numeric_limits<double>::infinity();
   for (std::size_t i = 0; i < clients_.size(); ++i) {
     auto capacity = options_.adaptive_inflight
                         ? std::max<td::uint32>(1, static_cast<td::uint32>(std::floor(clients_[i].cwnd)))
-                        : clients_[i].hard_limit;
-    capacity = std::min(capacity, clients_[i].hard_limit);
+                        : client_dispatch_ceiling(i);
+    capacity = std::min(capacity, client_dispatch_ceiling(i));
     auto message_capacity = clients_[i].inflight < capacity ? capacity - clients_[i].inflight : 0;
     if (message_capacity < required_logical_capacity ||
         !native_load::client_can_dispatch_admission_query(
@@ -3654,8 +3851,8 @@ td::optional<std::size_t> NativeLoadWorker::select_client(td::uint32 required_lo
 td::uint32 NativeLoadWorker::client_available_capacity(std::size_t client_idx) const {
   auto capacity = options_.adaptive_inflight
                       ? std::max<td::uint32>(1, static_cast<td::uint32>(std::floor(clients_[client_idx].cwnd)))
-                      : clients_[client_idx].hard_limit;
-  capacity = std::min(capacity, clients_[client_idx].hard_limit);
+                      : client_dispatch_ceiling(client_idx);
+  capacity = std::min(capacity, client_dispatch_ceiling(client_idx));
   return clients_[client_idx].inflight < capacity ? capacity - clients_[client_idx].inflight : 0;
 }
 
@@ -3663,6 +3860,20 @@ td::uint32 NativeLoadWorker::largest_client_available_capacity() const {
   td::uint32 result = 0;
   for (std::size_t client_idx = 0; client_idx < clients_.size(); ++client_idx) {
     result = std::max(result, client_available_capacity(client_idx));
+  }
+  return result;
+}
+
+td::uint32 NativeLoadWorker::largest_client_query_dispatchable_capacity() const {
+  td::uint32 result = 0;
+  for (std::size_t client_idx = 0; client_idx < clients_.size(); ++client_idx) {
+    auto available = client_available_capacity(client_idx);
+    if (!native_load::client_can_dispatch_admission_query(
+            available, options_.submit_max_queries_per_client,
+            clients_[client_idx].admission_queries_inflight)) {
+      continue;
+    }
+    result = std::max(result, available);
   }
   return result;
 }
@@ -3691,14 +3902,15 @@ td::optional<std::size_t> NativeLoadWorker::select_full_batch_client() const {
   return selected;
 }
 
-bool NativeLoadWorker::query_credit_blocks_dispatch() const {
+bool NativeLoadWorker::query_credit_blocks_dispatch(
+    td::uint32 required_logical_capacity) const {
   if (options_.submit_max_queries_per_client == 0) {
     return false;
   }
   bool has_message_capacity = false;
   for (std::size_t i = 0; i < clients_.size(); ++i) {
     auto capacity = client_available_capacity(i);
-    if (capacity == 0) {
+    if (capacity < required_logical_capacity) {
       continue;
     }
     has_message_capacity = true;
@@ -3822,7 +4034,7 @@ void NativeLoadWorker::dispatch_ready() {
       auto client_idx = select_client(task->logical_count());
       if (!client_idx) {
         enqueue_ready_wallet(task->wallet_idx);
-        if (query_credit_blocks_dispatch()) {
+        if (query_credit_blocks_dispatch(task->logical_count())) {
           ++stats_.query_credit_stalls;
         }
         break;
@@ -4061,6 +4273,9 @@ void NativeLoadWorker::on_result(std::shared_ptr<TransferTask> task, std::size_t
   clients_[client_idx].inflight -= logical_count;
   CHECK(native_load::release_admission_query_credit(
       clients_[client_idx].admission_queries_inflight));
+  if (sending_done_ && native_signed_run_repair_capacity_held_) {
+    next_drain_scan_at_ = std::min(next_drain_scan_at_, td::Time::now());
+  }
   auto latency = td::Time::now() - task->last_sent_at;
   for (td::uint32 i = 0; i < logical_count; ++i) {
     stats_.request_latency.observe_seconds(latency);
@@ -4119,6 +4334,9 @@ void NativeLoadWorker::on_batch_result(std::vector<std::shared_ptr<TransferTask>
   CHECK(native_load::release_admission_query_credit(
       clients_[client_idx].admission_queries_inflight));
   auto now = td::Time::now();
+  if (sending_done_ && native_signed_run_repair_capacity_held_) {
+    next_drain_scan_at_ = std::min(next_drain_scan_at_, now);
+  }
   for (const auto& task : tasks) {
     for (td::uint32 i = 0; i < task->logical_count(); ++i) {
       stats_.request_latency.observe_seconds(now - task->last_sent_at);
@@ -4265,7 +4483,17 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
     // A burst of failures from one old window is one congestion event, not
     // hundreds of independent reasons to repeatedly halve the same window.
     if (now - client.last_decrease_at >= 0.1) {
-      client.cwnd = std::max(1.0, client.cwnd * 0.5);
+      auto minimum_dispatch_window = options_.native_signed_runs.requested
+                                         ? std::min<td::uint32>(
+                                               native_signed_run_quantum_,
+                                               client_dispatch_ceiling(client_idx))
+                                         : 1u;
+      auto loss = native_load::adaptive_cwnd_after_loss(
+          client.cwnd, minimum_dispatch_window);
+      client.cwnd = loss.cwnd;
+      if (options_.native_signed_runs.requested && loss.minimum_limited) {
+        ++stats_.native_signed_run_cwnd_floor_clamps;
+      }
       client.last_decrease_at = now;
     }
   }
@@ -4617,11 +4845,7 @@ void NativeLoadWorker::refresh_stats() {
     auto source_backlog = wallet.next_nonce >= wallet.anchored_nonce
                               ? wallet.next_nonce - wallet.anchored_nonce
                               : 0;
-    auto source_limit = options_.max_source_canonical_backlog
-                            ? std::min<td::uint64>(options_.max_source_canonical_backlog,
-                                                   max_native_nonce_diff)
-                            : max_native_nonce_diff;
-    if (source_backlog >= source_limit) {
+    if (source_backlog_full(wallet)) {
       ++stats_.sources_at_canonical_backlog_cap;
     }
     stats_.max_source_canonical_backlog_current =
@@ -4877,7 +5101,10 @@ void NativeLoadWorker::finish_scan() {
       if (!canonical_cohorts_complete(stats_.anchored_after_drain, stats_.steady_offered,
                                       stats_.total_anchored_after_drain, stats_.offered)) {
         repair_gaps();
-        next_drain_scan_at_ = td::Time::now() + options_.finality_poll_seconds;
+        auto retry_delay = native_signed_run_repair_capacity_held_
+                               ? std::min(0.25, options_.finality_poll_seconds)
+                               : options_.finality_poll_seconds;
+        next_drain_scan_at_ = td::Time::now() + retry_delay;
       } else {
         stats_.drain_to_anchor_seconds = std::max(0.0, td::Time::now() - drain_started_at_);
       }
@@ -5146,7 +5373,10 @@ void NativeLoadWorker::canonical_checkpoint(bool may_capture_measure_end) {
     stats_.drain_to_anchor_seconds = std::max(0.0, now - drain_started_at_);
   } else if (now >= next_drain_scan_at_) {
     repair_gaps();
-    next_drain_scan_at_ = now + options_.repair_cooldown_seconds;
+    auto retry_delay = native_signed_run_repair_capacity_held_
+                           ? std::min(0.25, options_.repair_cooldown_seconds)
+                           : options_.repair_cooldown_seconds;
+    next_drain_scan_at_ = now + retry_delay;
   }
   publish_stats();
   maybe_finish();
@@ -5181,11 +5411,14 @@ void NativeLoadWorker::finalize_after_canonical_poll() {
 
 void NativeLoadWorker::repair_gaps() {
   auto now = td::Time::now();
+  native_signed_run_repair_capacity_held_ = false;
   if (now >= drain_deadline_) {
     return;
   }
   for (std::size_t i = 0; i < wallets_.size(); ++i) {
     if (active_tasks_ >= options_.max_inflight) {
+      native_signed_run_repair_capacity_held_ =
+          options_.native_signed_runs.requested;
       break;
     }
     auto& wallet = wallets_[i];
@@ -5196,7 +5429,6 @@ void NativeLoadWorker::repair_gaps() {
         ++stats_.repair_suppressed;
         continue;
       }
-      invalidate_available_wallet(i);
       auto task = find_task_covering(wallet.admitted_tasks, wallet.anchored_nonce);
       if (task) {
         if (task->first_nonce() != wallet.anchored_nonce) {
@@ -5206,6 +5438,14 @@ void NativeLoadWorker::repair_gaps() {
                                       "repair would start inside an admitted source-signed run");
           continue;
         }
+        if (task->signed_run &&
+            !native_load::native_signed_run_repair_capacity_available(
+                task->logical_count(), options_.max_inflight - active_tasks_,
+                largest_client_query_dispatchable_capacity())) {
+          native_signed_run_repair_capacity_held_ = true;
+          continue;
+        }
+        invalidate_available_wallet(i);
         CHECK(task && task->state == TaskState::resolved && !task->boc.empty() &&
               task->first_nonce() == wallet.anchored_nonce &&
               wallet.expected_hashes.count(wallet.anchored_nonce));
@@ -5228,16 +5468,15 @@ void NativeLoadWorker::repair_gaps() {
         // pending hash to preserve and a freshly signed repair is appropriate.
         if (options_.native_signed_runs.requested) {
           auto remaining = wallet.next_nonce - wallet.anchored_nonce;
-          auto logical_capacity = std::min<td::uint64>(
-              remaining, static_cast<td::uint64>(options_.max_inflight - active_tasks_));
-          auto largest_client_window = largest_client_available_capacity();
-          if (largest_client_window == 0) {
-            continue;
-          }
-          logical_capacity = std::min<td::uint64>(logical_capacity, largest_client_window);
-          auto plan = native_load::make_native_signed_run_plan(
-              wallet.anchored_nonce, static_cast<std::size_t>(logical_capacity),
-              options_.native_signed_runs);
+          // Repair owns the one legitimate short-run case: a finite suffix
+          // smaller than the normal quantum after offering has stopped.
+          // Residual worker/client capacity still waits for that exact suffix
+          // rather than shrinking it again on every drain scan.
+          auto repair_count = std::min<td::uint64>(
+              remaining, native_signed_run_quantum_);
+          auto plan = native_load::make_native_signed_run_repair_plan(
+              wallet.anchored_nonce, static_cast<std::size_t>(repair_count),
+              native_signed_run_quantum_);
           if (!plan.is_valid() ||
               plan.first_nonce > std::numeric_limits<td::uint64>::max() - plan.logical_count) {
             ++stats_.canonical_hash_conflicts;
@@ -5246,8 +5485,16 @@ void NativeLoadWorker::repair_gaps() {
                                         "cannot construct an atomic signed-run repair interval");
             continue;
           }
+          if (!native_load::native_signed_run_repair_capacity_available(
+                  plan.logical_count, options_.max_inflight - active_tasks_,
+                  largest_client_query_dispatchable_capacity())) {
+            native_signed_run_repair_capacity_held_ = true;
+            continue;
+          }
+          invalidate_available_wallet(i);
           create_signed_run(i, plan, false, true);
         } else {
+          invalidate_available_wallet(i);
           create_transfer(i, wallet.anchored_nonce, false, true);
         }
       }

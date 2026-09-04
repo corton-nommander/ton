@@ -20,7 +20,9 @@
 #include <cassert>
 #include <ctime>
 #include <exception>
+#include <optional>
 #include <set>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -4649,7 +4651,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     // defer, deadline rollback, and checkpoint decision must retain the
     // signed source interval as one physical work item.
     std::vector<block::NativeTransfer> transfers;
-    td::optional<block::NativeTransferRun> run;
+    std::optional<block::NativeTransferRun> run;
 
     bool is_run() const {
       return static_cast<bool>(run);
@@ -4658,6 +4660,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       return transfers.size();
     }
   };
+  static_assert(std::is_nothrow_move_constructible_v<NativeExternal>);
 
   ++stats_.native_fast_path_invocations;
   const bool work_driven = consensus::work_driven_max_tps_mode_enabled(shard_);
@@ -4915,6 +4918,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   };
   enum class NativeCheckpointFlushReason { capacity, ingress, deadline, fanout, headroom, latency };
   PendingNativeCheckpoint pending_checkpoint;
+  pending_checkpoint.entries.reserve(consensus::native_checkpoint_coalesce_max_entries);
 
   auto discard_unchanged_native_states = [&] {
     for (auto it = native_states.begin(); it != native_states.end();) {
@@ -5179,6 +5183,24 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       return true;
     }
 
+    auto reserve_native_append = [](auto& destination, std::size_t append_size) {
+      CHECK(destination.size() <= block::NativeTransferBatch::max_entries);
+      CHECK(append_size <= block::NativeTransferBatch::max_entries - destination.size());
+      const auto required_size = destination.size() + append_size;
+      if (required_size <= destination.capacity()) {
+        return;
+      }
+      auto new_capacity = std::max<std::size_t>(destination.capacity(), NATIVE_FAST_PATH_EXTERNAL_BATCH);
+      while (new_capacity < required_size) {
+        new_capacity += std::min(new_capacity, block::NativeTransferBatch::max_entries - new_capacity);
+      }
+      destination.reserve(new_capacity);
+    };
+    reserve_native_append(native_transfer_batch_entries_, pending_entries);
+    if (native_runs_enabled) {
+      reserve_native_append(native_transfer_batch_runs_, pending_checkpoint.entries.size());
+    }
+
     block_limit_status_->st_stat = std::move(trial_limit_status->st_stat);
     unsigned changed_accounts = 0;
     for (auto& [address, staged_total_state] : staged_account_cells) {
@@ -5191,21 +5213,21 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     }
     account_dict_estimator_ = std::make_unique<vm::AugmentedDictionary>(staged_account_dict);
     account_dict_ops_ += changed_accounts;
-    for (const auto& entry : pending_checkpoint.entries) {
+    for (auto& entry : pending_checkpoint.entries) {
       if (native_runs_enabled != entry.is_run()) {
         fatal_error("mixed scalar and source-signed native work reached one checkpoint");
         return false;
       }
       if (entry.is_run()) {
-        native_transfer_batch_runs_.push_back(entry.run.value());
+        native_transfer_batch_runs_.push_back(std::move(entry.run.value()));
       }
-      for (const auto& transfer : entry.transfers) {
+      for (auto& transfer : entry.transfers) {
         native_compact_transaction_fees_ += block::CurrencyCollection{td::make_refint(transfer.fee)};
         if (!native_compact_transaction_fees_.is_valid()) {
           fatal_error("native transfer fee total overflow");
           return false;
         }
-        native_transfer_batch_entries_.push_back(block::NativeTransferBatchEntry{transfer, 0, 0});
+        native_transfer_batch_entries_.push_back(block::NativeTransferBatchEntry{std::move(transfer), 0, 0});
         ++stats_.transactions;
       }
       // External-message accounting stays physical: a signed NTRN work is
@@ -5250,7 +5272,13 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     }
   };
 
+  std::vector<NativeExternal> batch;
+  batch.reserve(NATIVE_FAST_PATH_EXTERNAL_BATCH);
+  std::vector<std::size_t> accepted_indices;
+  accepted_indices.reserve(NATIVE_FAST_PATH_EXTERNAL_BATCH);
   while (true) {
+    batch.clear();
+    accepted_indices.clear();
     auto deadline_action = consensus::select_native_intake_deadline_action(
         native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), !pending_checkpoint.empty());
     if (deadline_action != consensus::NativeIntakeDeadlineAction::continue_work) {
@@ -5310,8 +5338,6 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     // separately before a work is staged.
     auto batch_logical_capacity = std::min<std::size_t>(NATIVE_FAST_PATH_EXTERNAL_BATCH, protocol_capacity);
     auto batch_capacity = NATIVE_FAST_PATH_EXTERNAL_BATCH;
-    std::vector<NativeExternal> batch;
-    batch.reserve(batch_capacity);
     std::size_t batch_logical_entries = 0;
     bool queue_exhausted = false;
     bool protocol_capacity_deferred = false;
@@ -5782,8 +5808,6 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     std::size_t first_fragment_deadline_deferred = 0;
     bool deadline_seal_current_fragment = false;
     std::size_t deadline_unprocessed_in_batch = 0;
-    std::vector<std::size_t> accepted_indices;
-    accepted_indices.reserve(batch.size());
     std::map<StdSmcAddress, NativeAccountSnapshot> state_journal;
     std::set<StdSmcAddress> dirty_addresses;
     // `dirty_addresses` also carries endpoints already dirty in the pending
@@ -6075,13 +6099,16 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         pending_checkpoint.journal.try_emplace(address, snapshot);
       }
       pending_checkpoint.dirty_addresses.insert(dirty_addresses.begin(), dirty_addresses.end());
+      CHECK(pending_checkpoint.entries.size() + accepted_indices.size() <=
+            consensus::native_checkpoint_coalesce_max_entries);
       for (auto index : accepted_indices) {
         // Keep the authenticated ExtMessage reference alongside the ordered
         // physical work so a rejected group returns the exact identities to
         // the mempool instead of reconstructing them from nonce/account
         // fields. In a direct-run batch this remains one whole source-signed run.
-        pending_checkpoint.logical_entries += batch[index].logical_count();
-        pending_checkpoint.entries.push_back(batch[index]);
+        const auto logical_count = batch[index].logical_count();
+        pending_checkpoint.entries.push_back(std::move(batch[index]));
+        pending_checkpoint.logical_entries += logical_count;
       }
       ++pending_checkpoint.fragments;
       if (checkpoint_was_empty) {
@@ -8155,18 +8182,28 @@ bool Collator::create_block_extra(Ref<vm::Cell>& block_extra) {
       }
       batch.version = native_payment_lanes_enabled() ? block::NativeTransferBatch::lanes_version
                                                       : block::NativeTransferBatch::runs_version;
-      batch.runs = native_transfer_batch_runs_;
     } else if (!native_transfer_batch_runs_.empty()) {
       return fatal_error("scalar native candidate unexpectedly contains source-signed runs");
     }
-    batch.entries = native_transfer_batch_entries_;
     const auto capabilities = config_->has_capabilities() ? config_->get_capabilities() : 0;
     if (!block::NativeTransferBatch::version_allowed_for_global_version_and_capabilities(batch.version, global_version_,
                                                                                          capabilities)) {
       return fatal_error("native transfer batch version is disabled by current global version");
     }
-    vm::CellBuilder native_cb;
-    if (!(batch.store(native_cb) && native_cb.finalize_to(custom_extra))) {
+    static_assert(noexcept(batch.entries.swap(native_transfer_batch_entries_)));
+    static_assert(noexcept(batch.runs.swap(native_transfer_batch_runs_)));
+    bool serialized = false;
+    {
+      batch.entries.swap(native_transfer_batch_entries_);
+      batch.runs.swap(native_transfer_batch_runs_);
+      SCOPE_EXIT {
+        batch.entries.swap(native_transfer_batch_entries_);
+        batch.runs.swap(native_transfer_batch_runs_);
+      };
+      vm::CellBuilder native_cb;
+      serialized = batch.store(native_cb) && native_cb.finalize_to(custom_extra);
+    }
+    if (!serialized) {
       return fatal_error("cannot serialize compact native transfer batch");
     }
   }

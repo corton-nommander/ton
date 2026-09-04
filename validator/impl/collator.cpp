@@ -4655,6 +4655,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
 
   ++stats_.native_fast_path_invocations;
   const bool work_driven = consensus::work_driven_max_tps_mode_enabled(shard_);
+  const bool retain_checkpoint_at_ingress = consensus::native_checkpoint_retain_ingress_enabled();
   if (work_driven && stats_.native_fast_path_invocations != 1) {
     co_return fatal_error("work-driven native processor was invoked more than once for one candidate");
   }
@@ -4912,6 +4913,49 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         ++stats_.native_checkpoint_flush_latency;
         break;
     }
+  };
+  auto should_retain_pending_checkpoint_at_ingress = [&](bool ingress_boundary, bool bounded_refill_timed_out,
+                                                          bool protocol_capacity_deferred) {
+    if (!retain_checkpoint_at_ingress || !work_driven || !ingress_boundary || !bounded_refill_timed_out ||
+        pending_checkpoint.empty() || native_transfer_batch_entries_.empty()) {
+      return false;
+    }
+    const bool latency_window_open = pending_checkpoint.latency_deadline &&
+                                     !pending_checkpoint.latency_deadline->is_in_past(td::Timestamp::now());
+    const bool headroom_limited =
+        full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
+        !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+                                                   consensus_max_block_size);
+    const bool capacity_reached =
+        pending_checkpoint.logical_entries >= consensus::native_checkpoint_coalesce_max_entries ||
+        pending_checkpoint.fragments >= consensus::native_checkpoint_coalesce_max_fragments;
+    const bool fanout_reached =
+        pending_checkpoint.dirty_addresses.size() >= consensus::native_checkpoint_coalesce_fanout_limit;
+    const bool protocol_capacity_reached =
+        native_transfer_batch_entries_.size() + pending_checkpoint.logical_entries >=
+        block::NativeTransferBatch::max_entries;
+    return consensus::should_retain_native_checkpoint_at_ingress({
+        .enabled = retain_checkpoint_at_ingress,
+        .work_driven = work_driven,
+        .has_committed_fragment = !native_transfer_batch_entries_.empty(),
+        .has_pending_checkpoint = !pending_checkpoint.empty(),
+        .ingress_boundary = ingress_boundary,
+        .bounded_refill_timed_out = bounded_refill_timed_out,
+        .latency_window_open = latency_window_open,
+        .intake_deadline_reached = native_intake_timeout_reached(),
+        .checkpoint_deadline_reached = pending_checkpoint.first_fragment_deadline_commit_pending,
+        .headroom_limited = headroom_limited,
+        .capacity_reached = capacity_reached,
+        .fanout_reached = fanout_reached,
+        .protocol_capacity_reached = protocol_capacity_reached,
+        .protocol_capacity_deferred = protocol_capacity_deferred,
+    });
+  };
+  auto record_checkpoint_ingress_retention = [&] {
+    ++stats_.native_checkpoint_ingress_retentions;
+    stats_.native_checkpoint_ingress_retention_max_dirty_accounts =
+        std::max<td::uint64>(stats_.native_checkpoint_ingress_retention_max_dirty_accounts,
+                             pending_checkpoint.dirty_addresses.size());
   };
   auto rollback_pending_checkpoint = [&]() -> std::size_t {
     if (pending_checkpoint.empty()) {
@@ -5230,6 +5274,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     bool logical_fragment_boundary = false;
     bool saw_item = false;
     bool intake_deadline_before_batch = false;
+    bool bounded_checkpoint_refill_timed_out = false;
     std::optional<td::Timestamp> fragment_refill_until;
     std::optional<td::Timestamp> post_commit_idle_until;
     auto bounded_coalescing_deadline = [&] {
@@ -5309,6 +5354,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         // nonblocking probe without making a later probe miss look like an
         // expired checkpoint refill wait in telemetry.
         bool checkpoint_waited = false;
+        bool bounded_refill_attempted = false;
         td::Result<ExtMsgPopBatch> maybe;
         td::Timer wait_timer;
         auto wait_kind = ExternalWaitKind::native_probe;
@@ -5382,6 +5428,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
                 ++stats_.native_post_commit_idle_waits;
               }
               checkpoint_waited = !pending_checkpoint.empty();
+              bounded_refill_attempted = true;
               maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), true, wait_until).wrap();
             }
           }
@@ -5412,10 +5459,19 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
               ++stats_.native_post_commit_idle_timeouts;
             }
           }
-          if (checkpoint_waited && maybe.error().code() == td::actor::AWAIT_TIMEOUT_CODE) {
-            ++stats_.native_checkpoint_refill_expirations;
+          if (bounded_refill_attempted && maybe.error().code() == td::actor::AWAIT_TIMEOUT_CODE) {
+            bounded_checkpoint_refill_timed_out = true;
+            if (checkpoint_waited) {
+              ++stats_.native_checkpoint_refill_expirations;
+            }
           }
-          if (batch.empty()) {
+          bool retained_ingress_checkpoint = false;
+          if (batch.empty() && should_retain_pending_checkpoint_at_ingress(
+                                   true, bounded_checkpoint_refill_timed_out, protocol_capacity_deferred)) {
+            retained_ingress_checkpoint = true;
+            record_checkpoint_ingress_retention();
+          }
+          if (batch.empty() && !retained_ingress_checkpoint) {
             switch (consensus::select_native_checkpoint_refill_boundary_action(
                 !pending_checkpoint.empty(), false, native_intake_timeout_reached(),
                 !native_transfer_batch_entries_.empty())) {
@@ -5455,7 +5511,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
               }
             }
           }
-          queue_exhausted = true;
+          queue_exhausted = !retained_ingress_checkpoint;
           break;
         }
         auto popped = maybe.move_as_ok();
@@ -5609,6 +5665,14 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       if (intake_deadline_before_batch) {
         auto deferred = rollback_pending_checkpoint();
         record_deadline_seal(deferred);
+        break;
+      }
+      if (protocol_capacity_deferred) {
+        if (!pending_checkpoint.empty() && !flush_pending_checkpoint(NativeCheckpointFlushReason::capacity)) {
+          co_return false;
+        }
+        LOG(INFO) << "native transfer protocol batch capacity deferred an atomic work";
+        stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: deferred atomic work by protocol batch capacity\n";
         break;
       }
       if (queue_exhausted) {
@@ -6005,13 +6069,25 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       const bool capacity_reached =
           pending_checkpoint.logical_entries >= consensus::native_checkpoint_coalesce_max_entries ||
           pending_checkpoint.fragments >= consensus::native_checkpoint_coalesce_max_fragments;
+      const bool protocol_capacity_reached =
+          native_transfer_batch_entries_.size() + pending_checkpoint.logical_entries >=
+          block::NativeTransferBatch::max_entries;
       const bool fanout_reached =
           pending_checkpoint.dirty_addresses.size() >= consensus::native_checkpoint_coalesce_fanout_limit;
       const bool deadline_flush = first_fragment_deadline_commit_pending;
+      const bool retained_ingress_checkpoint =
+          accepted_in_batch != 0 &&
+          should_retain_pending_checkpoint_at_ingress(
+              ingress_boundary, bounded_checkpoint_refill_timed_out, protocol_capacity_deferred);
+      if (retained_ingress_checkpoint) {
+        record_checkpoint_ingress_retention();
+      }
       const bool should_flush = !work_driven || initial_checkpoint ||
+                                protocol_capacity_reached || protocol_capacity_deferred ||
                                 consensus::should_flush_native_checkpoint(
                                     pending_checkpoint.logical_entries, pending_checkpoint.fragments,
-                                    pending_checkpoint.dirty_addresses.size(), deadline_flush, ingress_boundary,
+                                    pending_checkpoint.dirty_addresses.size(), deadline_flush,
+                                    ingress_boundary && !retained_ingress_checkpoint,
                                     headroom_limited, latency_expired);
       if (should_flush) {
         // Preserve the deadline exception before all other reasons.  The
@@ -6024,7 +6100,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           reason = NativeCheckpointFlushReason::headroom;
         } else if (fanout_reached) {
           reason = NativeCheckpointFlushReason::fanout;
-        } else if (capacity_reached) {
+        } else if (capacity_reached || protocol_capacity_reached || protocol_capacity_deferred) {
           reason = NativeCheckpointFlushReason::capacity;
         } else if (latency_expired) {
           reason = NativeCheckpointFlushReason::latency;

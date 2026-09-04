@@ -55,6 +55,22 @@ inline bool max_tps_mode_enabled() {
   return enabled;
 }
 
+// Experimental checkpoint retention is fail-closed and independent from the
+// broader max-TPS switch: only the literal value "1" enables it.  The caller
+// still gates the policy to work-driven shardchain collation and every
+// validator in a private deployment must opt in consistently.
+constexpr bool parse_native_checkpoint_retain_ingress(std::string_view value) {
+  return value == "1";
+}
+
+inline bool native_checkpoint_retain_ingress_enabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("TON_NATIVE_CHECKPOINT_RETAIN_INGRESS");
+    return parse_native_checkpoint_retain_ingress(value ? std::string_view{value} : std::string_view{});
+  }();
+  return enabled;
+}
+
 // Max-TPS changes candidate scheduling only for shardchain production.  The
 // masterchain continues to use its normal target-rate pacing, minimum block
 // interval, and failure/skip deadlines even when the process also produces a
@@ -119,6 +135,35 @@ constexpr bool should_flush_native_checkpoint(std::size_t staged_entries, std::s
          staged_entries >= native_checkpoint_coalesce_max_entries ||
          staged_fragments >= native_checkpoint_coalesce_max_fragments ||
          staged_dirty_accounts >= native_checkpoint_coalesce_fanout_limit;
+}
+
+struct NativeCheckpointIngressRetentionState {
+  bool enabled{false};
+  bool work_driven{false};
+  bool has_committed_fragment{false};
+  bool has_pending_checkpoint{false};
+  bool ingress_boundary{false};
+  bool bounded_refill_timed_out{false};
+  bool latency_window_open{false};
+  bool intake_deadline_reached{false};
+  bool checkpoint_deadline_reached{false};
+  bool headroom_limited{false};
+  bool capacity_reached{false};
+  bool fanout_reached{false};
+  bool protocol_capacity_reached{false};
+  bool protocol_capacity_deferred{false};
+};
+
+// The opt-in treatment masks ingress only when it is the sole reason to flush
+// an already-bounded checkpoint.  It never weakens the first exact rollback
+// anchor, intake/finalization deadline, size headroom, protocol capacity,
+// coalescing capacity, fanout, or fixed latency boundaries.
+constexpr bool should_retain_native_checkpoint_at_ingress(const NativeCheckpointIngressRetentionState& state) {
+  return state.enabled && state.work_driven && state.has_committed_fragment && state.has_pending_checkpoint &&
+         state.ingress_boundary && state.bounded_refill_timed_out && state.latency_window_open &&
+         !state.intake_deadline_reached && !state.checkpoint_deadline_reached && !state.headroom_limited &&
+         !state.capacity_reached && !state.fanout_reached && !state.protocol_capacity_reached &&
+         !state.protocol_capacity_deferred;
 }
 
 constexpr std::size_t parse_native_collator_queue_capacity(std::string_view value) {

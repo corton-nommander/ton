@@ -76,6 +76,91 @@ static_assert(should_flush_native_checkpoint(1'024, 2, 1'024, false, true, false
 static_assert(should_flush_native_checkpoint(1'024, 2, 1'024, false, false, true, false));
 static_assert(should_flush_native_checkpoint(1'024, 2, 3'072, false, false, false, false));
 static_assert(should_flush_native_checkpoint(1'024, 2, 1'024, false, false, false, true));
+static_assert(!parse_native_checkpoint_retain_ingress(""));
+static_assert(!parse_native_checkpoint_retain_ingress("0"));
+static_assert(parse_native_checkpoint_retain_ingress("1"));
+static_assert(!parse_native_checkpoint_retain_ingress("true"));
+static_assert(!parse_native_checkpoint_retain_ingress("01"));
+inline constexpr NativeCheckpointIngressRetentionState native_checkpoint_ingress_retention_test_state{
+    .enabled = true,
+    .work_driven = true,
+    .has_committed_fragment = true,
+    .has_pending_checkpoint = true,
+    .ingress_boundary = true,
+    .bounded_refill_timed_out = true,
+    .latency_window_open = true,
+};
+static_assert(should_retain_native_checkpoint_at_ingress(native_checkpoint_ingress_retention_test_state));
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.enabled = false;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.work_driven = false;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.has_committed_fragment = false;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.has_pending_checkpoint = false;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.ingress_boundary = false;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.bounded_refill_timed_out = false;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.latency_window_open = false;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.intake_deadline_reached = true;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.checkpoint_deadline_reached = true;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.headroom_limited = true;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.capacity_reached = true;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.fanout_reached = true;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.protocol_capacity_reached = true;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.protocol_capacity_deferred = true;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
 inline constexpr td::uint64 native_candidate_test_max_bytes = 10'485'760;
 inline constexpr td::uint64 native_candidate_test_estimate_budget = 8'987'795;
 static_assert(native_candidate_size_reserve(native_candidate_test_max_bytes) == 1'497'965);

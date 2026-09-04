@@ -306,6 +306,8 @@ struct CollationStats {
   td::uint64 native_checkpoint_flush_latency = 0;
   td::uint64 native_checkpoint_refill_continuations = 0;
   td::uint64 native_checkpoint_refill_expirations = 0;
+  td::uint64 native_checkpoint_ingress_retentions = 0;
+  td::uint64 native_checkpoint_ingress_retention_max_dirty_accounts = 0;
   td::uint64 native_checkpoint_rollbacks = 0;
   td::uint64 native_checkpoint_rollback_entries = 0;
   td::uint64 native_fragment_refill_waits = 0;
@@ -364,6 +366,10 @@ struct CollationStats {
                                    << native_checkpoint_refill_continuations
                                    << " native_checkpoint_refill_expirations="
                                    << native_checkpoint_refill_expirations
+                                   << " native_checkpoint_ingress_retentions="
+                                   << native_checkpoint_ingress_retentions
+                                   << " native_checkpoint_ingress_retention_max_dirty_accounts="
+                                   << native_checkpoint_ingress_retention_max_dirty_accounts
                                    << " native_checkpoint_rollbacks=" << native_checkpoint_rollbacks
                                    << " native_checkpoint_rollback_entries=" << native_checkpoint_rollback_entries
                                    << " native_fragment_refill_waits=" << native_fragment_refill_waits

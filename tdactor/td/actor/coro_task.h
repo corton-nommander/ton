@@ -2,7 +2,9 @@
 
 #include <atomic>
 #include <coroutine>
+#include <exception>
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -150,7 +152,17 @@ struct promise_value : promise_common {
   }
 
   void unhandled_exception() noexcept {
-    result = td::Status::Error("unhandled exception in coroutine");
+    try {
+      auto exception = std::current_exception();
+      if (exception) {
+        std::rethrow_exception(std::move(exception));
+      }
+      result = td::Status::Error("unhandled exception in coroutine (missing exception)");
+    } catch (const std::exception& error) {
+      result = td::Status::Error(std::string{"unhandled exception in coroutine: "} + error.what());
+    } catch (...) {
+      result = td::Status::Error("unhandled exception in coroutine (non-standard exception)");
+    }
   }
 
   ResultT extract_result() noexcept {

@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cassert>
 #include <ctime>
+#include <exception>
 #include <set>
 #include <unordered_map>
 #include <vector>
@@ -4724,6 +4725,35 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     }
   };
 
+  // VM dictionary exceptions intentionally do not derive from
+  // std::exception.  Preserve their type and message at the native boundary
+  // instead of letting the coroutine promise collapse them into an opaque
+  // non-standard exception.
+  auto run_native_stage = [&](const char* stage, auto&& operation) -> bool {
+    try {
+      operation();
+      return true;
+    } catch (const vm::VmError& error) {
+      fatal_error(PSTRING() << "native fast-path " << stage << " threw VM exception " << error.get_errno() << ": "
+                            << error.get_msg());
+    } catch (const vm::VmVirtError& error) {
+      fatal_error(PSTRING() << "native fast-path " << stage << " threw VM virtualization exception "
+                            << error.get_errno() << ": " << error.get_msg());
+    } catch (const vm::VmNoGas& error) {
+      fatal_error(PSTRING() << "native fast-path " << stage << " threw VM no-gas exception " << error.get_errno()
+                            << ": " << error.get_msg());
+    } catch (const vm::CombineError&) {
+      fatal_error(PSTRING() << "native fast-path " << stage << " threw dictionary combine exception");
+    } catch (const vm::CombineErrorValue& error) {
+      fatal_error(PSTRING() << "native fast-path " << stage << " threw dictionary combine exception " << error.arg_);
+    } catch (const std::exception& error) {
+      fatal_error(PSTRING() << "native fast-path " << stage << " threw standard exception: " << error.what());
+    } catch (...) {
+      fatal_error(PSTRING() << "native fast-path " << stage << " threw unknown exception");
+    }
+    return false;
+  };
+
   // Keep the compact logical state for the complete candidate.  The queue is
   // still consumed in small, cancellable fragments, but accepted fragments no
   // longer install Account objects and then reload/rematerialize them in the
@@ -4937,7 +4967,11 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     std::vector<Ref<vm::Cell>> staged_total_states;
     {
       td::ScopedRealCpuTimer cell_timer{stats_.work_time.native_account_cell_build};
-      staged_total_states = block::build_native_account_state_cells_parallel(staged_account_inputs);
+      if (!run_native_stage("account-cell build", [&] {
+            staged_total_states = block::build_native_account_state_cells_parallel(staged_account_inputs);
+          })) {
+        return false;
+      }
     }
     if (staged_total_states.size() != staged_account_addresses.size()) {
       fatal_error("native account-state cell builder returned an invalid result size");
@@ -4979,7 +5013,14 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       const auto dict_workers = staged_account_updates.size() < 512u
                                     ? 1u
                                     : block::native_executor_workers(0, staged_account_updates.size());
-      if (!staged_account_dict.set_many_sorted_parallel(td::as_span(staged_account_updates), dict_workers)) {
+      bool staged_account_dict_set = false;
+      if (!run_native_stage("staged-account trie build", [&] {
+            staged_account_dict_set =
+                staged_account_dict.set_many_sorted_parallel(td::as_span(staged_account_updates), dict_workers);
+          })) {
+        return false;
+      }
+      if (!staged_account_dict_set) {
         fatal_error("cannot stage native account dictionary bulk update");
         return false;
       }
@@ -5012,7 +5053,11 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       trial.collated_data_size_estimate = block_limit_status_->collated_data_size_estimate;
       trial.public_library_diff = block_limit_status_->public_library_diff;
       trial.st_stat = *native_pre_storage_stat_;
-      trial.st_stat.add_proof(staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
+      if (!run_native_stage("storage-proof rebuild", [&] {
+            trial.st_stat.add_proof(staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
+          })) {
+        return false;
+      }
       ++stats_.native_stat_checkpoint_rebuilds;
     }
     bool staged_hard_fits;
@@ -5419,7 +5464,12 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       td::ScopedRealCpuTimer timer_total{stats_.work_time.total};
       auto [ext_msg_ref, priority] = std::move(item);
       ++stats_.ext_msgs_total;
-      if (register_external_message(ext_msg_ref, priority).is_error()) {
+      td::Status registration_status;
+      if (!run_native_stage("external-message registration",
+                            [&] { registration_status = register_external_message(ext_msg_ref, priority); })) {
+        co_return false;
+      }
+      if (registration_status.is_error()) {
         ++stats_.ext_msgs_filtered;
         bad_ext_msgs_.emplace_back(ext_msg_ref->hash());
         continue;
@@ -5432,14 +5482,18 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       NativeExternal native_external;
       native_external.ext_msg = std::move(ext_msg_ref);
       if (native_runs_enabled) {
-        auto native_run_res = block::NativeTransferRun::unpack_external(ext_msg);
-        if (native_run_res.is_error()) {
+        std::optional<td::Result<block::NativeTransferRun>> native_run_res;
+        if (!run_native_stage("native-run decode",
+                              [&] { native_run_res.emplace(block::NativeTransferRun::unpack_external(ext_msg)); })) {
+          co_return false;
+        }
+        if (native_run_res->is_error()) {
           LOG(DEBUG) << "source-signed native fast path rejected non-NTRN external message";
           ++stats_.ext_msgs_rejected;
           bad_ext_msgs_.emplace_back(native_external.ext_msg->hash());
           continue;
         }
-        native_external.run = native_run_res.move_as_ok();
+        native_external.run = native_run_res->move_as_ok();
         const auto& run = native_external.run.value();
         if (native_payment_lanes && !payment_lane_policy) {
           auto policy = native_payment_lane_policy();
@@ -5474,14 +5528,19 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           native_external.transfers.push_back(std::move(transfer));
         }
       } else {
-        auto native_transfer_res = block::NativeTransfer::unpack_external(ext_msg);
-        if (native_transfer_res.is_error()) {
+        std::optional<td::Result<block::NativeTransfer>> native_transfer_res;
+        if (!run_native_stage(
+                "native-transfer decode",
+                [&] { native_transfer_res.emplace(block::NativeTransfer::unpack_external(ext_msg)); })) {
+          co_return false;
+        }
+        if (native_transfer_res->is_error()) {
           LOG(DEBUG) << "native fast path rejected non-native external message";
           ++stats_.ext_msgs_rejected;
           delay_ext_msgs_.emplace_back(native_external.ext_msg->hash());
           continue;
         }
-        native_external.transfers.push_back(native_transfer_res.move_as_ok());
+        native_external.transfers.push_back(native_transfer_res->move_as_ok());
       }
       if (native_external.logical_count() > batch_logical_capacity - batch_logical_entries) {
         // The signed interval must never be split merely to fill a candidate.
@@ -5712,12 +5771,20 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         bool work_deferred = false;
         bool work_permanently_invalid = false;
         for (const auto& transfer : item.transfers) {
-          auto* src = load_cached_native_state(transfer.src, false);
+          NativeAccountState* src = nullptr;
+          if (!run_native_stage("source-account load",
+                                [&] { src = load_cached_native_state(transfer.src, false); })) {
+            co_return false;
+          }
           if (src) {
             cached_src_address = transfer.src;
             cached_src_state = src;
           }
-          auto* dst = load_cached_native_state(transfer.dst, true);
+          NativeAccountState* dst = nullptr;
+          if (!run_native_stage("destination-account load",
+                                [&] { dst = load_cached_native_state(transfer.dst, true); })) {
+            co_return false;
+          }
           if (dst) {
             cached_dst_address = transfer.dst;
             cached_dst_state = dst;

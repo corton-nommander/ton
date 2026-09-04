@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -916,6 +917,36 @@ class CoroSpec final : public td::actor::Actor {
     co_return td::Unit{};
   }
 
+  Task<td::Unit> unhandled_exception_diagnostics() {
+    LOG(INFO) << "=== unhandled_exception_diagnostics ===";
+
+    auto standard_exception = []() -> Task<int> {
+      throw std::runtime_error{"diagnostic standard exception"};
+      co_return 0;
+    };
+    auto standard_result = co_await standard_exception().wrap();
+    expect_true(standard_result.is_error(), "standard exception becomes a task error");
+    auto standard_message = standard_result.error().message().str();
+    expect_true(standard_message.find("unhandled exception in coroutine") != std::string::npos,
+                "standard exception keeps the coroutine context");
+    expect_true(standard_message.find("diagnostic standard exception") != std::string::npos,
+                "standard exception preserves what()");
+
+    auto nonstandard_exception = []() -> Task<int> {
+      throw 42;
+      co_return 0;
+    };
+    auto nonstandard_result = co_await nonstandard_exception().wrap();
+    expect_true(nonstandard_result.is_error(), "non-standard exception becomes a task error");
+    auto nonstandard_message = nonstandard_result.error().message().str();
+    expect_true(nonstandard_message.find("unhandled exception in coroutine") != std::string::npos,
+                "non-standard exception keeps the coroutine context");
+    expect_true(nonstandard_message.find("non-standard exception") != std::string::npos,
+                "non-standard exception is identified explicitly");
+
+    co_return td::Unit{};
+  }
+
   static Task<td::Unit> slow_task() {
     td::usleep_for(2000000);
     co_return td::Unit{};
@@ -1239,6 +1270,7 @@ class CoroSpec final : public td::actor::Actor {
     co_await ask_dead_actor();
     co_await try_awaitable();
     co_await test_trace();
+    co_await unhandled_exception_diagnostics();
     co_await stop_actor();
     co_await promise_destroy_in_mailbox();
     co_await promise_destroy_in_actor_member();

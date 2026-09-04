@@ -81,6 +81,23 @@ static_assert(!parse_native_checkpoint_retain_ingress("0"));
 static_assert(parse_native_checkpoint_retain_ingress("1"));
 static_assert(!parse_native_checkpoint_retain_ingress("true"));
 static_assert(!parse_native_checkpoint_retain_ingress("01"));
+static_assert(!parse_native_post_commit_pack_grace_20ms(""));
+static_assert(!parse_native_post_commit_pack_grace_20ms("0"));
+static_assert(parse_native_post_commit_pack_grace_20ms("1"));
+static_assert(!parse_native_post_commit_pack_grace_20ms("true"));
+static_assert(!parse_native_post_commit_pack_grace_20ms("20"));
+static_assert(native_post_commit_pack_grace_default_seconds == 0.010);
+static_assert(native_post_commit_pack_grace_throughput_seconds == 0.020);
+static_assert(native_post_commit_pack_grace_throughput_seconds > native_post_commit_pack_grace_default_seconds);
+static_assert(native_post_commit_pack_grace_throughput_seconds <= native_checkpoint_coalesce_max_latency_seconds);
+static_assert(select_native_post_commit_pack_grace_seconds(false, false) ==
+              native_post_commit_pack_grace_default_seconds);
+static_assert(select_native_post_commit_pack_grace_seconds(false, true) ==
+              native_post_commit_pack_grace_default_seconds);
+static_assert(select_native_post_commit_pack_grace_seconds(true, false) ==
+              native_post_commit_pack_grace_default_seconds);
+static_assert(select_native_post_commit_pack_grace_seconds(true, true) ==
+              native_post_commit_pack_grace_throughput_seconds);
 inline constexpr NativeCheckpointIngressRetentionState native_checkpoint_ingress_retention_test_state{
     .enabled = true,
     .work_driven = true,

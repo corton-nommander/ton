@@ -83,6 +83,30 @@ inline bool native_checkpoint_retain_ingress_enabled() {
   return enabled;
 }
 
+// Dense post-commit packing is an explicit sidechain throughput tradeoff.  A
+// committed checkpoint may wait up to 20 ms for more work when every validator
+// opts in; the default remains 10 ms.  This does not change the independent
+// partial-fragment refill or fixed checkpoint-latency deadlines.
+inline constexpr double native_post_commit_pack_grace_default_seconds = 0.010;
+inline constexpr double native_post_commit_pack_grace_throughput_seconds = 0.020;
+
+constexpr bool parse_native_post_commit_pack_grace_20ms(std::string_view value) {
+  return value == "1";
+}
+
+constexpr double select_native_post_commit_pack_grace_seconds(bool work_driven, bool throughput_opt_in) {
+  return work_driven && throughput_opt_in ? native_post_commit_pack_grace_throughput_seconds
+                                          : native_post_commit_pack_grace_default_seconds;
+}
+
+inline double native_post_commit_pack_grace_seconds(bool work_driven) {
+  static const bool throughput_opt_in = [] {
+    const char* value = std::getenv("TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS");
+    return parse_native_post_commit_pack_grace_20ms(value ? std::string_view{value} : std::string_view{});
+  }();
+  return select_native_post_commit_pack_grace_seconds(work_driven, throughput_opt_in);
+}
+
 // Max-TPS changes candidate scheduling only for shardchain production.  The
 // masterchain continues to use its normal target-rate pacing, minimum block
 // interval, and failure/skip deadlines even when the process also produces a

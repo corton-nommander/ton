@@ -82,11 +82,6 @@ static constexpr std::size_t NATIVE_ACCOUNT_STATE_RESERVE =
 // fragment before sealing it. This is an ingress coalescing grace, not a
 // block period or a consensus timing parameter.
 static constexpr double NATIVE_QUEUE_COALESCING_GRACE_SECONDS = 0.010;
-// Once a native fragment has committed its exact checkpoint, use a separate,
-// still bounded window to pack the next fragment before sealing the candidate.
-// Keeping it equal to the partial-fragment grace favors prompt publication in
-// the three-block-per-second desktop cadence experiment.
-static constexpr double NATIVE_POST_COMMIT_PACK_GRACE_SECONDS = 0.010;
 
 static constexpr int MAX_ATTEMPTS = 5;
 
@@ -4665,6 +4660,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   ++stats_.native_fast_path_invocations;
   const bool work_driven = consensus::work_driven_max_tps_mode_enabled(shard_);
   const bool retain_checkpoint_at_ingress = consensus::native_checkpoint_retain_ingress_enabled();
+  const double post_commit_pack_grace_seconds = consensus::native_post_commit_pack_grace_seconds(work_driven);
   if (work_driven && stats_.native_fast_path_invocations != 1) {
     co_return fatal_error("work-driven native processor was invoked more than once for one candidate");
   }
@@ -5355,7 +5351,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       return deadline;
     };
     auto bounded_post_commit_pack_deadline = [&] {
-      auto deadline = td::Timestamp::in(NATIVE_POST_COMMIT_PACK_GRACE_SECONDS);
+      auto deadline = td::Timestamp::in(post_commit_pack_grace_seconds);
       if (params_.soft_timeout) {
         deadline.relax(params_.soft_timeout);
       }

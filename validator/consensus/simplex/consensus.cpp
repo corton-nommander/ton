@@ -286,7 +286,8 @@ class ConsensusImpl : public td::actor::SpawnsWith<Bus>, public td::actor::Conne
     ++scheduling_stats_.generation_triggers;
     emit_scheduling_stats();
     owning_bus().publish<OurLeaderWindowStarted>(base, parent.state, start_slot, start_slot + slots_per_leader_window_,
-                                                 start_time, std::move(parent.excluded_ext_messages));
+                                                 start_time, std::move(parent.excluded_ext_messages),
+                                                 std::move(parent.native_source_nonce_floors));
     co_return {};
   }
 

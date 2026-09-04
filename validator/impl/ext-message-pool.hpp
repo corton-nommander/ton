@@ -22,6 +22,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <tuple>
 #include <vector>
 
 #include "interfaces/validator-manager.h"
@@ -664,6 +665,53 @@ class ExtMessagePool : public td::actor::Actor {
   };
   struct InstalledCallback {
     explicit InstalledCallback(std::unique_ptr<ExtMsgCallback> value) : callback(std::move(value)) {
+      // Normalize the externally supplied storage once without allocating a
+      // second tree node per source. Production carriers are already sorted
+      // and unique, while this defensive pass also handles direct callers and
+      // drops metadata outside the callback's shard.
+      auto &floors = callback->native_source_nonce_floors;
+      std::erase_if(floors, [&](const auto &floor) {
+        return !shard_contains(callback->shard, extract_addr_prefix(floor.workchain, floor.source));
+      });
+      bool sorted_unique = true;
+      for (std::size_t i = 1; i < floors.size(); ++i) {
+        if (!(floors[i - 1] < floors[i])) {
+          sorted_unique = false;
+          break;
+        }
+      }
+      if (!sorted_unique) {
+        std::sort(floors.begin(), floors.end(), [](const auto &lhs, const auto &rhs) {
+          if (lhs < rhs) {
+            return true;
+          }
+          if (rhs < lhs) {
+            return false;
+          }
+          return lhs.next_nonce < rhs.next_nonce;
+        });
+        std::size_t normalized_size = 0;
+        for (const auto &floor : floors) {
+          if (normalized_size != 0 && !(floors[normalized_size - 1] < floor) &&
+              !(floor < floors[normalized_size - 1])) {
+            floors[normalized_size - 1].next_nonce =
+                std::max(floors[normalized_size - 1].next_nonce, floor.next_nonce);
+          } else {
+            floors[normalized_size++] = floor;
+          }
+        }
+        floors.resize(normalized_size);
+      }
+    }
+
+    td::uint64 effective_native_nonce_floor(const NativeAddress &source, td::uint64 canonical_next_nonce) const {
+      const auto &floors = callback->native_source_nonce_floors;
+      auto it = std::lower_bound(floors.begin(), floors.end(), source, [](const auto &floor, const auto &key) {
+        return std::tie(floor.workchain, floor.source) < std::tie(key.first, key.second);
+      });
+      return it == floors.end() || it->workchain != source.first || it->source != source.second
+                 ? canonical_next_nonce
+                 : std::max(canonical_next_nonce, it->next_nonce);
     }
 
     std::unique_ptr<ExtMsgCallback> callback;

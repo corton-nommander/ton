@@ -193,6 +193,7 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     ChainStateRef state = event->state;
     ParentId parent = event->base;
     auto branch_excluded_ext_messages = event->excluded_ext_messages;
+    auto branch_native_source_nonce_floors = event->native_source_nonce_floors;
     bool block_generation_active = false;
     td::actor::SharedFuture<GeneratedCandidate> block_generation;
 
@@ -230,6 +231,7 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
             .utime = collate_started_at.at_unix(),
             .hard_timeout = collate_started_at + hard_timeout,
             .excluded_ext_messages = branch_excluded_ext_messages,
+            .native_source_nonce_floors = branch_native_source_nonce_floors,
             .prev_block_data = state->block_data(),
             .prev_block_state_roots = state->state(),
         };
@@ -338,11 +340,24 @@ class BlockProducerImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       std::variant<BlockIdExt, BlockCandidate> block;
       std::optional<adnl::AdnlNodeIdShort> collator;
       if (generated_candidate.has_value()) {
-        auto native_hashes = get_candidate_native_external_hashes(generated_candidate->candidate);
-        if (native_hashes.is_error()) {
-          co_return native_hashes.move_as_error_prefix("cannot track speculative native messages: ");
+        auto native_messages = get_candidate_native_external_messages(generated_candidate->candidate);
+        if (native_messages.is_error()) {
+          co_return native_messages.move_as_error_prefix("cannot track speculative native messages: ");
         }
-        merge_external_hashes(branch_excluded_ext_messages, native_hashes.move_as_ok());
+        auto candidate_native_messages = native_messages.move_as_ok();
+        std::vector<Bits256> native_hashes;
+        native_hashes.reserve(candidate_native_messages.size());
+        for (const auto &message : candidate_native_messages) {
+          native_hashes.push_back(message.hash);
+        }
+        std::sort(native_hashes.begin(), native_hashes.end());
+        native_hashes.erase(std::unique(native_hashes.begin(), native_hashes.end()), native_hashes.end());
+        auto candidate_nonce_floors = get_native_source_nonce_floors(candidate_native_messages);
+        if (candidate_nonce_floors.is_error()) {
+          co_return candidate_nonce_floors.move_as_error_prefix("cannot extend speculative native nonce floors: ");
+        }
+        merge_external_hashes(branch_excluded_ext_messages, std::move(native_hashes));
+        merge_native_source_nonce_floors(branch_native_source_nonce_floors, candidate_nonce_floors.ok());
         td::actor::send_closure(bus.manager, &ManagerFacade::cache_block_candidate,
                                 generated_candidate->candidate.clone());
         state = state->apply(generated_candidate->candidate);

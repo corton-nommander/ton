@@ -273,6 +273,11 @@ void Collator::start_up() {
     callback->sync_only = !callback_until;
     callback->native_streaming = native_streaming;
     callback->excluded_messages = params_.excluded_ext_messages;
+    // Keep the immutable branch snapshot in params_ as well: fatal_error()
+    // may clone CollateParams for a retry after this callback has been handed
+    // to the pool. Moving here made that retry fall back to canonical-only
+    // probing and rescan every excluded ancestor interval.
+    callback->native_source_nonce_floors = params_.native_source_nonce_floors;
     callback->queue = ext_msg_queue_;
     // A work-driven native candidate is latency-sensitive: its first useful
     // item otherwise waits through the Collator -> Manager -> Pool mailbox

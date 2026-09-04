@@ -54,6 +54,11 @@ struct CollateParams {
   // finalization, but must not be offered again to a child of that branch.
   std::vector<Bits256> excluded_ext_messages = {};
 
+  // Per-source next nonces produced by the exact speculative ancestor chain.
+  // Unlike the canonical pool watermark, these floors are callback-local: a
+  // sibling fork must still be able to consume the same pending messages.
+  NativeSourceNonceFloors native_source_nonce_floors = {};
+
   // Optional - if empty, blocks and states are taken from manager
   // If not empty, should be the same size as prev
   std::vector<Ref<BlockData>> prev_block_data = {};

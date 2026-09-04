@@ -59,7 +59,8 @@ std::string ResolveState::contents_to_string() const {
 std::string ResolveState::response_to_string(const ReturnType &result) {
   return PSTRING() << "ResolvedState{state=" << *result.state << ", gen_utime_exact="
                    << (result.gen_utime_exact ? (PSTRING() << *result.gen_utime_exact) : "nullopt")
-                   << ", excluded_ext_messages=" << result.excluded_ext_messages.size() << "}";
+                   << ", excluded_ext_messages=" << result.excluded_ext_messages.size()
+                   << ", native_source_nonce_floors=" << result.native_source_nonce_floors.size() << "}";
 }
 
 std::string SaveCertificate::contents_to_string() const {

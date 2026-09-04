@@ -1643,6 +1643,11 @@ void ExtMessagePool::probe_callback_native_source(const std::shared_ptr<Installe
   if (!first_nonce) {
     return;
   }
+  // The canonical watermark is process-wide, while this floor belongs only
+  // to the exact speculative branch that installed the callback. Starting at
+  // their maximum skips ancestor work without consuming or rebasing it for a
+  // sibling fork.
+  first_nonce = callback->effective_native_nonce_floor(source, first_nonce.value());
   state.next_nonce = std::max(state.next_nonce, first_nonce.value());
   auto advance_nonce = [&](td::uint32 logical_count) {
     if (logical_count == 0 || state.next_nonce > std::numeric_limits<td::uint64>::max() - logical_count) {
@@ -2405,6 +2410,8 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
                         << " selected_native_logical=" << installed->delivered_native_logical
                         << " selected_generic=" << installed->generic_selected
                         << " excluded=" << installed->callback->excluded_messages.size()
+                        << " native_source_nonce_floors="
+                        << installed->callback->native_source_nonce_floors.size()
                         << " native_limit=" << native_collator_queue_limit_ << " shard=" << shard;
   start_callback_pump(installed);
   if (!installed->callback->sync_only) {
@@ -2469,8 +2476,10 @@ void ExtMessagePool::track_locally_accepted_native_messages(
     return;
   }
   ++native_reconciliation_tracked_candidates_;
-  native_reconciliation_tracked_messages_ += messages.size();
   for (const auto &message : messages) {
+    // Preserve the historical logical-transfer meaning after compact NTRN
+    // metadata switched from one record per child to one atomic interval.
+    native_reconciliation_tracked_messages_ += message.logical_count;
     NativeAddress address{message.workchain, message.source};
     // A candidate learned from another node need not have a corresponding
     // local reservation. There is nothing to purge in that case, and keeping a

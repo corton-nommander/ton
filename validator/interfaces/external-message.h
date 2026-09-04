@@ -59,6 +59,26 @@ struct TrackedNativeExternalMessage {
   td::uint32 logical_count{1};
 };
 
+// Exclusive nonce boundary contributed by native work on one exact candidate
+// branch.  A collection of these records is always normalized in
+// (workchain, source) order and contains at most one record for each source.
+// The value is branch-local speculation; it must never advance the canonical
+// mempool watermark on its own.
+struct NativeSourceNonceFloor {
+  WorkchainId workchain{basechainId};
+  StdSmcAddress source;
+  td::uint64 next_nonce{0};
+
+  bool operator<(const NativeSourceNonceFloor &other) const {
+    if (workchain != other.workchain) {
+      return workchain < other.workchain;
+    }
+    return source < other.source;
+  }
+};
+
+using NativeSourceNonceFloors = std::vector<NativeSourceNonceFloor>;
+
 // Ordered result of admitting one element of a sendMessageBatch request.  This
 // intentionally contains no actor-local state: ValidatorManager consumes the
 // pool's broadcast handles and returns only these stable per-input statuses to

@@ -91,6 +91,8 @@ class ExtMessagePoolTestAccess {
   };
   struct CallbackRound {
     std::vector<NativeAddress> sources;
+    std::vector<td::uint64> nonces;
+    std::vector<td::uint32> logical_counts;
     td::optional<NativeAddress> cursor;
     td::uint64 source_scans{0};
   };
@@ -370,7 +372,8 @@ class ExtMessagePoolTestAccess {
   static void install_live_waiting_callback(ExtMessagePool &pool, std::size_t queue_capacity,
                                             std::size_t transport_message_capacity = 500,
                                             std::vector<ExtMessage::Hash> excluded = {},
-                                            ShardIdFull shard = {basechainId, shardIdAll}) {
+                                            ShardIdFull shard = {basechainId, shardIdAll},
+                                            NativeSourceNonceFloors native_source_nonce_floors = {}) {
     auto callback = std::make_unique<ExtMsgCallback>();
     callback->shard = shard;
     callback->queue_capacity = queue_capacity;
@@ -380,6 +383,7 @@ class ExtMessagePoolTestAccess {
     std::sort(excluded.begin(), excluded.end());
     excluded.erase(std::unique(excluded.begin(), excluded.end()), excluded.end());
     callback->excluded_messages = std::move(excluded);
+    callback->native_source_nonce_floors = std::move(native_source_nonce_floors);
     auto installed = std::make_shared<ExtMessagePool::InstalledCallback>(std::move(callback));
     // Model the installed callback's serialized pump already waiting. This
     // keeps the unit test actor-free while ensuring the post-commit wake appends
@@ -390,10 +394,12 @@ class ExtMessagePoolTestAccess {
   }
 
   static CallbackRound select_callback_round(ExtMessagePool &pool, ShardIdFull shard,
-                                             std::size_t logical_limit) {
+                                             std::size_t logical_limit,
+                                             NativeSourceNonceFloors native_source_nonce_floors = {}) {
     auto callback = std::make_unique<ExtMsgCallback>();
     callback->shard = shard;
     callback->queue_capacity = logical_limit;
+    callback->native_source_nonce_floors = std::move(native_source_nonce_floors);
     auto installed = std::make_shared<ExtMessagePool::InstalledCallback>(std::move(callback));
     pool.restore_callback_native_cursor(installed);
     auto selection = pool.select_callback_native_messages(installed, logical_limit, logical_limit);
@@ -404,10 +410,19 @@ class ExtMessagePoolTestAccess {
     result.cursor = selection.cursor;
     result.source_scans = selection.counters.source_scans;
     result.sources.reserve(selection.items.size());
+    result.nonces.reserve(selection.items.size());
+    result.logical_counts.reserve(selection.items.size());
     for (const auto &item : selection.items) {
       result.sources.push_back(item.source);
+      result.nonces.push_back(item.nonce);
+      result.logical_counts.push_back(item.logical_count);
     }
     return result;
+  }
+
+  static std::size_t callback_native_floor_sources(const ExtMessagePool &pool) {
+    CHECK(pool.callbacks_.size() == 1);
+    return pool.callbacks_.front()->callback->native_source_nonce_floors.size();
   }
 
   static bool finalize_existing_native(ExtMessagePool &pool, NativeAddress source, td::uint64 nonce,
@@ -539,6 +554,10 @@ class ExtMessagePoolTestAccess {
       return {};
     }
     return it->second;
+  }
+
+  static td::uint64 reconciliation_tracked_logical_messages(const ExtMessagePool &pool) {
+    return pool.native_reconciliation_tracked_messages_;
   }
 
   static void register_pending_reconciliation_targets(ExtMessagePool &pool) {
@@ -1247,13 +1266,14 @@ TEST(ExtMessagePoolScheduler, NativeReconciliationTracksEitherRunOrChildMetadata
   ExtMessagePoolTestAccess::set_watermark(pool, source, 10);
   auto hash = ExtMessagePoolTestAccess::add_work(pool, source, 10, 3);
 
-  // Eventual v5 metadata may describe one parent range, while the current
-  // candidate decoder emits one child record per nonce with the same parent
-  // hash. Both forms must register the same exclusive reconciliation target.
+  // Current v5 metadata describes one atomic parent interval. Retain coverage
+  // for legacy/per-child metadata too: both forms must register the same
+  // exclusive reconciliation target.
   ExtMessagePoolTestAccess::track_locally_accepted_records(
       pool, {TrackedNativeExternalMessage{
                 .hash = hash, .workchain = source.first, .source = source.second, .nonce = 10, .logical_count = 3}});
   ASSERT_EQ(ExtMessagePoolTestAccess::tracked_nonce(pool, source), td::optional<td::uint64>(12));
+  ASSERT_EQ(ExtMessagePoolTestAccess::reconciliation_tracked_logical_messages(pool), 3u);
 
   auto child_pool = ExtMessagePoolTestAccess::make_pool();
   ExtMessagePoolTestAccess::set_watermark(child_pool, source, 10);
@@ -1266,6 +1286,7 @@ TEST(ExtMessagePoolScheduler, NativeReconciliationTracksEitherRunOrChildMetadata
                    TrackedNativeExternalMessage{
                        .hash = child_hash, .workchain = source.first, .source = source.second, .nonce = 12}});
   ASSERT_EQ(ExtMessagePoolTestAccess::tracked_nonce(child_pool, source), td::optional<td::uint64>(12));
+  ASSERT_EQ(ExtMessagePoolTestAccess::reconciliation_tracked_logical_messages(child_pool), 3u);
 }
 
 TEST(ExtMessagePoolScheduler, CancelledDuplicateSeqnoIsNotAnAppliedOutcome) {
@@ -1733,6 +1754,140 @@ TEST(ExtMessagePoolScheduler, ExclusionsAdvanceOnlySpeculativeView) {
 
   auto losing_fork = ExtMessagePoolTestAccess::select(pool, {basechainId, shardIdAll}, 32);
   ASSERT_EQ(losing_fork.nonces, (std::vector<td::uint64>{0, 1, 2}));
+}
+
+TEST(ExtMessagePoolScheduler, CallbackNonceFloorIsBranchLocalAndSiblingReusable) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(0x24);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  for (td::uint64 nonce = 0; nonce < 4; ++nonce) {
+    ExtMessagePoolTestAccess::add(pool, source, nonce);
+  }
+
+  auto child = ExtMessagePoolTestAccess::select_callback_round(
+      pool, {basechainId, shardIdAll}, 4,
+      {{.workchain = source.first, .source = source.second, .next_nonce = 2}});
+  ASSERT_EQ(child.nonces, (std::vector<td::uint64>{2, 3}));
+
+  // Selection advances only the callback-local scheduler. Neither the global
+  // canonical watermark nor the reservations are changed, so a sibling fork
+  // starting from the same canonical parent can reuse the complete prefix.
+  ASSERT_EQ(ExtMessagePoolTestAccess::first_unconsumed_nonce(pool, source), td::optional<td::uint64>(0));
+  ASSERT_EQ(ExtMessagePoolTestAccess::reservation_nonces(pool, source),
+            (std::vector<td::uint64>{0, 1, 2, 3}));
+  auto sibling = ExtMessagePoolTestAccess::select_callback_round(pool, {basechainId, shardIdAll}, 4);
+  ASSERT_EQ(sibling.nonces, (std::vector<td::uint64>{0, 1, 2, 3}));
+}
+
+TEST(ExtMessagePoolScheduler, CallbackNonceFloorUsesMaxOfCanonicalAndNormalizedBranchFloor) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(0x25);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 2);
+  for (td::uint64 nonce = 2; nonce < 6; ++nonce) {
+    ExtMessagePoolTestAccess::add(pool, source, nonce);
+  }
+
+  // Deliberately unsorted duplicate source entries prove normalization keeps
+  // the maximum branch floor; it then wins over the lower canonical value.
+  auto branch_ahead = ExtMessagePoolTestAccess::select_callback_round(
+      pool, {basechainId, shardIdAll}, 4,
+      {{.workchain = source.first, .source = source.second, .next_nonce = 1},
+       {.workchain = source.first, .source = source.second, .next_nonce = 4},
+       {.workchain = source.first, .source = source.second, .next_nonce = 3}});
+  ASSERT_EQ(branch_ahead.nonces, (std::vector<td::uint64>{4, 5}));
+
+  auto canonical_ahead = ExtMessagePoolTestAccess::select_callback_round(
+      pool, {basechainId, shardIdAll}, 4,
+      {{.workchain = source.first, .source = source.second, .next_nonce = 1}});
+  ASSERT_EQ(canonical_ahead.nonces, (std::vector<td::uint64>{2, 3, 4, 5}));
+}
+
+TEST(ExtMessagePoolScheduler, CallbackNonceFloorDoesNotRequireAncestorReservations) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(0x26);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  ExtMessagePoolTestAccess::add(pool, source, 5);
+  ExtMessagePoolTestAccess::add(pool, source, 6);
+
+  // The exact parent state is the authority for the skipped prefix. A node
+  // that learned the parent from a peer need not have reservations 0..4.
+  auto selected = ExtMessagePoolTestAccess::select_callback_round(
+      pool, {basechainId, shardIdAll}, 8,
+      {{.workchain = source.first, .source = source.second, .next_nonce = 5}});
+  ASSERT_EQ(selected.nonces, (std::vector<td::uint64>{5, 6}));
+  ASSERT_EQ(ExtMessagePoolTestAccess::first_unconsumed_nonce(pool, source), td::optional<td::uint64>(0));
+}
+
+TEST(ExtMessagePoolScheduler, TargetedCallbackRefreshRetainsBranchNonceFloor) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(0x27);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  auto ancestor = ExtMessagePoolTestAccess::add(pool, source, 0);
+  ExtMessagePoolTestAccess::install_live_waiting_callback(
+      pool, ExtMessagePoolTestAccess::max_native_queue_limit(), 500, {}, {basechainId, shardIdAll},
+      {{.workchain = source.first, .source = source.second, .next_nonce = 2}});
+
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), 0u);
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_contains_delivery(pool, ancestor));
+  auto next = ExtMessagePoolTestAccess::add(pool, source, 2);
+  ASSERT_EQ(ExtMessagePoolTestAccess::wake_sources(pool, {source}), 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::dirty_sources(pool), 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::resume_native_pump_refill(pool), 1u);
+  ASSERT_TRUE(ExtMessagePoolTestAccess::callback_has_delivery(pool, next));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_contains_delivery(pool, ancestor));
+}
+
+TEST(ExtMessagePoolScheduler, CallbackNonceFloorKeepsSourceSignedRunsAtomic) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(0x28);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  ExtMessagePoolTestAccess::add_work(pool, source, 0, 3);
+  ExtMessagePoolTestAccess::add(pool, source, 3);
+
+  auto child = ExtMessagePoolTestAccess::select_callback_round(
+      pool, {basechainId, shardIdAll}, 4,
+      {{.workchain = source.first, .source = source.second, .next_nonce = 3}});
+  ASSERT_EQ(child.nonces, (std::vector<td::uint64>{3}));
+  ASSERT_EQ(child.logical_counts, (std::vector<td::uint32>{1}));
+
+  auto sibling = ExtMessagePoolTestAccess::select_callback_round(pool, {basechainId, shardIdAll}, 4);
+  ASSERT_EQ(sibling.nonces, (std::vector<td::uint64>{0, 3}));
+  ASSERT_EQ(sibling.logical_counts, (std::vector<td::uint32>{3, 1}));
+
+  // A malformed/intermediate floor may not synthesize a suffix of the one
+  // physical run or skip across that incomplete interval.
+  auto interior = ExtMessagePoolTestAccess::select_callback_round(
+      pool, {basechainId, shardIdAll}, 4,
+      {{.workchain = source.first, .source = source.second, .next_nonce = 2}});
+  ASSERT_TRUE(interior.nonces.empty());
+}
+
+TEST(ExtMessagePoolScheduler, CallbackNonceFloorsAreShardIsolated) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  const ShardIdFull left_shard{basechainId, shard_child(shardIdAll, true)};
+  const ShardIdFull right_shard{basechainId, shard_child(shardIdAll, false)};
+  auto left_source = ExtMessagePoolTestAccess::source(0x10);
+  auto right_source = ExtMessagePoolTestAccess::source(0x90);
+  ExtMessagePoolTestAccess::set_watermark(pool, left_source, 0);
+  ExtMessagePoolTestAccess::set_watermark(pool, right_source, 0);
+  auto left_zero = ExtMessagePoolTestAccess::add(pool, left_source, 0);
+  auto left_one = ExtMessagePoolTestAccess::add(pool, left_source, 1);
+  ExtMessagePoolTestAccess::add(pool, right_source, 0);
+  ExtMessagePoolTestAccess::add(pool, right_source, 1);
+
+  ExtMessagePoolTestAccess::install_live_waiting_callback(
+      pool, ExtMessagePoolTestAccess::max_native_queue_limit(), 500, {}, left_shard,
+      {{.workchain = right_source.first, .source = right_source.second, .next_nonce = 1},
+       {.workchain = left_source.first, .source = left_source.second, .next_nonce = 1}});
+  ASSERT_EQ(ExtMessagePoolTestAccess::callback_native_floor_sources(pool), 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::fill_once(pool), 1u);
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::callback_contains_delivery(pool, left_zero));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::callback_contains_delivery(pool, left_one));
+
+  // The right-lane floor was discarded by the left callback and global state
+  // remains untouched, so a right callback starts at its canonical nonce.
+  auto right = ExtMessagePoolTestAccess::select_callback_round(pool, right_shard, 2);
+  ASSERT_EQ(right.nonces, (std::vector<td::uint64>{0, 1}));
 }
 
 TEST(ExtMessagePoolScheduler, MasterchainNeverScansNativeSources) {

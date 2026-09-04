@@ -32,12 +32,24 @@ td::Result<double> get_candidate_gen_utime_exact(const BlockCandidate& candidate
 // hash for every flattened child.
 td::Result<std::vector<Bits256>> get_candidate_native_external_hashes(const BlockCandidate& candidate);
 
-// Returns every native source/nonce mapping carried by a candidate. A direct-run batch keeps
-// each logical child mapping but assigns all children in a signed run the
-// same parent NTRN hash, allowing reconciliation to retire the whole nonce
-// range while speculative exclusion remains parent-hash based.
+// Returns every native source/nonce interval carried by a candidate. A
+// direct-run batch keeps one atomic interval identified by its parent NTRN
+// hash, while scalar NTFX metadata keeps logical_count == 1.
 td::Result<std::vector<TrackedNativeExternalMessage>> get_candidate_native_external_messages(
     const BlockCandidate& candidate);
+
+// Projects already-decoded candidate metadata to exclusive source nonce
+// boundaries. Zero-length intervals and intervals whose exclusive end cannot
+// be represented are rejected. The result is sorted and unique by
+// (workchain, source), with the greatest boundary retained for duplicates.
+td::Result<NativeSourceNonceFloors> get_native_source_nonce_floors(
+    const std::vector<TrackedNativeExternalMessage>& messages);
+
+// Deterministically folds `added` into `target`, retaining the greatest
+// exclusive boundary for each source. `target` must already be sorted and
+// unique; `added` may be unsorted or contain duplicate source records. The
+// merge is linear in target size after normalizing only `added`.
+void merge_native_source_nonce_floors(NativeSourceNonceFloors& target, const NativeSourceNonceFloors& added);
 
 // Explicit sidechain-only throughput mode.  The environment switch is kept
 // outside consensus configuration deliberately: every validator in the

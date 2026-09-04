@@ -70,7 +70,8 @@ std::string FinalizeBlock::contents_to_string() const {
 std::string OurLeaderWindowStarted::contents_to_string() const {
   return PSTRING() << "{base=" << base << ", state=" << state << ", start_slot=" << start_slot
                    << ", end_slot=" << end_slot << ", start_time=" << start_time.at_unix()
-                   << ", excluded_ext_messages=" << excluded_ext_messages.size() << "}";
+                   << ", excluded_ext_messages=" << excluded_ext_messages.size()
+                   << ", native_source_nonce_floors=" << native_source_nonce_floors.size() << "}";
 }
 
 std::string CandidateGenerated::contents_to_string() const {

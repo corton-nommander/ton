@@ -938,6 +938,9 @@ struct ExtMsgCallback {
   bool sync_only = false;
   bool native_streaming = false;
   std::vector<ExtMessage::Hash> excluded_messages;
+  // Exact speculative-branch view. The pool normalizes this once when the
+  // callback is installed and never publishes it into canonical state.
+  NativeSourceNonceFloors native_source_nonce_floors;
 };
 
 using ValidateCandidateResult = td::Variant<CandidateAccept, CandidateReject>;

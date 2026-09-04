@@ -34,6 +34,34 @@ void merge_external_hashes(std::vector<Bits256>& target, std::vector<Bits256> ad
   target.erase(std::unique(target.begin(), target.end()), target.end());
 }
 
+struct NativeCandidateMetadata {
+  std::vector<Bits256> hashes;
+  NativeSourceNonceFloors nonce_floors;
+};
+
+NativeCandidateMetadata get_native_candidate_metadata(const BlockCandidate& candidate) {
+  // Keep the hash exclusion and nonce-floor projections sourced from the same
+  // decoded metadata.  A malformed nonce interval must only disable the hint:
+  // hash exclusion remains the correctness mechanism and must not be relaxed.
+  auto messages = get_candidate_native_external_messages(candidate).move_as_ok();
+
+  NativeCandidateMetadata result;
+  result.hashes.reserve(messages.size());
+  for (const auto& message : messages) {
+    result.hashes.push_back(message.hash);
+  }
+  std::sort(result.hashes.begin(), result.hashes.end());
+  result.hashes.erase(std::unique(result.hashes.begin(), result.hashes.end()), result.hashes.end());
+
+  auto nonce_floors = get_native_source_nonce_floors(messages);
+  if (nonce_floors.is_error()) {
+    LOG(WARNING) << "Ignoring unusable native source nonce-floor metadata: " << nonce_floors.error();
+  } else {
+    result.nonce_floors = nonce_floors.move_as_ok();
+  }
+  return result;
+}
+
 class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::ConnectsTo<Bus> {
   using ResolvedState = ResolveState::Result;
 
@@ -98,6 +126,7 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     std::optional<ResolvedState> result;
     bool started = false;
     td::uint64 exclusion_epoch = 0;
+    td::uint64 nonce_floor_epoch = 0;
     std::vector<td::Promise<ResolvedState>> promises;
   };
 
@@ -118,14 +147,22 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       td::Result<ResolvedState> result;
       do {
         entry.exclusion_epoch = native_exclusion_epoch_;
+        entry.nonce_floor_epoch = native_nonce_floor_epoch_;
         result = co_await resolve_state_inner(id).wrap();
         if (result.is_ok()) {
           merge_external_hashes(result.ok_ref().excluded_ext_messages, unanchored_finalized_native_hashes_);
+          // Canonical progress is safe for every future branch and is kept
+          // separate from the exact candidate ancestry assembled below.  In
+          // particular, never substitute the locally-finalized fork union.
+          merge_native_source_nonce_floors(result.ok_ref().native_source_nonce_floors,
+                                           canonical_native_source_nonce_floors_);
         }
         // A masterchain notification can release hashes while this recursive
         // resolution is suspended. Re-resolve instead of caching (or returning)
         // a mixture of the old and new canonical branches.
-      } while (result.is_ok() && entry.exclusion_epoch != native_exclusion_epoch_);
+      } while (result.is_ok() &&
+               (entry.exclusion_epoch != native_exclusion_epoch_ ||
+                entry.nonce_floor_epoch != native_nonce_floor_epoch_));
       for (auto& p : entry.promises) {
         p.set_result(result.clone());
       }
@@ -149,7 +186,12 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       auto genesis = co_await genesis_.get();
       auto state = co_await ChainState::from_manager(owning_bus()->manager, owning_bus()->shard,
                                                      genesis->state->block_ids(), genesis->state->min_mc_block_id());
-      co_return ResolvedState{state, std::nullopt, {}};
+      co_return ResolvedState{.state = state,
+                              .gen_utime_exact = std::nullopt,
+                              .excluded_ext_messages = {},
+                              // The stable-epoch wrapper adds separately proven
+                              // canonical floors after this exact ancestry base.
+                              .native_source_nonce_floors = {}};
     }
 
     auto candidate = (co_await owning_bus().publish<ResolveCandidate>(*id)).candidate;
@@ -157,8 +199,7 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       co_return co_await resolve_state(candidate->parent_id);
     }
     auto gen_utime_exact = get_candidate_gen_utime_exact(std::get<BlockCandidate>(candidate->block)).move_as_ok();
-    auto native_hashes =
-        get_candidate_native_external_hashes(std::get<BlockCandidate>(candidate->block)).move_as_ok();
+    auto native_metadata = get_native_candidate_metadata(std::get<BlockCandidate>(candidate->block));
 
     if (is_finalized(*id)) {
       auto genesis = co_await genesis_.get();
@@ -167,16 +208,32 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       // The external-message pool still contains native messages until the
       // exact block is anchored in masterchain. A locally finalized state must
       // therefore carry exclusions just like a speculative parent chain.
-      merge_external_hashes(native_hashes, unanchored_finalized_native_hashes_);
-      co_return ResolvedState{state, gen_utime_exact, std::move(native_hashes)};
+      merge_external_hashes(native_metadata.hashes, unanchored_finalized_native_hashes_);
+
+      // The exact accepted-branch ledger normally contains the whole ancestry.
+      // A restarted validator can know that a candidate was finalized from DB
+      // without having its old native metadata; falling back to this block's
+      // own projection is conservative and cannot skip an unconsumed nonce.
+      auto branch_floors = std::move(native_metadata.nonce_floors);
+      auto accepted_branch = finalized_native_branches_.find(*id);
+      if (accepted_branch != finalized_native_branches_.end() &&
+          accepted_branch->second.block_id == candidate->block_id()) {
+        branch_floors = materialize_finalized_native_branch_floors(*id);
+      }
+      co_return ResolvedState{.state = state,
+                              .gen_utime_exact = gen_utime_exact,
+                              .excluded_ext_messages = std::move(native_metadata.hashes),
+                              .native_source_nonce_floors = std::move(branch_floors)};
     }
 
     auto prev_data_state = co_await resolve_state(candidate->parent_id);
-    merge_external_hashes(prev_data_state.excluded_ext_messages, std::move(native_hashes));
+    merge_external_hashes(prev_data_state.excluded_ext_messages, std::move(native_metadata.hashes));
+    merge_native_source_nonce_floors(prev_data_state.native_source_nonce_floors, native_metadata.nonce_floors);
     co_return ResolvedState{
         .state = prev_data_state.state->apply(std::get<BlockCandidate>(candidate->block)),
         .gen_utime_exact = gen_utime_exact,
         .excluded_ext_messages = std::move(prev_data_state.excluded_ext_messages),
+        .native_source_nonce_floors = std::move(prev_data_state.native_source_nonce_floors),
     };
   }
 
@@ -194,6 +251,16 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     std::vector<Bits256> native_hashes;
   };
 
+  struct FinalizedNativeBranch {
+    BlockIdExt block_id;
+    ParentId parent_id;
+    // Store only this candidate's delta. Materialization follows the exact
+    // CandidateId parent chain, avoiding one cumulative source-vector copy per
+    // finalized block and making the hard record cap an effective memory cap.
+    NativeSourceNonceFloors own_nonce_floors;
+    bool is_full = false;
+  };
+
   // FinalizeBlock means that this validator accepted the candidate locally;
   // it does not yet prove which candidate at this seqno was anchored by the
   // masterchain. Keep all such messages excluded until the exact canonical top
@@ -201,8 +268,116 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
   // hashes without releasing later, still-unanchored candidates.
   std::vector<UnanchoredFinalizedBlock> unanchored_finalized_blocks_;
   std::vector<Bits256> unanchored_finalized_native_hashes_;
+  // Unlike the hash exclusion union above, this ledger is keyed by the exact
+  // consensus ancestry.  Entries from competing candidates are never merged.
+  std::map<CandidateId, FinalizedNativeBranch> finalized_native_branches_;
+  NativeSourceNonceFloors canonical_native_source_nonce_floors_;
   std::optional<BlockIdExt> last_masterchain_finalized_block_;
   td::uint64 native_exclusion_epoch_ = 0;
+  td::uint64 native_nonce_floor_epoch_ = 0;
+
+  void invalidate_resolved_states_for_native_nonce_floors() {
+    ++native_nonce_floor_epoch_;
+    for (auto it = state_cache_.begin(); it != state_cache_.end();) {
+      if (it->second.result) {
+        it = state_cache_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  bool promote_exact_canonical_native_nonce_floors(const BlockIdExt& block_id) {
+    NativeSourceNonceFloors exact_floors;
+    bool found_exact_full_block = false;
+    for (const auto& [candidate_id, branch] : finalized_native_branches_) {
+      if (!branch.is_full || branch.block_id != block_id) {
+        continue;
+      }
+      found_exact_full_block = true;
+      // Duplicate consensus candidates for one full block identify the same
+      // state.  Max-merging their conservative projections remains exact.
+      auto branch_floors = materialize_finalized_native_branch_floors(candidate_id);
+      merge_native_source_nonce_floors(exact_floors, branch_floors);
+    }
+    if (!found_exact_full_block) {
+      return false;
+    }
+
+    merge_native_source_nonce_floors(canonical_native_source_nonce_floors_, exact_floors);
+    LOG(INFO) << "Promoted exact canonical native nonce floors at " << block_id.to_str()
+              << ": sources=" << exact_floors.size()
+              << " canonical_sources=" << canonical_native_source_nonce_floors_.size();
+    return true;
+  }
+
+  NativeSourceNonceFloors materialize_finalized_native_branch_floors(CandidateId candidate_id) const {
+    return materialize_native_branch_floor_chain(
+        finalized_native_branches_, candidate_id, canonical_native_source_nonce_floors_,
+        [](auto& target, const auto& added) { merge_native_source_nonce_floors(target, added); });
+  }
+
+  void bound_finalized_native_branches() {
+    bound_native_branch_records(
+        finalized_native_branches_, native_finalized_branch_record_limit,
+        [&](const auto& record) {
+          return record.second.is_full && last_masterchain_finalized_block_ &&
+                 record.second.block_id == *last_masterchain_finalized_block_;
+        },
+        [](const auto& record) { return record.second.block_id.seqno(); },
+        [](const auto& record) { return record.second.is_full; },
+        [&](const auto& record) {
+          LOG(WARNING) << "Evicting bounded native branch nonce metadata at " << record.second.block_id.to_str()
+                       << ": retained_records=" << finalized_native_branches_.size()
+                       << " limit=" << native_finalized_branch_record_limit;
+        });
+  }
+
+  void record_finalized_native_branch(const CandidateRef& candidate, NativeSourceNonceFloors own_floors) {
+    auto block_id = candidate->block_id();
+    auto is_full = !candidate->is_empty();
+    auto record_action = select_native_branch_record_action(
+        last_masterchain_finalized_block_.has_value(), block_id.seqno(),
+        last_masterchain_finalized_block_ ? last_masterchain_finalized_block_->seqno() : 0,
+        is_full && last_masterchain_finalized_block_ && block_id == *last_masterchain_finalized_block_);
+    if (record_action == NativeBranchRecordAction::discard) {
+      // Late ancestors and same-height losing roots are already decided.
+      // Keeping them could only grow memory or seed obsolete descendants.
+      return;
+    }
+
+    auto [entry, inserted] = finalized_native_branches_.insert_or_assign(
+        candidate->id,
+        FinalizedNativeBranch{.block_id = block_id,
+                              .parent_id = candidate->parent_id,
+                              .own_nonce_floors = std::move(own_floors),
+                              .is_full = is_full});
+    static_cast<void>(inserted);
+
+    // A masterchain notification can arrive while accept_block is suspended.
+    // Only the subsequently accepted full block with the exact root/file hash
+    // may satisfy that pending anchor.  Same-height losing roots and old late
+    // callbacks deliberately leave the canonical floor unchanged.
+    if (record_action == NativeBranchRecordAction::promote_and_discard) {
+      CHECK(entry->second.is_full && last_masterchain_finalized_block_ &&
+            entry->second.block_id == *last_masterchain_finalized_block_);
+      promote_exact_canonical_native_nonce_floors(entry->second.block_id);
+      invalidate_resolved_states_for_native_nonce_floors();
+      finalized_native_branches_.erase(entry);
+      return;
+    }
+    bound_finalized_native_branches();
+  }
+
+  void prune_finalized_native_branches_through(const BlockIdExt& block_id) {
+    for (auto it = finalized_native_branches_.begin(); it != finalized_native_branches_.end();) {
+      if (should_prune_native_branch_record(it->second.block_id.seqno(), block_id.seqno())) {
+        it = finalized_native_branches_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
 
   void release_unanchored_native_hashes_through(const BlockIdExt& block_id) {
     auto first_retained = std::stable_partition(
@@ -287,6 +462,13 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
     }
     last_masterchain_finalized_block_ = block_id;
 
+    // Advance the resolution epoch even when metadata has not arrived yet.
+    // In-flight resolutions retry against the new canonical anchor; a late
+    // exact accept will promote and invalidate once more.
+    promote_exact_canonical_native_nonce_floors(block_id);
+    invalidate_resolved_states_for_native_nonce_floors();
+    prune_finalized_native_branches_through(block_id);
+
     // The canonical top decides the whole prefix, including losing roots at
     // its own height and ancestors finalized late by an overlapping session.
     // Canonical messages are independently purged by ExtMessagePool account
@@ -342,6 +524,14 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
       // survives the publish await for the masterchain-race exclusion guard.
       auto finalized_native_messages =
           get_candidate_native_external_messages(std::get<BlockCandidate>(candidate->block)).move_as_ok();
+      NativeSourceNonceFloors own_native_nonce_floors;
+      auto projected_nonce_floors = get_native_source_nonce_floors(finalized_native_messages);
+      if (projected_nonce_floors.is_error()) {
+        LOG(WARNING) << "Accepting block without unusable native source nonce-floor metadata: "
+                     << projected_nonce_floors.error();
+      } else {
+        own_native_nonce_floors = projected_nonce_floors.move_as_ok();
+      }
       std::vector<Bits256> finalized_native_hashes;
       finalized_native_hashes.reserve(finalized_native_messages.size());
       for (const auto& message : finalized_native_messages) {
@@ -360,11 +550,16 @@ class StateResolverImpl : public td::actor::SpawnsWith<Bus>, public td::actor::C
         sig_set = notar_cert->to_signature_set(candidate, bus);
       }
       co_await owning_bus().publish<FinalizeBlock>(candidate, sig_set, std::move(finalized_native_messages));
+      record_finalized_native_branch(candidate, std::move(own_native_nonce_floors));
       record_unanchored_finalized_native_hashes(candidate->block_id(), std::move(finalized_native_hashes));
     } else {
       if (auto parent = candidate->parent_id) {
         co_await finalize_blocks(*parent, final_cert, final_candidate);
       }
+      // Empty candidates do not introduce a block or nonce progress, but
+      // retaining their exact CandidateId link lets a later full descendant
+      // inherit the native ancestry of the full block they reference.
+      record_finalized_native_branch(candidate, {});
     }
 
     auto key = create_serialize_tl_object<tl::db_key_finalizedBlock>(id.to_tl());

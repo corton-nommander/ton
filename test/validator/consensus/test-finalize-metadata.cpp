@@ -126,6 +126,7 @@ void assert_metadata_equal(const std::vector<TrackedNativeExternalMessage>& actu
     ASSERT_EQ(actual[i].workchain, expected[i].workchain);
     ASSERT_TRUE(actual[i].source == expected[i].source);
     ASSERT_EQ(actual[i].nonce, expected[i].nonce);
+    ASSERT_EQ(actual[i].logical_count, expected[i].logical_count);
   }
 }
 
@@ -262,23 +263,153 @@ TEST(FinalizeMetadataHandoff, ParsesRealCompactNativeBatch) {
   ASSERT_EQ(messages[0].nonce, transfer.nonce);
 }
 
-TEST(FinalizeMetadataHandoff, V5RunTracksParentHashForEveryChildNonce) {
+TEST(FinalizeMetadataHandoff, V5RunTracksOneAtomicParentInterval) {
   auto run = make_native_transfer_run();
   auto candidate = make_native_run_candidate(run);
   auto messages = get_candidate_native_external_messages(candidate).move_as_ok();
   auto parent_hash = run.external_hash().move_as_ok();
 
-  ASSERT_EQ(messages.size(), run.outputs.size());
-  for (std::size_t index = 0; index < messages.size(); ++index) {
-    ASSERT_TRUE(messages[index].hash == parent_hash);
-    ASSERT_EQ(messages[index].workchain, basechainId);
-    ASSERT_TRUE(messages[index].source == run.src);
-    ASSERT_EQ(messages[index].nonce, run.first_nonce + index);
-  }
+  ASSERT_EQ(messages.size(), 1u);
+  ASSERT_TRUE(messages[0].hash == parent_hash);
+  ASSERT_EQ(messages[0].workchain, basechainId);
+  ASSERT_TRUE(messages[0].source == run.src);
+  ASSERT_EQ(messages[0].nonce, run.first_nonce);
+  ASSERT_EQ(messages[0].logical_count, run.outputs.size());
+
+  auto floors = get_native_source_nonce_floors(messages).move_as_ok();
+  ASSERT_EQ(floors.size(), 1u);
+  ASSERT_EQ(floors[0].workchain, basechainId);
+  ASSERT_TRUE(floors[0].source == run.src);
+  ASSERT_EQ(floors[0].next_nonce, run.first_nonce + run.outputs.size());
 
   auto hashes = get_candidate_native_external_hashes(candidate).move_as_ok();
   ASSERT_EQ(hashes.size(), 1u);
   ASSERT_TRUE(hashes[0] == parent_hash);
+}
+
+TEST(FinalizeMetadataHandoff, ProjectsSortedUniqueExclusiveNonceFloors) {
+  ASSERT_TRUE(get_native_source_nonce_floors({}).move_as_ok().empty());
+
+  StdSmcAddress source_a;
+  StdSmcAddress source_b;
+  source_a.as_slice().copy_from(std::string(32, '\x10'));
+  source_b.as_slice().copy_from(std::string(32, '\x20'));
+  std::vector<TrackedNativeExternalMessage> messages{
+      {.hash = Bits256::zero(), .workchain = basechainId, .source = source_b, .nonce = 100, .logical_count = 4},
+      {.hash = Bits256::zero(), .workchain = masterchainId, .source = source_a, .nonce = 90, .logical_count = 3},
+      {.hash = Bits256::zero(), .workchain = basechainId, .source = source_a, .nonce = 40, .logical_count = 2},
+      {.hash = Bits256::zero(), .workchain = basechainId, .source = source_b, .nonce = 98, .logical_count = 9},
+      {.hash = Bits256::zero(), .workchain = basechainId, .source = source_a, .nonce = 41, .logical_count = 8},
+  };
+
+  auto floors = get_native_source_nonce_floors(messages).move_as_ok();
+  ASSERT_EQ(floors.size(), 3u);
+  ASSERT_EQ(floors[0].workchain, masterchainId);
+  ASSERT_TRUE(floors[0].source == source_a);
+  ASSERT_EQ(floors[0].next_nonce, 93u);
+  ASSERT_EQ(floors[1].workchain, basechainId);
+  ASSERT_TRUE(floors[1].source == source_a);
+  ASSERT_EQ(floors[1].next_nonce, 49u);
+  ASSERT_EQ(floors[2].workchain, basechainId);
+  ASSERT_TRUE(floors[2].source == source_b);
+  ASSERT_EQ(floors[2].next_nonce, 107u);
+}
+
+TEST(FinalizeMetadataHandoff, RejectsInvalidNonceFloorIntervals) {
+  auto metadata = make_handoff_metadata();
+  metadata.logical_count = 0;
+  ASSERT_TRUE(get_native_source_nonce_floors({metadata}).is_error());
+
+  metadata.nonce = std::numeric_limits<td::uint64>::max();
+  metadata.logical_count = 1;
+  ASSERT_TRUE(get_native_source_nonce_floors({metadata}).is_error());
+
+  metadata.nonce = std::numeric_limits<td::uint64>::max() - 1;
+  metadata.logical_count = 2;
+  ASSERT_TRUE(get_native_source_nonce_floors({metadata}).is_error());
+
+  metadata.logical_count = 1;
+  auto boundary = get_native_source_nonce_floors({metadata}).move_as_ok();
+  ASSERT_EQ(boundary.size(), 1u);
+  ASSERT_EQ(boundary[0].next_nonce, std::numeric_limits<td::uint64>::max());
+
+  auto run = make_native_transfer_run();
+  run.first_nonce = std::numeric_limits<td::uint64>::max() - 1;
+  ASSERT_TRUE(run.is_valid());
+  auto run_messages = get_candidate_native_external_messages(make_native_run_candidate(run)).move_as_ok();
+  ASSERT_EQ(run_messages.size(), 1u);
+  ASSERT_EQ(run_messages[0].logical_count, 2u);
+  ASSERT_TRUE(get_native_source_nonce_floors(run_messages).is_error());
+}
+
+TEST(FinalizeMetadataHandoff, MergesNonceFloorsByDeterministicMaximum) {
+  StdSmcAddress source_a;
+  StdSmcAddress source_b;
+  source_a.as_slice().copy_from(std::string(32, '\x10'));
+  source_b.as_slice().copy_from(std::string(32, '\x20'));
+  NativeSourceNonceFloors left{
+      {.workchain = basechainId, .source = source_a, .next_nonce = 9},
+      {.workchain = basechainId, .source = source_b, .next_nonce = 11},
+  };
+  NativeSourceNonceFloors right{
+      {.workchain = masterchainId, .source = source_a, .next_nonce = 21},
+      {.workchain = basechainId, .source = source_a, .next_nonce = 13},
+      {.workchain = basechainId, .source = source_b, .next_nonce = 10},
+      {.workchain = basechainId, .source = source_a, .next_nonce = 7},
+  };
+
+  NativeSourceNonceFloors reverse;
+  merge_native_source_nonce_floors(reverse, right);
+  merge_native_source_nonce_floors(left, right);
+  merge_native_source_nonce_floors(reverse, NativeSourceNonceFloors{
+                                                {.workchain = basechainId, .source = source_b, .next_nonce = 11},
+                                                {.workchain = basechainId, .source = source_a, .next_nonce = 9},
+                                            });
+  ASSERT_EQ(left.size(), 3u);
+  ASSERT_EQ(reverse.size(), left.size());
+  for (std::size_t index = 0; index < left.size(); ++index) {
+    ASSERT_EQ(reverse[index].workchain, left[index].workchain);
+    ASSERT_TRUE(reverse[index].source == left[index].source);
+    ASSERT_EQ(reverse[index].next_nonce, left[index].next_nonce);
+  }
+  ASSERT_EQ(left[0].workchain, masterchainId);
+  ASSERT_TRUE(left[0].source == source_a);
+  ASSERT_EQ(left[0].next_nonce, 21u);
+  ASSERT_EQ(left[1].workchain, basechainId);
+  ASSERT_TRUE(left[1].source == source_a);
+  ASSERT_EQ(left[1].next_nonce, 13u);
+  ASSERT_EQ(left[2].workchain, basechainId);
+  ASSERT_TRUE(left[2].source == source_b);
+  ASSERT_EQ(left[2].next_nonce, 11u);
+
+  // A canonical/branch merge that cannot advance any source is the dominant
+  // hot path during recursive state resolution. It must not rebuild the
+  // already normalized target vector.
+  auto dominated = left;
+  const auto* dominated_storage = dominated.data();
+  const auto dominated_capacity = dominated.capacity();
+  merge_native_source_nonce_floors(
+      dominated, NativeSourceNonceFloors{
+                     {.workchain = basechainId, .source = source_a, .next_nonce = 12},
+                     {.workchain = basechainId, .source = source_b, .next_nonce = 10},
+                 });
+  ASSERT_EQ(dominated.data(), dominated_storage);
+  ASSERT_EQ(dominated.capacity(), dominated_capacity);
+  ASSERT_EQ(dominated.size(), left.size());
+  for (std::size_t index = 0; index < left.size(); ++index) {
+    ASSERT_EQ(dominated[index].workchain, left[index].workchain);
+    ASSERT_TRUE(dominated[index].source == left[index].source);
+    ASSERT_EQ(dominated[index].next_nonce, left[index].next_nonce);
+  }
+
+  auto idempotent = left;
+  merge_native_source_nonce_floors(idempotent, idempotent);
+  ASSERT_EQ(idempotent.size(), left.size());
+  for (std::size_t index = 0; index < left.size(); ++index) {
+    ASSERT_EQ(idempotent[index].workchain, left[index].workchain);
+    ASSERT_TRUE(idempotent[index].source == left[index].source);
+    ASSERT_EQ(idempotent[index].next_nonce, left[index].next_nonce);
+  }
 }
 
 TEST(FinalizeMetadataHandoff, MovesValueOwnedMetadataOnlyAfterAccept) {

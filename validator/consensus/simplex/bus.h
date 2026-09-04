@@ -76,6 +76,7 @@ struct ResolveState {
     ChainStateRef state;
     std::optional<double> gen_utime_exact = std::nullopt;
     std::vector<Bits256> excluded_ext_messages;
+    NativeSourceNonceFloors native_source_nonce_floors;
   };
 
   using ReturnType = Result;

@@ -56,6 +56,7 @@ struct OurLeaderWindowStarted {
   td::uint32 end_slot;
   td::Timestamp start_time;
   std::vector<Bits256> excluded_ext_messages;
+  NativeSourceNonceFloors native_source_nonce_floors;
 
   std::string contents_to_string() const;
 };

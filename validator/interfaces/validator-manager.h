@@ -177,6 +177,122 @@ struct CollationStats {
     std::array<Bucket, bucket_count> buckets_{};
   };
 
+  // Logical-entry reasons are mutually exclusive and reconcile exactly to
+  // native_microbatch_delayed. Prebatch counters describe physical work that
+  // never entered native_microbatch_input, so they remain a separate domain.
+  struct NativeDeferralCounters {
+    enum class Reason : td::uint8 {
+      intake_deadline_idle,
+      intake_deadline_fragment,
+      checkpoint_deadline_rollback,
+      checkpoint_hard_preflight,
+      checkpoint_size_preflight,
+      medium_timeout,
+      candidate_headroom,
+      candidate_size_guard,
+      protocol_account_capacity,
+      account_unavailable,
+      account_balance_unrepresentable,
+      state_invalid_fields,
+      state_invalid_signature,
+      state_nonce_mismatch,
+      state_nonce_overflow,
+      state_invalid_source,
+      state_invalid_destination,
+      state_insufficient_balance,
+      state_balance_overflow,
+      count,
+    };
+
+    void add(Reason reason, td::uint64 entries) {
+      entries_[index(reason)] += entries;
+    }
+
+    td::uint64 entries(Reason reason) const {
+      return entries_[index(reason)];
+    }
+
+    td::uint64 total_entries() const {
+      td::uint64 result = 0;
+      for (auto entries : entries_) {
+        result += entries;
+      }
+      return result;
+    }
+
+    void merge(const NativeDeferralCounters& other) {
+      for (std::size_t i = 0; i < reason_count; ++i) {
+        entries_[i] += other.entries_[i];
+      }
+      prebatch_protocol_capacity_requeue_works += other.prebatch_protocol_capacity_requeue_works;
+      prebatch_protocol_capacity_requeue_entries += other.prebatch_protocol_capacity_requeue_entries;
+      prebatch_carryover_requeue_works += other.prebatch_carryover_requeue_works;
+      prebatch_carryover_requeue_entries += other.prebatch_carryover_requeue_entries;
+      prebatch_scalar_decode_retry_works += other.prebatch_scalar_decode_retry_works;
+    }
+
+    void record_protocol_capacity_requeue(td::uint64 entries) {
+      ++prebatch_protocol_capacity_requeue_works;
+      prebatch_protocol_capacity_requeue_entries += entries;
+    }
+
+    void record_carryover_requeue(td::uint64 entries) {
+      ++prebatch_carryover_requeue_works;
+      prebatch_carryover_requeue_entries += entries;
+    }
+
+    void record_scalar_decode_retry() {
+      ++prebatch_scalar_decode_retry_works;
+    }
+
+    std::string to_str() const {
+      return PSTRING()
+             << "native_deferral_intake_deadline_idle_entries=" << entries(Reason::intake_deadline_idle)
+             << " native_deferral_intake_deadline_fragment_entries=" << entries(Reason::intake_deadline_fragment)
+             << " native_deferral_checkpoint_deadline_rollback_entries="
+             << entries(Reason::checkpoint_deadline_rollback)
+             << " native_deferral_checkpoint_hard_preflight_entries=" << entries(Reason::checkpoint_hard_preflight)
+             << " native_deferral_checkpoint_size_preflight_entries=" << entries(Reason::checkpoint_size_preflight)
+             << " native_deferral_medium_timeout_entries=" << entries(Reason::medium_timeout)
+             << " native_deferral_candidate_headroom_entries=" << entries(Reason::candidate_headroom)
+             << " native_deferral_candidate_size_guard_entries=" << entries(Reason::candidate_size_guard)
+             << " native_deferral_protocol_account_capacity_entries=" << entries(Reason::protocol_account_capacity)
+             << " native_deferral_account_unavailable_entries=" << entries(Reason::account_unavailable)
+             << " native_deferral_account_balance_unrepresentable_entries="
+             << entries(Reason::account_balance_unrepresentable)
+             << " native_deferral_state_invalid_fields_entries=" << entries(Reason::state_invalid_fields)
+             << " native_deferral_state_invalid_signature_entries=" << entries(Reason::state_invalid_signature)
+             << " native_deferral_state_nonce_mismatch_entries=" << entries(Reason::state_nonce_mismatch)
+             << " native_deferral_state_nonce_overflow_entries=" << entries(Reason::state_nonce_overflow)
+             << " native_deferral_state_invalid_source_entries=" << entries(Reason::state_invalid_source)
+             << " native_deferral_state_invalid_destination_entries=" << entries(Reason::state_invalid_destination)
+             << " native_deferral_state_insufficient_balance_entries=" << entries(Reason::state_insufficient_balance)
+             << " native_deferral_state_balance_overflow_entries=" << entries(Reason::state_balance_overflow)
+             << " native_prebatch_protocol_capacity_requeue_works=" << prebatch_protocol_capacity_requeue_works
+             << " native_prebatch_protocol_capacity_requeue_entries=" << prebatch_protocol_capacity_requeue_entries
+             << " native_prebatch_carryover_requeue_works=" << prebatch_carryover_requeue_works
+             << " native_prebatch_carryover_requeue_entries=" << prebatch_carryover_requeue_entries
+             << " native_prebatch_scalar_decode_retry_works=" << prebatch_scalar_decode_retry_works;
+    }
+
+    td::uint64 prebatch_protocol_capacity_requeue_works = 0;
+    td::uint64 prebatch_protocol_capacity_requeue_entries = 0;
+    td::uint64 prebatch_carryover_requeue_works = 0;
+    td::uint64 prebatch_carryover_requeue_entries = 0;
+    td::uint64 prebatch_scalar_decode_retry_works = 0;
+
+   private:
+    static constexpr std::size_t reason_count = static_cast<std::size_t>(Reason::count);
+
+    static std::size_t index(Reason reason) {
+      auto result = static_cast<std::size_t>(reason);
+      CHECK(result < reason_count);
+      return result;
+    }
+
+    std::array<td::uint64, reason_count> entries_{};
+  };
+
   BlockIdExt block_id{workchainInvalid, 0, 0, RootHash::zero(), FileHash::zero()};
   td::Status status = td::Status::OK();
 
@@ -328,6 +444,7 @@ struct CollationStats {
   td::uint64 native_deadline_first_fragment_commits = 0;
   td::uint64 native_canonical_accounts_reused = 0;
   bool native_canonical_root_reused = false;
+  NativeDeferralCounters native_deferrals;
   ExternalWaitStats external_wait;
   double wait_externals_time = 0.0;
   double check_load_do_collate_time = -1.0;
@@ -395,6 +512,7 @@ struct CollationStats {
                                    << native_deadline_first_fragment_commits
                                    << " native_canonical_root_reused=" << native_canonical_root_reused
                                    << " native_canonical_accounts_reused=" << native_canonical_accounts_reused;
+    result += PSTRING() << " " << native_deferrals.to_str();
     if (!is_cpu) {
       result += PSTRING() << " " << external_wait.to_str();
     }

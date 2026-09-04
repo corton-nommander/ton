@@ -4725,6 +4725,31 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
                       "so the candidate is nonempty";
     }
   };
+  using NativeDeferralReason = CollationStats::NativeDeferralCounters::Reason;
+  auto native_state_deferral_reason = [](block::NativeTransferStateResult::Code code) {
+    switch (code) {
+      case block::NativeTransferStateResult::invalid_fields:
+        return NativeDeferralReason::state_invalid_fields;
+      case block::NativeTransferStateResult::invalid_signature:
+        return NativeDeferralReason::state_invalid_signature;
+      case block::NativeTransferStateResult::nonce_mismatch:
+        return NativeDeferralReason::state_nonce_mismatch;
+      case block::NativeTransferStateResult::nonce_overflow:
+        return NativeDeferralReason::state_nonce_overflow;
+      case block::NativeTransferStateResult::invalid_source:
+        return NativeDeferralReason::state_invalid_source;
+      case block::NativeTransferStateResult::invalid_destination:
+        return NativeDeferralReason::state_invalid_destination;
+      case block::NativeTransferStateResult::insufficient_balance:
+        return NativeDeferralReason::state_insufficient_balance;
+      case block::NativeTransferStateResult::balance_overflow:
+        return NativeDeferralReason::state_balance_overflow;
+      case block::NativeTransferStateResult::ok:
+      case block::NativeTransferStateResult::expired:
+        UNREACHABLE();
+    }
+    UNREACHABLE();
+  };
 
   // VM dictionary exceptions intentionally do not derive from
   // std::exception.  Preserve their type and message at the native boundary
@@ -4957,7 +4982,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         std::max<td::uint64>(stats_.native_checkpoint_ingress_retention_max_dirty_accounts,
                              pending_checkpoint.dirty_addresses.size());
   };
-  auto rollback_pending_checkpoint = [&]() -> std::size_t {
+  auto rollback_pending_checkpoint = [&](NativeDeferralReason reason) -> std::size_t {
     if (pending_checkpoint.empty()) {
       return 0;
     }
@@ -4981,6 +5006,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     CHECK(stats_.native_microbatch_accepted >= deferred);
     stats_.native_microbatch_accepted -= deferred;
     stats_.native_microbatch_delayed += deferred;
+    stats_.native_deferrals.add(reason, deferred);
     ++stats_.native_checkpoint_rollbacks;
     stats_.native_checkpoint_rollback_entries += deferred;
     pending_checkpoint.clear();
@@ -5123,7 +5149,16 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         ++stats_.native_size_guard_deferrals;
       }
       block_limit_status_->transactions -= static_cast<unsigned>(pending_entries);
-      rollback_pending_checkpoint();
+      const bool first_fragment_deadline = pending_checkpoint.first_fragment_deadline_commit_pending;
+      const auto first_fragment_deadline_deferred = pending_checkpoint.first_fragment_deadline_deferred;
+      rollback_pending_checkpoint(!staged_size_guard_fits ? NativeDeferralReason::checkpoint_size_preflight
+                                                          : NativeDeferralReason::checkpoint_hard_preflight);
+      // A failed checkpoint preflight clears the pending group. Preserve the
+      // already-attributed first-fragment deadline suffix without claiming
+      // that the rejected fragment was committed.
+      if (first_fragment_deadline) {
+        record_deadline_seal(first_fragment_deadline_deferred);
+      }
       full = true;
       if (!staged_size_guard_fits) {
         stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: deferred checkpoint group by candidate size "
@@ -5202,6 +5237,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   std::optional<NativeExternal> carryover_native_work;
   SCOPE_EXIT {
     if (carryover_native_work) {
+      stats_.native_deferrals.record_carryover_requeue(carryover_native_work->logical_count());
       delay_ext_msgs_.emplace_back(carryover_native_work->ext_msg->hash());
     }
   };
@@ -5211,7 +5247,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), !pending_checkpoint.empty());
     if (deadline_action != consensus::NativeIntakeDeadlineAction::continue_work) {
       if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed) {
-        auto deferred = rollback_pending_checkpoint();
+        auto deferred = rollback_pending_checkpoint(NativeDeferralReason::checkpoint_deadline_rollback);
         record_deadline_seal(deferred);
       } else if (deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment) {
         // The first native fragment is always flushed before coalescing can
@@ -5296,6 +5332,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         // This can only happen when the candidate-wide remaining capacity is
         // smaller than the complete work. It must be deferred, never split.
         ++stats_.ext_msgs_rejected;
+        stats_.native_deferrals.record_protocol_capacity_requeue(carryover_native_work->logical_count());
         delay_ext_msgs_.emplace_back(carryover_native_work->ext_msg->hash());
         carryover_native_work.reset();
         protocol_capacity_deferred = true;
@@ -5481,7 +5518,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
                 // A prior exact checkpoint already makes a useful candidate.
                 // Never let a refill wait cross the intake deadline and commit
                 // this unpreflighted group on the normal exit path.
-                auto deferred = rollback_pending_checkpoint();
+                auto deferred = rollback_pending_checkpoint(NativeDeferralReason::checkpoint_deadline_rollback);
                 record_deadline_seal(deferred);
                 break;
               }
@@ -5625,6 +5662,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         if (native_transfer_res->is_error()) {
           LOG(DEBUG) << "native fast path rejected non-native external message";
           ++stats_.ext_msgs_rejected;
+          stats_.native_deferrals.record_scalar_decode_retry();
           delay_ext_msgs_.emplace_back(native_external.ext_msg->hash());
           continue;
         }
@@ -5641,6 +5679,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           logical_fragment_boundary = true;
         } else {
           ++stats_.ext_msgs_rejected;
+          stats_.native_deferrals.record_protocol_capacity_requeue(native_external.logical_count());
           delay_ext_msgs_.emplace_back(native_external.ext_msg->hash());
           protocol_capacity_deferred = true;
           queue_exhausted = true;
@@ -5663,7 +5702,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
 
     if (batch.empty()) {
       if (intake_deadline_before_batch) {
-        auto deferred = rollback_pending_checkpoint();
+        auto deferred = rollback_pending_checkpoint(NativeDeferralReason::checkpoint_deadline_rollback);
         record_deadline_seal(deferred);
         break;
       }
@@ -5729,8 +5768,8 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     };
 
     std::size_t accepted_in_batch = 0;
-    std::size_t delayed_in_batch = 0;
     std::size_t permanent_in_batch = 0;
+    CollationStats::NativeDeferralCounters deferrals_in_batch;
     bool first_fragment_deadline_commit_pending = false;
     std::size_t first_fragment_deadline_deferred = 0;
     bool deadline_seal_current_fragment = false;
@@ -5751,12 +5790,12 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
       return count;
     };
-    auto delay_batch_suffix = [&](std::size_t index) {
+    auto delay_batch_suffix = [&](std::size_t index, NativeDeferralReason reason) {
       for (; index < batch.size(); ++index) {
         // Keep the exact admitted-message identity. A source-signed run is
         // one identity even though it contains several logical transfers.
         delay_ext_msgs_.emplace_back(batch[index].ext_msg->hash());
-        delayed_in_batch += batch[index].logical_count();
+        deferrals_in_batch.add(reason, batch[index].logical_count());
       }
     };
     {
@@ -5767,7 +5806,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           co_return false;
         }
         if (medium_timeout_reached()) {
-          delay_batch_suffix(index);
+          delay_batch_suffix(index, NativeDeferralReason::medium_timeout);
           stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: timeout\n";
           break;
         }
@@ -5777,14 +5816,14 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           // The intake window closed before any first-fragment work became
           // staged. Do not turn a late queue pop into an oversized deadline
           // exception; leave all of it for the next candidate.
-          delay_batch_suffix(index);
+          delay_batch_suffix(index, NativeDeferralReason::intake_deadline_idle);
           stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline idle\n";
           break;
         }
         if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed ||
             deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment) {
           const auto deferred = suffix_logical_count(index);
-          delay_batch_suffix(index);
+          delay_batch_suffix(index, NativeDeferralReason::intake_deadline_fragment);
           if (deadline_action == consensus::NativeIntakeDeadlineAction::commit_first_fragment) {
             first_fragment_deadline_commit_pending = true;
             first_fragment_deadline_deferred += deferred;
@@ -5797,7 +5836,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         }
         if (full || !block_limit_status_->fits(block::ParamLimits::cl_soft)) {
           full = true;
-          delay_batch_suffix(index);
+          delay_batch_suffix(index, NativeDeferralReason::candidate_headroom);
           break;
         }
 
@@ -5827,8 +5866,11 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
             std::min<td::uint64>(block_limit_status_->limits.bytes.soft(), native_estimate_budget);
         if (prospective_estimated_bytes >= speculative_size_limit) {
           full = true;
-          delay_batch_suffix(index);
-          if (!consensus::native_candidate_estimate_fits(prospective_estimated_bytes, consensus_max_block_size)) {
+          const bool size_guard_fits =
+              consensus::native_candidate_estimate_fits(prospective_estimated_bytes, consensus_max_block_size);
+          delay_batch_suffix(index, size_guard_fits ? NativeDeferralReason::candidate_headroom
+                                                    : NativeDeferralReason::candidate_size_guard);
+          if (!size_guard_fits) {
             ++stats_.native_size_guard_deferrals;
             stats_.limits_log += PSTRING() << "NATIVE_FAST_PATH_EXTERNALS: candidate size reserve estimate="
                                            << prospective_estimated_bytes << " budget=" << native_estimate_budget
@@ -5866,6 +5908,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
 
         bool work_deferred = false;
         bool work_permanently_invalid = false;
+        std::optional<NativeDeferralReason> work_deferral_reason;
         for (const auto& transfer : item.transfers) {
           NativeAccountState* src = nullptr;
           if (!run_native_stage("source-account load",
@@ -5891,10 +5934,17 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           }
           if (state_capacity_reached) {
             work_deferred = true;
+            work_deferral_reason = NativeDeferralReason::protocol_account_capacity;
             break;
           }
-          if (!src || !dst || !src->valid_balance || !dst->valid_balance) {
+          if (!src || !dst) {
             work_deferred = true;
+            work_deferral_reason = NativeDeferralReason::account_unavailable;
+            break;
+          }
+          if (!src->valid_balance || !dst->valid_balance) {
+            work_deferred = true;
+            work_deferral_reason = NativeDeferralReason::account_balance_unrepresentable;
             break;
           }
           block::NativeTransferStateInput input{
@@ -5915,6 +5965,9 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           if (result.code != block::NativeTransferStateResult::ok) {
             work_deferred = true;
             work_permanently_invalid = result.code == block::NativeTransferStateResult::expired;
+            if (!work_permanently_invalid) {
+              work_deferral_reason = native_state_deferral_reason(result.code);
+            }
             break;
           }
           journal_work_state(transfer.src, *src);
@@ -5940,12 +5993,13 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
             bad_ext_msgs_.emplace_back(item.ext_msg->hash());
             permanent_in_batch += item.logical_count();
           } else {
+            CHECK(work_deferral_reason.has_value());
             delay_ext_msgs_.emplace_back(item.ext_msg->hash());
-            delayed_in_batch += item.logical_count();
+            deferrals_in_batch.add(*work_deferral_reason, item.logical_count());
           }
           if (state_capacity_reached) {
             full = true;
-            delay_batch_suffix(index + 1);
+            delay_batch_suffix(index + 1, NativeDeferralReason::protocol_account_capacity);
             stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: protocol account-state cap reached\n";
             break;
           }
@@ -5966,7 +6020,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
     }
 
-    auto rollback_accepted_fragment = [&] {
+    auto rollback_accepted_fragment = [&](NativeDeferralReason reason) {
       for (const auto& [address, snapshot] : state_journal) {
         auto& state = native_states.at(address);
         state.balance = snapshot.balance;
@@ -5977,7 +6031,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
       for (auto index : accepted_indices) {
         delay_ext_msgs_.emplace_back(batch[index].ext_msg->hash());
-        delayed_in_batch += batch[index].logical_count();
+        deferrals_in_batch.add(reason, batch[index].logical_count());
       }
       accepted_indices.clear();
       accepted_in_batch = 0;
@@ -5993,7 +6047,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         native_intake_timeout_reached(), !native_transfer_batch_entries_.empty(), !accepted_indices.empty());
     if (deadline_action == consensus::NativeIntakeDeadlineAction::seal_committed) {
       deadline_deferred_in_batch += accepted_in_batch;
-      rollback_accepted_fragment();
+      rollback_accepted_fragment(NativeDeferralReason::intake_deadline_fragment);
       seal_pending_checkpoint_for_deadline = true;
       stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: intake deadline before checkpoint\n";
     }
@@ -6034,9 +6088,11 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
                                                       consensus_max_block_size);
     block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
     ++stats_.native_microbatches;
+    const auto delayed_in_batch = deferrals_in_batch.total_entries();
     stats_.native_microbatch_input += batch_logical_entries;
     stats_.native_microbatch_accepted += accepted_in_batch;
     stats_.native_microbatch_delayed += delayed_in_batch;
+    stats_.native_deferrals.merge(deferrals_in_batch);
     stats_.native_microbatch_permanent += permanent_in_batch;
     stats_.native_microbatch_unique_accounts += state_journal.size();
     stats_.native_microbatch_max_input =
@@ -6054,7 +6110,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
 
     discard_unchanged_native_states();
     if (seal_pending_checkpoint_for_deadline) {
-      auto deferred = rollback_pending_checkpoint();
+      auto deferred = rollback_pending_checkpoint(NativeDeferralReason::checkpoint_deadline_rollback);
       record_deadline_seal(deadline_deferred_in_batch + deferred);
       break;
     }

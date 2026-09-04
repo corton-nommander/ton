@@ -8,6 +8,9 @@ namespace {
 
 using ExternalWaitStats = ton::validator::CollationStats::ExternalWaitStats;
 using ExternalWaitKind = ExternalWaitStats::Kind;
+using NativeDeferralCounters = ton::validator::CollationStats::NativeDeferralCounters;
+using NativeDeferralReason = NativeDeferralCounters::Reason;
+constexpr auto native_deferral_reason_count = static_cast<std::size_t>(NativeDeferralReason::count);
 
 constexpr std::array<const char*, 22> external_wait_keys{
     "external_wait_round_live_s=",
@@ -33,6 +36,33 @@ constexpr std::array<const char*, 22> external_wait_keys{
     "external_wait_accounted_s=",
     "external_wait_calls=",
 };
+
+constexpr std::array<const char*, native_deferral_reason_count> native_deferral_entry_keys{
+    "native_deferral_intake_deadline_idle_entries=",
+    "native_deferral_intake_deadline_fragment_entries=",
+    "native_deferral_checkpoint_deadline_rollback_entries=",
+    "native_deferral_checkpoint_hard_preflight_entries=",
+    "native_deferral_checkpoint_size_preflight_entries=",
+    "native_deferral_medium_timeout_entries=",
+    "native_deferral_candidate_headroom_entries=",
+    "native_deferral_candidate_size_guard_entries=",
+    "native_deferral_protocol_account_capacity_entries=",
+    "native_deferral_account_unavailable_entries=",
+    "native_deferral_account_balance_unrepresentable_entries=",
+    "native_deferral_state_invalid_fields_entries=",
+    "native_deferral_state_invalid_signature_entries=",
+    "native_deferral_state_nonce_mismatch_entries=",
+    "native_deferral_state_nonce_overflow_entries=",
+    "native_deferral_state_invalid_source_entries=",
+    "native_deferral_state_invalid_destination_entries=",
+    "native_deferral_state_insufficient_balance_entries=",
+    "native_deferral_state_balance_overflow_entries=",
+};
+
+bool contains_exact_stat(const std::string& stats, const char* key, td::uint64 value) {
+  auto token = std::string{" "} + key + std::to_string(value) + " ";
+  return stats.find(token) != std::string::npos;
+}
 
 }  // namespace
 
@@ -90,4 +120,48 @@ TEST(CollatorExternalWaitStats, SerializesNativeCheckpointCoalescingTelemetry) {
   ASSERT_TRUE(real_stats.find("native_checkpoint_ingress_retention_max_dirty_accounts=1536") != std::string::npos);
   ASSERT_TRUE(real_stats.find("native_checkpoint_rollbacks=1") != std::string::npos);
   ASSERT_TRUE(real_stats.find("native_checkpoint_rollback_entries=512") != std::string::npos);
+}
+
+TEST(CollatorExternalWaitStats, AccountsAndSerializesNativeDeferrals) {
+  NativeDeferralCounters counters;
+  for (std::size_t i = 0; i < native_deferral_reason_count; ++i) {
+    counters.add(static_cast<NativeDeferralReason>(i), i + 1);
+  }
+  ASSERT_EQ(counters.total_entries(), 190u);
+  counters.record_protocol_capacity_requeue(16);
+  counters.record_carryover_requeue(8);
+  counters.record_scalar_decode_retry();
+
+  NativeDeferralCounters additional;
+  for (std::size_t i = 0; i < native_deferral_reason_count; ++i) {
+    additional.add(static_cast<NativeDeferralReason>(i), (i + 1) * 10);
+  }
+  additional.record_protocol_capacity_requeue(4);
+  additional.record_carryover_requeue(3);
+  additional.record_scalar_decode_retry();
+  counters.merge(additional);
+
+  ASSERT_EQ(counters.total_entries(), 2'090u);
+  for (std::size_t i = 0; i < native_deferral_reason_count; ++i) {
+    ASSERT_EQ(counters.entries(static_cast<NativeDeferralReason>(i)), (i + 1) * 11);
+  }
+  ASSERT_EQ(counters.prebatch_protocol_capacity_requeue_works, 2u);
+  ASSERT_EQ(counters.prebatch_protocol_capacity_requeue_entries, 20u);
+  ASSERT_EQ(counters.prebatch_carryover_requeue_works, 2u);
+  ASSERT_EQ(counters.prebatch_carryover_requeue_entries, 11u);
+  ASSERT_EQ(counters.prebatch_scalar_decode_retry_works, 2u);
+
+  ton::validator::CollationStats stats;
+  stats.native_deferrals = counters;
+  stats.native_microbatch_delayed = counters.total_entries();
+  auto real_stats = stats.work_time_to_str(false);
+  ASSERT_TRUE(contains_exact_stat(real_stats, "native_microbatch_delayed=", counters.total_entries()));
+  for (std::size_t i = 0; i < native_deferral_reason_count; ++i) {
+    ASSERT_TRUE(contains_exact_stat(real_stats, native_deferral_entry_keys[i], (i + 1) * 11));
+  }
+  ASSERT_TRUE(contains_exact_stat(real_stats, "native_prebatch_protocol_capacity_requeue_works=", 2));
+  ASSERT_TRUE(contains_exact_stat(real_stats, "native_prebatch_protocol_capacity_requeue_entries=", 20));
+  ASSERT_TRUE(contains_exact_stat(real_stats, "native_prebatch_carryover_requeue_works=", 2));
+  ASSERT_TRUE(contains_exact_stat(real_stats, "native_prebatch_carryover_requeue_entries=", 11));
+  ASSERT_TRUE(contains_exact_stat(real_stats, "native_prebatch_scalar_decode_retry_works=", 2));
 }

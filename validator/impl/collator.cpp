@@ -44,6 +44,7 @@
 #include "candidate-serializer.h"
 #include "collator-impl.h"
 #include "fabric.h"
+#include "native-work-scratch.h"
 #include "storage-stat-cache.hpp"
 #include "top-shard-descr.hpp"
 
@@ -4809,6 +4810,8 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     bool is_native{false};
     bool changed{false};
   };
+  using NativeWorkScratch =
+      detail::NativeWorkScratch<NativeAccountSnapshot, 2 * block::NativeTransferRun::max_entries>;
   struct NativeAddressHash {
     NativeAddressHash() : seed_(td::Random::secure_uint64()) {
     }
@@ -5805,7 +5808,9 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     };
     {
       td::ScopedRealCpuTimer timer{stats_.work_time.native_execute};
+      NativeWorkScratch work_scratch;
       for (std::size_t index = 0; index < batch.size(); ++index) {
+        work_scratch.clear();
         auto& item = batch[index];
         if (!check_cancelled()) {
           co_return false;
@@ -5848,17 +5853,17 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         // Reserve the complete signed work before touching any state. This
         // is what prevents a capacity or proof guard from accepting only a
         // prefix of an NTRN interval.
-        std::set<StdSmcAddress> work_dirty_addresses;
         for (const auto& transfer : item.transfers) {
-          work_dirty_addresses.insert(transfer.src);
-          work_dirty_addresses.insert(transfer.dst);
+          if (!work_scratch.add_address(transfer.src) || !work_scratch.add_address(transfer.dst)) {
+            co_return fatal_error("native signed work exceeds bounded account scratch capacity");
+          }
         }
         std::size_t new_dirty_accounts = 0;
-        for (const auto& address : work_dirty_addresses) {
+        work_scratch.for_each_address([&](const StdSmcAddress& address) {
           if (!pending_checkpoint.dirty_addresses.contains(address) && !dirty_addresses.contains(address)) {
             ++new_dirty_accounts;
           }
-        }
+        });
         auto prospective_deferred_bytes =
             static_cast<td::uint64>(pending_checkpoint.logical_entries + accepted_in_batch + item.logical_count()) *
                 NATIVE_DEFERRED_ENTRY_CHARGE_BYTES +
@@ -5890,25 +5895,24 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         // output may touch a source/destination already changed by earlier
         // outputs, but any later failure restores the complete signed run to
         // the state seen before its first output.
-        std::map<StdSmcAddress, NativeAccountSnapshot> work_journal;
         auto journal_work_state = [&](const StdSmcAddress& address, const NativeAccountState& state) {
-          work_journal.try_emplace(address, NativeAccountSnapshot{
-                                                 .balance = state.balance,
-                                                 .nonce = state.nonce,
-                                                 .status = state.status,
-                                                 .is_native = state.is_native,
-                                                 .changed = state.changed,
-                                             });
+          CHECK(work_scratch.capture_before(address, NativeAccountSnapshot{
+                                                         .balance = state.balance,
+                                                         .nonce = state.nonce,
+                                                         .status = state.status,
+                                                         .is_native = state.is_native,
+                                                         .changed = state.changed,
+                                                     }));
         };
         auto rollback_work = [&] {
-          for (const auto& [address, snapshot] : work_journal) {
+          work_scratch.for_each_snapshot([&](const StdSmcAddress& address, const NativeAccountSnapshot& snapshot) {
             auto& state = native_states.at(address);
             state.balance = snapshot.balance;
             state.nonce = snapshot.nonce;
             state.status = snapshot.status;
             state.is_native = snapshot.is_native;
             state.changed = snapshot.changed;
-          }
+          });
         };
 
         bool work_deferred = false;
@@ -6011,15 +6015,15 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           continue;
         }
 
-        for (const auto& [address, snapshot] : work_journal) {
+        work_scratch.for_each_snapshot([&](const StdSmcAddress& address, const NativeAccountSnapshot& snapshot) {
           state_journal.try_emplace(address, snapshot);
-        }
-        for (const auto& address : work_dirty_addresses) {
+        });
+        work_scratch.for_each_address([&](const StdSmcAddress& address) {
           if (!pending_checkpoint.dirty_addresses.contains(address) && !dirty_addresses.contains(address)) {
             ++local_dirty_addresses_not_in_pending;
           }
           dirty_addresses.insert(address);
-        }
+        });
         accepted_indices.push_back(index);
         accepted_in_batch += item.logical_count();
       }

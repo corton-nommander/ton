@@ -5,6 +5,11 @@ target_include_directories(test-native-admission-batch PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(test-native-admission-batch PRIVATE td-test-main tdutils ton_validator)
 ton_test(test-native-admission-batch)
 
+add_executable(test-native-work-scratch test-native-work-scratch.cpp)
+target_include_directories(test-native-work-scratch PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/crypto)
+target_link_libraries(test-native-work-scratch PRIVATE td-test-main tdutils ton_crypto_core)
+ton_test(test-native-work-scratch)
+
 add_executable(test-external-message-routing test-external-message-routing.cpp)
 target_include_directories(test-external-message-routing PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
                                                              ${CMAKE_SOURCE_DIR}/common

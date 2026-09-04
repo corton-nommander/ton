@@ -345,6 +345,166 @@ constexpr PhysicalLogicalMessageCounts source_issue_burst_message_counts(
   return {source_signed_run ? std::uint64_t{1} : logical_transfers, logical_transfers};
 }
 
+constexpr std::uint32_t canonical_lane_equal_share_bps = 10000;
+constexpr std::uint32_t default_canonical_lane_tolerance_bps = 500;
+constexpr std::uint32_t max_canonical_lane_depth = 60;
+
+// TON-free policy evidence for canonical per-lane reporting. Counts are
+// measured over the same proof-anchored whole-second cohort as the aggregate;
+// this helper only checks topology, reconciliation, activity, and balance.
+struct CanonicalLaneBalanceSummary {
+  bool required{false};
+  bool valid{false};
+  bool depth_valid{true};
+  bool tolerance_valid{true};
+  bool topology_complete{false};
+  bool totals_reconcile{false};
+  bool every_lane_active{false};
+  bool within_tolerance{false};
+  bool measured_transfers_sum_overflow{false};
+  std::uint32_t depth{0};
+  std::uint32_t tolerance_bps{default_canonical_lane_tolerance_bps};
+  std::uint32_t minimum_allowed_equal_share_bps{canonical_lane_equal_share_bps -
+                                                 default_canonical_lane_tolerance_bps};
+  std::uint32_t maximum_allowed_equal_share_bps{canonical_lane_equal_share_bps +
+                                                 default_canonical_lane_tolerance_bps};
+  std::uint64_t expected_lanes{0};
+  std::uint64_t observed_lanes{0};
+  std::uint64_t aggregate_measured_transfers{0};
+  std::uint64_t measured_transfers_sum{0};
+  std::uint64_t min_measured_transfers{0};
+  std::uint64_t max_measured_transfers{0};
+  std::uint64_t min_equal_share_bps{0};
+  std::uint64_t max_equal_share_bps{0};
+};
+
+namespace detail {
+
+// Compare a*b*c with d*e without allowing either product to wrap. The right
+// side always fits uint128 because it has only two uint64 factors. If the left
+// side exceeds uint128, it is therefore strictly greater than the right side.
+inline int compare_three_factor_product(std::uint64_t a, std::uint64_t b, std::uint64_t c,
+                                        std::uint64_t d, std::uint64_t e) {
+  using Wide = unsigned __int128;
+  constexpr auto wide_max = ~static_cast<Wide>(0);
+  Wide left = a;
+  if ((b != 0 && left > wide_max / b)) {
+    return 1;
+  }
+  left *= b;
+  if ((c != 0 && left > wide_max / c)) {
+    return 1;
+  }
+  left *= c;
+  auto right = static_cast<Wide>(d) * e;
+  if (left < right) {
+    return -1;
+  }
+  return left > right ? 1 : 0;
+}
+
+inline std::uint64_t equal_share_bps(std::uint64_t measured_transfers,
+                                     std::uint64_t expected_lanes,
+                                     std::uint64_t aggregate_measured_transfers) {
+  if (aggregate_measured_transfers == 0) {
+    return 0;
+  }
+  constexpr auto result_max = std::numeric_limits<std::uint64_t>::max();
+  if (compare_three_factor_product(measured_transfers, expected_lanes,
+                                   canonical_lane_equal_share_bps,
+                                   aggregate_measured_transfers, result_max) > 0) {
+    return result_max;
+  }
+  using Wide = unsigned __int128;
+  auto numerator = static_cast<Wide>(measured_transfers) * expected_lanes *
+                   canonical_lane_equal_share_bps;
+  return static_cast<std::uint64_t>(numerator / aggregate_measured_transfers);
+}
+
+}  // namespace detail
+
+inline CanonicalLaneBalanceSummary summarize_canonical_lane_balance(
+    std::uint32_t depth, std::uint64_t aggregate_measured_transfers,
+    const std::vector<std::uint64_t>& lane_measured_transfers,
+    std::uint32_t tolerance_bps = default_canonical_lane_tolerance_bps) {
+  CanonicalLaneBalanceSummary result;
+  result.required = depth > 0;
+  result.depth = depth;
+  result.tolerance_bps = tolerance_bps;
+  result.depth_valid = depth <= max_canonical_lane_depth;
+  result.tolerance_valid = tolerance_bps <= canonical_lane_equal_share_bps;
+  if (result.tolerance_valid) {
+    result.minimum_allowed_equal_share_bps = canonical_lane_equal_share_bps - tolerance_bps;
+    result.maximum_allowed_equal_share_bps = canonical_lane_equal_share_bps + tolerance_bps;
+  }
+  result.observed_lanes = static_cast<std::uint64_t>(lane_measured_transfers.size());
+  result.aggregate_measured_transfers = aggregate_measured_transfers;
+
+  if (!lane_measured_transfers.empty()) {
+    result.min_measured_transfers = lane_measured_transfers.front();
+    result.max_measured_transfers = lane_measured_transfers.front();
+  }
+  for (auto measured_transfers : lane_measured_transfers) {
+    result.min_measured_transfers = std::min(result.min_measured_transfers, measured_transfers);
+    result.max_measured_transfers = std::max(result.max_measured_transfers, measured_transfers);
+    if (result.measured_transfers_sum_overflow ||
+        result.measured_transfers_sum >
+            std::numeric_limits<std::uint64_t>::max() - measured_transfers) {
+      result.measured_transfers_sum_overflow = true;
+      result.measured_transfers_sum = std::numeric_limits<std::uint64_t>::max();
+    } else {
+      result.measured_transfers_sum += measured_transfers;
+    }
+  }
+  result.totals_reconcile = !result.measured_transfers_sum_overflow &&
+                            result.measured_transfers_sum == aggregate_measured_transfers;
+
+  // Scalar mode has no lane-balance requirement and therefore cannot provide
+  // a valid lane-balance proof. Callers gate only when `required` is true.
+  if (!result.required) {
+    return result;
+  }
+
+  if (!result.depth_valid || !result.tolerance_valid) {
+    result.valid = false;
+    result.topology_complete = false;
+    result.every_lane_active = false;
+    result.within_tolerance = false;
+    return result;
+  }
+
+  result.expected_lanes = std::uint64_t{1} << depth;
+  result.topology_complete = result.observed_lanes == result.expected_lanes;
+  result.every_lane_active = result.topology_complete &&
+                             std::all_of(lane_measured_transfers.begin(), lane_measured_transfers.end(),
+                                         [](std::uint64_t count) { return count != 0; });
+  result.within_tolerance = result.topology_complete && aggregate_measured_transfers != 0;
+
+  if (aggregate_measured_transfers != 0) {
+    result.min_equal_share_bps = detail::equal_share_bps(
+        result.min_measured_transfers, result.expected_lanes, aggregate_measured_transfers);
+    result.max_equal_share_bps = detail::equal_share_bps(
+        result.max_measured_transfers, result.expected_lanes, aggregate_measured_transfers);
+  }
+
+  if (result.within_tolerance) {
+    for (auto measured_transfers : lane_measured_transfers) {
+      if (detail::compare_three_factor_product(
+              measured_transfers, result.expected_lanes, canonical_lane_equal_share_bps,
+              aggregate_measured_transfers, result.minimum_allowed_equal_share_bps) < 0 ||
+          detail::compare_three_factor_product(
+              measured_transfers, result.expected_lanes, canonical_lane_equal_share_bps,
+              aggregate_measured_transfers, result.maximum_allowed_equal_share_bps) > 0) {
+        result.within_tolerance = false;
+        break;
+      }
+    }
+  }
+  result.valid = result.topology_complete && result.totals_reconcile &&
+                 result.every_lane_active && result.within_tolerance;
+  return result;
+}
+
 // A NativeTransferRun has one source signature for a contiguous, ordered
 // nonce interval. Keep this small model independent from the wire codec so
 // generator policy tests can protect dispatcher range rules without needing

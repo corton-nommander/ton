@@ -472,3 +472,154 @@ TEST(NativeLoadGeneratorPolicy, SubmitCoalescerCannotStarveAfterDeadline) {
   ASSERT_TRUE(std::abs(coalescer.deadline() - 42.020) < 1e-9);
   ASSERT_TRUE(coalescer.release_reason(42.010, 1, 64, false) == native_load::SubmitCoalescer::ReleaseReason::blocked);
 }
+
+TEST(NativeLoadGeneratorPolicy, CanonicalLaneBalanceAcceptsPerfectCompleteTopology) {
+  auto balance = native_load::summarize_canonical_lane_balance(2, 400, {100, 100, 100, 100});
+
+  ASSERT_TRUE(balance.required);
+  ASSERT_TRUE(balance.valid);
+  ASSERT_TRUE(balance.depth_valid);
+  ASSERT_TRUE(balance.tolerance_valid);
+  ASSERT_TRUE(balance.topology_complete);
+  ASSERT_TRUE(balance.totals_reconcile);
+  ASSERT_TRUE(balance.every_lane_active);
+  ASSERT_TRUE(balance.within_tolerance);
+  ASSERT_TRUE(!balance.measured_transfers_sum_overflow);
+  ASSERT_EQ(balance.depth, 2u);
+  ASSERT_EQ(balance.expected_lanes, 4u);
+  ASSERT_EQ(balance.observed_lanes, 4u);
+  ASSERT_EQ(balance.aggregate_measured_transfers, 400u);
+  ASSERT_EQ(balance.measured_transfers_sum, 400u);
+  ASSERT_EQ(balance.min_measured_transfers, 100u);
+  ASSERT_EQ(balance.max_measured_transfers, 100u);
+  ASSERT_EQ(balance.min_equal_share_bps, 10000u);
+  ASSERT_EQ(balance.max_equal_share_bps, 10000u);
+  ASSERT_EQ(balance.minimum_allowed_equal_share_bps, 9500u);
+  ASSERT_EQ(balance.maximum_allowed_equal_share_bps, 10500u);
+}
+
+TEST(NativeLoadGeneratorPolicy, CanonicalLaneBalanceRejectsMissingAndStarvedLanes) {
+  auto missing = native_load::summarize_canonical_lane_balance(2, 300, {100, 100, 100});
+  ASSERT_TRUE(!missing.valid);
+  ASSERT_TRUE(!missing.topology_complete);
+  ASSERT_TRUE(missing.totals_reconcile);
+  ASSERT_TRUE(!missing.every_lane_active);
+  ASSERT_TRUE(!missing.within_tolerance);
+  ASSERT_EQ(missing.expected_lanes, 4u);
+  ASSERT_EQ(missing.observed_lanes, 3u);
+
+  auto starved = native_load::summarize_canonical_lane_balance(2, 300, {0, 100, 100, 100});
+  ASSERT_TRUE(!starved.valid);
+  ASSERT_TRUE(starved.topology_complete);
+  ASSERT_TRUE(starved.totals_reconcile);
+  ASSERT_TRUE(!starved.every_lane_active);
+  ASSERT_TRUE(!starved.within_tolerance);
+  ASSERT_EQ(starved.min_measured_transfers, 0u);
+  ASSERT_EQ(starved.min_equal_share_bps, 0u);
+}
+
+TEST(NativeLoadGeneratorPolicy, CanonicalLaneBalanceRejectsAggregateMismatch) {
+  auto balance = native_load::summarize_canonical_lane_balance(2, 399, {100, 100, 100, 100});
+
+  ASSERT_TRUE(!balance.valid);
+  ASSERT_TRUE(balance.topology_complete);
+  ASSERT_TRUE(!balance.totals_reconcile);
+  ASSERT_TRUE(balance.every_lane_active);
+  ASSERT_TRUE(balance.within_tolerance);
+  ASSERT_EQ(balance.measured_transfers_sum, 400u);
+  ASSERT_EQ(balance.aggregate_measured_transfers, 399u);
+}
+
+TEST(NativeLoadGeneratorPolicy, CanonicalLaneBalanceToleranceBoundariesAreInclusive) {
+  auto boundary = native_load::summarize_canonical_lane_balance(
+      2, 40000, {9500, 9500, 10500, 10500});
+  ASSERT_TRUE(boundary.valid);
+  ASSERT_TRUE(boundary.within_tolerance);
+  ASSERT_EQ(boundary.min_equal_share_bps, 9500u);
+  ASSERT_EQ(boundary.max_equal_share_bps, 10500u);
+
+  auto below = native_load::summarize_canonical_lane_balance(
+      2, 40000, {9499, 10167, 10167, 10167});
+  ASSERT_TRUE(!below.valid);
+  ASSERT_TRUE(!below.within_tolerance);
+  ASSERT_EQ(below.min_equal_share_bps, 9499u);
+  ASSERT_EQ(below.max_equal_share_bps, 10167u);
+
+  auto above = native_load::summarize_canonical_lane_balance(
+      2, 40000, {10501, 9833, 9833, 9833});
+  ASSERT_TRUE(!above.valid);
+  ASSERT_TRUE(!above.within_tolerance);
+  ASSERT_EQ(above.min_equal_share_bps, 9833u);
+  ASSERT_EQ(above.max_equal_share_bps, 10501u);
+}
+
+TEST(NativeLoadGeneratorPolicy, CanonicalLaneBalanceDepthZeroNeverGates) {
+  auto balance = native_load::summarize_canonical_lane_balance(0, 7, {3});
+
+  ASSERT_TRUE(!balance.required);
+  ASSERT_TRUE(!balance.valid);
+  ASSERT_TRUE(balance.depth_valid);
+  ASSERT_TRUE(!balance.topology_complete);
+  ASSERT_TRUE(!balance.every_lane_active);
+  ASSERT_TRUE(!balance.within_tolerance);
+  ASSERT_EQ(balance.expected_lanes, 0u);
+  ASSERT_EQ(balance.observed_lanes, 1u);
+  ASSERT_TRUE(!balance.totals_reconcile);
+}
+
+TEST(NativeLoadGeneratorPolicy, CanonicalLaneBalanceDepthBoundsAreShiftSafe) {
+  auto deepest = native_load::summarize_canonical_lane_balance(60, 0, {});
+  ASSERT_TRUE(deepest.required);
+  ASSERT_TRUE(deepest.depth_valid);
+  ASSERT_TRUE(!deepest.valid);
+  ASSERT_EQ(deepest.expected_lanes, std::uint64_t{1} << 60);
+  ASSERT_EQ(deepest.observed_lanes, 0u);
+
+  auto invalid = native_load::summarize_canonical_lane_balance(61, 0, {});
+  ASSERT_TRUE(invalid.required);
+  ASSERT_TRUE(!invalid.depth_valid);
+  ASSERT_TRUE(!invalid.valid);
+  ASSERT_EQ(invalid.expected_lanes, 0u);
+
+  auto far_invalid = native_load::summarize_canonical_lane_balance(
+      std::numeric_limits<std::uint32_t>::max(), 0, {});
+  ASSERT_TRUE(!far_invalid.depth_valid);
+  ASSERT_TRUE(!far_invalid.valid);
+  ASSERT_EQ(far_invalid.expected_lanes, 0u);
+}
+
+TEST(NativeLoadGeneratorPolicy, CanonicalLaneBalanceUsesOverflowSafeIntegerMath) {
+  constexpr auto max = std::numeric_limits<std::uint64_t>::max();
+  auto balanced = native_load::summarize_canonical_lane_balance(
+      1, max, {max / 2, max - max / 2});
+  ASSERT_TRUE(balanced.valid);
+  ASSERT_TRUE(balanced.totals_reconcile);
+  ASSERT_TRUE(!balanced.measured_transfers_sum_overflow);
+  ASSERT_EQ(balanced.measured_transfers_sum, max);
+  ASSERT_TRUE(balanced.min_equal_share_bps >= 9500);
+  ASSERT_TRUE(balanced.max_equal_share_bps <= 10500);
+
+  auto overflowing_sum = native_load::summarize_canonical_lane_balance(1, max, {max, max});
+  ASSERT_TRUE(!overflowing_sum.valid);
+  ASSERT_TRUE(overflowing_sum.measured_transfers_sum_overflow);
+  ASSERT_TRUE(!overflowing_sum.totals_reconcile);
+  ASSERT_EQ(overflowing_sum.measured_transfers_sum, max);
+}
+
+TEST(NativeLoadGeneratorPolicy, CanonicalLaneBalanceIsOrderIndependent) {
+  auto first = native_load::summarize_canonical_lane_balance(
+      2, 40000, {9500, 10500, 10000, 10000});
+  auto second = native_load::summarize_canonical_lane_balance(
+      2, 40000, {10000, 9500, 10000, 10500});
+
+  ASSERT_EQ(first.valid, second.valid);
+  ASSERT_EQ(first.topology_complete, second.topology_complete);
+  ASSERT_EQ(first.totals_reconcile, second.totals_reconcile);
+  ASSERT_EQ(first.every_lane_active, second.every_lane_active);
+  ASSERT_EQ(first.within_tolerance, second.within_tolerance);
+  ASSERT_EQ(first.measured_transfers_sum, second.measured_transfers_sum);
+  ASSERT_EQ(first.min_measured_transfers, second.min_measured_transfers);
+  ASSERT_EQ(first.max_measured_transfers, second.max_measured_transfers);
+  ASSERT_EQ(first.min_equal_share_bps, second.min_equal_share_bps);
+  ASSERT_EQ(first.max_equal_share_bps, second.max_equal_share_bps);
+}

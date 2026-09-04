@@ -583,6 +583,34 @@ struct CanonicalFollowerStats {
   td::uint64 max_lag_blocks{0};
 };
 
+// Canonical lane accounting deliberately contains only counters attributed to
+// proof-checked shard blocks. Transport/retry/reorg counters remain global to
+// the follower because they cannot be assigned to a successfully committed
+// lane. A poll builds one delta per authenticated leaf and merges those deltas
+// only after every changed leaf reaches its previously committed tip.
+struct CanonicalShardStats {
+  td::uint64 blocks{0};
+  td::uint64 native_blocks{0};
+  td::uint64 measured_native_blocks{0};
+  td::uint64 native_transfers{0};
+  td::uint64 measured_native_transfers{0};
+  td::uint64 max_native_transfers_per_block{0};
+  td::uint64 measured_max_native_transfers_per_block{0};
+
+  void merge(const CanonicalShardStats& other) {
+    blocks += other.blocks;
+    native_blocks += other.native_blocks;
+    measured_native_blocks += other.measured_native_blocks;
+    native_transfers += other.native_transfers;
+    measured_native_transfers += other.measured_native_transfers;
+    max_native_transfers_per_block =
+        std::max(max_native_transfers_per_block, other.max_native_transfers_per_block);
+    measured_max_native_transfers_per_block =
+        std::max(measured_max_native_transfers_per_block,
+                 other.measured_max_native_transfers_per_block);
+  }
+};
+
 class NativeLoadCoordinator;
 
 class NativeLoadWorker final : public td::actor::Actor {
@@ -1122,7 +1150,9 @@ class NativeLoadCoordinator final : public td::actor::Actor {
   double follower_topology_wait_at_{0.0};
   double follower_poll_started_system_at_{0.0};
   std::map<ton::ShardIdFull, ton::BlockIdExt> followed_shard_blocks_;
+  std::map<ton::ShardIdFull, CanonicalShardStats> canonical_shard_stats_;
   std::map<ton::ShardIdFull, ShardFollowPath> follower_paths_;
+  std::map<ton::ShardIdFull, CanonicalShardStats> follower_poll_shard_deltas_;
   td::uint64 follower_poll_generation_{0};
   ton::BlockIdExt startup_discovery_mc_block_;
   std::vector<std::vector<CanonicalTransferObservation>> follower_observations_;
@@ -1424,6 +1454,36 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     return total;
   }
 
+  CanonicalShardStats aggregate_canonical_shard_stats() const {
+    CanonicalShardStats total;
+    for (const auto& [shard, stats] : canonical_shard_stats_) {
+      static_cast<void>(shard);
+      total.merge(stats);
+    }
+    return total;
+  }
+
+  bool canonical_shard_stats_reconcile() const {
+    if (canonical_shard_stats_.size() != followed_shard_blocks_.size()) {
+      return false;
+    }
+    for (const auto& [shard, tip] : followed_shard_blocks_) {
+      static_cast<void>(tip);
+      if (canonical_shard_stats_.find(shard) == canonical_shard_stats_.end()) {
+        return false;
+      }
+    }
+    const auto total = aggregate_canonical_shard_stats();
+    return total.blocks == follower_stats_.blocks &&
+           total.native_blocks == follower_stats_.native_blocks &&
+           total.measured_native_blocks == follower_stats_.measured_native_blocks &&
+           total.native_transfers == follower_stats_.native_transfers &&
+           total.measured_native_transfers == follower_stats_.measured_native_transfers &&
+           total.max_native_transfers_per_block == follower_stats_.max_native_transfers_per_block &&
+           total.measured_max_native_transfers_per_block ==
+               follower_stats_.measured_max_native_transfers_per_block;
+  }
+
   std::string phase(double now, const WorkerStats& total) const {
     if (total.sending_done) {
       return "drain";
@@ -1474,6 +1534,39 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         canonical_measure_blocks_peak_1s = std::max(canonical_measure_blocks_peak_1s, blocks);
       }
     }
+    std::vector<std::uint64_t> canonical_lane_measured_transfers;
+    canonical_lane_measured_transfers.reserve(canonical_shard_stats_.size());
+    bool canonical_lane_prefixes_exact = options_.native_payment_lane_depth == 0;
+    if (options_.native_payment_lane_depth != 0) {
+      canonical_lane_prefixes_exact =
+          std::all_of(canonical_shard_stats_.begin(), canonical_shard_stats_.end(),
+                      [this](const auto& item) {
+                        return item.first.pfx_len() ==
+                               static_cast<int>(options_.native_payment_lane_depth);
+                      });
+    }
+    for (const auto& [shard, stats] : canonical_shard_stats_) {
+      static_cast<void>(shard);
+      canonical_lane_measured_transfers.push_back(stats.measured_native_transfers);
+    }
+    const auto canonical_lane_policy = native_load::summarize_canonical_lane_balance(
+        options_.native_payment_lane_depth, follower_stats_.measured_native_transfers,
+        canonical_lane_measured_transfers);
+    const bool canonical_lane_aggregate_reconciled = canonical_shard_stats_reconcile();
+    const bool canonical_lane_keys_match =
+        canonical_shard_stats_.size() == followed_shard_blocks_.size() &&
+        std::all_of(canonical_shard_stats_.begin(), canonical_shard_stats_.end(),
+                    [this](const auto& item) {
+                      return followed_shard_blocks_.find(item.first) != followed_shard_blocks_.end();
+                    });
+    const bool canonical_lane_topology_complete =
+        canonical_lane_policy.topology_complete && canonical_lane_prefixes_exact &&
+        canonical_lane_keys_match;
+    const bool canonical_lane_totals_reconcile =
+        canonical_lane_policy.totals_reconcile && canonical_lane_aggregate_reconciled;
+    const bool canonical_lane_balance_valid =
+        canonical_lane_policy.valid && canonical_lane_topology_complete &&
+        canonical_lane_totals_reconcile;
     auto interval = std::max(0.000001, now - last_report_at_);
     auto rate = [interval](td::uint64 current, td::uint64 previous) {
       return static_cast<double>(current - previous) / interval;
@@ -1516,12 +1609,30 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     std::vector<const char*> completion_reasons;
     std::vector<const char*> ingress_capacity_reasons;
     std::vector<const char*> chain_capacity_reasons;
+    std::vector<const char*> canonical_lane_balance_reasons;
     auto append_reason = [](std::vector<const char*>& reasons, bool condition,
                             const char* reason) {
       if (condition) {
         reasons.push_back(reason);
       }
     };
+    if (canonical_lane_policy.required) {
+      append_reason(canonical_lane_balance_reasons, !canonical_lane_policy.depth_valid,
+                    "invalid_lane_depth");
+      append_reason(canonical_lane_balance_reasons, !canonical_lane_policy.tolerance_valid,
+                    "invalid_lane_tolerance");
+      append_reason(canonical_lane_balance_reasons, !canonical_lane_topology_complete,
+                    "incomplete_lane_topology");
+      append_reason(canonical_lane_balance_reasons, !canonical_lane_totals_reconcile,
+                    "lane_totals_mismatch");
+      append_reason(canonical_lane_balance_reasons,
+                    canonical_lane_policy.measured_transfers_sum_overflow,
+                    "lane_measured_transfers_sum_overflow");
+      append_reason(canonical_lane_balance_reasons, !canonical_lane_policy.every_lane_active,
+                    "inactive_lane");
+      append_reason(canonical_lane_balance_reasons, !canonical_lane_policy.within_tolerance,
+                    "lane_share_outside_tolerance");
+    }
     if (final) {
       append_reason(correctness_reasons, !options_.canonical_block_follower,
                     "canonical_follower_disabled");
@@ -1823,7 +1934,96 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"canonical_follower_retry_max_backoff_s\":" << options_.canonical_retry_max_backoff_seconds
         << ",\"canonical_follower_query_timeout_s\":" << options_.canonical_query_timeout
         << ",\"canonical_follower_reorgs\":" << follower_stats_.reorgs
-        << ",\"canonical_follower_basechain_leaf_shards\":" << followed_shard_blocks_.size()
+        << ",\"canonical_follower_basechain_leaf_shards\":" << followed_shard_blocks_.size();
+    std::cout << ",\"canonical_lane_balance\":{\"enabled\":"
+              << (options_.native_payment_lane_depth != 0 ? "true" : "false")
+              << ",\"required\":" << (canonical_lane_policy.required ? "true" : "false")
+              << ",\"valid\":" << (canonical_lane_balance_valid ? "true" : "false")
+              << ",\"depth_valid\":" << (canonical_lane_policy.depth_valid ? "true" : "false")
+              << ",\"tolerance_valid\":" << (canonical_lane_policy.tolerance_valid ? "true" : "false")
+              << ",\"topology_complete\":" << (canonical_lane_topology_complete ? "true" : "false")
+              << ",\"totals_reconcile\":" << (canonical_lane_totals_reconcile ? "true" : "false")
+              << ",\"aggregate_reconciled\":"
+              << (canonical_lane_aggregate_reconciled ? "true" : "false")
+              << ",\"every_lane_active\":"
+              << (canonical_lane_policy.every_lane_active ? "true" : "false")
+              << ",\"within_tolerance\":"
+              << (canonical_lane_policy.within_tolerance ? "true" : "false")
+              << ",\"measured_transfers_sum_overflow\":"
+              << (canonical_lane_policy.measured_transfers_sum_overflow ? "true" : "false")
+              << ",\"depth\":" << canonical_lane_policy.depth
+              << ",\"tolerance_bps\":" << canonical_lane_policy.tolerance_bps
+              << ",\"minimum_allowed_equal_share_bps\":"
+              << canonical_lane_policy.minimum_allowed_equal_share_bps
+              << ",\"maximum_allowed_equal_share_bps\":"
+              << canonical_lane_policy.maximum_allowed_equal_share_bps
+              << ",\"expected_lanes\":" << canonical_lane_policy.expected_lanes
+              << ",\"observed_lanes\":" << canonical_lane_policy.observed_lanes
+              << ",\"measured_transfers\":"
+              << canonical_lane_policy.aggregate_measured_transfers
+              << ",\"aggregate_measured_transfers\":"
+              << canonical_lane_policy.aggregate_measured_transfers
+              << ",\"lane_measured_transfers_sum\":"
+              << canonical_lane_policy.measured_transfers_sum
+              << ",\"measured_transfers_sum\":"
+              << canonical_lane_policy.measured_transfers_sum
+              << ",\"min_measured_transfers\":"
+              << canonical_lane_policy.min_measured_transfers
+              << ",\"max_measured_transfers\":"
+              << canonical_lane_policy.max_measured_transfers
+              << ",\"min_equal_share_bps\":"
+              << canonical_lane_policy.min_equal_share_bps
+              << ",\"max_equal_share_bps\":"
+              << canonical_lane_policy.max_equal_share_bps
+              << ",\"measured_avg_tps\":"
+              << static_cast<double>(canonical_lane_policy.aggregate_measured_transfers) /
+                     static_cast<double>(std::max<td::int64>(1, canonical_bucket_seconds))
+              << ",\"lanes\":[";
+    bool first_canonical_lane = true;
+    for (const auto& [shard, stats] : canonical_shard_stats_) {
+      const auto tip_it = followed_shard_blocks_.find(shard);
+      const auto measured_share =
+          canonical_lane_policy.aggregate_measured_transfers == 0
+              ? 0.0
+              : static_cast<double>(stats.measured_native_transfers) /
+                    static_cast<double>(canonical_lane_policy.aggregate_measured_transfers);
+      const auto equal_share_bps = native_load::detail::equal_share_bps(
+          stats.measured_native_transfers, canonical_lane_policy.expected_lanes,
+          canonical_lane_policy.aggregate_measured_transfers);
+      const auto equal_share_ratio =
+          static_cast<double>(equal_share_bps) /
+          static_cast<double>(native_load::canonical_lane_equal_share_bps);
+      if (!first_canonical_lane) {
+        std::cout << ',';
+      }
+      first_canonical_lane = false;
+      std::cout << "{\"shard\":" << td::json_encode<std::string>(shard.to_str())
+                << ",\"depth\":" << shard.pfx_len() << ",\"tip\":";
+      if (tip_it == followed_shard_blocks_.end()) {
+        std::cout << "null,\"tip_seqno\":null";
+      } else {
+        std::cout << td::json_encode<std::string>(tip_it->second.to_str())
+                  << ",\"tip_seqno\":" << tip_it->second.seqno();
+      }
+      std::cout << ",\"blocks\":" << stats.blocks
+                << ",\"native_blocks\":" << stats.native_blocks
+                << ",\"measured_native_blocks\":" << stats.measured_native_blocks
+                << ",\"native_transfers\":" << stats.native_transfers
+                << ",\"measured_native_transfers\":" << stats.measured_native_transfers
+                << ",\"max_native_transfers_per_block\":"
+                << stats.max_native_transfers_per_block
+                << ",\"measured_max_native_transfers_per_block\":"
+                << stats.measured_max_native_transfers_per_block
+                << ",\"measured_avg_tps\":"
+                << static_cast<double>(stats.measured_native_transfers) /
+                       static_cast<double>(std::max<td::int64>(1, canonical_bucket_seconds))
+                << ",\"measured_share\":" << measured_share
+                << ",\"equal_share_bps\":" << equal_share_bps
+                << ",\"equal_share_ratio\":" << equal_share_ratio << '}';
+    }
+    std::cout << "],\"invalid_reasons\":";
+    write_reason_array(canonical_lane_balance_reasons);
+    std::cout << '}'
         << ",\"canonical_follower_lag_blocks\":" << follower_stats_.lag_blocks
         << ",\"canonical_follower_max_lag_blocks\":" << follower_stats_.max_lag_blocks
         << ",\"canonical_follower_enabled\":" << (options_.canonical_block_follower ? "true" : "false")
@@ -2180,11 +2380,16 @@ void NativeLoadCoordinator::on_follower_shards(bool baseline, td::uint64 generat
       return;
     }
   }
+  const auto expected_lane_count =
+      options_.native_payment_lane_depth == 0
+          ? td::uint64{0}
+          : (td::uint64{1} << options_.native_payment_lane_depth);
   const bool requested_lane_topology_ready =
       options_.native_payment_lane_depth == 0 ||
-      std::all_of(current_tips.begin(), current_tips.end(), [this](const auto& item) {
-        return item.first.pfx_len() == static_cast<int>(options_.native_payment_lane_depth);
-      });
+      (current_tips.size() == expected_lane_count &&
+       std::all_of(current_tips.begin(), current_tips.end(), [this](const auto& item) {
+         return item.first.pfx_len() == static_cast<int>(options_.native_payment_lane_depth);
+       }));
   if ((baseline || followed_shard_blocks_.empty()) && !requested_lane_topology_ready) {
     // Do not establish a root-shard baseline and later silently span the
     // root-to-lane split.  A lane-enabled benchmark waits until the exact
@@ -2194,18 +2399,26 @@ void NativeLoadCoordinator::on_follower_shards(bool baseline, td::uint64 generat
     follower_topology_wait_pending_ = true;
     follower_topology_wait_at_ = td::Time::now() + options_.canonical_poll_seconds;
     LOG(WARNING) << "waiting for proof-anchored basechain payment-lane topology at depth "
-                 << options_.native_payment_lane_depth << "; current leaf count=" << current_tips.size();
+                 << options_.native_payment_lane_depth << "; expected leaf count="
+                 << expected_lane_count << " current leaf count=" << current_tips.size();
     alarm_timestamp().relax(td::Timestamp::in(options_.canonical_poll_seconds));
     return;
   }
   if (baseline || followed_shard_blocks_.empty()) {
     mark_follower_recovered();
     followed_shard_blocks_ = std::move(current_tips);
+    canonical_shard_stats_.clear();
+    for (const auto& [shard, tip] : followed_shard_blocks_) {
+      static_cast<void>(tip);
+      canonical_shard_stats_.emplace(shard, CanonicalShardStats{});
+    }
     follower_paths_.clear();
+    follower_poll_shard_deltas_.clear();
     follower_topology_wait_pending_ = false;
     startup_discovery_mc_block_ = mc_block;
     startup_discovery_anchor_ready_ = true;
     follower_stats_.lag_blocks = 0;
+    CHECK(canonical_shard_stats_reconcile());
     follower_query_active_ = false;
     follower_ready_ = true;
     next_follower_poll_at_ = td::Time::now() + options_.canonical_poll_seconds;
@@ -2231,8 +2444,16 @@ void NativeLoadCoordinator::on_follower_shards(bool baseline, td::uint64 generat
     return;
   }
   follower_paths_.clear();
+  follower_poll_delta_ = {};
+  follower_poll_measure_second_counts_.clear();
+  follower_poll_block_second_counts_.clear();
+  follower_poll_shard_deltas_.clear();
+  for (auto& observations : follower_observations_) {
+    observations.clear();
+  }
   td::uint64 lag_blocks = 0;
   for (const auto& [shard, top] : current_tips) {
+    follower_poll_shard_deltas_.emplace(shard, CanonicalShardStats{});
     const auto& followed = followed_shard_blocks_.at(shard);
     if (top == followed) {
       continue;
@@ -2255,12 +2476,6 @@ void NativeLoadCoordinator::on_follower_shards(bool baseline, td::uint64 generat
   follower_stats_.lag_blocks = lag_blocks;
   follower_stats_.max_lag_blocks =
       std::max(follower_stats_.max_lag_blocks, follower_stats_.lag_blocks);
-  follower_poll_delta_ = {};
-  follower_poll_measure_second_counts_.clear();
-  follower_poll_block_second_counts_.clear();
-  for (auto& observations : follower_observations_) {
-    observations.clear();
-  }
   // Every leaf walks its own history in order; separate lanes can be fetched
   // concurrently through the dedicated follower client.
   for (const auto& [shard, path] : follower_paths_) {
@@ -2333,7 +2548,16 @@ void NativeLoadCoordinator::on_follower_block(td::uint64 generation, ton::BlockI
     follower_fatal_error(td::Status::Error("cannot unpack anchored basechain block"));
     return;
   }
+  auto poll_shard_it = follower_poll_shard_deltas_.find(requested.shard_full());
+  if (poll_shard_it == follower_poll_shard_deltas_.end()) {
+    follower_fatal_error(td::Status::Error(
+        PSLICE() << "proof-checked requested shard has no poll-local lane accumulator "
+                 << requested.shard_full().to_str()));
+    return;
+  }
+  auto& poll_shard_delta = poll_shard_it->second;
   ++follower_poll_delta_.blocks;
+  ++poll_shard_delta.blocks;
   ++follower_poll_block_second_counts_[block_info.gen_utime];
   if (block_extra.custom->have_refs()) {
     auto batch = block::NativeTransferBatch::unpack(block_extra.custom->prefetch_ref());
@@ -2344,18 +2568,28 @@ void NativeLoadCoordinator::on_follower_block(td::uint64 generation, ton::BlockI
     }
     auto native_batch = batch.move_as_ok();
     ++follower_poll_delta_.native_blocks;
+    ++poll_shard_delta.native_blocks;
     follower_poll_delta_.max_native_transfers_per_block =
         std::max<td::uint64>(follower_poll_delta_.max_native_transfers_per_block,
                              native_batch.entries.size());
+    poll_shard_delta.max_native_transfers_per_block =
+        std::max<td::uint64>(poll_shard_delta.max_native_transfers_per_block,
+                             native_batch.entries.size());
     follower_poll_delta_.native_transfers += native_batch.entries.size();
+    poll_shard_delta.native_transfers += native_batch.entries.size();
     auto measure_begin = start_system_at_ + options_.ramp_seconds + options_.warmup_seconds;
     auto measure_end = measure_begin + options_.duration_seconds;
     if (in_whole_second_window(block_info.gen_utime, unix_milliseconds(measure_begin),
                                unix_milliseconds(measure_end))) {
       ++follower_poll_delta_.measured_native_blocks;
+      ++poll_shard_delta.measured_native_blocks;
       follower_poll_delta_.measured_native_transfers += native_batch.entries.size();
+      poll_shard_delta.measured_native_transfers += native_batch.entries.size();
       follower_poll_delta_.measured_max_native_transfers_per_block =
           std::max<td::uint64>(follower_poll_delta_.measured_max_native_transfers_per_block,
+                               native_batch.entries.size());
+      poll_shard_delta.measured_max_native_transfers_per_block =
+          std::max<td::uint64>(poll_shard_delta.measured_max_native_transfers_per_block,
                                native_batch.entries.size());
       follower_poll_measure_second_counts_[block_info.gen_utime] += native_batch.entries.size();
     }
@@ -2460,6 +2694,12 @@ void NativeLoadCoordinator::complete_follower_poll() {
   follower_stats_.measured_max_native_transfers_per_block =
       std::max(follower_stats_.measured_max_native_transfers_per_block,
                follower_poll_delta_.measured_max_native_transfers_per_block);
+  for (const auto& [shard, delta] : follower_poll_shard_deltas_) {
+    auto committed_it = canonical_shard_stats_.find(shard);
+    CHECK(committed_it != canonical_shard_stats_.end());
+    committed_it->second.merge(delta);
+  }
+  CHECK(canonical_shard_stats_reconcile());
   for (const auto& [second, transfers] : follower_poll_measure_second_counts_) {
     follower_measure_second_counts_[second] += transfers;
   }
@@ -2468,6 +2708,7 @@ void NativeLoadCoordinator::complete_follower_poll() {
   }
   follower_stats_.lag_blocks = 0;
   follower_poll_delta_ = {};
+  follower_poll_shard_deltas_.clear();
   follower_poll_measure_second_counts_.clear();
   follower_poll_block_second_counts_.clear();
   for (std::size_t worker_id = 0; worker_id < follower_observations_.size(); ++worker_id) {
@@ -2533,6 +2774,7 @@ void NativeLoadCoordinator::mark_follower_recovered() {
 void NativeLoadCoordinator::discard_follower_poll() {
   follower_paths_.clear();
   follower_poll_delta_ = {};
+  follower_poll_shard_deltas_.clear();
   follower_poll_measure_second_counts_.clear();
   follower_poll_block_second_counts_.clear();
   for (auto& observations : follower_observations_) {

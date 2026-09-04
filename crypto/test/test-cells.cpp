@@ -997,6 +997,47 @@ TEST(AugmentedDictionary, bulk_sorted_set_matches_sequential_and_is_atomic) {
   ASSERT_TRUE(bulk.validate_all());
 }
 
+TEST(AugmentedDictionary, parallel_bulk_set_handles_a_255_bit_local_prefix) {
+  auto shard_account = [](td::uint64 balance, td::uint64 nonce, td::uint64 last_lt) {
+    vm::CellBuilder state_builder;
+    ASSERT_TRUE(state_builder.store_long_bool(1, 2));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(balance, 64));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(nonce, 64));
+    ASSERT_TRUE(state_builder.store_ulong_rchk_bool(0, 8));
+    auto state = state_builder.finalize();
+    vm::CellBuilder account_builder;
+    ASSERT_TRUE(account_builder.store_ref_bool(std::move(state)));
+    ASSERT_TRUE(account_builder.store_bits_bool(ton::Bits256{}));
+    ASSERT_TRUE(account_builder.store_ulong_rchk_bool(last_lt, 64));
+    return vm::load_cell_slice_ref(account_builder.finalize());
+  };
+
+  auto address = [](unsigned char suffix) {
+    ton::StdSmcAddress result;
+    std::string bytes(32, '\0');
+    bytes.back() = static_cast<char>(suffix);
+    result.as_slice().copy_from(bytes);
+    return result;
+  };
+  const auto zero = address(0);
+  const auto adjacent = address(1);
+
+  std::vector<vm::AugmentedDictionary::SetManyEntry> updates;
+  updates.emplace_back(zero.cbits(), shard_account(100, 1, 10));
+  updates.emplace_back(adjacent.cbits(), shard_account(200, 2, 20));
+
+  vm::AugmentedDictionary expected{256, block::tlb::aug_ShardAccounts};
+  for (const auto& [key, value] : updates) {
+    ASSERT_TRUE(expected.set(key, 256, value));
+  }
+  ASSERT_TRUE(expected.validate_all());
+
+  vm::AugmentedDictionary parallel{256, block::tlb::aug_ShardAccounts};
+  ASSERT_TRUE(parallel.set_many_sorted_parallel(td::as_span(updates), 2));
+  ASSERT_TRUE(parallel.validate_all());
+  ASSERT_EQ(parallel.get_root_cell()->get_hash(), expected.get_root_cell()->get_hash());
+}
+
 TEST(AugmentedDictionary, parallel_shard_accounts_bulk_merge_is_canonical_and_atomic) {
   auto shard_account = [](td::uint64 balance, td::uint64 nonce, td::uint64 last_lt) {
     vm::CellBuilder state_builder;

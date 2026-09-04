@@ -3349,7 +3349,7 @@ Ref<Cell> AugmentedDictionary::build_sorted_update_subtree(td::Span<SetManyEntry
 
   CellBuilder cb;
   append_dict_label(cb, new_values.front().first + prefix_len, common_prefix_len, key_bits - prefix_len);
-  return finish_create_fork(cb, std::move(left), std::move(right), key_bits - prefix_len);
+  return finish_create_fork(cb, std::move(left), std::move(right), key_bits - prefix_len - common_prefix_len);
 }
 
 bool AugmentedDictionary::set_many_sorted(td::Span<SetManyEntry> new_values) {

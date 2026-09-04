@@ -1541,7 +1541,10 @@ TEST(NativeStateEngine, native_transfer_run_is_domain_signed_and_canonical) {
   auto first_root = first_builder.finalize();
   auto first_hash = ton::Bits256{first_root->get_hash().bits()};
   ASSERT_EQ(run.external_hash().move_as_ok(), first_hash);
-  auto decoded = block::NativeTransferRun::unpack_external(first_root).move_as_ok();
+  td::Ref<vm::Cell> decoded_canonical_root;
+  auto decoded = block::NativeTransferRun::unpack_external(first_root, &decoded_canonical_root).move_as_ok();
+  ASSERT_TRUE(decoded_canonical_root.not_null());
+  ASSERT_EQ(decoded_canonical_root->get_hash(), first_root->get_hash());
   ASSERT_EQ(decoded.src, run.src);
   ASSERT_EQ(decoded.first_nonce, run.first_nonce);
   ASSERT_EQ(decoded.valid_until, run.valid_until);
@@ -1693,6 +1696,24 @@ TEST(NativeStateEngine, native_transfer_batch_v5_keeps_signed_runs_atomic_and_fl
     return run;
   };
 
+  // Empty direct-run batches keep a null transfer root. Exercise both header
+  // versions because the optimized canonical check rebuilds this root without
+  // passing through NativeTransferBatch::store a second time.
+  for (auto version : {block::NativeTransferBatch::runs_version, block::NativeTransferBatch::lanes_version}) {
+    block::NativeTransferBatch empty_batch;
+    empty_batch.version = version;
+    vm::CellBuilder empty_builder;
+    ASSERT_TRUE(empty_batch.store(empty_builder));
+    auto empty_root = empty_builder.finalize();
+    auto empty_decoded = block::NativeTransferBatch::unpack(empty_root).move_as_ok();
+    ASSERT_TRUE(empty_decoded.runs.empty());
+    ASSERT_TRUE(empty_decoded.entries.empty());
+    ASSERT_TRUE(empty_decoded.accounts.empty());
+    vm::CellBuilder empty_roundtrip_builder;
+    ASSERT_TRUE(empty_decoded.store(empty_roundtrip_builder));
+    ASSERT_EQ(empty_roundtrip_builder.finalize()->get_hash(), empty_root->get_hash());
+  }
+
   block::NativeTransferBatch batch;
   batch.version = block::NativeTransferBatch::runs_version;
   batch.runs.push_back(make_run(40, {{7, 1}, {11, 2}}, 10));
@@ -1779,9 +1800,13 @@ TEST(NativeStateEngine, native_transfer_batch_v5_keeps_signed_runs_atomic_and_fl
   single_run_batch.runs.push_back(batch.runs.front());
   vm::CellBuilder single_run_builder;
   ASSERT_TRUE(single_run_batch.store(single_run_builder));
-  auto single_run_decoded = block::NativeTransferBatch::unpack(single_run_builder.finalize()).move_as_ok();
+  auto single_run_root = single_run_builder.finalize();
+  auto single_run_decoded = block::NativeTransferBatch::unpack(single_run_root).move_as_ok();
   ASSERT_EQ(single_run_decoded.runs.size(), 1u);
   ASSERT_EQ(single_run_decoded.entries.size(), 2u);
+  vm::CellBuilder single_run_roundtrip_builder;
+  ASSERT_TRUE(single_run_decoded.store(single_run_roundtrip_builder));
+  ASSERT_EQ(single_run_roundtrip_builder.finalize()->get_hash(), single_run_root->get_hash());
 
   vm::CellBuilder roundtrip_builder;
   ASSERT_TRUE(decoded.store(roundtrip_builder));
@@ -1808,10 +1833,40 @@ TEST(NativeStateEngine, native_transfer_batch_v5_keeps_signed_runs_atomic_and_fl
   ASSERT_TRUE(malformed_builder.store_maybe_ref(first_run_root));
   ASSERT_TRUE(block::NativeTransferBatch::unpack(malformed_builder.finalize()).is_error());
 
+  // An NTRM branch weight is a logical output count. A wrong weight must be
+  // rejected even when both child run cells are individually canonical.
+  vm::CellBuilder wrong_weight_tree_builder;
+  ASSERT_TRUE(wrong_weight_tree_builder.store_ulong_rchk_bool(block::NativeTransferBatch::runs_node_magic, 32));
+  ASSERT_TRUE(wrong_weight_tree_builder.store_ulong_rchk_bool(1, 32));
+  ASSERT_TRUE(wrong_weight_tree_builder.store_ref_bool(first_run_root));
+  vm::CellBuilder second_run_builder;
+  ASSERT_TRUE(batch.runs.back().store_external(second_run_builder));
+  ASSERT_TRUE(wrong_weight_tree_builder.store_ref_bool(second_run_builder.finalize()));
+  vm::CellBuilder wrong_weight_batch_builder;
+  ASSERT_TRUE(wrong_weight_batch_builder.store_ulong_rchk_bool(block::NativeTransferBatch::magic, 32));
+  ASSERT_TRUE(wrong_weight_batch_builder.store_ulong_rchk_bool(block::NativeTransferBatch::runs_version, 8));
+  ASSERT_TRUE(wrong_weight_batch_builder.store_ulong_rchk_bool(0, 32));
+  ASSERT_TRUE(wrong_weight_batch_builder.store_ulong_rchk_bool(3, 32));
+  ASSERT_TRUE(wrong_weight_batch_builder.store_maybe_ref({}));
+  ASSERT_TRUE(wrong_weight_batch_builder.store_maybe_ref(wrong_weight_tree_builder.finalize()));
+  ASSERT_TRUE(block::NativeTransferBatch::unpack(wrong_weight_batch_builder.finalize()).is_error());
+
   // Run leaves are canonical individually, but the enclosing vector must be
-  // canonical as well.  Three one-output runs normally serialize as
-  // [[first, second], third]; reject the equivalent [first, [second, third]].
+  // canonical as well. Three uneven runs normally serialize as [[first,
+  // second], third]; reject the equivalent [first, [second, third]].
   auto third_run = make_run(43, {{17, 4}}, 30);
+  auto three_run_batch = batch;
+  three_run_batch.runs.push_back(third_run);
+  vm::CellBuilder three_run_builder;
+  ASSERT_TRUE(three_run_batch.store(three_run_builder));
+  auto three_run_root = three_run_builder.finalize();
+  auto three_run_decoded = block::NativeTransferBatch::unpack(three_run_root).move_as_ok();
+  ASSERT_EQ(three_run_decoded.runs.size(), 3u);
+  ASSERT_EQ(three_run_decoded.entries.size(), 4u);
+  vm::CellBuilder three_run_roundtrip_builder;
+  ASSERT_TRUE(three_run_decoded.store(three_run_roundtrip_builder));
+  ASSERT_EQ(three_run_roundtrip_builder.finalize()->get_hash(), three_run_root->get_hash());
+
   auto serialize_run = [](const block::NativeTransferRun& run) {
     vm::CellBuilder run_builder;
     ASSERT_TRUE(run.store_external(run_builder));

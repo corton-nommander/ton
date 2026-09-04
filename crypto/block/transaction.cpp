@@ -1777,6 +1777,11 @@ td::Result<ton::Bits256> NativeTransferRun::external_hash() const {
 }
 
 td::Result<NativeTransferRun> NativeTransferRun::unpack_external(Ref<vm::Cell> cell) {
+  return unpack_external(std::move(cell), nullptr);
+}
+
+td::Result<NativeTransferRun> NativeTransferRun::unpack_external(Ref<vm::Cell> cell,
+                                                                 Ref<vm::Cell>* canonical_root_out) {
   if (cell.is_null()) {
     return td::Status::Error("Native transfer run cell is null");
   }
@@ -1811,6 +1816,9 @@ td::Result<NativeTransferRun> NativeTransferRun::unpack_external(Ref<vm::Cell> c
   if (!(run.store_external(canonical_builder) && canonical_builder.finalize_to(canonical_root)) ||
       canonical_root->get_hash() != cell->get_hash()) {
     return td::Status::Error("Native transfer run output tree is not canonical");
+  }
+  if (canonical_root_out) {
+    *canonical_root_out = std::move(canonical_root);
   }
   return run;
 }
@@ -1888,6 +1896,43 @@ td::Result<NativeTransferCredit> NativeTransferCredit::unpack_description(Ref<vm
   }
   return credit;
 }
+
+namespace {
+
+struct NativeTransferBatchTreeNode {
+  Ref<vm::Cell> cell;
+  td::uint32 count;
+};
+
+td::Result<Ref<vm::Cell>> combine_native_transfer_batch_tree(std::vector<NativeTransferBatchTreeNode> level,
+                                                             td::uint32 magic) {
+  while (level.size() > 1) {
+    std::vector<NativeTransferBatchTreeNode> next;
+    next.reserve((level.size() + 1) / 2);
+    for (std::size_t i = 0; i < level.size(); i += 2) {
+      if (i + 1 == level.size()) {
+        next.push_back(std::move(level[i]));
+        continue;
+      }
+      vm::CellBuilder node;
+      auto count = static_cast<td::uint64>(level[i].count) + level[i + 1].count;
+      if (count > std::numeric_limits<td::uint32>::max() ||
+          !(node.store_ulong_rchk_bool(magic, 32) && node.store_ulong_rchk_bool(level[i].count, 32) &&
+            node.store_ref_bool(std::move(level[i].cell)) && node.store_ref_bool(std::move(level[i + 1].cell)))) {
+        return td::Status::Error("cannot serialize native transfer batch tree node");
+      }
+      Ref<vm::Cell> root;
+      if (!node.finalize_to(root)) {
+        return td::Status::Error("cannot finalize native transfer batch tree node");
+      }
+      next.push_back(NativeTransferBatchTreeNode{std::move(root), static_cast<td::uint32>(count)});
+    }
+    level = std::move(next);
+  }
+  return level.empty() ? Ref<vm::Cell>{} : std::move(level.front().cell);
+}
+
+}  // namespace
 
 bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
   if ((version != 1 && version != 2 && version != 3 && version != 4 && !is_direct_run_version(version)) ||
@@ -1993,39 +2038,7 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
     return true;
   };
   if (version >= 3) {
-    struct TreeNode {
-      Ref<vm::Cell> cell;
-      td::uint32 count;
-    };
-    auto combine_level = [](std::vector<TreeNode> level, td::uint32 magic) -> td::Result<Ref<vm::Cell>> {
-      while (level.size() > 1) {
-        std::vector<TreeNode> next;
-        next.reserve((level.size() + 1) / 2);
-        for (std::size_t i = 0; i < level.size(); i += 2) {
-          if (i + 1 == level.size()) {
-            next.push_back(std::move(level[i]));
-            continue;
-          }
-          vm::CellBuilder node;
-          auto count = static_cast<td::uint64>(level[i].count) + level[i + 1].count;
-          if (count > std::numeric_limits<td::uint32>::max() ||
-              !(node.store_ulong_rchk_bool(magic, 32) && node.store_ulong_rchk_bool(level[i].count, 32) &&
-                node.store_ref_bool(std::move(level[i].cell)) &&
-                node.store_ref_bool(std::move(level[i + 1].cell)))) {
-            return td::Status::Error("cannot serialize native transfer batch tree node");
-          }
-          Ref<vm::Cell> root;
-          if (!node.finalize_to(root)) {
-            return td::Status::Error("cannot finalize native transfer batch tree node");
-          }
-          next.push_back(TreeNode{std::move(root), static_cast<td::uint32>(count)});
-        }
-        level = std::move(next);
-      }
-      return level.empty() ? Ref<vm::Cell>{} : std::move(level.front().cell);
-    };
-
-    std::vector<TreeNode> account_leaves;
+    std::vector<NativeTransferBatchTreeNode> account_leaves;
     account_leaves.reserve((account_table.size() + 2) / 3);
     for (std::size_t start = 0; start < account_table.size(); start += 3) {
       auto end = std::min(start + 3, account_table.size());
@@ -2043,15 +2056,15 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
       if (!leaf.finalize_to(root)) {
         return false;
       }
-      account_leaves.push_back(TreeNode{std::move(root), static_cast<td::uint32>(end - start)});
+      account_leaves.push_back(NativeTransferBatchTreeNode{std::move(root), static_cast<td::uint32>(end - start)});
     }
-    auto account_tree = combine_level(std::move(account_leaves), accounts_node_magic);
+    auto account_tree = combine_native_transfer_batch_tree(std::move(account_leaves), accounts_node_magic);
     if (account_tree.is_error()) {
       return false;
     }
     account_root = account_tree.move_as_ok();
 
-    std::vector<TreeNode> transfer_leaves;
+    std::vector<NativeTransferBatchTreeNode> transfer_leaves;
     if (is_direct_run_version(version)) {
       transfer_leaves.reserve(runs.size());
       for (const auto& run : runs) {
@@ -2060,7 +2073,8 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
         if (!(run.store_external(run_builder) && run_builder.finalize_to(root))) {
           return false;
         }
-        transfer_leaves.push_back(TreeNode{std::move(root), static_cast<td::uint32>(run.outputs.size())});
+        transfer_leaves.push_back(
+            NativeTransferBatchTreeNode{std::move(root), static_cast<td::uint32>(run.outputs.size())});
       }
     } else {
       transfer_leaves.reserve(logical_entries.size());
@@ -2084,11 +2098,11 @@ bool NativeTransferBatch::store(vm::CellBuilder& cb) const {
         if (!leaf.finalize_to(root)) {
           return false;
         }
-        transfer_leaves.push_back(TreeNode{std::move(root), 1});
+        transfer_leaves.push_back(NativeTransferBatchTreeNode{std::move(root), 1});
       }
     }
-    auto transfer_tree = combine_level(std::move(transfer_leaves),
-                                       is_direct_run_version(version) ? runs_node_magic : transfers_node_magic);
+    auto transfer_tree = combine_native_transfer_batch_tree(
+        std::move(transfer_leaves), is_direct_run_version(version) ? runs_node_magic : transfers_node_magic);
     if (transfer_tree.is_error()) {
       return false;
     }
@@ -2261,8 +2275,10 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
     return td::Status::OK();
   };
   batch.entries.reserve(entries_count_u32);
+  std::vector<NativeTransferBatchTreeNode> canonical_run_leaves;
   if (is_direct_run_version(batch.version) && transfer_root.not_null()) {
     batch.runs.reserve(entries_count_u32);
+    canonical_run_leaves.reserve(entries_count_u32);
     std::vector<std::pair<Ref<vm::Cell>, td::uint32>> stack;
     stack.emplace_back(std::move(transfer_root), entries_count_u32);
     while (!stack.empty()) {
@@ -2271,10 +2287,13 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
       auto chunk = vm::load_cell_slice(cell);
       auto chunk_tag = chunk.prefetch_ulong(32);
       if (chunk_tag == NativeTransferRun::magic) {
-        TRY_RESULT(run, NativeTransferRun::unpack_external(std::move(cell)));
+        Ref<vm::Cell> canonical_run_root;
+        TRY_RESULT(run, NativeTransferRun::unpack_external(std::move(cell), &canonical_run_root));
         if (run.outputs.size() != expected) {
           return td::Status::Error("Native transfer run leaf count does not match batch tree");
         }
+        canonical_run_leaves.push_back(
+            NativeTransferBatchTreeNode{std::move(canonical_run_root), static_cast<td::uint32>(expected)});
         batch.runs.push_back(std::move(run));
       } else if (chunk_tag == runs_node_magic) {
         td::uint64 left_count = 0;
@@ -2359,9 +2378,18 @@ td::Result<NativeTransferBatch> NativeTransferBatch::unpack(Ref<vm::Cell> cell) 
     // The run signatures bind their own canonical output trees, and the batch
     // must likewise have exactly one ordered tree representation.  Otherwise
     // an equivalent run sequence could be encoded under multiple block roots.
+    // Reuse the canonical run cells which unpack_external already built and
+    // hash-checked instead of serializing every run a second time through
+    // batch.store().
+    TRY_RESULT(canonical_transfer_root,
+               combine_native_transfer_batch_tree(std::move(canonical_run_leaves), runs_node_magic));
     vm::CellBuilder canonical_builder;
     Ref<vm::Cell> canonical_root;
-    if (!(batch.store(canonical_builder) && canonical_builder.finalize_to(canonical_root)) ||
+    if (!(canonical_builder.store_ulong_rchk_bool(magic, 32) &&
+          canonical_builder.store_ulong_rchk_bool(batch.version, 8) && canonical_builder.store_ulong_rchk_bool(0, 32) &&
+          canonical_builder.store_ulong_rchk_bool(entries_count_u32, 32) && canonical_builder.store_maybe_ref({}) &&
+          canonical_builder.store_maybe_ref(std::move(canonical_transfer_root)) &&
+          canonical_builder.finalize_to(canonical_root)) ||
         canonical_root->get_hash() != cell->get_hash()) {
       return td::Status::Error("Native transfer run vector is not canonical");
     }

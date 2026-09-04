@@ -144,6 +144,7 @@ struct NativeTransferRun {
   bool store_external(vm::CellBuilder& cb) const;
   td::Result<ton::Bits256> external_hash() const;
   static td::Result<NativeTransferRun> unpack_external(Ref<vm::Cell> cell);
+  static td::Result<NativeTransferRun> unpack_external(Ref<vm::Cell> cell, Ref<vm::Cell>* canonical_root_out);
 };
 
 // A payment lane is a fixed-depth basechain shard selected solely by an

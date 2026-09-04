@@ -690,7 +690,15 @@ class ExtMessagePool : public td::actor::Actor {
     bool native_snapshot_exhausted{false};
   };
 
-  td::optional<NativeAddress> native_scheduler_cursor_;
+  struct NativeShardAddressBounds {
+    NativeAddress first;
+    NativeAddress last;
+  };
+
+  // Each shard rotates through only its own native sources. A process-wide
+  // cursor lets a sibling callback overwrite that position and restart the
+  // next callback near the beginning of its lane.
+  std::map<ShardIdFull, NativeAddress> native_scheduler_cursors_;
   std::multimap<td::Timestamp, std::pair<int, MessageId>> native_reactivations_;
   std::shared_ptr<ExtMsgQueueTelemetry> native_transport_telemetry_{std::make_shared<ExtMsgQueueTelemetry>()};
 
@@ -701,6 +709,9 @@ class ExtMessagePool : public td::actor::Actor {
   NativeQueueSelection select_callback_native_messages(const std::shared_ptr<InstalledCallback> &callback,
                                                        std::size_t logical_limit, std::size_t physical_limit,
                                                        const std::set<NativeAddress> *source_filter = nullptr);
+  static NativeShardAddressBounds native_shard_address_bounds(ShardIdFull shard);
+  void restore_callback_native_cursor(const std::shared_ptr<InstalledCallback> &callback) const;
+  void persist_callback_native_cursor(const std::shared_ptr<InstalledCallback> &callback);
   void initialize_callback_native_scheduler(const std::shared_ptr<InstalledCallback> &callback,
                                             NativeQueueCounters &counters);
   void refresh_callback_native_source(const std::shared_ptr<InstalledCallback> &callback,

@@ -1,3 +1,4 @@
+#include <array>
 #include <tuple>
 
 #include "td/utils/tests.h"
@@ -87,6 +88,11 @@ class ExtMessagePoolTestAccess {
     td::uint64 inactive{0};
     td::uint64 excluded{0};
     td::uint64 head_gaps{0};
+  };
+  struct CallbackRound {
+    std::vector<NativeAddress> sources;
+    td::optional<NativeAddress> cursor;
+    td::uint64 source_scans{0};
   };
 
   static ExtMessagePool make_pool() {
@@ -363,9 +369,10 @@ class ExtMessagePoolTestAccess {
 
   static void install_live_waiting_callback(ExtMessagePool &pool, std::size_t queue_capacity,
                                             std::size_t transport_message_capacity = 500,
-                                            std::vector<ExtMessage::Hash> excluded = {}) {
+                                            std::vector<ExtMessage::Hash> excluded = {},
+                                            ShardIdFull shard = {basechainId, shardIdAll}) {
     auto callback = std::make_unique<ExtMsgCallback>();
-    callback->shard = {basechainId, shardIdAll};
+    callback->shard = shard;
     callback->queue_capacity = queue_capacity;
     callback->transport_message_capacity = transport_message_capacity;
     callback->timeout = td::Timestamp::in(60.0);
@@ -380,6 +387,27 @@ class ExtMessagePoolTestAccess {
     installed->pump_active = true;
     installed->callback->queue_state->attach_telemetry(pool.native_transport_telemetry_);
     pool.callbacks_.push_back(std::move(installed));
+  }
+
+  static CallbackRound select_callback_round(ExtMessagePool &pool, ShardIdFull shard,
+                                             std::size_t logical_limit) {
+    auto callback = std::make_unique<ExtMsgCallback>();
+    callback->shard = shard;
+    callback->queue_capacity = logical_limit;
+    auto installed = std::make_shared<ExtMessagePool::InstalledCallback>(std::move(callback));
+    pool.restore_callback_native_cursor(installed);
+    auto selection = pool.select_callback_native_messages(installed, logical_limit, logical_limit);
+    installed->native_cursor = selection.cursor;
+    pool.persist_callback_native_cursor(installed);
+
+    CallbackRound result;
+    result.cursor = selection.cursor;
+    result.source_scans = selection.counters.source_scans;
+    result.sources.reserve(selection.items.size());
+    for (const auto &item : selection.items) {
+      result.sources.push_back(item.source);
+    }
+    return result;
   }
 
   static bool finalize_existing_native(ExtMessagePool &pool, NativeAddress source, td::uint64 nonce,
@@ -760,9 +788,15 @@ class ExtMessagePoolTestAccess {
     return pool.wake_native_callbacks(&sources, preserve_valid_ready_head);
   }
 
-  static std::size_t dirty_sources(const ExtMessagePool &pool) {
-    CHECK(pool.callbacks_.size() == 1);
-    return pool.callbacks_.front()->native_dirty_sources.size();
+  static std::size_t dirty_sources(const ExtMessagePool &pool, std::size_t callback_index = 0) {
+    CHECK(callback_index < pool.callbacks_.size());
+    return pool.callbacks_[callback_index]->native_dirty_sources.size();
+  }
+
+  static bool has_dirty_source(const ExtMessagePool &pool, std::size_t callback_index,
+                               const NativeAddress &source) {
+    CHECK(callback_index < pool.callbacks_.size());
+    return pool.callbacks_[callback_index]->native_dirty_sources.contains(source);
   }
 
   static std::size_t resume_native_pump_refill(ExtMessagePool &pool) {
@@ -1713,6 +1747,86 @@ TEST(ExtMessagePoolScheduler, MasterchainNeverScansNativeSources) {
   ASSERT_TRUE(selected.nonces.empty());
   ASSERT_EQ(selected.scanned, 0u);
   ASSERT_EQ(selected.selected, 0u);
+}
+
+TEST(ExtMessagePoolScheduler, NativeLeafCallbacksScanAndRotateOnlyWithinTheirShard) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  const ShardIdFull left_shard{basechainId, shard_child(shardIdAll, true)};
+  const ShardIdFull right_shard{basechainId, shard_child(shardIdAll, false)};
+  auto left_a = ExtMessagePoolTestAccess::source(0x10);
+  auto left_b = ExtMessagePoolTestAccess::source(0x20);
+  auto right_a = ExtMessagePoolTestAccess::source(0x90);
+  auto right_b = ExtMessagePoolTestAccess::source(0xa0);
+  for (const auto &source : {left_a, left_b, right_a, right_b}) {
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    ExtMessagePoolTestAccess::add(pool, source, 0);
+  }
+
+  auto left_first = ExtMessagePoolTestAccess::select_callback_round(pool, left_shard, 1);
+  auto right_first = ExtMessagePoolTestAccess::select_callback_round(pool, right_shard, 1);
+  auto left_second = ExtMessagePoolTestAccess::select_callback_round(pool, left_shard, 1);
+  auto right_second = ExtMessagePoolTestAccess::select_callback_round(pool, right_shard, 1);
+
+  ASSERT_EQ(left_first.source_scans, 2u);
+  ASSERT_EQ(right_first.source_scans, 2u);
+  ASSERT_EQ(left_second.source_scans, 2u);
+  ASSERT_EQ(right_second.source_scans, 2u);
+  ASSERT_EQ(left_first.sources.size(), 1u);
+  ASSERT_EQ(right_first.sources.size(), 1u);
+  ASSERT_EQ(left_second.sources.size(), 1u);
+  ASSERT_EQ(right_second.sources.size(), 1u);
+  ASSERT_EQ(left_first.sources.front(), left_a);
+  ASSERT_EQ(right_first.sources.front(), right_a);
+  ASSERT_EQ(left_second.sources.front(), left_b);
+  ASSERT_EQ(right_second.sources.front(), right_b);
+}
+
+TEST(ExtMessagePoolScheduler, NativeIngressWakesOnlyItsLeafCallback) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  const ShardIdFull left_shard{basechainId, shard_child(shardIdAll, true)};
+  const ShardIdFull right_shard{basechainId, shard_child(shardIdAll, false)};
+  auto left_source = ExtMessagePoolTestAccess::source(0x10);
+  auto right_source = ExtMessagePoolTestAccess::source(0x90);
+  ExtMessagePoolTestAccess::install_live_waiting_callback(
+      pool, ExtMessagePoolTestAccess::max_native_queue_limit(), 500, {}, left_shard);
+  ExtMessagePoolTestAccess::install_live_waiting_callback(
+      pool, ExtMessagePoolTestAccess::max_native_queue_limit(), 500, {}, right_shard);
+
+  ASSERT_EQ(ExtMessagePoolTestAccess::wake_sources(pool, {left_source, right_source}), 2u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::dirty_sources(pool, 0), 1u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::dirty_sources(pool, 1), 1u);
+  ASSERT_TRUE(ExtMessagePoolTestAccess::has_dirty_source(pool, 0, left_source));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_dirty_source(pool, 0, right_source));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::has_dirty_source(pool, 1, left_source));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::has_dirty_source(pool, 1, right_source));
+}
+
+TEST(ExtMessagePoolScheduler, NativeDepthTwoCallbacksScanOnlyTheirQuarterShard) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  const auto left = shard_child(shardIdAll, true);
+  const auto right = shard_child(shardIdAll, false);
+  const std::array<ShardIdFull, 4> shards{
+      ShardIdFull{basechainId, shard_child(left, true)},
+      ShardIdFull{basechainId, shard_child(left, false)},
+      ShardIdFull{basechainId, shard_child(right, true)},
+      ShardIdFull{basechainId, shard_child(right, false)},
+  };
+  const std::array<ExtMessagePoolTestAccess::NativeAddress, 4> sources{
+      ExtMessagePoolTestAccess::source(0x10),
+      ExtMessagePoolTestAccess::source(0x50),
+      ExtMessagePoolTestAccess::source(0x90),
+      ExtMessagePoolTestAccess::source(0xd0),
+  };
+  for (const auto &source : sources) {
+    ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+    ExtMessagePoolTestAccess::add(pool, source, 0);
+  }
+
+  for (std::size_t lane = 0; lane < shards.size(); ++lane) {
+    auto selected = ExtMessagePoolTestAccess::select_callback_round(pool, shards[lane], 1);
+    ASSERT_EQ(selected.source_scans, 1u);
+    ASSERT_EQ(selected.sources, (std::vector<ExtMessagePoolTestAccess::NativeAddress>{sources[lane]}));
+  }
 }
 
 TEST(ExtMessagePoolScheduler, PostCommitWakesLiveWaiterWithoutNewIngress) {

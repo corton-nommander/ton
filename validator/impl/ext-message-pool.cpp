@@ -1810,6 +1810,39 @@ void ExtMessagePool::refresh_callback_native_source(const std::shared_ptr<Instal
   probe_callback_native_source(callback, source, state_it->second, counters, true);
 }
 
+ExtMessagePool::NativeShardAddressBounds ExtMessagePool::native_shard_address_bounds(ShardIdFull shard) {
+  const td::uint64 lo_prefix = shard.shard & (shard.shard - 1);
+  const td::uint64 hi_prefix = shard.shard | (shard.shard - 1);
+  auto first = StdSmcAddress::zero();
+  auto last = StdSmcAddress::ones();
+  first.bits().store_uint(lo_prefix, 64);
+  last.bits().store_uint(hi_prefix, 64);
+  return {{shard.workchain, first}, {shard.workchain, last}};
+}
+
+void ExtMessagePool::restore_callback_native_cursor(const std::shared_ptr<InstalledCallback> &callback) const {
+  callback->native_cursor = {};
+  const auto shard = callback->callback->shard;
+  if (shard.workchain == masterchainId) {
+    return;
+  }
+  if (auto cursor = native_scheduler_cursors_.find(shard); cursor != native_scheduler_cursors_.end()) {
+    callback->native_cursor = cursor->second;
+  }
+}
+
+void ExtMessagePool::persist_callback_native_cursor(const std::shared_ptr<InstalledCallback> &callback) {
+  const auto shard = callback->callback->shard;
+  if (shard.workchain == masterchainId) {
+    return;
+  }
+  if (callback->native_cursor) {
+    native_scheduler_cursors_[shard] = callback->native_cursor.value();
+  } else {
+    native_scheduler_cursors_.erase(shard);
+  }
+}
+
 void ExtMessagePool::initialize_callback_native_scheduler(const std::shared_ptr<InstalledCallback> &callback,
                                                           NativeQueueCounters &counters) {
   auto &scheduler = callback->native_scheduler;
@@ -1822,16 +1855,32 @@ void ExtMessagePool::initialize_callback_native_scheduler(const std::shared_ptr<
     return;
   }
 
-  auto split = callback->native_cursor ? native_accounts_.upper_bound(callback->native_cursor.value())
-                                       : native_accounts_.begin();
+  // NativeAddress is ordered by workchain and then by the full big-endian
+  // account id, so every shard is one contiguous map range. Restricting the
+  // initial scheduler build to that range avoids scanning every other payment
+  // lane for each leaf callback.
+  const auto shard = callback->callback->shard;
+  const auto bounds = native_shard_address_bounds(shard);
+  auto range_begin = native_accounts_.lower_bound(bounds.first);
+  auto range_end = native_accounts_.upper_bound(bounds.last);
+
+  auto split = range_begin;
+  if (callback->native_cursor) {
+    const auto &cursor = callback->native_cursor.value();
+    if (shard_contains(shard, extract_addr_prefix(cursor.first, cursor.second))) {
+      split = native_accounts_.upper_bound(cursor);
+    } else {
+      callback->native_cursor = {};
+    }
+  }
   auto scan_range = [&](auto begin, auto end) {
     for (auto it = begin; it != end; ++it) {
       ++counters.source_scans;
       refresh_callback_native_source(callback, it->first, counters, false);
     }
   };
-  scan_range(split, native_accounts_.end());
-  scan_range(native_accounts_.begin(), split);
+  scan_range(split, range_end);
+  scan_range(range_begin, split);
 }
 
 ExtMessagePool::NativeQueueSelection ExtMessagePool::select_callback_native_messages(
@@ -2233,7 +2282,10 @@ std::size_t ExtMessagePool::wake_native_callbacks(const std::set<NativeAddress> 
     }
     bool marked = false;
     if (source_filter) {
-      for (const auto &source : *source_filter) {
+      const auto bounds = native_shard_address_bounds(callback->callback->shard);
+      auto source_end = source_filter->upper_bound(bounds.last);
+      for (auto source_it = source_filter->lower_bound(bounds.first); source_it != source_end; ++source_it) {
+        const auto &source = *source_it;
         if (preserve_valid_ready_head && callback->native_scheduler.initialized) {
           auto state_it = callback->native_scheduler.sources.find(source);
           if (state_it != callback->native_scheduler.sources.end() && state_it->second.queued &&
@@ -2305,11 +2357,9 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
   // Native scheduling is deliberately skipped for masterchain installs. Native
   // transfers are basechain-only, and copying/scanning their large treaps while
   // producing a masterchain anchor created avoidable multi-second stalls.
-  installed->native_cursor = native_scheduler_cursor_;
+  restore_callback_native_cursor(installed);
   prefill_callback_native(installed, true);
-  if (installed->callback->shard.workchain != masterchainId) {
-    native_scheduler_cursor_ = installed->native_cursor;
-  }
+  persist_callback_native_cursor(installed);
 
   // Generic externals retain their stable priority/address order. Masterchain
   // installs are bounded to the normal queue capacity even in max-TPS mode.

@@ -5276,6 +5276,32 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         queue_exhausted = true;
         break;
       }
+      if (work_driven) {
+        const bool checkpoint_latency_expired =
+            pending_checkpoint.latency_deadline &&
+            pending_checkpoint.latency_deadline->is_in_past(td::Timestamp::now());
+        const auto checkpoint_boundary_action =
+            consensus::select_native_checkpoint_selection_boundary_action(
+                !pending_checkpoint.empty(), checkpoint_latency_expired, batch.empty());
+        if (checkpoint_boundary_action ==
+            consensus::NativeCheckpointSelectionBoundaryAction::flush_before_selection) {
+          if (!flush_pending_checkpoint(NativeCheckpointFlushReason::latency)) {
+            co_return false;
+          }
+          full = full || !block_limit_status_->fits(block::ParamLimits::cl_soft) ||
+                 !consensus::native_candidate_estimate_fits(block_limit_status_->estimate_block_size(),
+                                                            consensus_max_block_size);
+          block_limit_class_ = std::max(block_limit_class_, block_limit_status_->classify());
+          if (full) {
+            break;
+          }
+          continue;
+        }
+        if (checkpoint_boundary_action ==
+            consensus::NativeCheckpointSelectionBoundaryAction::seal_selected_fragment) {
+          break;
+        }
+      }
       std::pair<td::Ref<ExtMessage>, int> item;
       if (pending_ext_msgs_.empty()) {
         // This flag belongs to one actual await, not the whole outer
@@ -5455,6 +5481,12 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           }
           queue_exhausted = true;
           break;
+        }
+        if (work_driven) {
+          // A queue pop may complete at the checkpoint deadline. Re-enter
+          // the fixed boundary checks before consuming the newly arrived
+          // message so the wait cannot silently extend the old checkpoint.
+          continue;
         }
       }
       item = std::move(pending_ext_msgs_.front());

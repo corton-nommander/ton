@@ -273,6 +273,25 @@ constexpr NativeIntakeDeadlineAction select_native_intake_deadline_action(bool d
   return NativeIntakeDeadlineAction::idle;
 }
 
+enum class NativeCheckpointSelectionBoundaryAction {
+  continue_selection,
+  flush_before_selection,
+  seal_selected_fragment,
+};
+
+// Once a checkpoint's fixed latency bound expires, do not pull another
+// fragment into it. Flush immediately when selection has not started; if a
+// fragment is already selected, seal that selection boundary so the caller's
+// pre-execution guard can flush the old checkpoint first.
+constexpr NativeCheckpointSelectionBoundaryAction select_native_checkpoint_selection_boundary_action(
+    bool has_pending_checkpoint, bool latency_expired, bool selected_fragment_empty) {
+  if (!has_pending_checkpoint || !latency_expired) {
+    return NativeCheckpointSelectionBoundaryAction::continue_selection;
+  }
+  return selected_fragment_empty ? NativeCheckpointSelectionBoundaryAction::flush_before_selection
+                                 : NativeCheckpointSelectionBoundaryAction::seal_selected_fragment;
+}
+
 enum class NativeCheckpointRefillBoundaryAction { retain, flush, seal_committed, commit_first_fragment };
 
 // The collator only asks this after a queue probe or bounded refill returns no

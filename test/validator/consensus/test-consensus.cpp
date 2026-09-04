@@ -116,6 +116,14 @@ static_assert(select_native_intake_deadline_action(true, false, false) == Native
 static_assert(select_native_intake_deadline_action(true, true, true) == NativeIntakeDeadlineAction::seal_committed);
 static_assert(select_native_intake_deadline_action(true, false, true) ==
               NativeIntakeDeadlineAction::commit_first_fragment);
+static_assert(select_native_checkpoint_selection_boundary_action(false, true, true) ==
+              NativeCheckpointSelectionBoundaryAction::continue_selection);
+static_assert(select_native_checkpoint_selection_boundary_action(true, false, true) ==
+              NativeCheckpointSelectionBoundaryAction::continue_selection);
+static_assert(select_native_checkpoint_selection_boundary_action(true, true, true) ==
+              NativeCheckpointSelectionBoundaryAction::flush_before_selection);
+static_assert(select_native_checkpoint_selection_boundary_action(true, true, false) ==
+              NativeCheckpointSelectionBoundaryAction::seal_selected_fragment);
 // A completed refill continues the exact checkpoint. A real empty refill
 // seals it only at its existing boundary; if that boundary is the intake
 // deadline, an earlier exact checkpoint wins and the speculative group rolls

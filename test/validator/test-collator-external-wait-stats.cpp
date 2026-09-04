@@ -70,6 +70,7 @@ TEST(CollatorExternalWaitStats, SerializesNativeCheckpointCoalescingTelemetry) {
   stats.native_checkpoint_group_max_entries = 2'048;
   stats.native_checkpoint_group_max_fragments = 4;
   stats.native_checkpoint_flush_ingress = 1;
+  stats.native_checkpoint_flush_latency = 2;
   stats.native_checkpoint_refill_continuations = 3;
   stats.native_checkpoint_refill_expirations = 1;
   stats.native_checkpoint_rollbacks = 1;
@@ -80,6 +81,7 @@ TEST(CollatorExternalWaitStats, SerializesNativeCheckpointCoalescingTelemetry) {
   ASSERT_TRUE(real_stats.find("native_checkpoint_group_max_entries=2048") != std::string::npos);
   ASSERT_TRUE(real_stats.find("native_checkpoint_group_max_fragments=4") != std::string::npos);
   ASSERT_TRUE(real_stats.find("native_checkpoint_flush_ingress=1") != std::string::npos);
+  ASSERT_TRUE(real_stats.find("native_checkpoint_flush_latency=2") != std::string::npos);
   ASSERT_TRUE(real_stats.find("native_checkpoint_refill_continuations=3") != std::string::npos);
   ASSERT_TRUE(real_stats.find("native_checkpoint_refill_expirations=1") != std::string::npos);
   ASSERT_TRUE(real_stats.find("native_checkpoint_rollbacks=1") != std::string::npos);

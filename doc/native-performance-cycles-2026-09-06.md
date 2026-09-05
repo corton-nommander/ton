@@ -46,13 +46,18 @@ These finite caps apply equally to every image in a pair.
 | --- | ---: | ---: | ---: | ---: | --- |
 | [baseline40k](benchmarks/results/cycles-20260906-source-a1-40k-60s.json) | 40,000 | 768 | 38,767.47 | 38,770.17 | Load validation; no capacity claim |
 | [baseline50k](benchmarks/results/cycles-20260906-source-a1-50k-60s.json) | 50,000 | 1,536 | 46,407.20 | 46,571.39 | Rejected: target not attained; offered below canonical |
+| [baseline50k-window3072](benchmarks/results/cycles-20260906-source-a1-50k-cwnd3072-60s.json) | 50,000 | 3,072 | 48,297.07 | 48,213.69 | Capacity gates pass; thin offered margin |
 
 The 40k screen passes proof, completion, quantum, ingress, lane, cleanup and strict
 continuity. Canonical-capacity holds and measured backpressure are zero; the chain
 kept pace with offered load. Native execution cost was 1.59044 microseconds per
 accepted candidate transfer. The 50k screen still did not reach 95% of target, with 261,314 full-run
 client-capacity holds and zero canonical-capacity holds. Admission headroom needs
-another calibration before comparing source changes. Raising
+another calibration before comparing source changes. With window 3072, all
+required gates pass, canonical-capacity holds remain zero and execution costs
+1.43207 microseconds per accepted candidate transfer. Offered over canonical is
+only 1.00173: this is a short qualified screen, not a maximum-capacity conclusion.
+The source treatment uses exactly this same target, window and backlog profile. Raising
 offer and queue headroom is benchmark calibration, not a validator TPS gain.
 
 ## Cycle1: source-state reuse

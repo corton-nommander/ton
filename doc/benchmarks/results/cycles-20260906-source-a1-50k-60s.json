@@ -699,6 +699,21 @@
     "semantics": "Before/after generator execution, including ramp/warmup/drain. Do not divide these counters by measured-only native accepted transfers."
   },
   "capacity_claim_allowed": false,
+  "launch_settings": {
+    "TON_SIMPLEX_MAX_TPS": "1",
+    "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0",
+    "BENCHMARK_IMAGES_PREBUILT": "1",
+    "BENCHMARK_STRICT_IMAGE_REUSE": "1",
+    "NATIVE_LOAD_TARGET_TPS": "50000",
+    "NATIVE_LOAD_RAMP_SECONDS": "30",
+    "NATIVE_LOAD_WARMUP_SECONDS": "60",
+    "NATIVE_LOAD_DURATION_SECONDS": "60",
+    "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+    "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+    "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+    "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "1536"
+  },
+  "launch_command_sha256": "84c37f214572b9450a4951bcb23626ec984a7ce57eb082345458317c2b3b0301",
   "generator_issue_holds": {
     "active_capacity": 0,
     "source_capacity": 0,

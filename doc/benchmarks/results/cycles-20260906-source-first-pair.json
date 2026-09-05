@@ -1,0 +1,20 @@
+{
+  "control": "source-a1-50k-cwnd3072-60s",
+  "treatment": "source-b1-50k-cwnd3072-60s",
+  "configuration_mismatches": [],
+  "configuration_complete": true,
+  "comparison_eligible": true,
+  "capacity_comparison_eligible": false,
+  "descriptive_changes_pct": {
+    "canonical_tps_change_pct": 1.3645465385740323,
+    "offered_tps_change_pct": 0.9358746424903757,
+    "proof_cohort_tps_change_pct": 0.2092644441739111,
+    "native_execute_us_per_accepted_change_pct": -1.2458110955069657,
+    "nonce_rate_change_pct": null,
+    "scans_per_selected_change_pct": 1.7309271389268162,
+    "excluded_per_selected_change_pct": null
+  },
+  "semantics": "Descriptive changes remain visible for rejected runs but cannot support claims. Zero control denominator yields null.",
+  "exact_launch_settings_match": true,
+  "harness_env_hash_match": true
+}

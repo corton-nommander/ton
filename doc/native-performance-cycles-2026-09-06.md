@@ -68,7 +68,23 @@ its rollback snapshot before the first successful write. Full per-transfer state
 validation, expired-work handling, size guards and whole-run rollback remain.
 The scratch CTest target and all 18 native tests passed before commit. The code
 baseline and treatment were built with Release/native Clang 22, four build workers,
-and immutable revision labels. Paired live results are pending.
+and immutable revision labels. The first matched live screen is complete:
+
+| Metric | Baseline | Source reuse |
+| --- | ---: | ---: |
+| Offered TPS | 48,297.07 | 48,749.07 |
+| Canonical TPS | 48,213.69 | 48,871.59 |
+| Native execution microseconds / accepted | 1.43207 | 1.41423 |
+| Classification | Capacity gates pass | Load validation |
+
+[Paired evidence](benchmarks/results/cycles-20260906-source-first-pair.json)
+confirms identical launch settings and harness environment hashes. All proof,
+completion, ingress, quantum, lane, cleanup and strict-continuity checks pass.
+Execution cost is descriptively 1.25% lower and TPS 1.36% higher. Treatment offered
+load is below canonical throughput; no capacity gain or repeatability claim is
+made. The >=15% execution target is not met by this screen. The change is retained
+for its removed redundant work while further cycles address the larger trie cost
+and insufficient admission headroom.
 
 ## Next candidate
 

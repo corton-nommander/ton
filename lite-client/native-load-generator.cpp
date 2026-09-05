@@ -3319,9 +3319,10 @@ double NativeLoadWorker::measure_backpressure_overlap(double begin, double end) 
 }
 
 void NativeLoadWorker::update_backpressure_state(double now) {
-  bool paused = !sending_done_ && options_.max_canonical_backlog &&
-                (options_.auto_nonce || options_.canonical_block_follower) &&
-                canonical_backlog_ >= options_.max_canonical_backlog;
+  bool paused = native_load::canonical_backpressure_active(
+      canonical_backlog_, options_.max_canonical_backlog,
+      options_.auto_nonce || options_.canonical_block_follower, sending_done_,
+      options_.native_signed_runs.requested ? native_signed_run_quantum_ : 1);
   if (paused == canonical_backpressure_paused_) {
     return;
   }

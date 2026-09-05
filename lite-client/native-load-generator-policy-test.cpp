@@ -454,6 +454,48 @@ TEST(NativeLoadGeneratorPolicy, NativeSignedRunHoldsAtCanonicalBacklogTail) {
   ASSERT_EQ(native_load::bounded_native_signed_run_canonical_capacity(16, 16, 16, false), 16u);
 }
 
+TEST(NativeLoadGeneratorPolicy, CanonicalBackpressureDetectsDistributedSignedRunResiduals) {
+  // Reproduce the 39k diagnostic: 131072 slots across six workers leaves each
+  // at 21840 after whole 16-transfer runs, below its 21845/21846 configured cap.
+  // The old scalar comparison reported no pause despite rejecting all normal
+  // issue opportunities and leaving pacing credit unused.
+  std::uint64_t total_used = 0;
+  for (std::uint32_t worker = 0; worker < 6; ++worker) {
+    auto limit = native_load::distributed_share(131072, worker, 6);
+    auto used = limit / 16 * 16;
+    total_used += used;
+    ASSERT_TRUE(used < limit);
+    ASSERT_TRUE(native_load::canonical_backpressure_active(used, limit, true, false, 16));
+    auto capacity = native_load::bounded_native_signed_run_canonical_capacity(16, used, limit, true);
+    ASSERT_TRUE(native_load::native_signed_run_issue_hold_reason(
+                    16, 16, 16, capacity, true, 16, 16, 16) ==
+                native_load::NativeSignedRunIssueHoldReason::canonical_capacity);
+    // A proof crossing one whole run frees enough room to resume. Drain or
+    // disabled canonical tracking must end the accounting interval too.
+    ASSERT_TRUE(!native_load::canonical_backpressure_active(used - 16, limit, true, false, 16));
+    ASSERT_TRUE(!native_load::canonical_backpressure_active(used, limit, true, true, 16));
+    ASSERT_TRUE(!native_load::canonical_backpressure_active(used, limit, false, false, 16));
+  }
+  ASSERT_EQ(total_used, 131040u);
+}
+
+TEST(NativeLoadGeneratorPolicy, CanonicalBackpressurePreservesScalarAndBoundarySemantics) {
+  ASSERT_TRUE(!native_load::canonical_backpressure_active(15, 16, true, false));
+  ASSERT_TRUE(native_load::canonical_backpressure_active(16, 16, true, false));
+  ASSERT_TRUE(native_load::canonical_backpressure_active(17, 16, true, false));
+  ASSERT_TRUE(!native_load::canonical_backpressure_active(0, 16, true, false, 16));
+  ASSERT_TRUE(native_load::canonical_backpressure_active(1, 16, true, false, 16));
+  ASSERT_TRUE(!native_load::canonical_backpressure_active(17, 0, true, false, 16));
+  ASSERT_TRUE(native_load::canonical_backpressure_active(16, 16, true, false, 0));
+
+  // Subtract the already-checked backlog from the cap; do not overflow by
+  // adding the quantum to a near-maximum nonce/backlog counter.
+  auto maximum = std::numeric_limits<std::uint64_t>::max();
+  ASSERT_TRUE(!native_load::canonical_backpressure_active(maximum - 16, maximum, true, false, 16));
+  ASSERT_TRUE(native_load::canonical_backpressure_active(maximum - 15, maximum, true, false, 16));
+  ASSERT_TRUE(native_load::canonical_backpressure_active(maximum, maximum, true, false, 16));
+}
+
 TEST(NativeLoadGeneratorPolicy, NativeSignedRunPlanCannotOverflowItsNonceInterval) {
   native_load::NativeSignedRunSettings settings;
   settings.requested = true;

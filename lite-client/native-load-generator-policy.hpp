@@ -667,6 +667,20 @@ inline std::uint64_t bounded_native_signed_run_canonical_capacity(
   return std::min(logical_capacity, configured_backlog_limit - canonical_backlog);
 }
 
+// Match the ordinary issuance quantum when reporting canonical backpressure.
+// A residual below one whole NTRN is blocked even when backlog < configured
+// limit. Scalar issuance retains a quantum of one; drain never adds pause time.
+inline bool canonical_backpressure_active(std::uint64_t canonical_backlog,
+                                           std::uint64_t configured_backlog_limit,
+                                           bool enforce_canonical_backlog, bool sending_done,
+                                           std::uint32_t issue_quantum = 1) {
+  auto required = std::max<std::uint32_t>(1, issue_quantum);
+  return !sending_done &&
+         bounded_native_signed_run_canonical_capacity(required, canonical_backlog,
+                                                       configured_backlog_limit,
+                                                       enforce_canonical_backlog) < required;
+}
+
 // A requested run consumes only a consecutive sequence which fits both the
 // configured run bound and the nonce range. A short tail is valid, but the
 // returned plan is always one indivisible authorization: later integration

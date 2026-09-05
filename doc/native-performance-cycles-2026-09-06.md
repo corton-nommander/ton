@@ -202,3 +202,22 @@ The candidate image is built once before live integration. Subsequent off/on
 runs will reuse that same image and validator process; offered-rate calibration
 remains necessary. Unit tests alone do not validate the actor/RPC lifecycle or
 establish a throughput gain.
+
+
+The initial enabled-mode integration screen used target55000, window12288,
+initial RTT0.20s and64queries/client. It delivered53694.4 offered TPS and
+53410.44 canonical TPS, passed all capacity/correctness/quantum/lane/cleanup
+and strict-continuity gates, and drained to zero logical/query inflight. Its
+0.532% offered margin remains thin evidence of saturation. Parent attempts,
+logical attempts and query identity reconcile exactly; all attempts carried16
+outputs. Only1.196% of parents used transport batches (947queries, mean5.86
+parents), so the immediate collector reduces total queries by only0.992%.
+[Diagnostic evidence](benchmarks/results/cycles-20260906-batch-diagnostic-55k-cwnd12288.json)
+preserves all counters. This is integration validation, not an A/B improvement.
+
+The next same-image screen fixes target60000 with the same12288window,
+0.20s initial RTT,64queries/client, finite backlog caps and phase durations.
+Planned order is off/on/on/off; a failed first capacity pair is retained and
+diagnosed before repetition. Both modes must attain at least57000 offered TPS
+and offered must exceed canonical; a5% margin would give stronger saturation
+evidence. No restart or rebuild occurs between arms.

@@ -773,3 +773,178 @@ TEST(NativeLoadGeneratorPolicy, CanonicalLaneBalanceIsOrderIndependent) {
   ASSERT_EQ(first.min_equal_share_bps, second.min_equal_share_bps);
   ASSERT_EQ(first.max_equal_share_bps, second.max_equal_share_bps);
 }
+
+TEST(NativeLoadGeneratorPolicy, SignedRunBatchRequiresDistinctWholeParentsAndIndependentCredits) {
+  native_load::NativeSignedRunBatchBudget client_limited(64, 100, 35);
+  ASSERT_TRUE(client_limited.try_append(7, 16, 900));
+  ASSERT_TRUE(!client_limited.try_append(7, 16, 900));
+  ASSERT_EQ(client_limited.body_count(), 1u);
+  ASSERT_EQ(client_limited.logical_count(), 16u);
+  ASSERT_EQ(client_limited.body_bytes(), 900u);
+  ASSERT_TRUE(client_limited.try_append(2, 16, 1000));
+  // Residual credit never resizes an existing full parent. A separately
+  // signed three-output repair/terminal tail can consume that exact credit.
+  ASSERT_TRUE(!client_limited.try_append(9, 16, 1100));
+  ASSERT_EQ(client_limited.logical_count(), 32u);
+  ASSERT_TRUE(client_limited.try_append(9, 3, 300));
+  ASSERT_TRUE(client_limited.full());
+  ASSERT_EQ(client_limited.logical_count(), 35u);
+  ASSERT_EQ(client_limited.sources()[0], 7u);
+  ASSERT_EQ(client_limited.sources()[1], 2u);
+  ASSERT_EQ(client_limited.sources()[2], 9u);
+
+  native_load::NativeSignedRunBatchBudget worker_limited(64, 31, 100);
+  ASSERT_TRUE(worker_limited.try_append(0, 16, 100));
+  ASSERT_TRUE(!worker_limited.try_append(1, 16, 100));
+  ASSERT_EQ(worker_limited.logical_count(), 16u);
+  ASSERT_EQ(worker_limited.body_count(), 1u);
+  ASSERT_TRUE(worker_limited.try_append(1, 15, 100));
+  ASSERT_TRUE(worker_limited.full());
+}
+
+TEST(NativeLoadGeneratorPolicy, SignedRunBatchHonorsPhysicalAndByteBoundsWithoutOverflow) {
+  native_load::NativeSignedRunBatchBudget physical(2, 100, 100);
+  ASSERT_TRUE(physical.try_append(0, 16, 1));
+  ASSERT_TRUE(physical.try_append(1, 16, 1));
+  ASSERT_TRUE(physical.full());
+  ASSERT_TRUE(!physical.try_append(2, 1, 1));
+  ASSERT_EQ(physical.logical_count(), 32u);
+
+  native_load::NativeSignedRunBatchBudget bytes(64, 100, 100);
+  ASSERT_TRUE(!bytes.try_append(0, 16, std::numeric_limits<std::size_t>::max()));
+  ASSERT_TRUE(!bytes.try_append(0, 0, 1));
+  ASSERT_TRUE(!bytes.try_append(0, 17, 1));
+  ASSERT_TRUE(!bytes.try_append(0, 16, 0));
+  ASSERT_EQ(bytes.body_count(), 0u);
+  ASSERT_TRUE(bytes.try_append(0, 16, native_load::max_submission_batch_bytes - 1));
+  ASSERT_TRUE(!bytes.try_append(1, 16, 2));
+  ASSERT_EQ(bytes.body_count(), 1u);
+  ASSERT_TRUE(bytes.try_append(1, 1, 1));
+  ASSERT_TRUE(bytes.full());
+  ASSERT_EQ(bytes.body_bytes(), native_load::max_submission_batch_bytes);
+
+  native_load::NativeSignedRunBatchBudget empty(64, 0, 100);
+  ASSERT_TRUE(empty.full());
+  ASSERT_TRUE(!empty.try_append(0, 1, 1));
+  native_load::NativeSignedRunBatchBudget protocol_limit(
+      std::numeric_limits<std::size_t>::max(),
+      std::numeric_limits<std::uint32_t>::max(),
+      std::numeric_limits<std::uint32_t>::max());
+  ASSERT_EQ(protocol_limit.body_limit(), native_load::max_submission_batch_bodies);
+}
+
+TEST(NativeLoadGeneratorPolicy, SignedRunBatchRequeuesAnUnfittingHeadWithoutChangingParentOrder) {
+  native_load::ReadySourceQueue queue;
+  queue.reset(3);
+  ASSERT_TRUE(queue.enqueue(0));
+  ASSERT_TRUE(queue.enqueue(1));
+  ASSERT_TRUE(queue.enqueue(2));
+  native_load::NativeSignedRunBatchBudget first(64, 31, 64);
+  auto a = queue.pop();
+  ASSERT_TRUE(first.try_append(a.source_idx, 16, 100));
+  auto b = queue.pop();
+  ASSERT_TRUE(!first.try_append(b.source_idx, 16, 100));
+  ASSERT_TRUE(queue.enqueue(b.source_idx));
+  // The accepted source stays unqueued until its head resolves. Existing
+  // queued heads retain precedence; the whole rejected parent is retryable.
+  ASSERT_EQ(queue.pop().source_idx, 2u);
+  auto requeued = queue.pop();
+  ASSERT_EQ(requeued.source_idx, 1u);
+  native_load::NativeSignedRunBatchBudget next(64, 16, 16);
+  ASSERT_TRUE(next.try_append(requeued.source_idx, 16, 100));
+  ASSERT_EQ(next.logical_count(), 16u);
+}
+
+TEST(NativeLoadGeneratorPolicy, SignedRunBatchAckGrowthMatchesIndividualLogicalReplies) {
+  constexpr double initial = 63.9;
+  auto grouped = native_load::adaptive_cwnd_after_logical_acks(initial, 4096, 64, 16);
+  double separate = initial;
+  std::uint32_t limited = 0;
+  for (std::uint32_t i = 0; i < 16; ++i) {
+    auto ack = native_load::adaptive_cwnd_after_ack(separate, 4096, 64);
+    separate = ack.cwnd;
+    limited += ack.limited ? 1u : 0u;
+  }
+  ASSERT_TRUE(std::abs(grouped.cwnd - separate) < 1e-12);
+  ASSERT_EQ(grouped.limited_acks, limited);
+  ASSERT_TRUE(limited > 0);
+  ASSERT_TRUE(grouped.cwnd > native_load::adaptive_cwnd_after_ack(initial, 4096, 64).cwnd);
+  auto at_cap = native_load::adaptive_cwnd_after_logical_acks(64, 4096, 64, 3);
+  ASSERT_EQ(at_cap.limited_acks, 3u);
+  auto none = native_load::adaptive_cwnd_after_logical_acks(64, 4096, 64, 0);
+  ASSERT_EQ(none.limited_acks, 0u);
+  ASSERT_TRUE(none.cwnd == 64);
+
+  auto counts = native_load::batch_submission_message_counts(3, 16 + 16 + 3);
+  ASSERT_EQ(counts.physical_messages, 3u);
+  ASSERT_EQ(counts.logical_transfers, 35u);
+}
+
+TEST(NativeLoadGeneratorPolicy, SignedRunBatch64BodiesNeverConfuses1024LogicalCredits) {
+  native_load::NativeSignedRunBatchBudget exact(64, 1024, 1024);
+  native_load::NativeSignedRunBatchBudget residual(64, 1024, 1023);
+  for (std::size_t i = 0; i < 63; ++i) {
+    ASSERT_TRUE(exact.try_append(i, 16, 100));
+    ASSERT_TRUE(residual.try_append(i, 16, 100));
+  }
+  ASSERT_TRUE(exact.try_append(63, 16, 100));
+  ASSERT_EQ(exact.body_count(), 64u);
+  ASSERT_EQ(exact.logical_count(), 1024u);
+  ASSERT_TRUE(exact.full());
+  ASSERT_TRUE(!residual.try_append(63, 16, 100));
+  ASSERT_EQ(residual.body_count(), 63u);
+  ASSERT_EQ(residual.logical_count(), 1008u);
+  ASSERT_EQ(residual.body_bytes(), 6300u);
+  ASSERT_EQ(residual.sources().back(), 62u);
+}
+
+TEST(NativeLoadGeneratorPolicy, SignedRunBatchMixedTailReservesOneQueryAndAllLogicalCredit) {
+  native_load::NativeSignedRunBatchBudget budget(64, 100, 19);
+  ASSERT_TRUE(budget.try_append(0, 16, 100));
+  ASSERT_TRUE(budget.try_append(1, 3, 100));
+  std::uint32_t queries = 0;
+  std::uint32_t logical_inflight = 7;
+  ASSERT_TRUE(native_load::acquire_admission_query_credit(1, queries));
+  logical_inflight += budget.logical_count();
+  ASSERT_EQ(queries, 1u);
+  ASSERT_EQ(logical_inflight, 26u);
+  ASSERT_TRUE(!native_load::acquire_admission_query_credit(1, queries));
+  // Release is transport ownership, before any per-parent result is applied;
+  // accepted, rejected, or already proof-resolved parents share this release.
+  logical_inflight -= budget.logical_count();
+  ASSERT_TRUE(native_load::release_admission_query_credit(queries));
+  ASSERT_EQ(logical_inflight, 7u);
+  ASSERT_EQ(queries, 0u);
+
+  auto first = native_load::adaptive_cwnd_after_logical_acks(16, 4096, 0, 16);
+  auto tail = native_load::adaptive_cwnd_after_logical_acks(first.cwnd, 4096, 0, 3);
+  auto together = native_load::adaptive_cwnd_after_logical_acks(16, 4096, 0, 19);
+  ASSERT_TRUE(std::abs(tail.cwnd - together.cwnd) < 1e-12);
+  ASSERT_EQ(first.limited_acks + tail.limited_acks, together.limited_acks);
+  auto scalar = native_load::adaptive_cwnd_after_logical_acks(16, 4096, 0, 1);
+  ASSERT_TRUE(scalar.cwnd == native_load::adaptive_cwnd_after_ack(16, 4096, 0).cwnd);
+  auto hard = native_load::adaptive_cwnd_after_logical_acks(4096, 4096, 0, 3);
+  ASSERT_TRUE(hard.cwnd == 4096);
+  ASSERT_EQ(hard.limited_acks, 3u);
+}
+TEST(NativeLoadGeneratorPolicy, SignedRunBatchingIsExplicitAndDefaultOffEvenWithLegacyBatch64) {
+  native_load::NativeRunBatchingSettings settings;
+  ASSERT_TRUE(!settings.requested);
+  ASSERT_TRUE(!native_load::native_run_batching_enabled(settings, true, 64));
+  ASSERT_TRUE(native_load::valid_native_run_batching_configuration(settings, true, 64));
+  ASSERT_TRUE(native_load::valid_submission_batch_timeout(true, settings, 64, 1));
+  // The same scalar batch still owns the server's longer batch deadline.
+  ASSERT_TRUE(!native_load::valid_submission_batch_timeout(false, settings, 64, 8.999));
+  ASSERT_TRUE(native_load::valid_submission_batch_timeout(false, settings, 64, 9));
+  ASSERT_TRUE(native_load::valid_submission_batch_timeout(false, settings, 1, 1));
+
+  settings.requested = true;
+  ASSERT_TRUE(!native_load::valid_native_run_batching_configuration(settings, false, 64));
+  ASSERT_TRUE(!native_load::native_run_batching_enabled(settings, false, 64));
+  ASSERT_TRUE(!native_load::valid_native_run_batching_configuration(settings, true, 1));
+  ASSERT_TRUE(!native_load::native_run_batching_enabled(settings, true, 1));
+  ASSERT_TRUE(native_load::valid_native_run_batching_configuration(settings, true, 64));
+  ASSERT_TRUE(native_load::native_run_batching_enabled(settings, true, 64));
+  ASSERT_TRUE(!native_load::valid_submission_batch_timeout(true, settings, 64, 8.999));
+  ASSERT_TRUE(native_load::valid_submission_batch_timeout(true, settings, 64, 9));
+}

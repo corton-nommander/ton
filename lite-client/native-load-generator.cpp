@@ -187,6 +187,7 @@ struct Options {
   td::uint32 submit_source_run_size{1};
   td::uint32 native_payment_lane_depth{0};
   native_load::NativeSignedRunSettings native_signed_runs;
+  native_load::NativeRunBatchingSettings native_run_batching;
   td::uint32 submit_coalesce_ms{2};
   td::uint32 submit_max_queries_per_client{0};
   td::uint64 max_canonical_backlog{262144};
@@ -991,7 +992,7 @@ class NativeLoadWorker final : public td::actor::Actor {
                  td::Result<td::BufferSlice> result);
   void on_batch_result(std::vector<std::shared_ptr<TransferTask>> tasks, std::size_t client_idx,
                        td::Result<td::BufferSlice> result);
-  void increase_client_cwnd(std::size_t client_idx);
+  void increase_client_cwnd(std::size_t client_idx, td::uint32 logical_count);
   void handle_task_error(std::shared_ptr<TransferTask> task, std::size_t client_idx, td::Status error,
                          ErrorOrigin origin);
   void schedule_retry(std::shared_ptr<TransferTask> task, double delay_seconds,
@@ -1772,6 +1773,12 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"sign_errors\":" << total.sign_errors
         << ",\"native_signed_runs_enabled\":"
         << (options_.native_signed_runs.requested ? "true" : "false")
+        << ",\"native_run_batching_requested\":"
+        << (options_.native_run_batching.requested ? "true" : "false")
+        << ",\"native_run_batching_enabled\":"
+        << (native_load::native_run_batching_enabled(
+                options_.native_run_batching, options_.native_signed_runs.requested,
+                options_.submit_batch_size) ? "true" : "false")
         << ",\"native_signed_run_target_size\":" << options_.native_signed_runs.entries_per_run
         << ",\"native_payment_lane_depth\":" << options_.native_payment_lane_depth
         << ",\"native_signed_run_messages\":" << total.native_signed_run_messages
@@ -1824,7 +1831,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << static_cast<double>(total.wire_batch_messages) /
                static_cast<double>(std::max<td::uint64>(1, total.wire_batches))
         << ",\"wire_batch_max_size\":" << total.max_wire_batch_size
-        << ",\"wire_batch_source_run_target\":" << options_.submit_source_run_size
+        << ",\"wire_batch_source_run_target\":"
+        << (options_.native_signed_runs.requested ? 1u : options_.submit_source_run_size)
         << ",\"wire_batch_source_runs\":" << total.wire_batch_source_runs << ",\"wire_batch_source_run_avg_size\":"
         << static_cast<double>(total.wire_batch_messages) /
                static_cast<double>(std::max<td::uint64>(1, total.wire_batch_source_runs))
@@ -2166,8 +2174,9 @@ class NativeLoadCoordinator final : public td::actor::Actor {
                    ",\"canonical_backlog_after_drain\":null,\"drain_to_anchor_s\":null";
     }
     std::cout << ",\"finalized\":null,\"finalized_semantics\":\"not_independently_observed\""
-              << ",\"admission_semantics\":\"liteServer.sendMessage status=1; not block inclusion\""
+              << ",\"admission_semantics\":\"liteServer.sendMessage or ordered sendMessageBatch item status=1; not block inclusion\""
               << ",\"native_signed_run_semantics\":\"when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash\""
+              << ",\"native_run_batching_semantics\":\"explicit default-off transport grouping of already-ready intact NTRN parents from distinct source heads; no coalescing wait or padding, one ready parent sends individually, and physical and logical credits stay separate\""
               << ",\"native_signed_run_normal_quantum_semantics\":\"ordinary NTRN issuance uses one fixed logical quantum capped once by static worker, source, canonical-backlog, and the smallest per-client dispatch ceiling; transient residuals hold instead of shrinking it\""
               << ",\"native_signed_run_repair_tail_semantics\":\"only a freshly signed finite drain-repair suffix may contain fewer outputs than the normal quantum; admitted repairs reuse their original exact parent\""
               << ",\"native_signed_run_terminal_tail_semantics\":\"the sole ordinary short-run exception advances the exclusive uint64 nonce cursor exactly to UINT64_MAX without wrapping it\""
@@ -2176,7 +2185,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"native_payment_lane_depth_semantics\":\"client-side source/destination address-prefix preflight depth; zero disables the check and consensus remains authoritative\""
               << ",\"wire_attempts_semantics\":\"physical external BOC bodies submitted to liteServer; an NTRN parent contributes one even when it authorizes multiple logical transfers\""
               << ",\"logical_submission_attempts_semantics\":\"logical transfers represented by every admission attempt, including retries; use alongside wire_attempts to measure NTRN message amortization\""
-              << ",\"wire_batch_source_run_semantics\":\"adjacent ascending nonces from one source in a sendMessageBatch; each source appears in at most one bounded run per batch and seed selection remains globally fair\""
+              << ",\"wire_batch_source_run_semantics\":\"physical envelopes in each source group of a sendMessageBatch; scalar groups use adjacent ascending nonces, NTRN groups contain one intact ready parent per distinct source, and source heads remain fair\""
               << ",\"source_issue_burst_semantics\":\"fair round-robin sources issue bounded contiguous work per turn; scalar mode counts one physical message per nonce, while signed-run mode constructs one physical NTRN parent carrying its reported logical transfer count\""
               << ",\"head_blocked_ready_notifications_semantics\":\"O(1) ready-state notifications for non-head same-source tasks; they do not enter or rotate through the dispatch queue\""
               << ",\"head_blocked_ready_scans_semantics\":\"deprecated compatibility counter; source-head scheduling avoids blocked-task scans and leaves this at zero\""
@@ -2264,6 +2273,7 @@ void NativeLoadCoordinator::maybe_begin() {
                << " max_inflight=" << options_.max_inflight << " submit_batch=" << options_.submit_batch_size
                << " source_run=" << options_.submit_source_run_size
                << " native_signed_runs=" << options_.native_signed_runs.requested
+               << " native_run_batching=" << options_.native_run_batching.requested
                << " native_signed_run_size=" << options_.native_signed_runs.entries_per_run
                << " native_payment_lane_depth=" << options_.native_payment_lane_depth
                << " submit_coalesce_ms=" << options_.submit_coalesce_ms
@@ -3289,9 +3299,9 @@ bool NativeLoadWorker::task_is_active(const std::shared_ptr<TransferTask>& task)
 
 bool NativeLoadWorker::is_fresh_normal_submission(
     const std::shared_ptr<TransferTask>& task) const {
-  // NTRN already is the source-local authorization bundle.  Do not hold it
-  // behind the scalar sendMessageBatch coalescer: one whole run is sent as
-  // one physical message and never split merely to fill a legacy batch.
+  // NTRN already is the source-local authorization bundle. Its optional
+  // transport batch contains only already-ready intact parents; it never
+  // waits behind the scalar coalescer or splits a parent to fill a batch.
   return !options_.native_signed_runs.requested && options_.submit_batch_size > 1 && task && !task->repair &&
          !task->ever_submitted && task->first_retry_at < 0.0;
 }
@@ -4016,10 +4026,10 @@ std::size_t NativeLoadWorker::append_ready_source_run(
 
 void NativeLoadWorker::dispatch_ready() {
   if (options_.native_signed_runs.requested) {
-    // A signed run is a complete authorization unit.  Keep its physical NTRN
-    // message on the individual sendMessage path (which may still be
-    // server-side coalesced) rather than flattening it into a scalar batch or
-    // permitting a partial client-window reservation.
+    // A signed run remains a complete authorization unit. The default sends
+    // it individually; --native-run-batching explicitly groups already-ready
+    // parents from distinct source heads without a coalescing delay. Neither
+    // path flattens a parent or consumes partial logical-transfer credit.
     while (!ready_wallets_.empty() && inflight_ < options_.max_inflight) {
       auto task = take_dispatchable_ready_task(true);
       if (!task) {
@@ -4040,7 +4050,44 @@ void NativeLoadWorker::dispatch_ready() {
         }
         break;
       }
-      send_task(std::move(task), client_idx.value());
+      if (!native_load::native_run_batching_enabled(
+              options_.native_run_batching, options_.native_signed_runs.requested,
+              options_.submit_batch_size)) {
+        send_task(std::move(task), client_idx.value());
+        continue;
+      }
+      native_load::NativeSignedRunBatchBudget budget(
+          options_.submit_batch_size, static_cast<td::uint32>(options_.max_inflight - inflight_),
+          client_available_capacity(client_idx.value()));
+      CHECK(task->signed_run);
+      if (!budget.try_append(task->wallet_idx, task->logical_count(), task->boc.size())) {
+        // Preserve individual admission for an envelope exceeding the batch
+        // byte limit; do not strand the popped source head or split its BOC.
+        send_task(std::move(task), client_idx.value());
+        continue;
+      }
+      std::vector<std::shared_ptr<TransferTask>> tasks;
+      tasks.reserve(budget.body_limit());
+      tasks.push_back(std::move(task));
+      while (!budget.full()) {
+        auto next = take_dispatchable_ready_task(true, &budget.sources());
+        if (!next) {
+          break;
+        }
+        CHECK(next->signed_run);
+        if (!budget.try_append(next->wallet_idx, next->logical_count(), next->boc.size())) {
+          enqueue_ready_wallet(next->wallet_idx);
+          break;
+        }
+        // Selected tasks stay ready until send_batch reserves one query and
+        // the sum of their logical credits. The actor cannot interleave here.
+        tasks.push_back(std::move(next));
+      }
+      if (tasks.size() == 1) {
+        send_task(std::move(tasks.front()), client_idx.value());
+      } else {
+        send_batch(std::move(tasks), client_idx.value());
+      }
     }
     return;
   }
@@ -4237,6 +4284,9 @@ void NativeLoadWorker::send_batch(std::vector<std::shared_ptr<TransferTask>> tas
       }
     }
     ++task->attempts;
+    if (task->signed_run) {
+      ++stats_.native_signed_run_submission_attempts;
+    }
   }
   auto query = ton::serialize_tl_object(
       ton::create_tl_object<ton::lite_api::liteServer_sendMessageBatch>(std::move(bodies)), true);
@@ -4304,9 +4354,7 @@ void NativeLoadWorker::on_result(std::shared_ptr<TransferTask> task, std::size_t
       // Client windows are expressed in logical transfers. One successful
       // NTRN response therefore acknowledges each authorized output even
       // though it arrived in a single physical sendMessage reply.
-      for (td::uint32 i = 0; i < logical_count; ++i) {
-        increase_client_cwnd(client_idx);
-      }
+      increase_client_cwnd(client_idx, logical_count);
       accept_task(std::move(task), TaskResolution::admitted);
     } else {
       ++stats_.rejected_other;
@@ -4397,7 +4445,7 @@ void NativeLoadWorker::on_batch_result(std::vector<std::shared_ptr<TransferTask>
     }
     auto& status = statuses->results_[i];
     if (status && status->status_ == 1) {
-      increase_client_cwnd(client_idx);
+      increase_client_cwnd(client_idx, task->logical_count());
       accept_task(std::move(task), TaskResolution::admitted);
     } else if (status && status->status_ == 0) {
       handle_task_error(std::move(task), client_idx,
@@ -4412,17 +4460,17 @@ void NativeLoadWorker::on_batch_result(std::vector<std::shared_ptr<TransferTask>
   maybe_finish();
 }
 
-void NativeLoadWorker::increase_client_cwnd(std::size_t client_idx) {
+void NativeLoadWorker::increase_client_cwnd(std::size_t client_idx, td::uint32 logical_count) {
   if (!options_.adaptive_inflight) {
     return;
   }
   CHECK(client_idx < clients_.size());
   auto& client = clients_[client_idx];
-  auto update = native_load::adaptive_cwnd_after_ack(client.cwnd, client.hard_limit,
-                                                      client.cwnd_limit);
+  auto update = native_load::adaptive_cwnd_after_logical_acks(
+      client.cwnd, client.hard_limit, client.cwnd_limit, logical_count);
   client.cwnd = update.cwnd;
-  if (options_.adaptive_max_cwnd && update.limited) {
-    ++stats_.cwnd_cap_limited_acks;
+  if (options_.adaptive_max_cwnd) {
+    stats_.cwnd_cap_limited_acks += update.limited_acks;
   }
 }
 
@@ -5584,7 +5632,7 @@ int main(int argc, char* argv[]) {
     options.max_inflight = td::to_integer<td::uint32>(value);
     return options.max_inflight ? td::Status::OK() : td::Status::Error("inflight must be positive");
   });
-  parser.add_checked_option(0, "submit-batch-size", "messages per liteServer.sendMessageBatch query",
+  parser.add_checked_option(0, "submit-batch-size", "physical BOC bodies per liteServer.sendMessageBatch query; NTRN requires --native-run-batching",
                             [&](td::Slice value) {
                               options.submit_batch_size = td::to_integer<td::uint32>(value);
                               return options.submit_batch_size >= 1 && options.submit_batch_size <= 1024
@@ -5604,6 +5652,9 @@ int main(int argc, char* argv[]) {
   parser.add_option(0, "native-signed-runs",
                     "emit v5 NTRN source-signed runs instead of scalar NTFX messages",
                     [&] { options.native_signed_runs.requested = true; });
+  parser.add_option(0, "native-run-batching",
+                    "immediately batch intact ready NTRN parents (requires signed runs and batch size > 1)",
+                    [&] { options.native_run_batching.requested = true; });
   parser.add_checked_option(0, "native-signed-run-size",
                             "logical transfers per v5 NTRN run (1..16; used with --native-signed-runs)",
                             [&](td::Slice value) {
@@ -5849,6 +5900,10 @@ int main(int argc, char* argv[]) {
       options.submit_source_run_size > options.submit_batch_size) {
     LOG(FATAL) << "submit-source-run-size must not exceed submit-batch-size";
   }
+  if (!native_load::valid_native_run_batching_configuration(
+          options.native_run_batching, options.native_signed_runs.requested, options.submit_batch_size)) {
+    LOG(FATAL) << "native-run-batching requires --native-signed-runs and --submit-batch-size > 1";
+  }
   if (options.workers > options.sources || options.workers > options.connections ||
       options.workers > options.signers || options.workers > options.max_inflight) {
     LOG(FATAL) << "workers must not exceed sources, connections, signers, or inflight";
@@ -5861,7 +5916,9 @@ int main(int argc, char* argv[]) {
   if (options.max_canonical_backlog && options.max_canonical_backlog < options.workers) {
     LOG(FATAL) << "max-canonical-backlog must be zero or at least the worker count";
   }
-  if (!options.native_signed_runs.requested && options.submit_batch_size > 1 && options.query_timeout < 9.0) {
+  if (!native_load::valid_submission_batch_timeout(
+          options.native_signed_runs.requested, options.native_run_batching,
+          options.submit_batch_size, options.query_timeout)) {
     LOG(FATAL) << "batched submission requires query-timeout >= 9 seconds; the server owns "
                   "admission work for at most 8 seconds";
   }

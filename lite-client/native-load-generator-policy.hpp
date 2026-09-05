@@ -30,6 +30,25 @@ inline AdaptiveCwndAckResult adaptive_cwnd_after_ack(double current, double hard
   return {.cwnd = std::min(limit, wanted), .limited = wanted > limit};
 }
 
+struct AdaptiveCwndLogicalAckResult {
+  double cwnd{1.0};
+  std::uint32_t limited_acks{0};
+};
+
+// Transport grouping must not change AIMD growth: acknowledge every logical
+// output, including finite repair tails, exactly as individual submissions do.
+inline AdaptiveCwndLogicalAckResult adaptive_cwnd_after_logical_acks(
+    double current, double hard_limit, double configured_limit,
+    std::uint32_t logical_count) {
+  AdaptiveCwndLogicalAckResult result{current, 0};
+  for (std::uint32_t i = 0; i < logical_count; ++i) {
+    auto next = adaptive_cwnd_after_ack(result.cwnd, hard_limit, configured_limit);
+    result.cwnd = next.cwnd;
+    result.limited_acks += next.limited ? 1u : 0u;
+  }
+  return result;
+}
+
 // Keep the loss response usable by indivisible logical-message quanta.  The
 // caller bounds minimum_dispatch_window by that client's configured ceiling;
 // scalar admission therefore retains the historical floor of one.
@@ -527,6 +546,80 @@ inline CanonicalLaneBalanceSummary summarize_canonical_lane_balance(
 // to serialize a v5 message. The generator has a compile-time guard against
 // this value drifting from block::NativeTransferRun::max_entries.
 constexpr std::uint32_t max_native_signed_run_entries = 16;
+
+// These are physical-body limits of liteServer.sendMessageBatch. Logical
+// transfer credit remains an independent, usually smaller client/worker bound.
+constexpr std::size_t max_submission_batch_bodies = 1024;
+constexpr std::size_t max_submission_batch_bytes = 8 << 20;
+
+struct NativeRunBatchingSettings {
+  // Existing NTRN commands often pass a formerly ignored scalar batch size.
+  // Require this separate opt-in to preserve their individual-send behavior.
+  bool requested{false};
+};
+
+inline bool native_run_batching_enabled(const NativeRunBatchingSettings& settings,
+                                        bool native_signed_runs, std::uint32_t batch_size) {
+  return settings.requested && native_signed_runs && batch_size > 1;
+}
+
+inline bool valid_native_run_batching_configuration(const NativeRunBatchingSettings& settings,
+                                                    bool native_signed_runs, std::uint32_t batch_size) {
+  return !settings.requested || native_run_batching_enabled(settings, native_signed_runs, batch_size);
+}
+
+inline bool valid_submission_batch_timeout(bool native_signed_runs,
+                                           const NativeRunBatchingSettings& settings,
+                                           std::uint32_t batch_size, double seconds) {
+  auto uses_batches = (!native_signed_runs && batch_size > 1) ||
+                      native_run_batching_enabled(settings, native_signed_runs, batch_size);
+  return !uses_batches || seconds >= 9.0;
+}
+
+// One ready source head contributes one intact signed parent. Rejected
+// additions leave all budgets unchanged so the actor can requeue that head.
+// This policy never waits for more work or manufactures a smaller parent.
+class NativeSignedRunBatchBudget {
+ public:
+  NativeSignedRunBatchBudget(std::size_t body_limit, std::uint32_t worker_credit,
+                            std::uint32_t client_credit)
+      : logical_capacity_(std::min(worker_credit, client_credit)),
+        body_limit_(std::min({body_limit, max_submission_batch_bodies,
+                              static_cast<std::size_t>(logical_capacity_)})) {
+    sources_.reserve(body_limit_);
+  }
+
+  bool try_append(std::size_t source, std::uint32_t logical_count,
+                  std::size_t body_bytes) {
+    if (full() || logical_count == 0 || logical_count > max_native_signed_run_entries ||
+        logical_count > logical_capacity_ - logical_count_ || body_bytes == 0 ||
+        body_bytes > max_submission_batch_bytes - body_bytes_ ||
+        std::find(sources_.begin(), sources_.end(), source) != sources_.end()) {
+      return false;
+    }
+    sources_.push_back(source);
+    logical_count_ += logical_count;
+    body_bytes_ += body_bytes;
+    return true;
+  }
+
+  bool full() const {
+    return sources_.size() >= body_limit_ || logical_count_ == logical_capacity_ ||
+           body_bytes_ == max_submission_batch_bytes;
+  }
+  std::size_t body_limit() const { return body_limit_; }
+  std::size_t body_count() const { return sources_.size(); }
+  std::uint32_t logical_count() const { return logical_count_; }
+  std::size_t body_bytes() const { return body_bytes_; }
+  const std::vector<std::size_t>& sources() const { return sources_; }
+
+ private:
+  std::uint32_t logical_capacity_;
+  std::size_t body_limit_;
+  std::uint32_t logical_count_{0};
+  std::size_t body_bytes_{0};
+  std::vector<std::size_t> sources_;
+};
 
 struct NativeSignedRunSettings {
   // Keep this opt-in so the established scalar NTFX generator remains the

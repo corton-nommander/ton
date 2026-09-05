@@ -724,6 +724,7 @@
   "native_run_batching": {
     "native_run_batching_requested": true,
     "native_run_batching_enabled": true,
+    "native_run_batching_coalesce_ms": null,
     "wire_queries": 465282,
     "wire_batches": 908,
     "wire_batch_messages": 5807,
@@ -750,6 +751,31 @@
     "native_run_batching_valid": true,
     "native_run_batching_invalid_reasons": []
   },
+  "coalescer": {
+    "submit_coalesce_ms": 20,
+    "submit_coalesce_windows": 0,
+    "submit_coalesce_blocked_pumps": 0,
+    "submit_coalesce_deadline_dispatches": 0,
+    "submit_coalesce_full_batch_dispatches": 0
+  },
+  "measured_container_cpu": {
+    "genesis": {
+      "samples": 29,
+      "mean_cores": 9.152610344827586,
+      "max_cores": 10.8488
+    },
+    "native-load-generator": {
+      "samples": 29,
+      "mean_cores": 0.8048172413793103,
+      "max_cores": 1.026
+    },
+    "session-stats": {
+      "samples": 29,
+      "mean_cores": 0.7698379310344827,
+      "max_cores": 1.0776000000000001
+    }
+  },
+  "measured_container_cpu_semantics": "Mean Docker CPU samples whose sample timestamps fall inside the measured window; sampled interval CPU, not per-stage instrumentation.",
   "generator_issue_holds": {
     "active_capacity": 0,
     "source_capacity": 0,

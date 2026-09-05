@@ -1,0 +1,25 @@
+{
+  "schema": "native-coalescer-validation-v1",
+  "source_revision": "4caa92df",
+  "harness_revision": "0cc494e3",
+  "default_enabled": false,
+  "tests_passed": [
+    "test-native-load-generator-policy",
+    "test-lite-client-query-utils",
+    "test-native-admission-batch"
+  ],
+  "test_log_sha256": "6356d07fee8431199a78203344ad4420942df0e1c58965cb4027882035969bc9",
+  "normal_quantum": 16,
+  "coalesce_ms": 20,
+  "live_validated": false,
+  "diagnostic_required": [
+    "actual batch usage and query amortization",
+    "measured generator CPU",
+    "per-parent and logical attempt reconciliation",
+    "zero outstanding logical/query credits after proof drain",
+    "unchanged proof/quantum/ingress/lane/cleanup/strict gates"
+  ],
+  "remaining_test_limitations": [
+    "Pure policy tests and static callback review do not force mixed per-parent statuses or late proof-resolved RPC callbacks."
+  ]
+}

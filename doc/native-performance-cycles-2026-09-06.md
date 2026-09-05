@@ -245,3 +245,23 @@ absolute coalescer deadline only for fresh parents in explicit batching mode.
 Retries, repairs and drain remain prompt, and parent quanta remain indivisible.
 The candidate must pass ownership/deadline/credit regressions before a new image
 and live integration run. Immediate batching remains default off.
+
+
+## Cycle4: bounded fresh-parent coalescing
+
+Commit `4caa92df` applies the existing absolute coalescer only to explicit native
+batching. Fresh source heads wait at most the configured20ms for transport
+grouping, or release early when actual physical/logical credit is full. Deadline
+expiry survives credit stalls. Retries, repairs and drain bypass the fresh gate.
+Held parents requeue intact; reset checks inspect ready tokens, without scanning
+all wallets. Released singletons avoid batch scratch allocations. The three
+policy/routing/admission CTest targets pass; [validation evidence](benchmarks/results/cycles-20260906-coalescer-validation.json)
+records remaining actor integration limits. Harness documentation commit
+`0cc494e3` describes the opt-in behavior without changing any values or gates.
+
+The candidate image is prebuilt once. Its first integration diagnostic uses
+target55000, window12288, initialRTT0.20s,64queries/client and20ms coalescing,
+with the existing finite backlog caps and60s measured window. Transport batch
+density, query reduction and measured-window generator CPU determine whether
+this experiment warrants longer paired repetitions. Repeated ready probing can
+add allocation/queue overhead; no performance gain is assumed.

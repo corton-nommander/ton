@@ -3354,6 +3354,10 @@ Ref<Cell> AugmentedDictionary::build_sorted_update_subtree(td::Span<SetManyEntry
 
 bool AugmentedDictionary::set_many_sorted(td::Span<SetManyEntry> new_values) {
   force_validate();
+  // Direct sorted construction also saves repeated prefix rebuilding on the
+  // serial path. Preserve incremental evaluation for generic augmentations
+  // and for values whose traversal can have VM or usage-accounting effects.
+  bool values_are_plain = aug.supports_parallel_construction() && aug.supports_parallel_sorted_build();
   for (std::size_t i = 0; i < new_values.size(); ++i) {
     const auto& [key, value] = new_values[i];
     if (key.is_null() || value.is_null() || !value->is_valid()) {
@@ -3361,6 +3365,9 @@ bool AugmentedDictionary::set_many_sorted(td::Span<SetManyEntry> new_values) {
     }
     if (i && td::bitstring::bits_memcmp(new_values[i - 1].first, key, key_bits) >= 0) {
       return false;
+    }
+    if (values_are_plain && !is_parallel_plain_cell_graph(value->get_base_cell())) {
+      values_are_plain = false;
     }
   }
   if (new_values.empty()) {
@@ -3373,9 +3380,15 @@ bool AugmentedDictionary::set_many_sorted(td::Span<SetManyEntry> new_values) {
   // label, leaf, and fork builders; in particular, do not use the raw
   // Dictionary::multiset path here because it has no augmentation data.
   AugmentedDictionary updates{key_bits, aug};
-  for (const auto& [key, value] : new_values) {
-    if (!updates.set(key, key_bits, value)) {
-      return false;
+  if (values_are_plain) {
+    // One worker means no fork/join. Only the private update side changes;
+    // the receiver can retain UsageCells and is still merged serially below.
+    updates.set_root_cell(updates.build_sorted_update_trie(new_values, 1));
+  } else {
+    for (const auto& [key, value] : new_values) {
+      if (!updates.set(key, key_bits, value)) {
+        return false;
+      }
     }
   }
 

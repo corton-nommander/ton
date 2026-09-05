@@ -1295,6 +1295,83 @@ TEST(AugmentedDictionary, parallel_shard_accounts_bulk_merge_is_canonical_and_at
   run_case(/*prefix_clustered=*/true);
 }
 
+TEST(AugmentedDictionary, serial_sorted_pure_builder_failure_preserves_tracked_root) {
+  struct RejectingPureAugmentation final : vm::dict::AugmentationData {
+    bool skip_extra(vm::CellSlice& cs) const override {
+      return cs.advance(16);
+    }
+    bool eval_leaf(vm::CellBuilder& cb, vm::CellSlice& value) const override {
+      const auto number = value.prefetch_ulong(16);
+      return number != 0xffff && cb.store_ulong_rchk_bool(number, 16);
+    }
+    bool eval_fork(vm::CellBuilder& cb, vm::CellSlice&, vm::CellSlice&) const override {
+      return cb.store_ulong_rchk_bool(0, 16);
+    }
+    bool eval_empty(vm::CellBuilder& cb) const override {
+      return cb.store_ulong_rchk_bool(0, 16);
+    }
+    bool supports_parallel_construction() const override {
+      return true;
+    }
+    bool supports_parallel_sorted_build() const override {
+      return true;
+    }
+  } augmentation;
+  auto value = [](td::uint64 number) {
+    vm::CellBuilder builder;
+    ASSERT_TRUE(builder.store_ulong_rchk_bool(number, 16));
+    return vm::load_cell_slice_ref(builder.finalize());
+  };
+  std::array<td::BitArray<8>, 3> keys{
+      td::BitArray<8>{static_cast<long long>(0)}, td::BitArray<8>{static_cast<long long>(64)},
+      td::BitArray<8>{static_cast<long long>(128)}};
+  vm::AugmentedDictionary original{8, augmentation};
+  ASSERT_TRUE(original.set(keys[0], value(1)));
+  ASSERT_TRUE(original.set(keys[2], value(2)));
+  const auto original_hash = original.get_root_cell()->get_hash();
+
+  const auto owner = std::this_thread::get_id();
+  std::atomic<bool> worker_usage_callback{false};
+  auto usage_tree = std::make_shared<vm::CellUsageTree>();
+  usage_tree->set_cell_load_callback([&](const vm::LoadedCell&) {
+    if (std::this_thread::get_id() != owner) {
+      worker_usage_callback.store(true, std::memory_order_relaxed);
+    }
+  });
+  vm::AugmentedDictionary staged{
+      vm::UsageCell::create(original.get_root_cell(), usage_tree->root_ptr()), 8, augmentation, false};
+  std::vector<vm::AugmentedDictionary::SetManyEntry> updates;
+  updates.emplace_back(keys[0].cbits(), value(10));
+  updates.emplace_back(keys[1].cbits(), value(0xffff));
+  updates.emplace_back(keys[2].cbits(), value(12));
+
+  // A pure augmentation can reject an otherwise well-formed leaf. A failed
+  // private direct build must leave the previously accepted root intact.
+  bool failed = false;
+  bool applied = false;
+  try {
+    applied = staged.set_many_sorted(td::as_span(updates));
+  } catch (const vm::VmError&) {
+    failed = true;
+  }
+  ASSERT_TRUE(!applied);
+  ASSERT_TRUE(failed);
+  ASSERT_EQ(staged.get_root_cell()->get_hash(), original_hash);
+  ASSERT_TRUE(staged.validate_all());
+  ASSERT_TRUE(!worker_usage_callback.load(std::memory_order_relaxed));
+
+  // A later valid retry must match ordinary ordered replacement/insertion.
+  updates[1].second = value(11);
+  vm::AugmentedDictionary expected{original};
+  for (const auto& [key, leaf] : updates) {
+    ASSERT_TRUE(expected.set(key, 8, leaf));
+  }
+  ASSERT_TRUE(staged.set_many_sorted_parallel(td::as_span(updates), 1));
+  ASSERT_TRUE(staged.validate_all());
+  ASSERT_EQ(staged.get_root_cell()->get_hash(), expected.get_root_cell()->get_hash());
+  ASSERT_TRUE(!worker_usage_callback.load(std::memory_order_relaxed));
+}
+
 TEST(AugmentedDictionary, parallel_bulk_merge_worker_failure_is_atomic) {
   struct WorkerFailingAugmentation final : vm::dict::AugmentationData {
     std::thread::id owner{std::this_thread::get_id()};

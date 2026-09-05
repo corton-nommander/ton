@@ -1,0 +1,89 @@
+{
+  "source_artifact": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/recovery-20260905-treatment1-39k-60s/validator-pipeline-summary.json",
+  "source_sha256": "22a983c001e7303be07bca08891d30eb84f5763299627c8f878ea34f88813af2",
+  "scope": "Measured treatment collation attempts; screening diagnostic only. Paired 39k control ingress-invalid; no capacity or TPS gain claim.",
+  "measured_window_unix_s": {
+    "start": 1788595901.965,
+    "end": 1788595961.965
+  },
+  "measured_candidate_blocks": 681,
+  "max_microbatch_unique_accounts": 64,
+  "staged_dict_sets": 264248,
+  "staged_worker_histograms": {
+    "semantics": "counts of execution/staged-trie attempts including rollback; not committed TPS",
+    "records_total": 681,
+    "capture_complete": true,
+    "reconciled": true,
+    "microbatch_accounts": {
+      "le64": 8909,
+      "65_80": 0,
+      "81_128": 0,
+      "129_256": 0,
+      "257_511": 0,
+      "512": 0,
+      "gt512": 0
+    },
+    "staged_updates": {
+      "le64": 7249,
+      "65_80": 26,
+      "81_128": 87,
+      "129_256": 379,
+      "257_511": 0,
+      "512": 0,
+      "gt512": 0
+    },
+    "staged_workers": {
+      "1": 7741,
+      "2": 0,
+      "4": 0,
+      "8": 0,
+      "other": 0
+    }
+  },
+  "control_source_artifact": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/recovery-20260905-control1-39k-60s/benchmark-summary.json",
+  "control_source_sha256": "4e4dd6197d4eda36cee60bd0f98b4932f933f46435191ba642fb71a6190b2f63",
+  "control_acceptance": {
+    "chain_correctness_valid": true,
+    "correctness_invalid_reasons": [],
+    "run_complete": true,
+    "run_incomplete_reasons": [],
+    "ingress_capacity_valid": false,
+    "ingress_capacity_invalid_reasons": [
+      "offer_target_not_attained"
+    ],
+    "chain_capacity_valid": false,
+    "chain_capacity_invalid_reasons": [
+      "insufficient_load_over_canonical_throughput"
+    ],
+    "capacity_load": {
+      "measured_offered_avg_tps": 32647.2,
+      "measured_canonical_chain_avg_tps": 32032.813559322032,
+      "offered_above_canonical": true,
+      "invalid_reasons": []
+    },
+    "native_signed_run_quantum_required": true,
+    "native_signed_run_quantum_valid": true,
+    "native_signed_run_quantum_telemetry_contract_valid": true,
+    "native_signed_run_quantum_benchmark_profile_valid": true,
+    "native_signed_run_quantum_invalid_reasons": [],
+    "canonical_lane_balance_required": true,
+    "canonical_lane_balance_valid": true,
+    "canonical_lane_balance_invalid_reasons": [],
+    "strict_image_reuse_required": true,
+    "strict_image_reuse_valid": true,
+    "validator_cleanup_valid": true,
+    "validator_cleanup_invalid_reasons": [],
+    "reproducible": false,
+    "reproducibility_reasons": [
+      "source_tree_dirty",
+      "one_or_more_images_lack_source_revision_label"
+    ],
+    "semantics": "proof correctness, run completion, signed-run physical quantum, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+  },
+  "control_load_level_acceptance": {
+    "valid": false,
+    "classification": "rejected",
+    "capacity_claim_allowed": false,
+    "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+  }
+}

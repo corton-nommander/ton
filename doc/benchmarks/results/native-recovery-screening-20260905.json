@@ -1,0 +1,593 @@
+{
+  "schema": "native-recovery-screening-evidence-v1",
+  "scope": "Combined recovered treatment screening. Earlier nonce-floor and fixed-scratch commits are not isolated; no component target can be attributed to this comparison.",
+  "runs": [
+    {
+      "label": "control1",
+      "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/recovery-20260905-control1-39k-60s",
+      "summary_sha256": "4e4dd6197d4eda36cee60bd0f98b4932f933f46435191ba642fb71a6190b2f63",
+      "strict_identity": {
+        "valid": true,
+        "invalid_reasons": [],
+        "evidence": {
+          "required": true,
+          "valid": true,
+          "validator_before": {
+            "container_id": "183eccfacb38ef6708a89ac26fc4d85e140f8f945c6fb92c3e486084ea833b92",
+            "image_id": "sha256:838c81662f35f0d34ee39699c3e9de60defd09e4b3994f01086299e509eeb574",
+            "started_at": "2026-09-05T07:47:53.874971161Z",
+            "restart_count": 0,
+            "running": true,
+            "validator_process": {
+              "pid": 31,
+              "start_ticks": 207611
+            }
+          },
+          "validator_after": {
+            "container_id": "183eccfacb38ef6708a89ac26fc4d85e140f8f945c6fb92c3e486084ea833b92",
+            "image_id": "sha256:838c81662f35f0d34ee39699c3e9de60defd09e4b3994f01086299e509eeb574",
+            "started_at": "2026-09-05T07:47:53.874971161Z",
+            "restart_count": 0,
+            "running": true,
+            "validator_process": {
+              "pid": 31,
+              "start_ticks": 207611
+            }
+          },
+          "generator_image_before": "sha256:e350a1012d60676123f807e885a4f544459dff0b0df3d429bfffdb17a33d0c0d",
+          "generator_image_after": "sha256:e350a1012d60676123f807e885a4f544459dff0b0df3d429bfffdb17a33d0c0d",
+          "generator_container_before": "35337d0bb048ea69a8f72bbc7f6688c02fd2b766300851168ba06c7fdc5685a3",
+          "generator_container_after": "35337d0bb048ea69a8f72bbc7f6688c02fd2b766300851168ba06c7fdc5685a3",
+          "semantics": "prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"
+        }
+      },
+      "acceptance": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": false,
+        "ingress_capacity_invalid_reasons": [
+          "offer_target_not_attained"
+        ],
+        "chain_capacity_valid": false,
+        "chain_capacity_invalid_reasons": [
+          "insufficient_load_over_canonical_throughput"
+        ],
+        "capacity_load": {
+          "measured_offered_avg_tps": 32647.2,
+          "measured_canonical_chain_avg_tps": 32032.813559322032,
+          "offered_above_canonical": true,
+          "invalid_reasons": []
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "source_tree_dirty",
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      },
+      "load_level_acceptance": {
+        "valid": false,
+        "classification": "rejected",
+        "capacity_claim_allowed": false,
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+      },
+      "rates": {
+        "offered_tps": 32647.2,
+        "canonical_chain_tps": 32032.813559322032,
+        "proof_cohort_observed_tps": 30901.066666666666,
+        "observer_discovery_tps": 39834.07887179429,
+        "offered_over_canonical": 1.0191799087376505,
+        "offered_above_canonical": true,
+        "measure_seconds": 60,
+        "canonical_gen_utime_bucket_seconds": 59,
+        "canonical_chain_transfers": 1889936,
+        "semantics": "Canonical chain TPS is proof-checked production by gen_utime; proof-cohort TPS is a measured-offer cohort/checkpoint rate; observer discovery TPS is catch-up, never capacity."
+      },
+      "signed_density": {
+        "logical_per_physical_run": 16.0,
+        "normal_logical_per_physical_run": 16.0,
+        "target": 16,
+        "effective_min": 16,
+        "effective_max": 16,
+        "all_run_telemetry": {
+          "native_signed_run_target_size": 16,
+          "native_signed_run_messages": 305185,
+          "native_signed_run_logical_transfers": 4882960,
+          "native_signed_run_submission_attempts": 306030,
+          "native_signed_run_proof_resolutions": 305185,
+          "native_signed_run_max_size": 16,
+          "native_signed_run_normal_messages": 305185,
+          "native_signed_run_normal_logical_transfers": 4882960,
+          "native_signed_run_normal_quantum_violations": 0,
+          "native_signed_run_repair_messages": 0,
+          "native_signed_run_repair_logical_transfers": 0,
+          "native_signed_run_repair_tail_messages": 0,
+          "native_signed_run_repair_tail_logical_transfers": 0,
+          "native_signed_run_terminal_tail_messages": 0,
+          "native_signed_run_terminal_tail_logical_transfers": 0,
+          "native_signed_run_effective_quantum_min": 16,
+          "native_signed_run_effective_quantum_max": 16,
+          "native_signed_run_cwnd_floor_clamps": 0,
+          "native_signed_run_issue_holds": {
+            "active_capacity": 0,
+            "source_capacity": 0,
+            "canonical_capacity": 11827,
+            "pacing_credit": 544151,
+            "client_capacity": 110062,
+            "query_credit": 0
+          },
+          "native_signed_run_semantics": "when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash",
+          "native_signed_run_normal_quantum_semantics": "ordinary NTRN issuance uses one fixed logical quantum capped once by static worker, source, canonical-backlog, and the smallest per-client dispatch ceiling; transient residuals hold instead of shrinking it",
+          "native_signed_run_repair_tail_semantics": "only a freshly signed finite drain-repair suffix may contain fewer outputs than the normal quantum; admitted repairs reuse their original exact parent",
+          "native_signed_run_terminal_tail_semantics": "the sole ordinary short-run exception advances the exclusive uint64 nonce cursor exactly to UINT64_MAX without wrapping it",
+          "native_signed_run_cwnd_floor_clamps_semantics": "AIMD loss responses whose halved window was raised to one effective signed-run quantum",
+          "native_signed_run_issue_holds_semantics": "blocked normal issue opportunities; issue decisions use active, source, canonical, pacing, current free-client capacity, then admission-query credit precedence, while source also counts quantum-ineligible queue suppression"
+        },
+        "semantics": "Generator full-run signed-run counts, including repair/tail partitions; not measured-only issuance."
+      },
+      "load_configuration": {
+        "target_tps": 39000,
+        "measure_elapsed_s": 60,
+        "native_signed_runs_enabled": true,
+        "native_signed_run_target_size": 16,
+        "adaptive_max_cwnd": 768,
+        "lane_depth": 2
+      },
+      "images": [
+        {
+          "image_id": "sha256:5f3576b583a98779069ea7e4900db2b3d74289aa99b230414c5226c1db792cb0",
+          "repo_tags": [
+            "ghcr.io/neodix42/ton-session-stats:side"
+          ],
+          "repo_digests": [
+            "ghcr.io/neodix42/ton-session-stats@sha256:5f3576b583a98779069ea7e4900db2b3d74289aa99b230414c5226c1db792cb0"
+          ],
+          "created": "2026-08-15T11:17:03.088733486Z",
+          "architecture": "amd64",
+          "os": "linux",
+          "size_bytes": 96735490,
+          "metadata_source": "local-image-inspect",
+          "oci_labels": {
+            "created": null,
+            "revision": null,
+            "source": null,
+            "version": null
+          }
+        },
+        {
+          "image_id": "sha256:838c81662f35f0d34ee39699c3e9de60defd09e4b3994f01086299e509eeb574",
+          "repo_tags": [
+            "ghcr.io/neodix42/mylocalton-docker:max-tps-native"
+          ],
+          "repo_digests": [
+            "ghcr.io/neodix42/mylocalton-docker@sha256:838c81662f35f0d34ee39699c3e9de60defd09e4b3994f01086299e509eeb574"
+          ],
+          "created": "2026-09-04T21:01:58.169360725Z",
+          "architecture": "amd64",
+          "os": "linux",
+          "size_bytes": 232625326,
+          "metadata_source": "local-image-inspect",
+          "oci_labels": {
+            "created": "2026-09-04T20:57:58Z",
+            "revision": "63285ce9bbfd95e7f430699e53f5ca74d1914f46",
+            "source": null,
+            "version": "22.04"
+          }
+        },
+        {
+          "image_id": "sha256:e350a1012d60676123f807e885a4f544459dff0b0df3d429bfffdb17a33d0c0d",
+          "repo_tags": [
+            "mylocalton-native-load-generator:max-tps-native"
+          ],
+          "repo_digests": [
+            "mylocalton-native-load-generator@sha256:e350a1012d60676123f807e885a4f544459dff0b0df3d429bfffdb17a33d0c0d"
+          ],
+          "created": "2026-09-04T21:01:35.147180755Z",
+          "architecture": "amd64",
+          "os": "linux",
+          "size_bytes": 168254698,
+          "metadata_source": "local-image-inspect",
+          "oci_labels": {
+            "created": "2026-09-04T20:57:58Z",
+            "revision": "63285ce9bbfd95e7f430699e53f5ca74d1914f46",
+            "source": null,
+            "version": "22.04"
+          }
+        }
+      ],
+      "measured_native": {
+        "candidate_blocks": 549,
+        "accepted_transfers": 1958224.0,
+        "native_execute_seconds": 3.0739620000000007,
+        "native_execute_us_per_accepted": 1.5697703633496478,
+        "nonce_mismatch_entries": 0.0,
+        "registered_run_reuses": null,
+        "checkpoint_ingress_retentions": 0.0,
+        "staged_worker_histograms": {
+          "semantics": "counts of execution/staged-trie attempts including rollback; not committed TPS",
+          "records_total": 549,
+          "capture_complete": false,
+          "reconciled": false,
+          "microbatch_accounts": null,
+          "staged_updates": null,
+          "staged_workers": null
+        },
+        "max_microbatch_unique_accounts": 64,
+        "semantics": "Measured-window local collation attempts; accepted includes candidate work, not only canonical transfers. Absent raw counter remains null."
+      },
+      "scheduler_full_run": {
+        "capture_complete": true,
+        "monotonic_shared_fields_valid": true,
+        "invalid_or_missing_delta_fields": [],
+        "delta": {
+          "installs": 2652,
+          "masterchain_installs": 721,
+          "scanned": 635864,
+          "selected": 317912,
+          "selected_logical": 5086592,
+          "direct_link_hits": 635864,
+          "direct_link_fallbacks": 0,
+          "active": 635864,
+          "inactive": 0,
+          "excluded": 0,
+          "expired": 0,
+          "delivered_skips": 0,
+          "ready_sources": 317952,
+          "head_gaps": 1864289,
+          "head_missing_watermark": 0,
+          "head_missing_nonce": 1864289,
+          "head_uncommitted": 0,
+          "head_missing_hash_index": 0,
+          "head_missing_priority": 0,
+          "head_missing_message": 0,
+          "head_nonce_mismatch": 0,
+          "speculative_exhausted": 318247,
+          "runs": 317912,
+          "run_messages": 5086592,
+          "delayed": 0,
+          "reactivated": 0,
+          "reactivation_wakes": 0,
+          "scheduler_builds": 1931,
+          "source_scans": 1989411,
+          "source_refreshes": 305120,
+          "source_probes": 2818400,
+          "stale_ready_tokens": 0
+        },
+        "scans_per_selected_physical": 2.000125820981907,
+        "excluded_per_selected_physical": 0.0,
+        "source_scans_per_selected_physical": 6.257741135911824,
+        "semantics": "Before/after generator execution, including ramp/warmup/drain. Do not divide these counters by measured-only native accepted transfers."
+      }
+    },
+    {
+      "label": "treatment1",
+      "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/recovery-20260905-treatment1-39k-60s",
+      "summary_sha256": "3ca4e1e3a78cc54875c4b48212a699b0c95dda51e0bac79cf4329d7512d2142f",
+      "strict_identity": {
+        "valid": true,
+        "invalid_reasons": [],
+        "evidence": {
+          "required": true,
+          "valid": true,
+          "validator_before": {
+            "container_id": "6d65f7bda4ece924edc3193dfe7021ac7db45b14e53068c7c5653a9508e3c786",
+            "image_id": "sha256:1af43034a7a03d4e0420aa383f3b954e4f79cfa78dbb7f2fa2766f9fa6614348",
+            "started_at": "2026-09-05T08:05:16.977235146Z",
+            "restart_count": 0,
+            "running": true,
+            "validator_process": {
+              "pid": 31,
+              "start_ticks": 311929
+            }
+          },
+          "validator_after": {
+            "container_id": "6d65f7bda4ece924edc3193dfe7021ac7db45b14e53068c7c5653a9508e3c786",
+            "image_id": "sha256:1af43034a7a03d4e0420aa383f3b954e4f79cfa78dbb7f2fa2766f9fa6614348",
+            "started_at": "2026-09-05T08:05:16.977235146Z",
+            "restart_count": 0,
+            "running": true,
+            "validator_process": {
+              "pid": 31,
+              "start_ticks": 311929
+            }
+          },
+          "generator_image_before": "sha256:2d2f9ccf9a78678406a068bc00658dc6d26513a07a2a681dbe1dff330dcaa969",
+          "generator_image_after": "sha256:2d2f9ccf9a78678406a068bc00658dc6d26513a07a2a681dbe1dff330dcaa969",
+          "generator_container_before": "4428bf2af9a5614d0339f63776050440a7c889fccb3097f6f4c7947604453f05",
+          "generator_container_after": "4428bf2af9a5614d0339f63776050440a7c889fccb3097f6f4c7947604453f05",
+          "semantics": "prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"
+        }
+      },
+      "acceptance": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": false,
+        "ingress_capacity_invalid_reasons": [
+          "offer_target_not_attained"
+        ],
+        "chain_capacity_valid": false,
+        "chain_capacity_invalid_reasons": [
+          "insufficient_load_over_canonical_throughput",
+          "offered_load_not_above_canonical_throughput"
+        ],
+        "capacity_load": {
+          "measured_offered_avg_tps": 35144,
+          "measured_canonical_chain_avg_tps": 35284.61016949153,
+          "offered_above_canonical": false,
+          "invalid_reasons": [
+            "offered_load_not_above_canonical_throughput"
+          ]
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "source_tree_dirty",
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      },
+      "load_level_acceptance": {
+        "valid": false,
+        "classification": "rejected",
+        "capacity_claim_allowed": false,
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+      },
+      "rates": {
+        "offered_tps": 35144,
+        "canonical_chain_tps": 35284.61016949153,
+        "proof_cohort_observed_tps": 33472.26666666667,
+        "observer_discovery_tps": 21102.942175733417,
+        "offered_over_canonical": 0.9960149717166749,
+        "offered_above_canonical": false,
+        "measure_seconds": 60,
+        "canonical_gen_utime_bucket_seconds": 59,
+        "canonical_chain_transfers": 2081792,
+        "semantics": "Canonical chain TPS is proof-checked production by gen_utime; proof-cohort TPS is a measured-offer cohort/checkpoint rate; observer discovery TPS is catch-up, never capacity."
+      },
+      "signed_density": {
+        "logical_per_physical_run": 16.0,
+        "normal_logical_per_physical_run": 16.0,
+        "target": 16,
+        "effective_min": 16,
+        "effective_max": 16,
+        "all_run_telemetry": {
+          "native_signed_run_target_size": 16,
+          "native_signed_run_messages": 314458,
+          "native_signed_run_logical_transfers": 5031328,
+          "native_signed_run_submission_attempts": 315647,
+          "native_signed_run_proof_resolutions": 314458,
+          "native_signed_run_max_size": 16,
+          "native_signed_run_normal_messages": 314458,
+          "native_signed_run_normal_logical_transfers": 5031328,
+          "native_signed_run_normal_quantum_violations": 0,
+          "native_signed_run_repair_messages": 0,
+          "native_signed_run_repair_logical_transfers": 0,
+          "native_signed_run_repair_tail_messages": 0,
+          "native_signed_run_repair_tail_logical_transfers": 0,
+          "native_signed_run_terminal_tail_messages": 0,
+          "native_signed_run_terminal_tail_logical_transfers": 0,
+          "native_signed_run_effective_quantum_min": 16,
+          "native_signed_run_effective_quantum_max": 16,
+          "native_signed_run_cwnd_floor_clamps": 0,
+          "native_signed_run_issue_holds": {
+            "active_capacity": 0,
+            "source_capacity": 0,
+            "canonical_capacity": 8303,
+            "pacing_credit": 578541,
+            "client_capacity": 96894,
+            "query_credit": 0
+          },
+          "native_signed_run_semantics": "when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash",
+          "native_signed_run_normal_quantum_semantics": "ordinary NTRN issuance uses one fixed logical quantum capped once by static worker, source, canonical-backlog, and the smallest per-client dispatch ceiling; transient residuals hold instead of shrinking it",
+          "native_signed_run_repair_tail_semantics": "only a freshly signed finite drain-repair suffix may contain fewer outputs than the normal quantum; admitted repairs reuse their original exact parent",
+          "native_signed_run_terminal_tail_semantics": "the sole ordinary short-run exception advances the exclusive uint64 nonce cursor exactly to UINT64_MAX without wrapping it",
+          "native_signed_run_cwnd_floor_clamps_semantics": "AIMD loss responses whose halved window was raised to one effective signed-run quantum",
+          "native_signed_run_issue_holds_semantics": "blocked normal issue opportunities; issue decisions use active, source, canonical, pacing, current free-client capacity, then admission-query credit precedence, while source also counts quantum-ineligible queue suppression"
+        },
+        "semantics": "Generator full-run signed-run counts, including repair/tail partitions; not measured-only issuance."
+      },
+      "load_configuration": {
+        "target_tps": 39000,
+        "measure_elapsed_s": 60,
+        "native_signed_runs_enabled": true,
+        "native_signed_run_target_size": 16,
+        "adaptive_max_cwnd": 768,
+        "lane_depth": 2
+      },
+      "images": [
+        {
+          "image_id": "sha256:1af43034a7a03d4e0420aa383f3b954e4f79cfa78dbb7f2fa2766f9fa6614348",
+          "repo_tags": [
+            "ghcr.io/neodix42/mylocalton-docker:resume-sourcegate-3613439ca927"
+          ],
+          "repo_digests": [
+            "ghcr.io/neodix42/mylocalton-docker@sha256:1af43034a7a03d4e0420aa383f3b954e4f79cfa78dbb7f2fa2766f9fa6614348"
+          ],
+          "created": "2026-09-05T07:34:54.075266823Z",
+          "architecture": "amd64",
+          "os": "linux",
+          "size_bytes": 232624781,
+          "metadata_source": "local-image-inspect",
+          "oci_labels": {
+            "created": "2026-09-05T07:24:19Z",
+            "revision": "63285ce9bbfd95e7f430699e53f5ca74d1914f46-dirty-3613439ca927",
+            "source": null,
+            "version": "22.04"
+          }
+        },
+        {
+          "image_id": "sha256:2d2f9ccf9a78678406a068bc00658dc6d26513a07a2a681dbe1dff330dcaa969",
+          "repo_tags": [
+            "mylocalton-native-load-generator:resume-sourcegate-3613439ca927"
+          ],
+          "repo_digests": [
+            "mylocalton-native-load-generator@sha256:2d2f9ccf9a78678406a068bc00658dc6d26513a07a2a681dbe1dff330dcaa969"
+          ],
+          "created": "2026-09-05T07:34:33.667359212Z",
+          "architecture": "amd64",
+          "os": "linux",
+          "size_bytes": 168254208,
+          "metadata_source": "local-image-inspect",
+          "oci_labels": {
+            "created": "2026-09-05T07:24:19Z",
+            "revision": "63285ce9bbfd95e7f430699e53f5ca74d1914f46-dirty-3613439ca927",
+            "source": null,
+            "version": "22.04"
+          }
+        },
+        {
+          "image_id": "sha256:5f3576b583a98779069ea7e4900db2b3d74289aa99b230414c5226c1db792cb0",
+          "repo_tags": [
+            "ghcr.io/neodix42/ton-session-stats:side"
+          ],
+          "repo_digests": [
+            "ghcr.io/neodix42/ton-session-stats@sha256:5f3576b583a98779069ea7e4900db2b3d74289aa99b230414c5226c1db792cb0"
+          ],
+          "created": "2026-08-15T11:17:03.088733486Z",
+          "architecture": "amd64",
+          "os": "linux",
+          "size_bytes": 96735490,
+          "metadata_source": "local-image-inspect",
+          "oci_labels": {
+            "created": null,
+            "revision": null,
+            "source": null,
+            "version": null
+          }
+        }
+      ],
+      "measured_native": {
+        "candidate_blocks": 681,
+        "accepted_transfers": 2113984.0,
+        "native_execute_seconds": 3.4371220000000022,
+        "native_execute_us_per_accepted": 1.6258978308255891,
+        "nonce_mismatch_entries": 0.0,
+        "registered_run_reuses": 132124.0,
+        "checkpoint_ingress_retentions": 0.0,
+        "staged_worker_histograms": {
+          "semantics": "counts of execution/staged-trie attempts including rollback; not committed TPS",
+          "records_total": 681,
+          "capture_complete": true,
+          "reconciled": true,
+          "microbatch_accounts": {
+            "le64": 8909,
+            "65_80": 0,
+            "81_128": 0,
+            "129_256": 0,
+            "257_511": 0,
+            "512": 0,
+            "gt512": 0
+          },
+          "staged_updates": {
+            "le64": 7249,
+            "65_80": 26,
+            "81_128": 87,
+            "129_256": 379,
+            "257_511": 0,
+            "512": 0,
+            "gt512": 0
+          },
+          "staged_workers": {
+            "1": 7741,
+            "2": 0,
+            "4": 0,
+            "8": 0,
+            "other": 0
+          }
+        },
+        "max_microbatch_unique_accounts": 64,
+        "semantics": "Measured-window local collation attempts; accepted includes candidate work, not only canonical transfers. Absent raw counter remains null."
+      },
+      "scheduler_full_run": {
+        "capture_complete": true,
+        "monotonic_shared_fields_valid": true,
+        "invalid_or_missing_delta_fields": [],
+        "delta": {
+          "installs": 2790,
+          "masterchain_installs": 763,
+          "scanned": 648186,
+          "selected": 324093,
+          "selected_logical": 5185488,
+          "direct_link_hits": 648186,
+          "direct_link_fallbacks": 0,
+          "active": 648186,
+          "inactive": 0,
+          "excluded": 0,
+          "expired": 0,
+          "delivered_skips": 0,
+          "ready_sources": 324093,
+          "head_gaps": 1699901,
+          "head_missing_watermark": 0,
+          "head_missing_nonce": 1699901,
+          "head_uncommitted": 0,
+          "head_missing_hash_index": 0,
+          "head_missing_priority": 0,
+          "head_missing_message": 0,
+          "head_nonce_mismatch": 0,
+          "speculative_exhausted": 324500,
+          "runs": 324093,
+          "run_messages": 5185488,
+          "delayed": 0,
+          "reactivated": 0,
+          "reactivation_wakes": 0,
+          "scheduler_builds": 2027,
+          "source_scans": 1808633,
+          "source_refreshes": 348463,
+          "source_probes": 2672587,
+          "stale_ready_tokens": 0
+        },
+        "scans_per_selected_physical": 2.0,
+        "excluded_per_selected_physical": 0.0,
+        "source_scans_per_selected_physical": 5.580598778745607,
+        "semantics": "Before/after generator execution, including ramp/warmup/drain. Do not divide these counters by measured-only native accepted transfers."
+      }
+    }
+  ],
+  "paired_descriptive_comparison": {
+    "control": "control1",
+    "treatment": "treatment1",
+    "configuration_mismatches": [],
+    "configuration_complete": true,
+    "comparison_eligible": false,
+    "capacity_comparison_eligible": false,
+    "descriptive_changes_pct": {
+      "canonical_tps_change_pct": 10.151454864080065,
+      "offered_tps_change_pct": 7.647822784189756,
+      "proof_cohort_tps_change_pct": 8.320748366830927,
+      "native_execute_us_per_accepted_change_pct": 3.57552090333607,
+      "nonce_rate_change_pct": null,
+      "scans_per_selected_change_pct": -0.006290653347264197,
+      "excluded_per_selected_change_pct": null
+    },
+    "semantics": "Descriptive changes remain visible for rejected runs but cannot support claims. Zero control denominator yields null."
+  },
+  "repeatability_assessable": false,
+  "performance_targets_validated": false
+}

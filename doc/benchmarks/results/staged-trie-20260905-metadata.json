@@ -1,0 +1,67 @@
+{
+  "date_utc": "2026-09-05T07:20:22Z",
+  "binary_sha256": "9b7b9fe79f81febc3b387f5a06f0caf2da298402bbf91fb2cfc3bd84e1e6583a",
+  "git_head": "63285ce9bbfd95e7f430699e53f5ca74d1914f46",
+  "command": [
+    "build/bench-staged-trie",
+    "--rounds",
+    "5",
+    "--iterations",
+    "5"
+  ],
+  "host": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+  "cpu_model": "AMD Ryzen 9 3900X 12-Core Processor",
+  "affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+  ],
+  "loadavg_before": "4.90 8.42 6.83 2/3442 61816",
+  "conditions": "Core/benchmark builds and tests completed; genesis preparation paused by root; no validator or offered load running.",
+  "run1_elapsed_seconds": 12.045158277000155,
+  "loadavg_after_run1": "4.54 8.23 6.78 2/3441 80629",
+  "run2_elapsed_seconds": 12.072943975000271,
+  "loadavg_after_run2": "3.29 7.57 6.61 1/3419 99638",
+  "compiler": "Ubuntu clang version 22.1.8 (++20260714014902+ca7933e47d3a-1~exp1~20260714135019.80)",
+  "build_configuration": [
+    "CMAKE_BUILD_TYPE:STRING=Release",
+    "CMAKE_CXX_COMPILER:STRING=/usr/bin/clang++-22",
+    "CMAKE_CXX_FLAGS_RELEASE:STRING=-O3 -DNDEBUG",
+    "TON_ARCH:STRING=native"
+  ],
+  "source_files_sha256": {
+    "CMakeLists.txt": "1e4f4beef30bbde477516a4953c0b4297802bde60aa2471200cfcfc314115064",
+    "crypto/test/bench-staged-trie.cpp": "c089d98c191b523082a7cfe1c104eaf3f2a75926de500f1c6dbdb6a152c86e97",
+    "crypto/vm/dict.cpp": "c42de34f7cca2ec63b92ea3a7b77b5131ce3e8250a0906d2ef1e4da1854917a0",
+    "crypto/block/transaction.cpp": "145c33a1a4ec517d40e42dabec213b88a40e87d43ac2a9f0ac5bcbdd16984c41",
+    "crypto/block/transaction.h": "65231d413bed0bbd3d6860f4720a3ce4178d10d1b2fb993b7b431356f7c25943"
+  },
+  "verified_cases_per_run": 168,
+  "timed_operations_per_run": 4200,
+  "warmup_operations_per_run": 336,
+  "csv_sha256": {
+    "staged-trie-20260905-1.csv": "3cbde31274e91ff3f75c60c6f89d1a99b1627b6529dae6cd0bf8d34dd54153d9",
+    "staged-trie-20260905-2.csv": "693ad8e5f742a06a19085d1d3a30eb0cac3cd534c071251eb938c81b329bcd1c"
+  }
+}

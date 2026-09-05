@@ -1,0 +1,28 @@
+{
+  "schema": "native-same-image-abba-plan-v1",
+  "status": "pending_successful_coalescer_integration",
+  "image_tag": "cycle-coalesce-4caa92df",
+  "source_revision": "4caa92df",
+  "harness_revision": "0cc494e3",
+  "order": [
+    "coalesce-a1-55k-180s",
+    "coalesce-b1-55k-180s",
+    "coalesce-b2-55k-180s",
+    "coalesce-a2-55k-180s"
+  ],
+  "target_tps": 55000,
+  "ramp_seconds": 30,
+  "warmup_seconds": 60,
+  "measurement_seconds": 180,
+  "drain_timeout_seconds": 180,
+  "adaptive_max_cwnd": 12288,
+  "adaptive_initial_rtt_seconds": 0.2,
+  "max_queries_per_client": 64,
+  "max_canonical_backlog": 2097120,
+  "max_source_canonical_backlog": 128,
+  "normal_signed_run_quantum": 16,
+  "submit_coalesce_ms": 20,
+  "strict_prebuilt_reuse": true,
+  "validator_restart_between_arms": false,
+  "acceptance": "One predeclared off/on/on/off series, no rerolling failed arms. All correctness, completion, quantum, ingress, lane, cleanup and strict gates stay unchanged. Each run must attain >=95% target and offered must exceed canonical for capacity eligibility. A repeatable >=2% capacity gain requires both eligible pairs. If load-only comparisons remain valid, preserve the entire series to quantify variability even when a capacity margin fails. Stop on correctness/completion or runtime-health failure."
+}

@@ -5862,6 +5862,11 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         // Expired work keeps the normal execution path's error precedence.
         CHECK(!item.transfers.empty());
         const auto& first_transfer = item.transfers.front();
+        // NativeExternal is built above from either one scalar transfer or
+        // the outputs of one canonical NTRN, all with that run's source.
+        // Keep its source across every output: map rehash preserves element
+        // pointers and unchanged-state cleanup only runs after this loop.
+        NativeAccountState* work_src = nullptr;
         if (now_ < first_transfer.valid_until) {
           NativeAccountState* first_src = nullptr;
           if (!run_native_stage("source-account preflight",
@@ -5880,6 +5885,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           } else if (!first_src->valid_balance) {
             source_deferral = NativeDeferralReason::account_balance_unrepresentable;
           } else {
+            work_src = first_src;
             cached_src_address = first_transfer.src;
             cached_src_state = first_src;
             const auto source_code = block::check_native_transfer_source(
@@ -5905,8 +5911,11 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         // Reserve the complete signed work before changing any state. This
         // is what prevents a capacity or proof guard from accepting only a
         // prefix of an NTRN interval.
+        if (!work_scratch.add_address(first_transfer.src)) {
+          co_return fatal_error("native signed work exceeds bounded account scratch capacity");
+        }
         for (const auto& transfer : item.transfers) {
-          if (!work_scratch.add_address(transfer.src) || !work_scratch.add_address(transfer.dst)) {
+          if (!work_scratch.add_address(transfer.dst)) {
             co_return fatal_error("native signed work exceeds bounded account scratch capacity");
           }
         }
@@ -5969,16 +5978,23 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
 
         bool work_deferred = false;
         bool work_permanently_invalid = false;
+        bool source_journaled = false;
         std::optional<NativeDeferralReason> work_deferral_reason;
         for (const auto& transfer : item.transfers) {
-          NativeAccountState* src = nullptr;
-          if (!run_native_stage("source-account load",
-                                [&] { src = load_cached_native_state(transfer.src, false); })) {
-            co_return false;
-          }
-          if (src) {
-            cached_src_address = transfer.src;
-            cached_src_state = src;
+          NativeAccountState* src = work_src;
+          if (!src) {
+            // Expired work bypasses preflight and retains the original load
+            // and error ordering. Successful preflight already loaded this
+            // exact source; every output still runs the full state engine.
+            if (!run_native_stage("source-account load",
+                                  [&] { src = load_cached_native_state(transfer.src, false); })) {
+              co_return false;
+            }
+            if (src) {
+              work_src = src;
+              cached_src_address = transfer.src;
+              cached_src_state = src;
+            }
           }
           NativeAccountState* dst = nullptr;
           if (!run_native_stage("destination-account load",
@@ -6031,7 +6047,10 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
             }
             break;
           }
-          journal_work_state(transfer.src, *src);
+          if (!source_journaled) {
+            journal_work_state(first_transfer.src, *src);
+            source_journaled = true;
+          }
           if (dst != src) {
             journal_work_state(transfer.dst, *dst);
           }

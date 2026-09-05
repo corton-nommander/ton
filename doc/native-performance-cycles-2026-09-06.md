@@ -265,3 +265,19 @@ with the existing finite backlog caps and 60 s measured window. Transport batch
 density, query reduction and measured-window generator CPU determine whether
 this experiment warrants longer paired repetitions. Repeated ready probing can
 add allocation/queue overhead; no performance gain is assumed.
+
+
+The coalescer integration passes all gates:53,541.6 offered TPS,53,486.37
+canonical TPS, zero outstanding logical/query credits and canonical backlog
+after drain. Exactly16 logical outputs per parent attempt and ordered query
+accounting reconcile. It batches99.801% of parents, averaging11.387 per batch;
+43,990 RPCs represent490,788 parent attempts, a91.037% reduction versus one RPC
+per parent. Measured generator CPU averages0.734 cores, validator8.652 cores.
+The offered margin is only0.103%, so this single screen does not prove maximum
+capacity or a TPS improvement. [Diagnostic evidence](benchmarks/results/cycles-20260906-coalesce-diagnostic-55k-cwnd12288.json)
+retains all counters and gates.
+
+The predeclared [180-second off/on/on/off protocol](benchmarks/results/cycles-20260906-coalescer-abba-plan.json)
+now proceeds at the same55k target/window/query limits. No images are rebuilt
+or validator restarted between arms. Every arm is preserved; capacity gain and
+repeatability require both eligible comparisons, not a selected best run.

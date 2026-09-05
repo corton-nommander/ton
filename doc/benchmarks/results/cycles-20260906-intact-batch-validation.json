@@ -1,0 +1,34 @@
+{
+  "schema": "native-intact-batch-validation-v1",
+  "source_revision": "d5fc1b9ad8c3f9c53a6605f273deaf125d0636bb",
+  "harness_revision": "559a519f582692493c8e5e5b89d2b4b7e4da4af8",
+  "default_enabled": false,
+  "normal_quantum": 16,
+  "cpp_targets": [
+    "test-native-load-generator-policy",
+    "test-lite-client-query-utils",
+    "test-native-admission-batch"
+  ],
+  "cpp_passed": 3,
+  "cpp_failed": 0,
+  "cpp_test_log_sha256": "5de6d2fb342267f194c1f351e34b0cf069b70b894c9872bdf08e3061aee03176",
+  "harness_validation": [
+    "native-run-batching-config-test.sh",
+    "native-benchmark-reporting-test.sh",
+    "bash/sh syntax",
+    "all five Compose default profiles",
+    "explicit NTRN/batching Compose mode",
+    "git diff --check"
+  ],
+  "live_validated": false,
+  "unchanged_limits": {
+    "parallel_trie_threshold": 512,
+    "ingress_retention": false,
+    "minimum_offered_target_fraction": 0.95,
+    "maximum_canonical_backpressure_fraction": 0.01,
+    "strict_prebuilt_reuse": true
+  },
+  "limitations": [
+    "Pure-policy and routing/admission unit tests do not exercise the full actor/RPC lifecycle; controlled live integration is still required."
+  ]
+}

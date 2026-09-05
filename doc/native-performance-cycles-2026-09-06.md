@@ -180,3 +180,25 @@ offline repetitions support the algorithm's serial-trie improvement. There is
 no validated TPS gain from this pair, and no repeated capacity pair is claimed.
 The tested trie optimization is retained while the next cycle addresses the
 transport admission ceiling using an explicit default-off batching mode.
+
+
+## Cycle3: explicit intact-parent transport batching
+
+Commit `d5fc1b9a` adds `--native-run-batching`, default off. It immediately
+groups already-ready whole NTRN parents from distinct source heads, falling
+back to individual submission for one parent. Physical message/byte bounds,
+worker/client logical credits, per-parent retry ownership, and per-output AIMD
+acknowledgment remain separate. It adds no coalescing delay or signed-run padding.
+The three policy, query-routing and admission CTest targets pass.
+
+Harness commit `559a519` wires an explicit `NATIVE_LOAD_NATIVE_RUN_BATCHING`
+boolean, checks the image's exact flag support, and validates requested/effective
+telemetry. Its full reporting/configuration regressions and shell/Compose checks
+pass. Existing admission, quantum, proof, cleanup, strict-reuse and capacity gates
+are unchanged. [Validation evidence](benchmarks/results/cycles-20260906-intact-batch-validation.json)
+records the tested source and harness revisions.
+
+The candidate image is built once before live integration. Subsequent off/on
+runs will reuse that same image and validator process; offered-rate calibration
+remains necessary. Unit tests alone do not validate the actor/RPC lifecycle or
+establish a throughput gain.

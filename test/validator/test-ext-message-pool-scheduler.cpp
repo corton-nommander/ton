@@ -95,6 +95,8 @@ class ExtMessagePoolTestAccess {
     std::vector<td::uint32> logical_counts;
     td::optional<NativeAddress> cursor;
     td::uint64 source_scans{0};
+    td::uint64 scanned{0};
+    td::uint64 excluded{0};
   };
 
   static ExtMessagePool make_pool() {
@@ -395,11 +397,14 @@ class ExtMessagePoolTestAccess {
 
   static CallbackRound select_callback_round(ExtMessagePool &pool, ShardIdFull shard,
                                              std::size_t logical_limit,
-                                             NativeSourceNonceFloors native_source_nonce_floors = {}) {
+                                             NativeSourceNonceFloors native_source_nonce_floors = {},
+                                             std::vector<ExtMessage::Hash> excluded = {}) {
     auto callback = std::make_unique<ExtMsgCallback>();
     callback->shard = shard;
     callback->queue_capacity = logical_limit;
     callback->native_source_nonce_floors = std::move(native_source_nonce_floors);
+    std::sort(excluded.begin(), excluded.end());
+    callback->excluded_messages = std::move(excluded);
     auto installed = std::make_shared<ExtMessagePool::InstalledCallback>(std::move(callback));
     pool.restore_callback_native_cursor(installed);
     auto selection = pool.select_callback_native_messages(installed, logical_limit, logical_limit);
@@ -409,6 +414,8 @@ class ExtMessagePoolTestAccess {
     CallbackRound result;
     result.cursor = selection.cursor;
     result.source_scans = selection.counters.source_scans;
+    result.scanned = selection.counters.scanned;
+    result.excluded = selection.counters.excluded;
     result.sources.reserve(selection.items.size());
     result.nonces.reserve(selection.items.size());
     result.logical_counts.reserve(selection.items.size());
@@ -1777,6 +1784,41 @@ TEST(ExtMessagePoolScheduler, CallbackNonceFloorIsBranchLocalAndSiblingReusable)
             (std::vector<td::uint64>{0, 1, 2, 3}));
   auto sibling = ExtMessagePoolTestAccess::select_callback_round(pool, {basechainId, shardIdAll}, 4);
   ASSERT_EQ(sibling.nonces, (std::vector<td::uint64>{0, 1, 2, 3}));
+}
+
+TEST(ExtMessagePoolScheduler, CallbackNonceFloorSkipsAncestorScansWithoutConsumingSiblingWork) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  auto source = ExtMessagePoolTestAccess::source(0x29);
+  ExtMessagePoolTestAccess::set_watermark(pool, source, 0);
+  std::vector<ExtMessage::Hash> ancestor_hashes;
+  for (td::uint64 nonce = 0; nonce < 40; ++nonce) {
+    auto hash = ExtMessagePoolTestAccess::add(pool, source, nonce);
+    if (nonce < 32) {
+      ancestor_hashes.push_back(hash);
+    }
+  }
+
+  // Both callbacks describe the same exact parent. The floor elides the
+  // ancestor prefix entirely while exclusions still guard message identity.
+  auto control = ExtMessagePoolTestAccess::select_callback_round(
+      pool, {basechainId, shardIdAll}, 8, {}, ancestor_hashes);
+  auto treatment = ExtMessagePoolTestAccess::select_callback_round(
+      pool, {basechainId, shardIdAll}, 8,
+      {{.workchain = source.first, .source = source.second, .next_nonce = 32}}, ancestor_hashes);
+  ASSERT_EQ(treatment.nonces, control.nonces);
+  ASSERT_EQ(treatment.nonces, (std::vector<td::uint64>{32, 33, 34, 35, 36, 37, 38, 39}));
+  ASSERT_EQ(control.excluded, 32u);
+  ASSERT_EQ(treatment.excluded, 0u);
+  ASSERT_EQ(control.scanned - treatment.scanned, 32u);
+
+  // A competing parent has consumed only nonce zero for this same source.
+  // Neither the larger sibling floor nor its delivered suffix may leak here.
+  auto sibling = ExtMessagePoolTestAccess::select_callback_round(
+      pool, {basechainId, shardIdAll}, 3,
+      {{.workchain = source.first, .source = source.second, .next_nonce = 1}});
+  ASSERT_EQ(sibling.nonces, (std::vector<td::uint64>{1, 2, 3}));
+  ASSERT_EQ(ExtMessagePoolTestAccess::first_unconsumed_nonce(pool, source), td::optional<td::uint64>(0));
+  ASSERT_EQ(ExtMessagePoolTestAccess::reservation_nonces(pool, source).size(), 40u);
 }
 
 TEST(ExtMessagePoolScheduler, CallbackNonceFloorUsesMaxOfCanonicalAndNormalizedBranchFloor) {

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: LGPL-2.0-or-later
  */
 
+#include <algorithm>
 #include <cstdlib>
 #include <map>
 #include <optional>
@@ -76,6 +77,30 @@ void test_exact_ancestry_and_fallback() {
   require(materialize(branches, 99, {1}) == std::set<int>{1});
 }
 
+void test_competing_branches_keep_distinct_same_source_floors() {
+  using Floors = std::map<int, int>;
+  struct Branch {
+    std::optional<int> parent_id;
+    Floors own_nonce_floors;
+  };
+  const Floors canonical{{1, 4}, {2, 7}};
+  const std::map<int, Branch> branches{
+      {10, {.parent_id = std::nullopt, .own_nonce_floors = {{1, 5}}}},
+      {11, {.parent_id = 10, .own_nonce_floors = {{1, 6}}}},
+      {20, {.parent_id = std::nullopt, .own_nonce_floors = {{1, 99}, {2, 80}}}},
+  };
+  auto merge = [](auto& target, const auto& added) {
+    for (const auto& [source, nonce] : added) {
+      target[source] = std::max(target[source], nonce);
+    }
+  };
+  auto left = materialize_native_branch_floor_chain(branches, 11, canonical, merge);
+  auto right = materialize_native_branch_floor_chain(branches, 20, canonical, merge);
+  require(left == Floors{{1, 6}, {2, 7}});
+  require(right == Floors{{1, 99}, {2, 80}});
+  require(canonical == Floors{{1, 4}, {2, 7}});
+}
+
 void test_pruning_and_eviction_policy() {
   require(should_prune_native_branch_record(6, 7));
   require(should_prune_native_branch_record(7, 7));
@@ -113,6 +138,7 @@ void test_pruning_and_eviction_policy() {
 int main() {
   test_record_actions();
   test_exact_ancestry_and_fallback();
+  test_competing_branches_keep_distinct_same_source_floors();
   test_pruning_and_eviction_policy();
   return 0;
 }

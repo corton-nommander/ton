@@ -395,6 +395,42 @@ struct CollationStats {
     }
   };
   WorkTimeStats work_time;
+  // Disjoint buckets preserve the observed 80-account workload and the exact
+  // 512-update worker threshold. Count attempts, including rolled-back work;
+  // these are workload distributions, not committed-throughput counters.
+  struct NativeAccountCountHistogram {
+    static constexpr std::array<std::size_t, 6> upper_bounds{64, 80, 128, 256, 511, 512};
+    static constexpr std::array<const char*, 7> suffixes{
+        "le64", "65_80", "81_128", "129_256", "257_511", "512", "gt512"};
+    std::array<td::uint64, 7> buckets{};
+
+    void record(std::size_t accounts) {
+      std::size_t bucket = 0;
+      while (bucket < upper_bounds.size() && accounts > upper_bounds[bucket]) {
+        ++bucket;
+      }
+      ++buckets[bucket];
+    }
+
+    std::string to_str(td::Slice prefix) const {
+      std::string result;
+      for (std::size_t i = 0; i < buckets.size(); ++i) {
+        result += PSTRING() << " " << prefix << "_" << suffixes[i] << "=" << buckets[i];
+      }
+      return result;
+    }
+  };
+  NativeAccountCountHistogram native_microbatch_account_histogram;
+  NativeAccountCountHistogram native_staged_update_histogram;
+  // Include other worker counts: native_executor_workers can select 3, 6, etc.
+  std::array<td::uint64, 5> native_staged_worker_histogram{};
+
+  void record_native_staged_updates(std::size_t accounts, unsigned workers) {
+    native_staged_update_histogram.record(accounts);
+    std::size_t bucket = workers == 1 ? 0 : workers == 2 ? 1 : workers == 4 ? 2 : workers == 8 ? 3 : 4;
+    ++native_staged_worker_histogram[bucket];
+  }
+
   td::uint64 native_microbatches = 0;
   td::uint64 native_microbatch_input = 0;
   td::uint64 native_microbatch_accepted = 0;
@@ -442,6 +478,7 @@ struct CollationStats {
   td::uint64 native_deadline_seals = 0;
   td::uint64 native_deadline_deferred = 0;
   td::uint64 native_deadline_first_fragment_commits = 0;
+  td::uint64 native_registered_run_reuses = 0;
   td::uint64 native_canonical_accounts_reused = 0;
   bool native_canonical_root_reused = false;
   NativeDeferralCounters native_deferrals;
@@ -510,8 +547,16 @@ struct CollationStats {
                                    << " native_deadline_deferred=" << native_deadline_deferred
                                    << " native_deadline_first_fragment_commits="
                                    << native_deadline_first_fragment_commits
+                                   << " native_registered_run_reuses=" << native_registered_run_reuses
                                    << " native_canonical_root_reused=" << native_canonical_root_reused
                                    << " native_canonical_accounts_reused=" << native_canonical_accounts_reused;
+    result += native_microbatch_account_histogram.to_str("native_microbatch_accounts");
+    result += native_staged_update_histogram.to_str("native_staged_updates");
+    constexpr std::array<const char*, 5> worker_suffixes{"1", "2", "4", "8", "other"};
+    for (std::size_t i = 0; i < native_staged_worker_histogram.size(); ++i) {
+      result += PSTRING() << " native_staged_workers_" << worker_suffixes[i] << "="
+                          << native_staged_worker_histogram[i];
+    }
     result += PSTRING() << " " << native_deferrals.to_str();
     if (!is_cpu) {
       result += PSTRING() << " " << external_wait.to_str();

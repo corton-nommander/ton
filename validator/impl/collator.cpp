@@ -4671,8 +4671,6 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
   auto start_rejected = stats_.ext_msgs_rejected;
   auto start_compact_entries = native_transfer_batch_entries_.size();
   const bool native_runs_enabled = native_transfer_runs_enabled();
-  const bool native_payment_lanes = native_payment_lanes_enabled();
-  td::optional<block::NativePaymentLanePolicy> payment_lane_policy;
   if (native_runs_enabled) {
     // This processor may be re-entered after a previous direct-run checkpoint has
     // committed, so nonempty derived entries alone do not prove scalar work.
@@ -4972,6 +4970,8 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         .work_driven = work_driven,
         .has_committed_fragment = !native_transfer_batch_entries_.empty(),
         .has_pending_checkpoint = !pending_checkpoint.empty(),
+        .has_pending_producer_work = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending() &&
+                                     ext_msg_queue_state_->native_selected_ahead() != 0,
         .ingress_boundary = ingress_boundary,
         .bounded_refill_timed_out = bounded_refill_timed_out,
         .latency_window_open = latency_window_open,
@@ -5091,6 +5091,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       const auto dict_workers = staged_account_updates.size() < 512u
                                     ? 1u
                                     : block::native_executor_workers(0, staged_account_updates.size());
+      stats_.record_native_staged_updates(staged_account_updates.size(), dict_workers);
       bool staged_account_dict_set = false;
       if (!run_native_stage("staged-account trie build", [&] {
             staged_account_dict_set =
@@ -5619,9 +5620,12 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       td::ScopedRealCpuTimer timer_total{stats_.work_time.total};
       auto [ext_msg_ref, priority] = std::move(item);
       ++stats_.ext_msgs_total;
+      NativeExternal native_external;
       td::Status registration_status;
-      if (!run_native_stage("external-message registration",
-                            [&] { registration_status = register_external_message(ext_msg_ref, priority); })) {
+      if (!run_native_stage("external-message registration", [&] {
+            registration_status = register_external_message(
+                ext_msg_ref, priority, native_runs_enabled ? &native_external.run : nullptr);
+          })) {
         co_return false;
       }
       if (registration_status.is_error()) {
@@ -5634,38 +5638,19 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       }
 
       auto ext_msg = ext_msg_ref->root_cell();
-      NativeExternal native_external;
       native_external.ext_msg = std::move(ext_msg_ref);
       if (native_runs_enabled) {
-        std::optional<td::Result<block::NativeTransferRun>> native_run_res;
-        if (!run_native_stage("native-run decode",
-                              [&] { native_run_res.emplace(block::NativeTransferRun::unpack_external(ext_msg)); })) {
-          co_return false;
-        }
-        if (native_run_res->is_error()) {
+        // Registration is the canonical NTRN parser and applies activation,
+        // payment-lane and current-shard locality gates. Reuse the value it
+        // decoded from this exact immutable root instead of repeating them.
+        if (!native_external.run) {
           LOG(DEBUG) << "source-signed native fast path rejected non-NTRN external message";
           ++stats_.ext_msgs_rejected;
           bad_ext_msgs_.emplace_back(native_external.ext_msg->hash());
           continue;
         }
-        native_external.run = native_run_res->move_as_ok();
+        ++stats_.native_registered_run_reuses;
         const auto& run = native_external.run.value();
-        if (native_payment_lanes && !payment_lane_policy) {
-          auto policy = native_payment_lane_policy();
-          if (policy.is_error()) {
-            LOG(DEBUG) << "native payment lane rejected run: " << policy.error().to_string();
-            ++stats_.ext_msgs_rejected;
-            bad_ext_msgs_.emplace_back(native_external.ext_msg->hash());
-            continue;
-          }
-          payment_lane_policy = policy.move_as_ok();
-        }
-        if (payment_lane_policy && !payment_lane_policy.value().contains(run)) {
-          LOG(DEBUG) << "native payment lane rejected run with a destination outside its source lane";
-          ++stats_.ext_msgs_rejected;
-          bad_ext_msgs_.emplace_back(native_external.ext_msg->hash());
-          continue;
-        }
         native_external.transfers.reserve(run.outputs.size());
         for (std::size_t output_index = 0; output_index < run.outputs.size(); ++output_index) {
           const auto& output = run.outputs[output_index];
@@ -5870,7 +5855,54 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
           break;
         }
 
-        // Reserve the complete signed work before touching any state. This
+        // A signed run has one source and contiguous nonces. Reject an
+        // unusable first source before collecting endpoints or loading any
+        // destination. Reads are safe before reservation; no account is
+        // changed until the complete signed work has passed the size guard.
+        // Expired work keeps the normal execution path's error precedence.
+        CHECK(!item.transfers.empty());
+        const auto& first_transfer = item.transfers.front();
+        if (now_ < first_transfer.valid_until) {
+          NativeAccountState* first_src = nullptr;
+          if (!run_native_stage("source-account preflight",
+                                [&] { first_src = load_cached_native_state(first_transfer.src, false); })) {
+            co_return false;
+          }
+          if (fatal) {
+            bad_ext_msgs_.emplace_back(item.ext_msg->hash());
+            co_return false;
+          }
+          std::optional<NativeDeferralReason> source_deferral;
+          if (state_capacity_reached) {
+            source_deferral = NativeDeferralReason::protocol_account_capacity;
+          } else if (!first_src) {
+            source_deferral = NativeDeferralReason::account_unavailable;
+          } else if (!first_src->valid_balance) {
+            source_deferral = NativeDeferralReason::account_balance_unrepresentable;
+          } else {
+            cached_src_address = first_transfer.src;
+            cached_src_state = first_src;
+            const auto source_code = block::check_native_transfer_source(
+                first_transfer, first_src->nonce, first_src->status, first_src->is_native);
+            if (source_code != block::NativeTransferStateResult::ok) {
+              source_deferral = native_state_deferral_reason(source_code);
+            }
+          }
+          if (source_deferral) {
+            ++stats_.ext_msgs_rejected;
+            delay_ext_msgs_.emplace_back(item.ext_msg->hash());
+            deferrals_in_batch.add(*source_deferral, item.logical_count());
+            if (state_capacity_reached) {
+              full = true;
+              delay_batch_suffix(index + 1, NativeDeferralReason::protocol_account_capacity);
+              stats_.limits_log += "NATIVE_FAST_PATH_EXTERNALS: protocol account-state cap reached\n";
+              break;
+            }
+            continue;
+          }
+        }
+
+        // Reserve the complete signed work before changing any state. This
         // is what prevents a capacity or proof guard from accepting only a
         // prefix of an NTRN interval.
         for (const auto& transfer : item.transfers) {
@@ -6127,6 +6159,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     stats_.native_deferrals.merge(deferrals_in_batch);
     stats_.native_microbatch_permanent += permanent_in_batch;
     stats_.native_microbatch_unique_accounts += state_journal.size();
+    stats_.native_microbatch_account_histogram.record(state_journal.size());
     stats_.native_microbatch_max_input =
         std::max<td::uint64>(stats_.native_microbatch_max_input, batch_logical_entries);
     stats_.native_microbatch_max_unique_accounts =
@@ -8687,7 +8720,11 @@ void Collator::return_block_candidate() {
  *          - If the external message is invalid or duplicate, returns an error.
  *          - Otherwise returns OK.
  */
-td::Status Collator::register_external_message(Ref<ExtMessage> ext_msg, int priority) {
+td::Status Collator::register_external_message(Ref<ExtMessage> ext_msg, int priority,
+                                               std::optional<block::NativeTransferRun>* decoded_native_run) {
+  if (decoded_native_run) {
+    decoded_native_run->reset();
+  }
   Ref<vm::Cell> ext_msg_cell = ext_msg->root_cell();
   if (ext_msg_cell.is_null()) {
     return td::Status::Error("external message cell is null");
@@ -8737,6 +8774,9 @@ td::Status Collator::register_external_message(Ref<ExtMessage> ext_msg, int prio
       }
     }
     registered_ext_msgs_.insert(hash);
+    if (decoded_native_run) {
+      decoded_native_run->emplace(std::move(run));
+    }
     return td::Status::OK();
   }
   if (cs.prefetch_ulong(2) != 2) {  // ext_in_msg_info$10

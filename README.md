@@ -56,7 +56,7 @@ timestamped result bundle.
 docker build \
   --build-arg PORTABLE=0 \
   --build-arg TON_ARCH=native \
-  --build-arg NINJA_JOBS=20 \
+  --build-arg NINJA_JOBS=4 \
   --build-arg VCS_REF="$(git describe --always --dirty)" \
   --build-arg VCS_DATE="$(git show -s --format=%cI HEAD)" \
   --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -65,6 +65,31 @@ docker build \
 cd ../MyLocalTonDocker
 sudo ./run-native-benchmark.sh .env.physical
 ```
+
+For subsequent A/B measurements, prebuild both variants and their derived
+images before sampling. Prepare and warm each variant outside its measured
+window, then require the existing healthy validator and generator image:
+
+```bash
+sudo env BENCHMARK_IMAGES_PREBUILT=1 BENCHMARK_STRICT_IMAGE_REUSE=1 \
+  ./run-native-benchmark.sh .env.physical
+```
+
+Use the same lane-profile environment for preparation and measurement. Strict
+image reuse rejects builds, missing prebuilt images, validator replacement or
+restart, and configuration mismatches. Pin the image ID/digest and record the
+source revision for each variant; the branch-image workflow publishes
+`sha-<commit>` tags and merges the exact platform digests produced by that run.
+For capacity claims, actual measured offered load must exceed canonical
+throughput and the proof, drain, signed-run-density and capacity gates must
+pass. A requested load or a short offered-load peak does not establish this.
+
+Checkpoint ingress retention remains default-off and now requires an active
+producer with selected native work still outstanding. The staged-trie threshold
+remains 512 updates pending workload histograms and the
+[worker-tier benchmark](doc/benchmarks/staged-trie.md). See the
+[recovery and measurement report](doc/native-performance-recovery-2026-09-05.md)
+for results and targets that still require clean paired measurements.
 
 The tracked 24-vCPU profile assigns 18 logical CPUs to genesis and four to the
 generator. Valid Cycle 1 at 4k TPS used about one generator core, and Cycle 3

@@ -103,6 +103,7 @@ inline constexpr NativeCheckpointIngressRetentionState native_checkpoint_ingress
     .work_driven = true,
     .has_committed_fragment = true,
     .has_pending_checkpoint = true,
+    .has_pending_producer_work = true,
     .ingress_boundary = true,
     .bounded_refill_timed_out = true,
     .latency_window_open = true,
@@ -126,6 +127,11 @@ static_assert([] {
 static_assert([] {
   auto state = native_checkpoint_ingress_retention_test_state;
   state.has_pending_checkpoint = false;
+  return !should_retain_native_checkpoint_at_ingress(state);
+}());
+static_assert([] {
+  auto state = native_checkpoint_ingress_retention_test_state;
+  state.has_pending_producer_work = false;
   return !should_retain_native_checkpoint_at_ingress(state);
 }());
 static_assert([] {

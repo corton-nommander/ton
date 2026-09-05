@@ -627,6 +627,10 @@ endif()
 add_executable(test-cells test/test-td-main.cpp ${CELLS_TEST_SOURCE})
 target_link_libraries(test-cells PRIVATE ton_crypto)
 
+# Explicit benchmark target: do not add timing work to normal builds or CTest.
+add_executable(bench-staged-trie EXCLUDE_FROM_ALL crypto/test/bench-staged-trie.cpp)
+target_link_libraries(bench-staged-trie PRIVATE ton_crypto)
+
 add_executable(test-fift test/test-td-main.cpp ${FIFT_TEST_SOURCE})
 target_link_libraries(test-fift PRIVATE fift-lib)
 

@@ -122,6 +122,16 @@ TEST(CollatorExternalWaitStats, SerializesNativeCheckpointCoalescingTelemetry) {
   ASSERT_TRUE(real_stats.find("native_checkpoint_rollback_entries=512") != std::string::npos);
 }
 
+TEST(CollatorExternalWaitStats, SerializesRegisteredNativeRunReuseTelemetry) {
+  ton::validator::CollationStats stats;
+  stats.native_registered_run_reuses = 123;
+
+  auto real_stats = stats.work_time_to_str(false);
+  auto cpu_stats = stats.work_time_to_str(true);
+  ASSERT_TRUE(contains_exact_stat(real_stats, "native_registered_run_reuses=", 123));
+  ASSERT_TRUE(contains_exact_stat(cpu_stats, "native_registered_run_reuses=", 123));
+}
+
 TEST(CollatorExternalWaitStats, AccountsAndSerializesNativeDeferrals) {
   NativeDeferralCounters counters;
   for (std::size_t i = 0; i < native_deferral_reason_count; ++i) {
@@ -164,4 +174,32 @@ TEST(CollatorExternalWaitStats, AccountsAndSerializesNativeDeferrals) {
   ASSERT_TRUE(contains_exact_stat(real_stats, "native_prebatch_carryover_requeue_works=", 2));
   ASSERT_TRUE(contains_exact_stat(real_stats, "native_prebatch_carryover_requeue_entries=", 11));
   ASSERT_TRUE(contains_exact_stat(real_stats, "native_prebatch_scalar_decode_retry_works=", 2));
+}
+
+TEST(CollatorExternalWaitStats, NativeAccountHistogramsPreserveThresholdBoundaries) {
+  ton::validator::CollationStats stats;
+  // Both edges of each disjoint bucket, including empty/rejected fragments.
+  for (auto accounts : {0u, 64u, 65u, 80u, 81u, 128u, 129u, 256u, 257u, 511u, 512u, 513u, 4096u}) {
+    stats.native_microbatch_account_histogram.record(accounts);
+    stats.record_native_staged_updates(accounts, 1);
+  }
+  constexpr std::array<td::uint64, 7> expected{2, 2, 2, 2, 2, 1, 2};
+  for (bool cpu : {false, true}) {
+    const auto serialized = stats.work_time_to_str(cpu);
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+      auto suffix = stats.native_microbatch_account_histogram.suffixes[i];
+      ASSERT_EQ(stats.native_microbatch_account_histogram.buckets[i], expected[i]);
+      ASSERT_TRUE(contains_exact_stat(serialized, (std::string{"native_microbatch_accounts_"} + suffix + "=").c_str(), expected[i]));
+      ASSERT_TRUE(contains_exact_stat(serialized, (std::string{"native_staged_updates_"} + suffix + "=").c_str(), expected[i]));
+    }
+    ASSERT_TRUE(contains_exact_stat(serialized, "native_staged_workers_1=", 13));
+    ASSERT_TRUE(contains_exact_stat(serialized, "native_staged_workers_other=", 0));
+  }
+  stats.record_native_staged_updates(512, 2);
+  stats.record_native_staged_updates(512, 4);
+  stats.record_native_staged_updates(512, 8);
+  stats.record_native_staged_updates(512, 6);
+  for (std::size_t i = 1; i < 5; ++i) {
+    ASSERT_EQ(stats.native_staged_worker_histogram[i], 1u);
+  }
 }

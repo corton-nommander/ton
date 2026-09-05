@@ -178,6 +178,7 @@ struct NativeCheckpointIngressRetentionState {
   bool work_driven{false};
   bool has_committed_fragment{false};
   bool has_pending_checkpoint{false};
+  bool has_pending_producer_work{false};
   bool ingress_boundary{false};
   bool bounded_refill_timed_out{false};
   bool latency_window_open{false};
@@ -191,12 +192,15 @@ struct NativeCheckpointIngressRetentionState {
 };
 
 // The opt-in treatment masks ingress only when it is the sole reason to flush
-// an already-bounded checkpoint.  It never weakens the first exact rollback
+// an already-bounded checkpoint when the producer reports pending work. An
+// open callback or an outstanding refill request alone is not work evidence.
+// It never weakens the first exact rollback
 // anchor, intake/finalization deadline, size headroom, protocol capacity,
 // coalescing capacity, fanout, or fixed latency boundaries.
 constexpr bool should_retain_native_checkpoint_at_ingress(const NativeCheckpointIngressRetentionState& state) {
   return state.enabled && state.work_driven && state.has_committed_fragment && state.has_pending_checkpoint &&
-         state.ingress_boundary && state.bounded_refill_timed_out && state.latency_window_open &&
+         state.has_pending_producer_work && state.ingress_boundary && state.bounded_refill_timed_out &&
+         state.latency_window_open &&
          !state.intake_deadline_reached && !state.checkpoint_deadline_reached && !state.headroom_limited &&
          !state.capacity_reached && !state.fanout_reached && !state.protocol_capacity_reached &&
          !state.protocol_capacity_deferred;

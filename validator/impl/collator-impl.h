@@ -385,7 +385,11 @@ class Collator final : public td::actor::Actor {
   bool is_our_address(Ref<vm::CellSlice> addr_ref) const;
   bool is_our_address(ton::AccountIdPrefixFull addr_prefix) const;
   bool is_our_address(const ton::StdSmcAddress& addr) const;
-  td::Status register_external_message(Ref<ExtMessage> ext_msg, int priority);
+  // When requested, return the exact canonical NTRN value decoded while
+  // registering the external. Native collation can then reuse that value
+  // instead of parsing and canonicalizing the same immutable root twice.
+  td::Status register_external_message(Ref<ExtMessage> ext_msg, int priority,
+                                       std::optional<block::NativeTransferRun>* decoded_native_run = nullptr);
   struct ExtMsgPopBatch {
     std::vector<std::pair<td::Ref<ExtMessage>, int>> messages;
     bool producer_completed{false};

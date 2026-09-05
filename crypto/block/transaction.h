@@ -602,6 +602,12 @@ struct NativeAccountStateCellInput {
   td::uint8 flags{0};
 };
 
+// Source-only admission gate for an already decoded transfer. It reads no
+// destination state and never mutates either account. Expiry and all remaining
+// execution checks still belong to execute_native_transfer_state.
+NativeTransferStateResult::Code check_native_transfer_source(const NativeTransfer& transfer, td::uint64 src_nonce,
+                                                             int src_status, bool src_is_native);
+
 // Pure, allocation-free native execution.  A caller may execute independent
 // inputs concurrently and then commit the returned states in deterministic
 // block order.

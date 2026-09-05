@@ -1354,6 +1354,20 @@ const char* NativeTransferStateResult::message() const {
   return "unknown native transfer result";
 }
 
+NativeTransferStateResult::Code check_native_transfer_source(const NativeTransfer& transfer, td::uint64 src_nonce,
+                                                             int src_status, bool src_is_native) {
+  if (src_status != Account::acc_uninit || !src_is_native) {
+    return NativeTransferStateResult::invalid_source;
+  }
+  if (transfer.nonce != src_nonce) {
+    return NativeTransferStateResult::nonce_mismatch;
+  }
+  if (transfer.nonce == std::numeric_limits<td::uint64>::max()) {
+    return NativeTransferStateResult::nonce_overflow;
+  }
+  return NativeTransferStateResult::ok;
+}
+
 NativeTransferStateResult execute_native_transfer_state(const NativeTransferStateInput& input, ton::UnixTime now,
                                                         bool verify_signature) {
   NativeTransferStateResult result;
@@ -1361,8 +1375,10 @@ NativeTransferStateResult execute_native_transfer_state(const NativeTransferStat
     return result;
   }
   const auto& transfer = *input.transfer;
-  if (input.src_status != Account::acc_uninit || !input.src_is_native) {
-    result.code = NativeTransferStateResult::invalid_source;
+  const auto source_code =
+      check_native_transfer_source(transfer, input.src_nonce, input.src_status, input.src_is_native);
+  if (source_code == NativeTransferStateResult::invalid_source) {
+    result.code = source_code;
     return result;
   }
   if ((input.dst_status != Account::acc_uninit && input.dst_status != Account::acc_nonexist) ||
@@ -1374,12 +1390,10 @@ NativeTransferStateResult execute_native_transfer_state(const NativeTransferStat
     result.code = NativeTransferStateResult::expired;
     return result;
   }
-  if (transfer.nonce != input.src_nonce) {
-    result.code = NativeTransferStateResult::nonce_mismatch;
-    return result;
-  }
-  if (transfer.nonce == std::numeric_limits<td::uint64>::max()) {
-    result.code = NativeTransferStateResult::nonce_overflow;
+  // Keep destination and expiry error precedence unchanged when sharing the
+  // source gate with the collator's earlier, destination-free preflight.
+  if (source_code != NativeTransferStateResult::ok) {
+    result.code = source_code;
     return result;
   }
   if (verify_signature && transfer.verify_signature().is_error()) {

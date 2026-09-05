@@ -740,6 +740,93 @@ TEST(NativeStateEngine, compact_batch_v2) {
   }
 }
 
+TEST(NativeStateEngine, source_gate_matches_execution_for_valid_destinations) {
+  auto source_key = td::Ed25519::generate_private_key().move_as_ok();
+  block::NativeTransfer transfer;
+  transfer.src.as_slice().copy_from(source_key.get_public_key().move_as_ok().as_octet_string());
+  transfer.amount = 100;
+  transfer.fee = 3;
+  transfer.valid_until = 200;
+  transfer.signature.resize(64);
+  block::NativeTransferStateInput input{
+      .transfer = &transfer,
+      .src_balance = 1000,
+      .dst_balance = 50,
+      .dst_status = block::Account::acc_nonexist,
+  };
+  const td::uint64 max_nonce = std::numeric_limits<td::uint64>::max();
+  for (auto transfer_nonce : {td::uint64{0}, td::uint64{7}, max_nonce - 1, max_nonce}) {
+    transfer.nonce = transfer_nonce;
+    for (auto source_nonce : {td::uint64{0}, td::uint64{6}, td::uint64{7}, td::uint64{8}, max_nonce - 1, max_nonce}) {
+      input.src_nonce = source_nonce;
+      for (auto status : {block::Account::acc_nonexist, block::Account::acc_uninit, block::Account::acc_active,
+                          block::Account::acc_frozen}) {
+        input.src_status = status;
+        for (bool native : {false, true}) {
+          input.src_is_native = native;
+          auto gate = block::check_native_transfer_source(transfer, source_nonce, status, native);
+          auto result = block::execute_native_transfer_state(input, 100, false);
+          ASSERT_EQ(gate, result.code);
+          if (gate == block::NativeTransferStateResult::ok) {
+            ASSERT_EQ(result.src_nonce, transfer_nonce + 1);
+            ASSERT_EQ(result.src_balance, 897u);
+            ASSERT_EQ(result.dst_balance, 150u);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(NativeStateEngine, source_gate_preserves_execution_error_precedence) {
+  auto source_key = td::Ed25519::generate_private_key().move_as_ok();
+  block::NativeTransfer transfer;
+  transfer.src.as_slice().copy_from(source_key.get_public_key().move_as_ok().as_octet_string());
+  transfer.amount = 100;
+  transfer.fee = 3;
+  transfer.nonce = 7;
+  transfer.valid_until = 200;
+  transfer.signature.resize(64);
+  block::NativeTransferStateInput input{
+      .transfer = &transfer,
+      .src_balance = 1000,
+      .src_nonce = 6,
+      .src_status = block::Account::acc_uninit,
+      .src_is_native = true,
+      .dst_status = block::Account::acc_active,
+  };
+  using Result = block::NativeTransferStateResult;
+  ASSERT_EQ(block::check_native_transfer_source(transfer, input.src_nonce, input.src_status, input.src_is_native),
+            Result::nonce_mismatch);
+  ASSERT_EQ(block::execute_native_transfer_state(input, 200, false).code, Result::invalid_destination);
+  input.dst_status = block::Account::acc_nonexist;
+  ASSERT_EQ(block::execute_native_transfer_state(input, 200, false).code, Result::expired);
+  ASSERT_EQ(block::execute_native_transfer_state(input, 199, false).code, Result::nonce_mismatch);
+  input.src_is_native = false;
+  ASSERT_EQ(block::execute_native_transfer_state(input, 200, false).code, Result::invalid_source);
+  transfer.amount = 0;
+  ASSERT_EQ(block::execute_native_transfer_state(input, 200, false).code, Result::invalid_fields);
+
+  // Passing preflight authorizes destination loading, never a state write.
+  // Later balance checks still reject the complete transfer atomically.
+  transfer.amount = 100;
+  input.src_is_native = true;
+  input.src_nonce = transfer.nonce;
+  input.src_balance = 102;
+  ASSERT_EQ(block::check_native_transfer_source(transfer, input.src_nonce, input.src_status, input.src_is_native),
+            Result::ok);
+  ASSERT_EQ(block::execute_native_transfer_state(input, 199, false).code, Result::insufficient_balance);
+  input.src_balance = 1000;
+  input.dst_balance = std::numeric_limits<td::uint64>::max();
+  ASSERT_EQ(block::execute_native_transfer_state(input, 199, false).code, Result::balance_overflow);
+  input.same_account = true;
+  auto self_transfer = block::execute_native_transfer_state(input, 199, false);
+  ASSERT_EQ(self_transfer.code, Result::ok);
+  ASSERT_EQ(self_transfer.src_balance, 997u);
+  ASSERT_EQ(self_transfer.dst_balance, 997u);
+  ASSERT_EQ(self_transfer.src_nonce, 8u);
+}
+
 TEST(NativeStateEngine, installs_prevalidated_native_account_cell) {
   ton::StdSmcAddress address;
   address.clear();

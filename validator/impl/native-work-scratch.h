@@ -67,9 +67,10 @@ class NativeWorkScratch {
     return true;
   }
 
-  // All work endpoints must be declared before state loading. Repeated calls
-  // deliberately keep the earliest snapshot so rollback restores pre-work
-  // state even when several transfers touch the same account.
+  // All work endpoints must be declared before snapshot capture or state
+  // mutation; source-only preflight may read state first. Repeated calls keep
+  // the earliest snapshot so rollback restores pre-work state even when
+  // several transfers touch the same account.
   bool capture_before(const StdSmcAddress& address, Snapshot snapshot) {
     auto it = find(address);
     if (it == active_end() || it->address != address) {

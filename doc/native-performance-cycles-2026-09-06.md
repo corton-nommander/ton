@@ -221,3 +221,27 @@ Planned order is off/on/on/off; a failed first capacity pair is retained and
 diagnosed before repetition. Both modes must attain at least57000 offered TPS
 and offered must exceed canonical; a5% margin would give stronger saturation
 evidence. No restart or rebuild occurs between arms.
+
+
+The60k same-image off/on screen is complete:
+
+| Metric | Off | Immediate batching |
+| --- | ---: | ---: |
+| Offered TPS | 54001.07 | 53498.67 |
+| Canonical TPS | 53975.32 | 54319.46 |
+| Execute microseconds / accepted | 1.32811 | 1.32182 |
+| Capacity comparison eligible | No | No |
+
+Both arms fail95% target attainment; treatment also offers less than canonical
+production. The descriptive+0.64% canonical change cannot support a gain claim.
+Only the intended mode flag changed, and validator container/daemon identity and
+both images are identical across arms. Proof, run completion,16-output quantum,
+per-parent/query accounting, lanes, strict reuse and cleanup pass. The enabled
+arm batches only1.235% of parents. [Paired evidence](benchmarks/results/cycles-20260906-batch-first-pair.json)
+retains both rejected runs. As predeclared, the ineligible pair is not repeated.
+
+This weak grouping motivates the next bounded experiment: use the existing
+absolute coalescer deadline only for fresh parents in explicit batching mode.
+Retries, repairs and drain remain prompt, and parent quanta remain indivisible.
+The candidate must pass ownership/deadline/credit regressions before a new image
+and live integration run. Immediate batching remains default off.

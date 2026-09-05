@@ -150,3 +150,33 @@ parallel threshold remains 512, and all production checkpoint attempts observed
 in the recovery screen selected one worker. The candidate only changes private
 update-trie construction under existing augmentation and plain-cell guards;
 tracked prior-state merging remains serial.
+
+
+## Cycle2: live serial trie screen
+
+Both images were prebuilt before the pair. Control uses source-reuse image
+`22c0d00b`; treatment image `4c200e69` includes serial direct construction
+`7e51f921` and the quantum backpressure-accounting correction `c81d9589`.
+The latter has no observed effect under the shared quantum-aligned caps: both
+runs report zero canonical-capacity holds. Target 55000, admission window 6144,
+backlog 2097120/source 128, four lanes and all other launch settings are identical.
+
+| Metric | Control | Trie treatment | Descriptive change |
+| --- | ---: | ---: | ---: |
+| Offered TPS | 52,632.80 | 51,406.13 | -2.33% |
+| Canonical TPS | 52,580.34 | 51,361.36 | -2.32% |
+| Execute microseconds / accepted | 1.46405 | 1.32094 | -9.77% |
+| Commit microseconds / accepted | 6.08695 | 4.80691 | -21.03% |
+| Staged trie microseconds / accepted | 2.77707 | 2.02784 | -26.98% |
+| Storage-proof rebuild microseconds / accepted | 2.51952 | 2.01579 | -19.99% |
+
+[Paired evidence](benchmarks/results/cycles-20260906-trie-first-pair.json) retains
+the classification and normalized stage arithmetic. Control passes capacity
+gates with a thin offered margin; treatment fails 95% target attainment. Proof,
+completion, quantum, lanes, cleanup and strict continuity pass. Stage timings
+remain descriptive because batching/population and scheduling can change under
+these offered rates; the unchanged execution/proof stages also moved. Independent
+offline repetitions support the algorithm's serial-trie improvement. There is
+no validated TPS gain from this pair, and no repeated capacity pair is claimed.
+The tested trie optimization is retained while the next cycle addresses the
+transport admission ceiling using an explicit default-off batching mode.

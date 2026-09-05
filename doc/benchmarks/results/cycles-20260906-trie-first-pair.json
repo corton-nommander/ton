@@ -1,0 +1,41 @@
+{
+  "control": "trie-a1-55k-cwnd6144-60s",
+  "treatment": "trie-b1-55k-cwnd6144-60s",
+  "configuration_mismatches": [],
+  "configuration_complete": true,
+  "comparison_eligible": false,
+  "capacity_comparison_eligible": false,
+  "descriptive_changes_pct": {
+    "canonical_tps_change_pct": -2.3183248233534357,
+    "offered_tps_change_pct": -2.3306125964544435,
+    "proof_cohort_tps_change_pct": -2.8780232977709375,
+    "native_execute_us_per_accepted_change_pct": -9.774732467587796,
+    "nonce_rate_change_pct": null,
+    "scans_per_selected_change_pct": 2.4145272414342855,
+    "excluded_per_selected_change_pct": null
+  },
+  "semantics": "Descriptive changes remain visible for rejected runs but cannot support claims. Zero control denominator yields null.",
+  "exact_launch_settings_match": true,
+  "stage_us_per_accepted": {
+    "native_execute": {
+      "control": 1.4640515215002945,
+      "treatment": 1.3209444020859913,
+      "change_pct": -9.774732467587855
+    },
+    "native_commit": {
+      "control": 6.086949717672909,
+      "treatment": 4.806907156786556,
+      "change_pct": -21.02929414990673
+    },
+    "native_staged_dict_set": {
+      "control": 2.777066672628325,
+      "treatment": 2.027838057115487,
+      "change_pct": -26.97913675957008
+    },
+    "native_stat_checkpoint_rebuild": {
+      "control": 2.519515061703159,
+      "treatment": 2.015790640899695,
+      "change_pct": -19.99291167019073
+    }
+  }
+}

@@ -22,7 +22,7 @@
 #include "vm/dict.h"
 
 namespace {
-constexpr std::array<std::size_t, 7> update_counts{64, 80, 128, 192, 256, 384, 512};
+constexpr std::array<std::size_t, 10> update_counts{8, 16, 32, 64, 80, 128, 192, 256, 384, 512};
 constexpr std::array<unsigned, 4> worker_counts{1, 2, 4, 8};
 
 struct Options {
@@ -138,7 +138,7 @@ int main(int argc, char** argv) {
       const std::string option = argv[i];
       if (option == "--help") {
         std::cout << "bench-staged-trie [--rounds 7] [--iterations 20] [--base-accounts 4096]\n"
-                     "CSV samples cover 64/80/128/192/256/384/512 updates, 1/2/4/8 workers,\n"
+                     "CSV samples cover 8/16/32/64/80/128/192/256/384/512 updates, 1/2/4/8 workers,\n"
                      "uniform/prefix2/prefix16 keys, and plain/tracked prior state. No policy is changed.\n";
         return 0;
       }

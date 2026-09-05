@@ -38,19 +38,21 @@ Commit `c81d9589` makes backpressure accounting use the actual issuance quantum.
 The policy suite passes residual, resume, scalar, disabled, drain and uint64
 boundary regressions. It does not weaken the 1% backpressure or other acceptance
 thresholds. The first image pair predates this telemetry correction, so it uses
-a quantum-aligned global cap of 2,097,120 (349,520 per worker) and source cap128;
+a quantum-aligned global cap of 2,097,120 (349,520 per worker) and source cap 128;
 canonical-capacity issue holds are checked in addition to timed backpressure.
 These finite caps apply equally to every image in a pair.
 
 | Screen | Requested TPS | Admission window | Offered TPS | Canonical TPS | Result |
 | --- | ---: | ---: | ---: | ---: | --- |
 | [baseline40k](benchmarks/results/cycles-20260906-source-a1-40k-60s.json) | 40,000 | 768 | 38,767.47 | 38,770.17 | Load validation; no capacity claim |
+| [baseline50k](benchmarks/results/cycles-20260906-source-a1-50k-60s.json) | 50,000 | 1,536 | 46,407.20 | 46,571.39 | Rejected: target not attained; offered below canonical |
 
-The40k screen passes proof, completion, quantum, ingress, lane, cleanup and strict
+The 40k screen passes proof, completion, quantum, ingress, lane, cleanup and strict
 continuity. Canonical-capacity holds and measured backpressure are zero; the chain
-kept pace with offered load. Native execution cost was1.59044 microseconds per
-accepted candidate transfer. A50k screen with admission window1536 follows to
-establish adequately offered capacity before comparing source changes. Raising
+kept pace with offered load. Native execution cost was 1.59044 microseconds per
+accepted candidate transfer. The 50k screen still did not reach 95% of target, with 261,314 full-run
+client-capacity holds and zero canonical-capacity holds. Admission headroom needs
+another calibration before comparing source changes. Raising
 offer and queue headroom is benchmark calibration, not a validator TPS gain.
 
 ## Cycle1: source-state reuse
@@ -59,8 +61,8 @@ Commit `22c0d00b` keeps the source state loaded by preflight across every output
 of its canonical signed run, reserves that source endpoint once, and captures
 its rollback snapshot before the first successful write. Full per-transfer state
 validation, expired-work handling, size guards and whole-run rollback remain.
-The scratch CTest target and all18 native tests passed before commit. The code
-baseline and treatment were built with Release/native Clang22, four build workers,
+The scratch CTest target and all 18 native tests passed before commit. The code
+baseline and treatment were built with Release/native Clang 22, four build workers,
 and immutable revision labels. Paired live results are pending.
 
 ## Next candidate
@@ -69,6 +71,6 @@ The production staging population is dominated by small serial updates. A
 separate candidate will reuse the existing direct sorted-update constructor with
 one worker, restricted to augmentations that explicitly permit reordered pure
 construction and plain update cell graphs. The existing root merge remains
-serial and threshold512 stays unchanged. The worker benchmark is extended with
+serial and threshold 512 stays unchanged. The worker benchmark is extended with
 8/16/32-update cases so both old and new executables exercise the dominant sizes.
 No performance claim or policy promotion has been made for this candidate.

@@ -60,7 +60,7 @@ only 1.00173: this is a short qualified screen, not a maximum-capacity conclusio
 The source treatment uses exactly this same target, window and backlog profile. Raising
 offer and queue headroom is benchmark calibration, not a validator TPS gain.
 
-## Cycle1: source-state reuse
+## Cycle 1: source-state reuse
 
 Commit `22c0d00b` keeps the source state loaded by preflight across every output
 of its canonical signed run, reserves that source endpoint once, and captures
@@ -152,7 +152,7 @@ update-trie construction under existing augmentation and plain-cell guards;
 tracked prior-state merging remains serial.
 
 
-## Cycle2: live serial trie screen
+## Cycle 2: live serial trie screen
 
 Both images were prebuilt before the pair. Control uses source-reuse image
 `22c0d00b`; treatment image `4c200e69` includes serial direct construction
@@ -182,7 +182,7 @@ The tested trie optimization is retained while the next cycle addresses the
 transport admission ceiling using an explicit default-off batching mode.
 
 
-## Cycle3: explicit intact-parent transport batching
+## Cycle 3: explicit intact-parent transport batching
 
 Commit `d5fc1b9a` adds `--native-run-batching`, default off. It immediately
 groups already-ready whole NTRN parents from distinct source heads, falling
@@ -204,26 +204,26 @@ remains necessary. Unit tests alone do not validate the actor/RPC lifecycle or
 establish a throughput gain.
 
 
-The initial enabled-mode integration screen used target55000, window12288,
-initial RTT0.20s and64queries/client. It delivered53694.4 offered TPS and
-53410.44 canonical TPS, passed all capacity/correctness/quantum/lane/cleanup
+The initial enabled-mode integration screen used target 55,000, window 12,288,
+initial RTT 0.20 s and64 queries/client. It delivered53,694.4 offered TPS and
+53,410.44 canonical TPS, passed all capacity/correctness/quantum/lane/cleanup
 and strict-continuity gates, and drained to zero logical/query inflight. Its
 0.532% offered margin remains thin evidence of saturation. Parent attempts,
 logical attempts and query identity reconcile exactly; all attempts carried16
-outputs. Only1.196% of parents used transport batches (947queries, mean5.86
-parents), so the immediate collector reduces total queries by only0.992%.
+outputs. Only 1.196% of parents used transport batches (947 queries, mean 5.86
+parents), so the immediate collector reduces total queries by only 0.992%.
 [Diagnostic evidence](benchmarks/results/cycles-20260906-batch-diagnostic-55k-cwnd12288.json)
 preserves all counters. This is integration validation, not an A/B improvement.
 
-The next same-image screen fixes target60000 with the same12288window,
-0.20s initial RTT,64queries/client, finite backlog caps and phase durations.
+The next same-image screen fixes target 60,000 with the same 12,288 window,
+0.20 s initial RTT,64 queries/client, finite backlog caps and phase durations.
 Planned order is off/on/on/off; a failed first capacity pair is retained and
-diagnosed before repetition. Both modes must attain at least57000 offered TPS
-and offered must exceed canonical; a5% margin would give stronger saturation
+diagnosed before repetition. Both modes must attain at least 57,000 offered TPS
+and offered must exceed canonical; a 5% margin would give stronger saturation
 evidence. No restart or rebuild occurs between arms.
 
 
-The60k same-image off/on screen is complete:
+The 60k same-image off/on screen is complete:
 
 | Metric | Off | Immediate batching |
 | --- | ---: | ---: |
@@ -232,12 +232,12 @@ The60k same-image off/on screen is complete:
 | Execute microseconds / accepted | 1.32811 | 1.32182 |
 | Capacity comparison eligible | No | No |
 
-Both arms fail95% target attainment; treatment also offers less than canonical
-production. The descriptive+0.64% canonical change cannot support a gain claim.
+Both arms fail 95% target attainment; treatment also offers less than canonical
+production. The descriptive +0.64% canonical change cannot support a gain claim.
 Only the intended mode flag changed, and validator container/daemon identity and
-both images are identical across arms. Proof, run completion,16-output quantum,
+both images are identical across arms. Proof, run completion, 16-output quantum,
 per-parent/query accounting, lanes, strict reuse and cleanup pass. The enabled
-arm batches only1.235% of parents. [Paired evidence](benchmarks/results/cycles-20260906-batch-first-pair.json)
+arm batches only 1.235% of parents. [Paired evidence](benchmarks/results/cycles-20260906-batch-first-pair.json)
 retains both rejected runs. As predeclared, the ineligible pair is not repeated.
 
 This weak grouping motivates the next bounded experiment: use the existing
@@ -247,10 +247,10 @@ The candidate must pass ownership/deadline/credit regressions before a new image
 and live integration run. Immediate batching remains default off.
 
 
-## Cycle4: bounded fresh-parent coalescing
+## Cycle 4: bounded fresh-parent coalescing
 
 Commit `4caa92df` applies the existing absolute coalescer only to explicit native
-batching. Fresh source heads wait at most the configured20ms for transport
+batching. Fresh source heads wait at most the configured 20 ms for transport
 grouping, or release early when actual physical/logical credit is full. Deadline
 expiry survives credit stalls. Retries, repairs and drain bypass the fresh gate.
 Held parents requeue intact; reset checks inspect ready tokens, without scanning
@@ -260,8 +260,8 @@ records remaining actor integration limits. Harness documentation commit
 `0cc494e3` describes the opt-in behavior without changing any values or gates.
 
 The candidate image is prebuilt once. Its first integration diagnostic uses
-target55000, window12288, initialRTT0.20s,64queries/client and20ms coalescing,
-with the existing finite backlog caps and60s measured window. Transport batch
+target 55,000, window 12,288, initial RTT 0.20 s,64 queries/client and 20 ms coalescing,
+with the existing finite backlog caps and 60 s measured window. Transport batch
 density, query reduction and measured-window generator CPU determine whether
 this experiment warrants longer paired repetitions. Repeated ready probing can
 add allocation/queue overhead; no performance gain is assumed.

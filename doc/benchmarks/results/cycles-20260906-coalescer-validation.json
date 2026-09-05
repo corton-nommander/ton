@@ -21,5 +21,22 @@
   ],
   "remaining_test_limitations": [
     "Pure policy tests and static callback review do not force mixed per-parent statuses or late proof-resolved RPC callbacks."
+  ],
+  "prebuilt_images": [
+    {
+      "tag": "ghcr.io/corton-nommander/ton:cycle-coalesce-4caa92df",
+      "id": "sha256:536fbe9ad5643bda183062f40be36bca19562bccc325010e7b6396b8bfce3500",
+      "revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124"
+    },
+    {
+      "tag": "ghcr.io/neodix42/mylocalton-docker:cycle-coalesce-4caa92df",
+      "id": "sha256:dd84211cccf6397d895fb0e6489c2ed712d1bbc19af3047f2a6f935bd8286b4a",
+      "revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124"
+    },
+    {
+      "tag": "mylocalton-native-load-generator:cycle-coalesce-4caa92df",
+      "id": "sha256:b152a246e082cd38bce4d1ec362a85db68e0535e435d9a801d0f2687784f4503",
+      "revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124"
+    }
   ]
 }

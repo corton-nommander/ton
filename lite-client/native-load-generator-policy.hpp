@@ -253,6 +253,23 @@ class ReadySourceQueue {
     return {PopKind::ready, entry.source_idx};
   }
 
+  // Inspect only live queued source identities. Stale generations and
+  // disabled sources cannot keep a coalescing window open or release it early.
+  template <class Predicate>
+  bool any_ready_source(Predicate&& matches) const {
+    for (const auto& entry : entries_) {
+      if (entry.source_idx >= sources_.size()) {
+        continue;
+      }
+      const auto& source = sources_[entry.source_idx];
+      if (!source.disabled && source.queued && source.generation == entry.generation &&
+          matches(entry.source_idx)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool empty() const {
     return entries_.empty();
   }
@@ -563,6 +580,11 @@ inline bool native_run_batching_enabled(const NativeRunBatchingSettings& setting
   return settings.requested && native_signed_runs && batch_size > 1;
 }
 
+inline bool native_run_submission_is_fresh(bool batching_enabled, bool repair,
+                                           bool ever_submitted, double first_retry_at) {
+  return batching_enabled && !repair && !ever_submitted && first_retry_at < 0.0;
+}
+
 inline bool valid_native_run_batching_configuration(const NativeRunBatchingSettings& settings,
                                                     bool native_signed_runs, std::uint32_t batch_size) {
   return !settings.requested || native_run_batching_enabled(settings, native_signed_runs, batch_size);
@@ -610,6 +632,7 @@ class NativeSignedRunBatchBudget {
   std::size_t body_limit() const { return body_limit_; }
   std::size_t body_count() const { return sources_.size(); }
   std::uint32_t logical_count() const { return logical_count_; }
+  std::uint32_t remaining_logical_credit() const { return logical_capacity_ - logical_count_; }
   std::size_t body_bytes() const { return body_bytes_; }
   const std::vector<std::size_t>& sources() const { return sources_; }
 
@@ -620,6 +643,23 @@ class NativeSignedRunBatchBudget {
   std::size_t body_bytes_{0};
   std::vector<std::size_t> sources_;
 };
+
+inline SubmitCoalescer::ReleaseReason native_run_batch_release_reason(
+    const SubmitCoalescer& gate, double now, bool full) {
+  // A probe can straddle the deadline. Preserve deadline attribution once
+  // elapsed rather than reporting a late full batch as an early release.
+  auto early_full = full && gate.armed() && now < gate.deadline();
+  return gate.release_reason(now, early_full ? 1 : 0, 1, false);
+}
+
+// A full transport batch is bounded by actual selected-client and worker
+// credit, not body_count * quantum. Already-signed finite tails remain intact.
+inline bool native_run_batch_fills_available_credit(const NativeSignedRunBatchBudget& budget,
+                                                   std::uint32_t normal_quantum) {
+  return budget.body_count() != 0 && normal_quantum != 0 &&
+         normal_quantum <= max_native_signed_run_entries &&
+         (budget.full() || budget.remaining_logical_credit() < normal_quantum);
+}
 
 struct NativeSignedRunSettings {
   // Keep this opt-in so the established scalar NTFX generator remains the

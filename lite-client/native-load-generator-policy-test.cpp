@@ -948,3 +948,125 @@ TEST(NativeLoadGeneratorPolicy, SignedRunBatchingIsExplicitAndDefaultOffEvenWith
   ASSERT_TRUE(!native_load::valid_submission_batch_timeout(true, settings, 64, 8.999));
   ASSERT_TRUE(native_load::valid_submission_batch_timeout(true, settings, 64, 9));
 }
+
+TEST(NativeLoadGeneratorPolicy, NativeRunCoalescingRecognizesOnlyFreshEnabledParents) {
+  native_load::NativeRunBatchingSettings mode;
+  auto enabled = [&] { return native_load::native_run_batching_enabled(mode, true, 64); };
+  ASSERT_TRUE(!native_load::native_run_submission_is_fresh(enabled(), false, false, -1));
+  mode.requested = true;
+  ASSERT_TRUE(native_load::native_run_submission_is_fresh(enabled(), false, false, -1));
+  ASSERT_TRUE(!native_load::native_run_submission_is_fresh(enabled(), true, false, -1));
+  ASSERT_TRUE(!native_load::native_run_submission_is_fresh(enabled(), false, true, -1));
+  ASSERT_TRUE(!native_load::native_run_submission_is_fresh(enabled(), false, false, 0));
+  ASSERT_TRUE(!native_load::native_run_submission_is_fresh(enabled(), false, false, 10));
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeRunCoalescingUsesActualPhysicalAndLogicalBatchCredit) {
+  using Reason = native_load::SubmitCoalescer::ReleaseReason;
+  native_load::SubmitCoalescer gate;
+  gate.note_fresh_ready(10, 0.020);
+  native_load::NativeSignedRunBatchBudget client_limited(64, 4096, 512);
+  for (std::size_t i = 0; i < 31; ++i) {
+    ASSERT_TRUE(client_limited.try_append(i, 16, 100));
+  }
+  ASSERT_TRUE(!native_load::native_run_batch_fills_available_credit(client_limited, 16));
+  ASSERT_TRUE(gate.release_reason(10.005, 0, 1, false) == Reason::blocked);
+  ASSERT_TRUE(client_limited.try_append(31, 16, 100));
+  ASSERT_TRUE(native_load::native_run_batch_fills_available_credit(client_limited, 16));
+  ASSERT_TRUE(native_load::native_run_batch_release_reason(gate, 10.005, true) == Reason::full_batch);
+  ASSERT_TRUE(native_load::native_run_batch_release_reason(gate, 10.020, true) == Reason::deadline);
+  ASSERT_TRUE(native_load::native_run_batch_release_reason(gate, 11, true) == Reason::deadline);
+  ASSERT_EQ(client_limited.body_count(), 32u);
+  ASSERT_EQ(client_limited.logical_count(), 512u);
+
+  native_load::NativeSignedRunBatchBudget worker_limited(64, 31, 1024);
+  ASSERT_TRUE(worker_limited.try_append(0, 16, 100));
+  ASSERT_TRUE(native_load::native_run_batch_fills_available_credit(worker_limited, 16));
+  ASSERT_EQ(worker_limited.remaining_logical_credit(), 15u);
+  native_load::NativeSignedRunBatchBudget insufficient(64, 4096, 15);
+  ASSERT_TRUE(!insufficient.try_append(0, 16, 100));
+  ASSERT_TRUE(!native_load::native_run_batch_fills_available_credit(insufficient, 16));
+  ASSERT_TRUE(!native_load::native_run_batch_fills_available_credit(client_limited, 0));
+  ASSERT_TRUE(!native_load::native_run_batch_fills_available_credit(client_limited, 17));
+
+  native_load::NativeSignedRunBatchBudget physical(2, 4096, 4096);
+  ASSERT_TRUE(physical.try_append(0, 16, 100));
+  ASSERT_TRUE(!native_load::native_run_batch_fills_available_credit(physical, 16));
+  ASSERT_TRUE(physical.try_append(1, 16, 100));
+  ASSERT_TRUE(native_load::native_run_batch_fills_available_credit(physical, 16));
+  native_load::NativeSignedRunBatchBudget tails(64, 35, 35);
+  ASSERT_TRUE(tails.try_append(0, 3, 100));
+  ASSERT_TRUE(tails.try_append(1, 16, 100));
+  // Counting two physical heads as two full quanta would release too soon.
+  ASSERT_TRUE(!native_load::native_run_batch_fills_available_credit(tails, 16));
+  ASSERT_TRUE(tails.try_append(2, 16, 100));
+  ASSERT_TRUE(native_load::native_run_batch_fills_available_credit(tails, 16));
+  ASSERT_EQ(tails.logical_count(), 35u);
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeRunCoalescingKeepsDeadlineAcrossUrgentAndCreditBlockedWork) {
+  using Reason = native_load::SubmitCoalescer::ReleaseReason;
+  native_load::SubmitCoalescer gate;
+  gate.note_fresh_ready(20, 0.020);
+  gate.note_fresh_ready(20.005, 0.020);
+  gate.note_fresh_ready(20.019, 0.020);
+  ASSERT_TRUE(std::abs(gate.deadline() - 20.020) < 1e-9);
+  ASSERT_TRUE(gate.release_reason(20.019, 0, 1, false) == Reason::blocked);
+  // Urgent source heads bypass waiting without opening the fresh gate or
+  // moving its absolute deadline; drain releases the waiting fresh parents.
+  ASSERT_TRUE(gate.release_reason(20.010, 0, 1, true) == Reason::bypass);
+  ASSERT_TRUE(gate.release_reason(20.010, 0, 1, false) == Reason::blocked);
+  ASSERT_TRUE(std::abs(gate.deadline() - 20.020) < 1e-9);
+  std::uint32_t queries = 1;
+  ASSERT_TRUE(!native_load::admission_query_credit_available(1, queries));
+  ASSERT_TRUE(gate.release_reason(20.020, 0, 1, false) == Reason::deadline);
+  gate.note_fresh_ready(21, 0.020);
+  ASSERT_TRUE(std::abs(gate.deadline() - 20.020) < 1e-9);
+  ASSERT_TRUE(native_load::release_admission_query_credit(queries));
+  ASSERT_TRUE(gate.release_reason(21, 0, 1, false) == Reason::deadline);
+  gate.note_queue_empty();
+  gate.note_fresh_ready(22, 0.020);
+  ASSERT_TRUE(std::abs(gate.deadline() - 22.020) < 1e-9);
+  ASSERT_TRUE(gate.release_reason(22.001, 0, 1, true) == Reason::bypass);
+}
+
+TEST(NativeLoadGeneratorPolicy, NativeRunCoalescingScansOnlyLiveReadySourceTokens) {
+  native_load::ReadySourceQueue queue;
+  queue.reset(4096);
+  ASSERT_TRUE(queue.enqueue(100));
+  queue.invalidate(100);
+  ASSERT_TRUE(queue.enqueue(100));
+  ASSERT_TRUE(queue.enqueue(200));
+  queue.disable(200);
+  std::size_t inspected = 0;
+  ASSERT_TRUE(queue.any_ready_source([&](std::size_t source) {
+    ++inspected;
+    return source == 100;
+  }));
+  ASSERT_EQ(inspected, 1u);
+  // Invalid generation and disabled tokens cannot keep the fresh gate open.
+  queue.disable(100);
+  inspected = 0;
+  ASSERT_TRUE(!queue.any_ready_source([&](std::size_t) { ++inspected; return true; }));
+  ASSERT_EQ(inspected, 0u);
+
+  queue.reset(3);
+  ASSERT_TRUE(queue.enqueue(0));
+  ASSERT_TRUE(queue.enqueue(1));
+  native_load::SubmitCoalescer gate;
+  gate.note_fresh_ready(30, 0.020);
+  native_load::NativeSignedRunBatchBudget pending(64, 1024, 1024);
+  auto first = queue.pop();
+  auto second = queue.pop();
+  ASSERT_TRUE(pending.try_append(first.source_idx, 16, 100));
+  ASSERT_TRUE(pending.try_append(second.source_idx, 16, 100));
+  ASSERT_TRUE(!native_load::native_run_batch_fills_available_credit(pending, 16));
+  for (auto source : pending.sources()) {
+    ASSERT_TRUE(queue.enqueue(source));
+  }
+  ASSERT_TRUE(queue.any_ready_source([](std::size_t) { return true; }));
+  ASSERT_TRUE(std::abs(gate.deadline() - 30.020) < 1e-9);
+  ASSERT_EQ(queue.pop().source_idx, first.source_idx);
+  ASSERT_EQ(queue.pop().source_idx, second.source_idx);
+  ASSERT_TRUE(!queue.any_ready_source([](std::size_t) { return true; }));
+}

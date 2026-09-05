@@ -954,6 +954,7 @@ class NativeLoadWorker final : public td::actor::Actor {
   bool task_is_active(const std::shared_ptr<TransferTask>& task) const;
   bool is_fresh_normal_submission(const std::shared_ptr<TransferTask>& task) const;
   bool has_dispatchable_fresh_tasks() const;
+  bool has_queued_fresh_heads() const;
   double measure_backpressure_overlap(double begin, double end) const;
   void update_backpressure_state(double now);
   void pump();
@@ -1775,6 +1776,10 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << (options_.native_signed_runs.requested ? "true" : "false")
         << ",\"native_run_batching_requested\":"
         << (options_.native_run_batching.requested ? "true" : "false")
+        << ",\"native_run_batching_coalesce_ms\":"
+        << (native_load::native_run_batching_enabled(
+                options_.native_run_batching, options_.native_signed_runs.requested,
+                options_.submit_batch_size) ? options_.submit_coalesce_ms : 0u)
         << ",\"native_run_batching_enabled\":"
         << (native_load::native_run_batching_enabled(
                 options_.native_run_batching, options_.native_signed_runs.requested,
@@ -2176,7 +2181,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     std::cout << ",\"finalized\":null,\"finalized_semantics\":\"not_independently_observed\""
               << ",\"admission_semantics\":\"liteServer.sendMessage or ordered sendMessageBatch item status=1; not block inclusion\""
               << ",\"native_signed_run_semantics\":\"when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash\""
-              << ",\"native_run_batching_semantics\":\"explicit default-off transport grouping of already-ready intact NTRN parents from distinct source heads; no coalescing wait or padding, one ready parent sends individually, and physical and logical credits stay separate\""
+              << ",\"native_run_batching_semantics\":\"explicit default-off intact NTRN transport grouping; fresh source heads share one absolute submit-coalesce-ms deadline or release a physical/logical-credit-full batch early; retries, repairs and drain bypass waiting; no parent splitting or padding\""
               << ",\"native_signed_run_normal_quantum_semantics\":\"ordinary NTRN issuance uses one fixed logical quantum capped once by static worker, source, canonical-backlog, and the smallest per-client dispatch ceiling; transient residuals hold instead of shrinking it\""
               << ",\"native_signed_run_repair_tail_semantics\":\"only a freshly signed finite drain-repair suffix may contain fewer outputs than the normal quantum; admitted repairs reuse their original exact parent\""
               << ",\"native_signed_run_terminal_tail_semantics\":\"the sole ordinary short-run exception advances the exclusive uint64 nonce cursor exactly to UINT64_MAX without wrapping it\""
@@ -3299,11 +3304,33 @@ bool NativeLoadWorker::task_is_active(const std::shared_ptr<TransferTask>& task)
 
 bool NativeLoadWorker::is_fresh_normal_submission(
     const std::shared_ptr<TransferTask>& task) const {
-  // NTRN already is the source-local authorization bundle. Its optional
-  // transport batch contains only already-ready intact parents; it never
-  // waits behind the scalar coalescer or splits a parent to fill a batch.
-  return !options_.native_signed_runs.requested && options_.submit_batch_size > 1 && task && !task->repair &&
+  if (!task) {
+    return false;
+  }
+  if (options_.native_signed_runs.requested) {
+    return native_load::native_run_submission_is_fresh(
+        native_load::native_run_batching_enabled(options_.native_run_batching,
+                                                options_.native_signed_runs.requested,
+                                                options_.submit_batch_size),
+        task->repair, task->ever_submitted, task->first_retry_at);
+  }
+  return options_.submit_batch_size > 1 && !task->repair &&
          !task->ever_submitted && task->first_retry_at < 0.0;
+}
+
+bool NativeLoadWorker::has_queued_fresh_heads() const {
+  return ready_wallets_.any_ready_source([this](std::size_t source_idx) {
+    if (source_idx >= wallets_.size()) {
+      return false;
+    }
+    const auto& wallet = wallets_[source_idx];
+    if (wallet.disabled || wallet.tasks.empty()) {
+      return false;
+    }
+    const auto& head = wallet.tasks.begin()->second;
+    return head && head->state == TaskState::ready && task_is_active(head) &&
+           is_fresh_normal_submission(head);
+  });
 }
 
 bool NativeLoadWorker::has_dispatchable_fresh_tasks() const {
@@ -3807,7 +3834,12 @@ void NativeLoadWorker::on_signed(std::shared_ptr<TransferTask> task, td::Result<
   // A fresh ordinary first submission is released by the absolute leading-edge
   // coalescing deadline armed in mark_task_ready().  Retried signatures,
   // repairs, and other urgent work still pump immediately.
-  if (!fresh_ready) {
+  // Experimental NTRN batching checks its bounded gate on every signature
+  // completion so a full ready batch can release before the absolute timer.
+  // Retried/repair/drain work still dispatches immediately through that gate.
+  if (!fresh_ready || native_load::native_run_batching_enabled(
+          options_.native_run_batching, options_.native_signed_runs.requested,
+          options_.submit_batch_size)) {
     pump();
   }
   maybe_finish();
@@ -4026,18 +4058,35 @@ std::size_t NativeLoadWorker::append_ready_source_run(
 
 void NativeLoadWorker::dispatch_ready() {
   if (options_.native_signed_runs.requested) {
-    // A signed run remains a complete authorization unit. The default sends
-    // it individually; --native-run-batching explicitly groups already-ready
-    // parents from distinct source heads without a coalescing delay. Neither
-    // path flattens a parent or consumes partial logical-transfer credit.
+    const bool batching = native_load::native_run_batching_enabled(
+        options_.native_run_batching, options_.native_signed_runs.requested,
+        options_.submit_batch_size);
+    using ReleaseReason = native_load::SubmitCoalescer::ReleaseReason;
+    bool blocked_fresh = false;
+    bool deadline_dispatch = false;
+    bool full_batch_dispatch = false;
+    auto note_release = [&](ReleaseReason reason, bool fresh) {
+      if (fresh) {
+        deadline_dispatch |= reason == ReleaseReason::deadline;
+        full_batch_dispatch |= reason == ReleaseReason::full_batch;
+      }
+    };
     while (!ready_wallets_.empty() && inflight_ < options_.max_inflight) {
-      auto task = take_dispatchable_ready_task(true);
+      auto reason = submit_coalescer_.release_reason(
+          td::Time::now(), 0, 1, !batching || sending_done_);
+      auto allow_fresh = reason != ReleaseReason::blocked;
+      auto task = take_dispatchable_ready_task(allow_fresh);
+      bool probe_fresh_batch = false;
+      if (!task && !allow_fresh) {
+        // Urgent source heads have already been offered immediate dispatch.
+        // Probe fresh heads without consuming credit or changing task state;
+        // only a full physical/logical batch may beat the absolute deadline.
+        task = take_dispatchable_ready_task(true);
+        probe_fresh_batch = static_cast<bool>(task);
+      }
       if (!task) {
         break;
       }
-      // NTRN cannot be split to consume a partial remaining worker window.
-      // Leave the whole authorization queued until enough logical-transfer
-      // capacity has returned rather than overcommitting max_inflight.
       if (task->logical_count() > options_.max_inflight - inflight_) {
         enqueue_ready_wallet(task->wallet_idx);
         break;
@@ -4050,9 +4099,9 @@ void NativeLoadWorker::dispatch_ready() {
         }
         break;
       }
-      if (!native_load::native_run_batching_enabled(
-              options_.native_run_batching, options_.native_signed_runs.requested,
-              options_.submit_batch_size)) {
+      if (!batching || (!probe_fresh_batch && ready_wallets_.empty())) {
+        // Released singleton work needs neither source nor task batch scratch.
+        note_release(reason, is_fresh_normal_submission(task));
         send_task(std::move(task), client_idx.value());
         continue;
       }
@@ -4061,8 +4110,15 @@ void NativeLoadWorker::dispatch_ready() {
           client_available_capacity(client_idx.value()));
       CHECK(task->signed_run);
       if (!budget.try_append(task->wallet_idx, task->logical_count(), task->boc.size())) {
-        // Preserve individual admission for an envelope exceeding the batch
-        // byte limit; do not strand the popped source head or split its BOC.
+        // An oversized individual parent must still respect a fresh deadline.
+        if (probe_fresh_batch && submit_coalescer_.release_reason(
+                td::Time::now(), 0, 1, false) == ReleaseReason::blocked) {
+          enqueue_ready_wallet(task->wallet_idx);
+          blocked_fresh = true;
+          break;
+        }
+        reason = submit_coalescer_.release_reason(td::Time::now(), 0, 1, sending_done_);
+        note_release(reason, is_fresh_normal_submission(task));
         send_task(std::move(task), client_idx.value());
         continue;
       }
@@ -4070,7 +4126,8 @@ void NativeLoadWorker::dispatch_ready() {
       tasks.reserve(budget.body_limit());
       tasks.push_back(std::move(task));
       while (!budget.full()) {
-        auto next = take_dispatchable_ready_task(true, &budget.sources());
+        // An urgent batch must not pull fresh siblings through a closed gate.
+        auto next = take_dispatchable_ready_task(allow_fresh || probe_fresh_batch, &budget.sources());
         if (!next) {
           break;
         }
@@ -4079,15 +4136,39 @@ void NativeLoadWorker::dispatch_ready() {
           enqueue_ready_wallet(next->wallet_idx);
           break;
         }
-        // Selected tasks stay ready until send_batch reserves one query and
-        // the sum of their logical credits. The actor cannot interleave here.
         tasks.push_back(std::move(next));
+      }
+      if (probe_fresh_batch) {
+        auto full = native_load::native_run_batch_fills_available_credit(budget, native_signed_run_quantum_);
+        reason = native_load::native_run_batch_release_reason(submit_coalescer_, td::Time::now(), full);
+        if (reason == ReleaseReason::blocked) {
+          for (const auto& pending : tasks) {
+            enqueue_ready_wallet(pending->wallet_idx);
+          }
+          blocked_fresh = true;
+          break;
+        }
+      }
+      for (const auto& pending : tasks) {
+        note_release(reason, is_fresh_normal_submission(pending));
       }
       if (tasks.size() == 1) {
         send_task(std::move(tasks.front()), client_idx.value());
       } else {
         send_batch(std::move(tasks), client_idx.value());
       }
+    }
+    // Inspect only live ready-source tokens, not all wallets. Retried work
+    // cannot reset a fresh deadline, and an elapsed gate survives credit loss.
+    if (submit_coalescer_.armed() && !has_queued_fresh_heads()) {
+      submit_coalescer_.note_queue_empty();
+    }
+    if (deadline_dispatch) {
+      ++stats_.submit_coalesce_deadline_dispatches;
+    } else if (full_batch_dispatch) {
+      ++stats_.submit_coalesce_full_batch_dispatches;
+    } else if (blocked_fresh) {
+      ++stats_.submit_coalesce_blocked_pumps;
     }
     return;
   }
@@ -5653,7 +5734,7 @@ int main(int argc, char* argv[]) {
                     "emit v5 NTRN source-signed runs instead of scalar NTFX messages",
                     [&] { options.native_signed_runs.requested = true; });
   parser.add_option(0, "native-run-batching",
-                    "immediately batch intact ready NTRN parents (requires signed runs and batch size > 1)",
+                    "batch intact NTRN parents with bounded fresh-head coalescing (requires signed runs and batch size > 1)",
                     [&] { options.native_run_batching.requested = true; });
   parser.add_checked_option(0, "native-signed-run-size",
                             "logical transfers per v5 NTRN run (1..16; used with --native-signed-runs)",

@@ -74,3 +74,58 @@ construction and plain update cell graphs. The existing root merge remains
 serial and threshold 512 stays unchanged. The worker benchmark is extended with
 8/16/32-update cases so both old and new executables exercise the dominant sizes.
 No performance claim or policy promotion has been made for this candidate.
+
+
+## Serial trie candidate: offline A/B/B/A
+
+The guarded serial direct constructor passed all seven dictionary tests and
+18 native state tests. Four complete matrices ran in A/B/B/A order using saved
+baseline/candidate executables with identical deterministic fixtures. Each
+contained 240 cases, five rounds and five iterations per CSV row. The 4,800 rows
+therefore represent **24,000 timed root comparisons**, plus 1,920 warmup root
+comparisons; 960 first warmups also passed full dictionary validation. Every
+process exited successfully. Genesis was paused during this offline work and
+resumed afterward; no build or live load overlapped.
+
+[One-worker results for all sizes/topologies](benchmarks/results/cycles-20260906-trie-serial-offline-summary.csv)
+and [binary hashes, raw CSV hashes and run provenance](benchmarks/results/cycles-20260906-trie-serial-offline-provenance.json)
+preserve the comparison. Baseline/candidate matrix elapsed times were
+14.034/13.075/12.976/14.006 seconds, including setup and all worker tiers.
+Per-operation comparisons below use only the timed dictionary stage. Pair 1
+compares A1/B1 and pair 2 compares A2/B2 at the same round and fixture. Positive
+percentages mean less time in the candidate.
+
+| Updates | Depth2 tracked wall reduction, pair 1 | Depth2 tracked wall reduction, pair 2 | Depth2 tracked CPU reduction, pooled | Depth2 plain wall reduction, pooled |
+| --- | ---: | ---: | ---: | ---: |
+| 8 | 8.5% | 14.9% | 11.8% | 13.6% |
+| 16 | 12.4% | 15.1% | 14.4% | 16.7% |
+| 32 | 13.2% | 15.4% | 14.4% | 16.6% |
+| 64 | 18.3% | 19.6% | 18.4% | 20.8% |
+| 80 | 19.6% | 22.1% | 21.0% | 25.4% |
+| 128 | 23.6% | 23.6% | 23.5% | 27.0% |
+| 192 | 27.0% | 27.3% | 27.0% | 30.5% |
+| 256 | 31.5% | 31.0% | 31.0% | 34.2% |
+| 384 | 34.3% | 34.3% | 34.3% | 35.3% |
+| 512 | 36.5% | 38.1% | 37.3% | 38.0% |
+
+All 60 one-worker size/distribution/prior-state configurations improved in
+pooled paired wall-time medians; 59 improved in both repetitions. The dominant
+production population is at most 64 updates, with mean staged set 34.14. At 32
+and 64 updates on tracked depth2 state, both repetitions reduced wall time by
+13.2–15.4% and 18.3–19.6%, respectively, with corresponding CPU reductions.
+The <=64 histogram does not establish exact 8/16/32 frequencies, so no weighted
+production gain is inferred.
+
+One result remains inconsistent: plain depth2 at 32 updates improved 17.6% in
+pair 1 but regressed 12.4% in pair 2. During that B2 sample block the unchanged
+2/4/8-worker paths also slowed, which suggests interference but does not prove
+its cause. Across the complete matrices those unchanged tiers had median
+A/B speedups of 1.010/1.002/1.003. The outlier remains in the preserved results
+and should be checked again after the live measurement window.
+
+The result is sufficient to justify a prebuilt live TPS experiment. It does
+not establish a validator TPS gain or change worker policy: the production
+parallel threshold remains 512, and all production checkpoint attempts observed
+in the recovery screen selected one worker. The candidate only changes private
+update-trie construction under existing augmentation and plain-cell guards;
+tracked prior-state merging remains serial.

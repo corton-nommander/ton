@@ -1,0 +1,108 @@
+{
+  "schema": "trie-serial-offline-abba-v1",
+  "run_order": [
+    "a1",
+    "b1",
+    "b2",
+    "a2"
+  ],
+  "baseline_provenance": {
+    "source_revision": "4ced3840e1c853743d7ed3108765448e0a01dbab",
+    "binary_sha256": "46ecc8d96525babf116c0358c1cb6c6d5e80d6a0b79717165a03d690e6635b1a",
+    "binary": "build/benchmarks/cycles-20260906/bench-staged-trie-before",
+    "dict_cpp_sha256": "c42de34f7cca2ec63b92ea3a7b77b5131ce3e8250a0906d2ef1e4da1854917a0",
+    "benchmark_cpp_sha256": "c3ed63e18f72ef2e39aa64314b18cd218e38f3e260e81c699611683879c9af69"
+  },
+  "candidate_provenance": {
+    "binary_sha256": "ad30ee13c62ff98e623a93d9af6bd54a049f09c5e506d1a0153f62d5ed91bd8a",
+    "dict_cpp_sha256": "b246a554fe7b4235afd16ce569840300899461258b363926cea4dbff58984d24",
+    "benchmark_cpp_sha256": "c3ed63e18f72ef2e39aa64314b18cd218e38f3e260e81c699611683879c9af69"
+  },
+  "matrix_runs": [
+    {
+      "label": "a1",
+      "binary": "before",
+      "exit_code": 0,
+      "wall_seconds": 14.034299261998967
+    },
+    {
+      "label": "b1",
+      "binary": "after",
+      "exit_code": 0,
+      "wall_seconds": 13.074668700995971
+    },
+    {
+      "label": "b2",
+      "binary": "after",
+      "exit_code": 0,
+      "wall_seconds": 12.976061171997571
+    },
+    {
+      "label": "a2",
+      "binary": "before",
+      "exit_code": 0,
+      "wall_seconds": 14.006019214000844
+    }
+  ],
+  "raw_csv_artifacts": {
+    "a1": {
+      "path": "build/benchmarks/cycles-20260906/trie-a1.csv",
+      "sha256": "fd28fdee3a2ce7423932c56986bc2ed530bc58652999b18bac785421521ea67c",
+      "rows": 1200
+    },
+    "b1": {
+      "path": "build/benchmarks/cycles-20260906/trie-b1.csv",
+      "sha256": "fa10516b9eb003ab6db71dad96b2faf044e570417ba8505dc85d3ac801b4c837",
+      "rows": 1200
+    },
+    "b2": {
+      "path": "build/benchmarks/cycles-20260906/trie-b2.csv",
+      "sha256": "ec0f2455103e0094bb82df970af6f439b57619055d537322d53c137e50e2126b",
+      "rows": 1200
+    },
+    "a2": {
+      "path": "build/benchmarks/cycles-20260906/trie-a2.csv",
+      "sha256": "ff217a23a63377a7eaaa908fdcd3fd9003c4aa6d960a614347a95d8423020ded",
+      "rows": 1200
+    }
+  },
+  "summary_sha256": "a4b78ec062ca0b4e9ae8cf3ca9de69f2bf7b640bbc1d0d10bdee38355a10bfe2",
+  "base_accounts": 4096,
+  "rounds": 5,
+  "iterations_per_row": 5,
+  "cases_per_matrix": 240,
+  "timed_root_comparisons": 24000,
+  "warmup_root_comparisons": 1920,
+  "fully_validated_first_warmups": 960,
+  "correctness_tests": {
+    "AugmentedDictionary": 7,
+    "NativeStateEngine": 18,
+    "evidence_logs": [
+      "build/benchmarks/cycles-20260906/trie-dictionary-tests.log",
+      "build/benchmarks/cycles-20260906/trie-native-tests.log"
+    ]
+  },
+  "one_worker_configurations": 60,
+  "one_worker_pooled_wall_improvements": 60,
+  "one_worker_improved_both_pairs": 59,
+  "unchanged_worker_tiers_pooled_wall_speedup": {
+    "2": 1.0104455112669195,
+    "4": 1.0021600775820843,
+    "8": 1.003155853439154
+  },
+  "pairing": "Pair1 a1/b1 and pair2 a2/b2; compare identical size/distribution/prior-state/worker/round. Each row averages5 operations. Positive reduction means lower candidate time.",
+  "conditions": "Genesis was paused with try/finally restoration during offline matrices; no load/build/test jobs overlapped; root resumed validator afterward.",
+  "decision": "Merits a strictly prebuilt live TPS image experiment; this is only an offline stage-cost result, not a TPS gain or worker-threshold promotion.",
+  "limitations": [
+    "Only two repetitions and five rounds; desktop frequency/affinity was not pinned.",
+    "Prefix2/plain32 improved17.6% in pair1 but regressed12.4% in pair2. Unchanged2/4/8 tiers also slowed during b2 for that case, consistent with interference but not proof of its cause.",
+    "No production-weighted aggregate is claimed because the <=64 production histogram does not resolve8/16/32 populations.",
+    "512 production parallel threshold remains unchanged."
+  ],
+  "archived_raw_csvs": {
+    "a1": "cycles-20260906-trie-a1.csv",
+    "b1": "cycles-20260906-trie-b1.csv",
+    "b2": "cycles-20260906-trie-b2.csv",
+    "a2": "cycles-20260906-trie-a2.csv"
+  }
+}

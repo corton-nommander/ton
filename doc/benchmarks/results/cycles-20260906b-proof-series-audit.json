@@ -1,0 +1,6582 @@
+{
+  "schema": "native-proof-live-abba-audit-v1",
+  "audited_utc": "2026-09-06T13:46:57.525396+00:00",
+  "auditor_sha256": "36ea9f4fa3fe8836cd78b9e430799167944b38d1a6c906664869ec5db8490966",
+  "plan": {
+    "commit": "50b175f5232789cb65b0926e25b66f1930b49554",
+    "path": "doc/benchmarks/results/cycles-20260906b-proof-live-plan.json",
+    "sha256": "59aa8e14c6d36ac7bc02bd836334e8986ea9cd4b54ec485a150f14c1c5d6cb52",
+    "document": {
+      "schema": "native-proof-live-abba-plan-v1",
+      "declared_utc": "2026-09-06T13:00:39.945655+00:00",
+      "control_revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124",
+      "control_tag": "cycle-coalesce-4caa92df",
+      "treatment_revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9",
+      "treatment_tag": "cycle-proof-6a96c953",
+      "harness_revision": "096aea7ff4d0ef2eb69732645fcc865e8320ebf8",
+      "sequence": [
+        "proof-a1",
+        "proof-b1",
+        "proof-b2",
+        "proof-a2"
+      ],
+      "settings": {
+        "target_tps": 60000,
+        "adaptive_max_cwnd": 65536,
+        "initial_rtt_seconds": 0.5,
+        "batching": 1,
+        "physical_batch_size": 64,
+        "coalesce_ms": 20,
+        "queries_per_client": 64,
+        "logical_outputs_per_parent": 16,
+        "lane_depth": 2,
+        "ramp_seconds": 30,
+        "warmup_seconds": 60,
+        "measurement_seconds": 300,
+        "drain_timeout_seconds": 180,
+        "canonical_backlog_limit": 2097120,
+        "per_source_backlog_limit": 128,
+        "checkpoint_retention": false,
+        "parallel_threshold": 512
+      },
+      "scope": "Direct incumbent versus bundled additive diagnostics and refined proof optimization. A live difference cannot be attributed solely to proof traversal. Batching is fixed on for both arms; this series does not select a batching default.",
+      "series_gates": [
+        "All four arms pass existing correctness, completion, normal quantum, ingress >=95%, canonical backpressure <=1%, lane, cleanup and strict reuse gates.",
+        "All four arms offer more logical TPS than canonical TPS for capacity comparison.",
+        "Both matched pairs pass fixed environment, resource limits, harness and exact declared source-image checks.",
+        "A1/A2 and B1/B2 preserve identical immutable service image IDs.",
+        "B1/B2 preserve exact validator container ID and StartedAt.",
+        "Both paired canonical TPS gains must be positive for a measured higher-TPS candidate; both must be >=2% to claim repeatable >=2%.",
+        "All raw runs are retained; any failed gate prevents promotion. Auxiliary source-provenance gap remains disclosed."
+      ],
+      "preparation": "All images prebuilt before A1. Image switches and validator restart occur only before setup/warmup. No compiler, tests or microbenchmarks overlap any live measurement. Persistent volumes are preserved.",
+      "images": {
+        "A": [
+          {
+            "tag": "ghcr.io/corton-nommander/ton:cycle-coalesce-4caa92df",
+            "id": "sha256:536fbe9ad5643bda183062f40be36bca19562bccc325010e7b6396b8bfce3500",
+            "revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124"
+          },
+          {
+            "tag": "ghcr.io/neodix42/mylocalton-docker:cycle-coalesce-4caa92df",
+            "id": "sha256:dd84211cccf6397d895fb0e6489c2ed712d1bbc19af3047f2a6f935bd8286b4a",
+            "revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124"
+          },
+          {
+            "tag": "mylocalton-native-load-generator:cycle-coalesce-4caa92df",
+            "id": "sha256:b152a246e082cd38bce4d1ec362a85db68e0535e435d9a801d0f2687784f4503",
+            "revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124"
+          }
+        ],
+        "B": [
+          {
+            "tag": "ghcr.io/corton-nommander/ton:cycle-proof-6a96c953",
+            "id": "sha256:854da925d3499a4368cde064fba66c3da717bb19c5b08ed3991d55ab6ac20afd",
+            "revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9"
+          },
+          {
+            "tag": "ghcr.io/neodix42/mylocalton-docker:cycle-proof-6a96c953",
+            "id": "sha256:020eafda13aa003b420bcb7bd6910bc506ed3cb4442d78d6eab582b67eb8cca6",
+            "revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9"
+          },
+          {
+            "tag": "mylocalton-native-load-generator:cycle-proof-6a96c953",
+            "id": "sha256:452253f924566664a91a557a5b4d8dcccd55f678b3837aad66be2ff1eedff9a9",
+            "revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9"
+          }
+        ]
+      }
+    }
+  },
+  "arms": {
+    "proof-a1": {
+      "label": "proof-a1",
+      "checks": [
+        {
+          "check": "saved_summary_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_launch_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_label",
+          "passed": true
+        },
+        {
+          "check": "saved_bundle",
+          "passed": true
+        },
+        {
+          "check": "raw_run_metadata",
+          "passed": true
+        },
+        {
+          "check": "raw_summary_strict_evidence",
+          "passed": true
+        },
+        {
+          "check": "saved_strict_evidence",
+          "passed": true
+        },
+        {
+          "check": "saved_acceptance",
+          "passed": true
+        },
+        {
+          "check": "saved_load_level",
+          "passed": true
+        },
+        {
+          "check": "saved_images",
+          "passed": true
+        },
+        {
+          "check": "raw_generator_final",
+          "passed": true
+        },
+        {
+          "check": "saved_run.run_id",
+          "passed": true
+        },
+        {
+          "check": "saved_run.started_at",
+          "passed": true
+        },
+        {
+          "check": "saved_run.finished_at",
+          "passed": true
+        },
+        {
+          "check": "saved_run.elapsed_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_run.benchmark_exit_code",
+          "passed": true
+        },
+        {
+          "check": "saved_run.generator_container_exit_code",
+          "passed": true
+        },
+        {
+          "check": "saved_run.interrupted",
+          "passed": true
+        },
+        {
+          "check": "saved_run.env_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_run.reproducibility",
+          "passed": true
+        },
+        {
+          "check": "git_revision",
+          "passed": true
+        },
+        {
+          "check": "source.revision",
+          "passed": true
+        },
+        {
+          "check": "git_dirty",
+          "passed": true
+        },
+        {
+          "check": "source.dirty",
+          "passed": true
+        },
+        {
+          "check": "benchmark_exit_code",
+          "passed": true
+        },
+        {
+          "check": "generator_container_exit_code",
+          "passed": true
+        },
+        {
+          "check": "interrupted",
+          "passed": true
+        },
+        {
+          "check": "final",
+          "passed": true
+        },
+        {
+          "check": "phase",
+          "passed": true
+        },
+        {
+          "check": "interrupted",
+          "passed": true
+        },
+        {
+          "check": "drain_timed_out",
+          "passed": true
+        },
+        {
+          "check": "status",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected_or_missing_gates"
+          }
+        },
+        {
+          "check": "comparison_eligible",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "failed_or_missing_gates",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "ingress_capacity_valid"
+            ]
+          }
+        },
+        {
+          "check": "strict_identity.valid",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.native_parent_attempts_equal_physical",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.query_identity",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.distinct_batch_source_groups",
+          "passed": true
+        },
+        {
+          "check": "load_level_acceptance.valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "load_level_acceptance.classification",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected"
+          }
+        },
+        {
+          "check": "load_level_acceptance.capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "validator_pool.cleanup_acceptance.valid",
+          "passed": true
+        },
+        {
+          "check": "generator.valid_canonical_run",
+          "passed": true
+        },
+        {
+          "check": "chain_correctness_valid",
+          "passed": true
+        },
+        {
+          "check": "run_complete",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "native_signed_run_quantum_required",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_valid",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_telemetry_contract_valid",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_benchmark_profile_valid",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_required",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_valid",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_required",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_enforced",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_valid",
+          "passed": true
+        },
+        {
+          "check": "strict_image_reuse_required",
+          "passed": true
+        },
+        {
+          "check": "strict_image_reuse_valid",
+          "passed": true
+        },
+        {
+          "check": "validator_cleanup_valid",
+          "passed": true
+        },
+        {
+          "check": "correctness_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "run_incomplete_reasons",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "native_signed_run_quantum_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "validator_cleanup_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "benchmark_result_valid",
+          "passed": true
+        },
+        {
+          "check": "chain_correctness_valid",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "canonical_result_valid",
+          "passed": true
+        },
+        {
+          "check": "canonical_follower_final_catchup_complete",
+          "passed": true
+        },
+        {
+          "check": "offer_target_attained",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "correctness_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "run_incomplete_reasons",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "launch_prefix",
+          "passed": true
+        },
+        {
+          "check": "launch_suffix",
+          "passed": true
+        },
+        {
+          "check": "launch_cwd",
+          "passed": true
+        },
+        {
+          "check": "launch_result",
+          "passed": true
+        },
+        {
+          "check": "launch_exact_declared_environment",
+          "passed": true
+        },
+        {
+          "check": "saved_launch_settings",
+          "passed": true
+        },
+        {
+          "check": "target_tps",
+          "passed": true
+        },
+        {
+          "check": "measure_elapsed_s",
+          "passed": true
+        },
+        {
+          "check": "adaptive_max_cwnd",
+          "passed": true
+        },
+        {
+          "check": "effective_cwnd_cap",
+          "passed": true
+        },
+        {
+          "check": "native_signed_runs_enabled",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_requested",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_enabled",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_target_size",
+          "passed": true
+        },
+        {
+          "check": "native_payment_lane_depth",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_coalesce_ms",
+          "passed": true
+        },
+        {
+          "check": "submit_coalesce_ms",
+          "passed": true
+        },
+        {
+          "check": "submit_max_queries_per_client",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_normal_quantum_violations",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_effective_quantum_min",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_effective_quantum_max",
+          "passed": true
+        },
+        {
+          "check": "max_source_canonical_backlog_configured",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_max_size",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_terminal_tail_messages",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_terminal_tail_logical_transfers",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.steady_offered",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.offered",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_chain_measure_transfers",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_measured_offers_at_measure_end",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_measured_offers_after_drain",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_total_after_drain",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.logical_submission_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_submission_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_queries",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batches",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_messages",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_source_runs",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_source_run_max_size",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_max_size",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.max_per_client_admission_queries",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.inflight",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.admission_queries_inflight",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_normal_messages",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_normal_logical_transfers",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.load_start_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.measure_start_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.measure_end_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_window_ms",
+          "passed": true
+        },
+        {
+          "check": "ramp_and_warmup_ms",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_start_unix_s",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_end_unix_s",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_duration_s",
+          "passed": true
+        },
+        {
+          "check": "load_start_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_start_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_end_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "offered_rate_from_count",
+          "passed": true
+        },
+        {
+          "check": "canonical_rate_from_count_and_bucket",
+          "passed": true
+        },
+        {
+          "check": "cohort_rate_from_count",
+          "passed": true
+        },
+        {
+          "check": "positive_canonical_and_actual_overload",
+          "passed": true
+        },
+        {
+          "check": "offer_target_at_least_95_percent",
+          "passed": false
+        },
+        {
+          "check": "target_attainment_ratio",
+          "passed": true
+        },
+        {
+          "check": "canonical_backpressure_at_most_one_percent",
+          "passed": true
+        },
+        {
+          "check": "all_measured_offers_proven_after_drain",
+          "passed": true
+        },
+        {
+          "check": "all_offers_proven_after_drain",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.offered_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_chain_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.proof_cohort_observed_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.measure_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_gen_utime_bucket_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_chain_transfers",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.offered_over_canonical",
+          "passed": true
+        },
+        {
+          "check": "rates.offered_above_canonical",
+          "passed": true
+        },
+        {
+          "check": "capacity_load.offered_above_canonical",
+          "passed": true
+        },
+        {
+          "check": "capacity_load.invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "capacity_load_offered_rate",
+          "passed": true
+        },
+        {
+          "check": "capacity_load_canonical_rate",
+          "passed": true
+        },
+        {
+          "check": "positive_parent_attempts",
+          "passed": true
+        },
+        {
+          "check": "positive_normal_signed_runs",
+          "passed": true
+        },
+        {
+          "check": "normal_signed_run_quantum_16",
+          "passed": true
+        },
+        {
+          "check": "logical_attempt_bounds_with_valid_repair_tails",
+          "passed": true
+        },
+        {
+          "check": "native_attempts_equal_physical",
+          "passed": true
+        },
+        {
+          "check": "query_accounting_identity",
+          "passed": true
+        },
+        {
+          "check": "one_source_group_per_batched_parent",
+          "passed": true
+        },
+        {
+          "check": "batching_count_bounds",
+          "passed": true
+        },
+        {
+          "check": "physical_batch_size_and_distinct_heads",
+          "passed": true
+        },
+        {
+          "check": "bounded_query_credit",
+          "passed": true
+        },
+        {
+          "check": "inflight",
+          "passed": true
+        },
+        {
+          "check": "admission_queries_inflight",
+          "passed": true
+        },
+        {
+          "check": "required",
+          "passed": true
+        },
+        {
+          "check": "valid",
+          "passed": true
+        },
+        {
+          "check": "validator_before.object",
+          "passed": true
+        },
+        {
+          "check": "validator_before.container_id",
+          "passed": true
+        },
+        {
+          "check": "validator_before.image_id",
+          "passed": true
+        },
+        {
+          "check": "validator_before.running",
+          "passed": true
+        },
+        {
+          "check": "validator_before.restart_count",
+          "passed": true
+        },
+        {
+          "check": "validator_before.validator_process.pid",
+          "passed": true
+        },
+        {
+          "check": "validator_before.validator_process.start_ticks",
+          "passed": true
+        },
+        {
+          "check": "validator_after.object",
+          "passed": true
+        },
+        {
+          "check": "validator_after.container_id",
+          "passed": true
+        },
+        {
+          "check": "validator_after.image_id",
+          "passed": true
+        },
+        {
+          "check": "validator_after.running",
+          "passed": true
+        },
+        {
+          "check": "validator_after.restart_count",
+          "passed": true
+        },
+        {
+          "check": "validator_after.validator_process.pid",
+          "passed": true
+        },
+        {
+          "check": "validator_after.validator_process.start_ticks",
+          "passed": true
+        },
+        {
+          "check": "validator_full_identity_unchanged",
+          "passed": true
+        },
+        {
+          "check": "strict_setup_identity",
+          "passed": true
+        },
+        {
+          "check": "validator_frozen_image",
+          "passed": true
+        },
+        {
+          "check": "generator_frozen_image_before",
+          "passed": true
+        },
+        {
+          "check": "generator_frozen_image_after",
+          "passed": true
+        },
+        {
+          "check": "generator_container_id",
+          "passed": true
+        },
+        {
+          "check": "generator_container_unchanged",
+          "passed": true
+        },
+        {
+          "check": "exact_services_once",
+          "passed": true
+        },
+        {
+          "check": "genesis.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "genesis.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "genesis.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "genesis.exit_code",
+          "passed": true
+        },
+        {
+          "check": "genesis.frozen_image",
+          "passed": true
+        },
+        {
+          "check": "genesis.frozen_image_id",
+          "passed": true
+        },
+        {
+          "check": "genesis.source_revision",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_record",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_record",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.exit_code",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.frozen_image",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.frozen_image_id",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.source_revision",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "session-stats.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "session-stats.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "session-stats.exit_code",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_TARGET_TPS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_RAMP_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_WARMUP_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_DURATION_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_MAX_CANONICAL_BACKLOG",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_MAX_CWND",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_RUN_BATCHING",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_BATCH_SIZE",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_COALESCE_MS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_TRANSFER_RUNS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_INFLIGHT",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.TON_SIMPLEX_MAX_TPS",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.TON_NATIVE_CHECKPOINT_RETAIN_INGRESS",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_PAYMENT_LANES_ENABLED",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_TRANSFER_RUNS_ENABLED",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_started_at",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_restart_count",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_running",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_health",
+          "passed": true
+        },
+        {
+          "check": "runtime_generator_exited",
+          "passed": true
+        },
+        {
+          "check": "service_image_records_once",
+          "passed": true
+        },
+        {
+          "check": "genesis.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "genesis.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "genesis.image_source_revision",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.image_source_revision",
+          "passed": true
+        },
+        {
+          "check": "session-stats.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "session-stats.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "timestamps_ordered",
+          "passed": true
+        },
+        {
+          "check": "run_elapsed_seconds",
+          "passed": true
+        },
+        {
+          "check": "host_identity_present",
+          "passed": true
+        }
+      ],
+      "artifacts": {
+        "/home/neodix/gitProjects/corton-nommander-ton-sidechain/doc/benchmarks/results/cycles-20260906b-proof-a1.json": {
+          "sha256": "83d323a0a86a1bd227fdc224eaa2bd39e327b7594bd6f955387fe1f27e7b5d30",
+          "bytes": 34161
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a1/benchmark-summary.json": {
+          "sha256": "e84a0fb36b0e5bd93611fe2b57f0d39788def5a880fac99cbe16e8f02ae78fc3",
+          "bytes": 221464
+        },
+        "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-a1-command.json": {
+          "sha256": "bc3da61b1bd5c0594a7d5f63d7624e1591c11d6a3f6691bb51873304306dbecc",
+          "bytes": 1181
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a1/run-metadata.json": {
+          "sha256": "2de69c1db314b021dcb401c9a597d2b0265c1ac0f712894c2b15b69b57637d24",
+          "bytes": 23763
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a1/strict-image-reuse.json": {
+          "sha256": "99fd07c552b78618198fd8b0dce7d96a945ae8c773d9ab463a1677f6de9c915a",
+          "bytes": 1337
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a1/generator-summary.json": {
+          "sha256": "c3a6918d8a1764df6b057398dcc34e99d406869b1543d90361ffe3a1dc57ad58",
+          "bytes": 41989
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a1/strict-image-reuse-before.json": {
+          "sha256": "59c2c767658796c2fca1f8e66d21a503cdf1d925eb601c2b1d25c995ce96706f",
+          "bytes": 302
+        }
+      },
+      "rates": {
+        "offered_tps": 53274.56,
+        "canonical_chain_tps": 53152.214046822744,
+        "proof_cohort_observed_tps": 52090.72,
+        "measure_seconds": 300,
+        "canonical_gen_utime_bucket_seconds": 299,
+        "canonical_chain_transfers": 15892512,
+        "offered_over_canonical": 1.0023018035160205
+      },
+      "source_revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124",
+      "source_image_declared": {
+        "tag": "ghcr.io/corton-nommander/ton:cycle-coalesce-4caa92df",
+        "id": "sha256:536fbe9ad5643bda183062f40be36bca19562bccc325010e7b6396b8bfce3500",
+        "revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124"
+      },
+      "service_image_ids": {
+        "genesis": "sha256:dd84211cccf6397d895fb0e6489c2ed712d1bbc19af3047f2a6f935bd8286b4a",
+        "native-load-generator": "sha256:b152a246e082cd38bce4d1ec362a85db68e0535e435d9a801d0f2687784f4503",
+        "session-stats": "sha256:5f3576b583a98779069ea7e4900db2b3d74289aa99b230414c5226c1db792cb0"
+      },
+      "normalized_runtime": {
+        "genesis": {
+          "environment": {
+            "NATIVE_SPAM_KEEP_ARTIFACTS": "0",
+            "SIMPLEX_FIRST_BLOCK_TIMEOUT_MS": "500",
+            "NATIVE_SPAM_CONFIRM_MODE": "optimistic",
+            "NATIVE_TRANSFER_RUNS_GLOBAL_VERSION": "15",
+            "NATIVE_LOAD_SOURCES": "24576",
+            "SIMPLEX_SLOTS_PER_LEADER_WINDOW": "4",
+            "NATIVE_SPAM_CONFIRM_POLL_SECONDS": "0.2",
+            "NATIVE_SPAM_FORCE_TOPUP": "0",
+            "NATIVE_SPAM_DURATION_SECONDS": "600",
+            "ACTUAL_MIN_SPLIT": "2",
+            "GENESIS_HEARTBEAT_SECONDS": "30",
+            "BLOCK_SIZE_UNDERLOAD_KB": "4096",
+            "TON_NATIVE_MEMPOOL_MAX_TTL": "7200",
+            "BLOCK_SIZE_HARD_KB": "9216",
+            "NATIVE_SPAM_TRANSFER_TIMEOUT_SECONDS": "120",
+            "NATIVE_SPAM_MODE": "pipeline",
+            "NATIVE_SPAM_CONFIRM_PARALLELISM": "192",
+            "NATIVE_TRANSFER_RUNS_CAPABILITY": "1024",
+            "TON_SIMPLEX_MAX_TPS": "1",
+            "NATIVE_TRANSFER_RUNS_ENABLED": "1",
+            "TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS": "8000",
+            "NATIVE_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_SPAM_RUN": "0",
+            "MAX_SPLIT": "2",
+            "TON_NATIVE_EXECUTOR_THREADS": "8",
+            "BLOCK_GAS_LIMIT_HARD": "20000000",
+            "NATIVE_SPAM_GENESIS_PROGRESS_EVERY": "256",
+            "TON_NATIVE_EXT_MSG_TRANSPORT_WINDOW": "1024",
+            "TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS": "0",
+            "NATIVE_SPAM_TOPUP_AMOUNT": "10",
+            "NATIVE_PAYMENT_LANES_ENABLED": "1",
+            "NATIVE_PAYMENT_LANE_WALLET_PARALLELISM": "12",
+            "NATIVE_SPAM_PARALLELISM": "192",
+            "TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS": "1000",
+            "BLOCK_LIMIT_MULTIPLIER": "1",
+            "BLOCK_SIZE_SOFT_KB": "8704",
+            "BLOCK_GAS_LIMIT_UNDERLOAD": "2000000",
+            "SIMPLEX_MAX_LEADER_WINDOW_DESYNC": "700",
+            "NATIVE_PAYMENT_LANES_CAPABILITY": "2048",
+            "NATIVE_SPAM_CONFIRM_TIMEOUT_SECONDS": "30",
+            "NATIVE_SPAM_PROGRESS_INTERVAL_SECONDS": "5",
+            "MIN_SPLIT": "2",
+            "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0",
+            "NATIVE_SPAM_GENESIS_DESTINATIONS": "1",
+            "BLOCK_GAS_LIMIT_SOFT": "10000000",
+            "NATIVE_SPAM_AMOUNT": "0.000000001",
+            "NATIVE_PAYMENT_LANE_WALLET_RETRIES": "128",
+            "NATIVE_PAYMENT_LANES_GLOBAL_VERSION": "16",
+            "NATIVE_SPAM_TOPUP_TIMEOUT_SECONDS": "180",
+            "NATIVE_SPAM_FEE": "0",
+            "NATIVE_SPAM_SOURCES": "1000",
+            "NATIVE_SPAM_ROUNDS": "0",
+            "TON_NATIVE_COLLATOR_QUEUE_LIMIT": "18432",
+            "SIMPLEX_TARGET_RATE_MS": "300"
+          },
+          "cpuset": "0-8,12-20",
+          "nano_cpus": 17999998976,
+          "memory_limit_bytes": 0,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_shared-data/_data",
+              "destination": "/usr/share/data",
+              "rw": true
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_ton-db-val0/_data",
+              "destination": "/var/ton-work/db",
+              "rw": true
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_native-load-wallets/_data",
+              "destination": "/var/ton-work/db/native-spam/wallets",
+              "rw": true
+            }
+          ]
+        },
+        "native-load-generator": {
+          "environment": {
+            "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+            "NATIVE_LOAD_SIGNERS": "6",
+            "NATIVE_LOAD_TARGET_TPS": "60000",
+            "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+            "NATIVE_LOAD_WALLET_DIR": "/wallets",
+            "NATIVE_LOAD_FINALITY_SAMPLE_SOURCES": "256",
+            "NATIVE_LOAD_FINALITY_POLL_SECONDS": "10",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS": "900",
+            "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+            "NATIVE_LOAD_AUTO_NONCE": "1",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_STABLE_OBSERVATIONS": "2",
+            "NATIVE_LOAD_RETRY_BACKOFF_MS": "100",
+            "NATIVE_LOAD_REPORT_INTERVAL_SECONDS": "1",
+            "NATIVE_LOAD_CANONICAL_RETRY_BACKOFF_SECONDS": "0.25",
+            "NATIVE_LOAD_VALID_FOR_SECONDS": "7200",
+            "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+            "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_POLL_SECONDS": "2",
+            "NATIVE_LOAD_AMOUNT": "0.000000001",
+            "NATIVE_LOAD_START_NONCE": "0",
+            "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+            "NATIVE_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER": "1",
+            "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+            "NATIVE_LOAD_INFLIGHT": "65536",
+            "NATIVE_LOAD_DURATION_SECONDS": "300",
+            "NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_BACKOFF_MS": "250",
+            "NATIVE_LOAD_QUERY_TIMEOUT_SECONDS": "10",
+            "NATIVE_LOAD_CANONICAL_POLL_SECONDS": "0.25",
+            "NATIVE_LOAD_CANONICAL_QUERY_TIMEOUT_SECONDS": "30",
+            "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+            "NATIVE_LOAD_GLOBAL_CONFIG": "/usr/share/data/global.config.json",
+            "NATIVE_LOAD_RAMP_SECONDS": "30",
+            "NATIVE_LOAD_CONNECTIONS": "12",
+            "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+            "NATIVE_LOAD_PAYMENT_LANE_LITESERVER_TIMEOUT_SECONDS": "5",
+            "NATIVE_LOAD_REPAIR_COOLDOWN_SECONDS": "10",
+            "NATIVE_LOAD_CANONICAL_RETRY_MAX_BACKOFF_SECONDS": "5",
+            "NATIVE_LOAD_FEE": "0",
+            "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+            "NATIVE_LOAD_MAX_RETRIES": "8",
+            "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+            "NATIVE_LOAD_CANONICAL_RETRY_LIMIT": "5",
+            "NATIVE_LOAD_SOURCES": "24576",
+            "NATIVE_LOAD_SOURCE_OFFSET": "0",
+            "NATIVE_LOAD_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_PAYMENT_LANES_ENABLED": "1",
+            "NATIVE_LOAD_RETRY_HORIZON_SECONDS": "90",
+            "NATIVE_LOAD_WORKERS": "6",
+            "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+            "NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_MAX_BACKOFF_MS": "2000",
+            "NATIVE_LOAD_WARMUP_SECONDS": "60",
+            "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "16"
+          },
+          "cpuset": "9-10,21-22",
+          "nano_cpus": 4000000000,
+          "memory_limit_bytes": 8589934592,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_shared-data/_data",
+              "destination": "/usr/share/data",
+              "rw": false
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_native-load-wallets/_data",
+              "destination": "/wallets",
+              "rw": false
+            }
+          ]
+        },
+        "session-stats": {
+          "environment": {},
+          "cpuset": "11,23",
+          "nano_cpus": 1000000000,
+          "memory_limit_bytes": 0,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_session-stats-data/_data",
+              "destination": "/data",
+              "rw": true
+            },
+            {
+              "type": "bind",
+              "source": "/var/lib/docker/volumes",
+              "destination": "/docker-volumes",
+              "rw": false
+            },
+            {
+              "type": "bind",
+              "source": "/",
+              "destination": "/hostfs",
+              "rw": false
+            }
+          ]
+        }
+      },
+      "host": {
+        "kernel": "Linux 6.8.0-139-generic x86_64 GNU/Linux",
+        "cpu_model": "AMD Ryzen 9 3900X 12-Core Processor",
+        "host_vcpus": 24,
+        "host_memory_bytes": 134984433664,
+        "docker": {
+          "version": "28.3.2",
+          "cgroup_driver": "cgroupfs",
+          "cgroup_version": "2"
+        },
+        "smt_active": true,
+        "numa_nodes": 1,
+        "compose_version": "2.39.1-desktop.1"
+      },
+      "validator_identity": {
+        "container_id": "9444eca458f154d95a8e2443e255b940705375461bbab9d460313d9d3bfaf664",
+        "image_id": "sha256:dd84211cccf6397d895fb0e6489c2ed712d1bbc19af3047f2a6f935bd8286b4a",
+        "started_at": "2026-09-06T13:01:07.419995377Z",
+        "restart_count": 0,
+        "running": true,
+        "validator_process": {
+          "pid": 31,
+          "start_ticks": 10726774
+        }
+      },
+      "container_uptime_at_measure_start_s": 273.9970049858093,
+      "reproducibility": {
+        "valid": false,
+        "reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "separate from proof correctness and capacity validity; dirty source or unpinned images make the run difficult to reproduce but do not alter canonical proof results"
+      },
+      "declared_parallel_threshold": 512,
+      "lane_manifest_sha256": "a8c594819938d55106ff6473ab91a73f667b12a0b2b1165015ea282b7e1dde6b",
+      "capacity_comparison_eligible": false,
+      "failed_checks": [
+        {
+          "check": "status",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected_or_missing_gates"
+          }
+        },
+        {
+          "check": "comparison_eligible",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "failed_or_missing_gates",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "ingress_capacity_valid"
+            ]
+          }
+        },
+        {
+          "check": "load_level_acceptance.valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "load_level_acceptance.classification",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected"
+          }
+        },
+        {
+          "check": "load_level_acceptance.capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "offer_target_attained",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "offer_target_at_least_95_percent",
+          "passed": false
+        }
+      ]
+    },
+    "proof-b1": {
+      "label": "proof-b1",
+      "checks": [
+        {
+          "check": "saved_summary_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_launch_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_label",
+          "passed": true
+        },
+        {
+          "check": "saved_bundle",
+          "passed": true
+        },
+        {
+          "check": "raw_run_metadata",
+          "passed": true
+        },
+        {
+          "check": "raw_summary_strict_evidence",
+          "passed": true
+        },
+        {
+          "check": "saved_strict_evidence",
+          "passed": true
+        },
+        {
+          "check": "saved_acceptance",
+          "passed": true
+        },
+        {
+          "check": "saved_load_level",
+          "passed": true
+        },
+        {
+          "check": "saved_images",
+          "passed": true
+        },
+        {
+          "check": "raw_generator_final",
+          "passed": true
+        },
+        {
+          "check": "saved_run.run_id",
+          "passed": true
+        },
+        {
+          "check": "saved_run.started_at",
+          "passed": true
+        },
+        {
+          "check": "saved_run.finished_at",
+          "passed": true
+        },
+        {
+          "check": "saved_run.elapsed_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_run.benchmark_exit_code",
+          "passed": true
+        },
+        {
+          "check": "saved_run.generator_container_exit_code",
+          "passed": true
+        },
+        {
+          "check": "saved_run.interrupted",
+          "passed": true
+        },
+        {
+          "check": "saved_run.env_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_run.reproducibility",
+          "passed": true
+        },
+        {
+          "check": "git_revision",
+          "passed": true
+        },
+        {
+          "check": "source.revision",
+          "passed": true
+        },
+        {
+          "check": "git_dirty",
+          "passed": true
+        },
+        {
+          "check": "source.dirty",
+          "passed": true
+        },
+        {
+          "check": "benchmark_exit_code",
+          "passed": true
+        },
+        {
+          "check": "generator_container_exit_code",
+          "passed": true
+        },
+        {
+          "check": "interrupted",
+          "passed": true
+        },
+        {
+          "check": "final",
+          "passed": true
+        },
+        {
+          "check": "phase",
+          "passed": true
+        },
+        {
+          "check": "interrupted",
+          "passed": true
+        },
+        {
+          "check": "drain_timed_out",
+          "passed": true
+        },
+        {
+          "check": "status",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected_or_missing_gates"
+          }
+        },
+        {
+          "check": "comparison_eligible",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "failed_or_missing_gates",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "ingress_capacity_valid"
+            ]
+          }
+        },
+        {
+          "check": "strict_identity.valid",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.native_parent_attempts_equal_physical",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.query_identity",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.distinct_batch_source_groups",
+          "passed": true
+        },
+        {
+          "check": "load_level_acceptance.valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "load_level_acceptance.classification",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected"
+          }
+        },
+        {
+          "check": "load_level_acceptance.capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "validator_pool.cleanup_acceptance.valid",
+          "passed": true
+        },
+        {
+          "check": "generator.valid_canonical_run",
+          "passed": true
+        },
+        {
+          "check": "chain_correctness_valid",
+          "passed": true
+        },
+        {
+          "check": "run_complete",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "native_signed_run_quantum_required",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_valid",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_telemetry_contract_valid",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_benchmark_profile_valid",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_required",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_valid",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_required",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_enforced",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_valid",
+          "passed": true
+        },
+        {
+          "check": "strict_image_reuse_required",
+          "passed": true
+        },
+        {
+          "check": "strict_image_reuse_valid",
+          "passed": true
+        },
+        {
+          "check": "validator_cleanup_valid",
+          "passed": true
+        },
+        {
+          "check": "correctness_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "run_incomplete_reasons",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "native_signed_run_quantum_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "validator_cleanup_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "benchmark_result_valid",
+          "passed": true
+        },
+        {
+          "check": "chain_correctness_valid",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "canonical_result_valid",
+          "passed": true
+        },
+        {
+          "check": "canonical_follower_final_catchup_complete",
+          "passed": true
+        },
+        {
+          "check": "offer_target_attained",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "correctness_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "run_incomplete_reasons",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "launch_prefix",
+          "passed": true
+        },
+        {
+          "check": "launch_suffix",
+          "passed": true
+        },
+        {
+          "check": "launch_cwd",
+          "passed": true
+        },
+        {
+          "check": "launch_result",
+          "passed": true
+        },
+        {
+          "check": "launch_exact_declared_environment",
+          "passed": true
+        },
+        {
+          "check": "saved_launch_settings",
+          "passed": true
+        },
+        {
+          "check": "target_tps",
+          "passed": true
+        },
+        {
+          "check": "measure_elapsed_s",
+          "passed": true
+        },
+        {
+          "check": "adaptive_max_cwnd",
+          "passed": true
+        },
+        {
+          "check": "effective_cwnd_cap",
+          "passed": true
+        },
+        {
+          "check": "native_signed_runs_enabled",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_requested",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_enabled",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_target_size",
+          "passed": true
+        },
+        {
+          "check": "native_payment_lane_depth",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_coalesce_ms",
+          "passed": true
+        },
+        {
+          "check": "submit_coalesce_ms",
+          "passed": true
+        },
+        {
+          "check": "submit_max_queries_per_client",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_normal_quantum_violations",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_effective_quantum_min",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_effective_quantum_max",
+          "passed": true
+        },
+        {
+          "check": "max_source_canonical_backlog_configured",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_max_size",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_terminal_tail_messages",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_terminal_tail_logical_transfers",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.steady_offered",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.offered",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_chain_measure_transfers",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_measured_offers_at_measure_end",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_measured_offers_after_drain",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_total_after_drain",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.logical_submission_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_submission_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_queries",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batches",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_messages",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_source_runs",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_source_run_max_size",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_max_size",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.max_per_client_admission_queries",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.inflight",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.admission_queries_inflight",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_normal_messages",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_normal_logical_transfers",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.load_start_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.measure_start_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.measure_end_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_window_ms",
+          "passed": true
+        },
+        {
+          "check": "ramp_and_warmup_ms",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_start_unix_s",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_end_unix_s",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_duration_s",
+          "passed": true
+        },
+        {
+          "check": "load_start_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_start_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_end_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "offered_rate_from_count",
+          "passed": true
+        },
+        {
+          "check": "canonical_rate_from_count_and_bucket",
+          "passed": true
+        },
+        {
+          "check": "cohort_rate_from_count",
+          "passed": true
+        },
+        {
+          "check": "positive_canonical_and_actual_overload",
+          "passed": true
+        },
+        {
+          "check": "offer_target_at_least_95_percent",
+          "passed": false
+        },
+        {
+          "check": "target_attainment_ratio",
+          "passed": true
+        },
+        {
+          "check": "canonical_backpressure_at_most_one_percent",
+          "passed": true
+        },
+        {
+          "check": "all_measured_offers_proven_after_drain",
+          "passed": true
+        },
+        {
+          "check": "all_offers_proven_after_drain",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.offered_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_chain_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.proof_cohort_observed_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.measure_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_gen_utime_bucket_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_chain_transfers",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.offered_over_canonical",
+          "passed": true
+        },
+        {
+          "check": "rates.offered_above_canonical",
+          "passed": true
+        },
+        {
+          "check": "capacity_load.offered_above_canonical",
+          "passed": true
+        },
+        {
+          "check": "capacity_load.invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "capacity_load_offered_rate",
+          "passed": true
+        },
+        {
+          "check": "capacity_load_canonical_rate",
+          "passed": true
+        },
+        {
+          "check": "positive_parent_attempts",
+          "passed": true
+        },
+        {
+          "check": "positive_normal_signed_runs",
+          "passed": true
+        },
+        {
+          "check": "normal_signed_run_quantum_16",
+          "passed": true
+        },
+        {
+          "check": "logical_attempt_bounds_with_valid_repair_tails",
+          "passed": true
+        },
+        {
+          "check": "native_attempts_equal_physical",
+          "passed": true
+        },
+        {
+          "check": "query_accounting_identity",
+          "passed": true
+        },
+        {
+          "check": "one_source_group_per_batched_parent",
+          "passed": true
+        },
+        {
+          "check": "batching_count_bounds",
+          "passed": true
+        },
+        {
+          "check": "physical_batch_size_and_distinct_heads",
+          "passed": true
+        },
+        {
+          "check": "bounded_query_credit",
+          "passed": true
+        },
+        {
+          "check": "inflight",
+          "passed": true
+        },
+        {
+          "check": "admission_queries_inflight",
+          "passed": true
+        },
+        {
+          "check": "required",
+          "passed": true
+        },
+        {
+          "check": "valid",
+          "passed": true
+        },
+        {
+          "check": "validator_before.object",
+          "passed": true
+        },
+        {
+          "check": "validator_before.container_id",
+          "passed": true
+        },
+        {
+          "check": "validator_before.image_id",
+          "passed": true
+        },
+        {
+          "check": "validator_before.running",
+          "passed": true
+        },
+        {
+          "check": "validator_before.restart_count",
+          "passed": true
+        },
+        {
+          "check": "validator_before.validator_process.pid",
+          "passed": true
+        },
+        {
+          "check": "validator_before.validator_process.start_ticks",
+          "passed": true
+        },
+        {
+          "check": "validator_after.object",
+          "passed": true
+        },
+        {
+          "check": "validator_after.container_id",
+          "passed": true
+        },
+        {
+          "check": "validator_after.image_id",
+          "passed": true
+        },
+        {
+          "check": "validator_after.running",
+          "passed": true
+        },
+        {
+          "check": "validator_after.restart_count",
+          "passed": true
+        },
+        {
+          "check": "validator_after.validator_process.pid",
+          "passed": true
+        },
+        {
+          "check": "validator_after.validator_process.start_ticks",
+          "passed": true
+        },
+        {
+          "check": "validator_full_identity_unchanged",
+          "passed": true
+        },
+        {
+          "check": "strict_setup_identity",
+          "passed": true
+        },
+        {
+          "check": "validator_frozen_image",
+          "passed": true
+        },
+        {
+          "check": "generator_frozen_image_before",
+          "passed": true
+        },
+        {
+          "check": "generator_frozen_image_after",
+          "passed": true
+        },
+        {
+          "check": "generator_container_id",
+          "passed": true
+        },
+        {
+          "check": "generator_container_unchanged",
+          "passed": true
+        },
+        {
+          "check": "exact_services_once",
+          "passed": true
+        },
+        {
+          "check": "genesis.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "genesis.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "genesis.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "genesis.exit_code",
+          "passed": true
+        },
+        {
+          "check": "genesis.frozen_image",
+          "passed": true
+        },
+        {
+          "check": "genesis.frozen_image_id",
+          "passed": true
+        },
+        {
+          "check": "genesis.source_revision",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_record",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_record",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.exit_code",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.frozen_image",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.frozen_image_id",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.source_revision",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "session-stats.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "session-stats.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "session-stats.exit_code",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_TARGET_TPS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_RAMP_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_WARMUP_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_DURATION_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_MAX_CANONICAL_BACKLOG",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_MAX_CWND",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_RUN_BATCHING",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_BATCH_SIZE",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_COALESCE_MS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_TRANSFER_RUNS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_INFLIGHT",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.TON_SIMPLEX_MAX_TPS",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.TON_NATIVE_CHECKPOINT_RETAIN_INGRESS",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_PAYMENT_LANES_ENABLED",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_TRANSFER_RUNS_ENABLED",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_started_at",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_restart_count",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_running",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_health",
+          "passed": true
+        },
+        {
+          "check": "runtime_generator_exited",
+          "passed": true
+        },
+        {
+          "check": "service_image_records_once",
+          "passed": true
+        },
+        {
+          "check": "genesis.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "genesis.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "genesis.image_source_revision",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.image_source_revision",
+          "passed": true
+        },
+        {
+          "check": "session-stats.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "session-stats.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "timestamps_ordered",
+          "passed": true
+        },
+        {
+          "check": "run_elapsed_seconds",
+          "passed": true
+        },
+        {
+          "check": "host_identity_present",
+          "passed": true
+        }
+      ],
+      "artifacts": {
+        "/home/neodix/gitProjects/corton-nommander-ton-sidechain/doc/benchmarks/results/cycles-20260906b-proof-b1.json": {
+          "sha256": "1781ee7487e17a16ad5b1176d16a5dfc2feedc61ad07be68b0c47945345dfbff",
+          "bytes": 47027
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b1/benchmark-summary.json": {
+          "sha256": "39ced17a391c836cd6d5c9fd7c65cce8749304a2cd606b3ab657f326e2592ee3",
+          "bytes": 234644
+        },
+        "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-b1-command.json": {
+          "sha256": "c7d7ee0b6f41f5f26fc6b46715b5873325834e6b39ad083e104fa9aecc337648",
+          "bytes": 1178
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b1/run-metadata.json": {
+          "sha256": "023ed01ffab830c68d1239b7cec73e686508ab4f687c0a17ac1fffab507fbca0",
+          "bytes": 23750
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b1/strict-image-reuse.json": {
+          "sha256": "ed5dfb94b6cf3013ab88389cf3a30c287b64a233b263ccedab57971734b644ff",
+          "bytes": 1337
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b1/generator-summary.json": {
+          "sha256": "e6b01490004faece82ca61546089f1d107022fd03a92fa30983a67067df2aa9f",
+          "bytes": 52966
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b1/strict-image-reuse-before.json": {
+          "sha256": "db1834a55ee39ab346a426374c517066deaede0b78aab0e0d175b656113c43d3",
+          "bytes": 302
+        }
+      },
+      "rates": {
+        "offered_tps": 53406.50666666667,
+        "canonical_chain_tps": 53314.782608695656,
+        "proof_cohort_observed_tps": 52614.56,
+        "measure_seconds": 300,
+        "canonical_gen_utime_bucket_seconds": 299,
+        "canonical_chain_transfers": 15941120,
+        "offered_over_canonical": 1.0017204244954767
+      },
+      "source_revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9",
+      "source_image_declared": {
+        "tag": "ghcr.io/corton-nommander/ton:cycle-proof-6a96c953",
+        "id": "sha256:854da925d3499a4368cde064fba66c3da717bb19c5b08ed3991d55ab6ac20afd",
+        "revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9"
+      },
+      "service_image_ids": {
+        "genesis": "sha256:020eafda13aa003b420bcb7bd6910bc506ed3cb4442d78d6eab582b67eb8cca6",
+        "native-load-generator": "sha256:452253f924566664a91a557a5b4d8dcccd55f678b3837aad66be2ff1eedff9a9",
+        "session-stats": "sha256:5f3576b583a98779069ea7e4900db2b3d74289aa99b230414c5226c1db792cb0"
+      },
+      "normalized_runtime": {
+        "genesis": {
+          "environment": {
+            "NATIVE_SPAM_FEE": "0",
+            "GENESIS_HEARTBEAT_SECONDS": "30",
+            "NATIVE_PAYMENT_LANE_WALLET_RETRIES": "128",
+            "NATIVE_SPAM_MODE": "pipeline",
+            "NATIVE_TRANSFER_RUNS_CAPABILITY": "1024",
+            "NATIVE_LOAD_SOURCES": "24576",
+            "SIMPLEX_SLOTS_PER_LEADER_WINDOW": "4",
+            "TON_NATIVE_EXECUTOR_THREADS": "8",
+            "BLOCK_SIZE_SOFT_KB": "8704",
+            "NATIVE_SPAM_SOURCES": "1000",
+            "SIMPLEX_MAX_LEADER_WINDOW_DESYNC": "700",
+            "NATIVE_SPAM_TOPUP_TIMEOUT_SECONDS": "180",
+            "NATIVE_TRANSFER_RUNS_GLOBAL_VERSION": "15",
+            "TON_NATIVE_COLLATOR_QUEUE_LIMIT": "18432",
+            "BLOCK_GAS_LIMIT_UNDERLOAD": "2000000",
+            "NATIVE_TRANSFER_RUNS_ENABLED": "1",
+            "TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS": "0",
+            "NATIVE_SPAM_AMOUNT": "0.000000001",
+            "NATIVE_SPAM_RUN": "0",
+            "SIMPLEX_FIRST_BLOCK_TIMEOUT_MS": "500",
+            "NATIVE_SPAM_CONFIRM_PARALLELISM": "192",
+            "NATIVE_SPAM_GENESIS_DESTINATIONS": "1",
+            "MAX_SPLIT": "2",
+            "NATIVE_SPAM_CONFIRM_MODE": "optimistic",
+            "NATIVE_PAYMENT_LANES_ENABLED": "1",
+            "NATIVE_SPAM_ROUNDS": "0",
+            "NATIVE_SPAM_DURATION_SECONDS": "600",
+            "NATIVE_SPAM_TOPUP_AMOUNT": "10",
+            "NATIVE_SPAM_PARALLELISM": "192",
+            "NATIVE_SPAM_FORCE_TOPUP": "0",
+            "BLOCK_GAS_LIMIT_SOFT": "10000000",
+            "MIN_SPLIT": "2",
+            "NATIVE_SPAM_CONFIRM_POLL_SECONDS": "0.2",
+            "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0",
+            "TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS": "8000",
+            "BLOCK_SIZE_HARD_KB": "9216",
+            "ACTUAL_MIN_SPLIT": "2",
+            "NATIVE_PAYMENT_LANES_GLOBAL_VERSION": "16",
+            "BLOCK_GAS_LIMIT_HARD": "20000000",
+            "TON_NATIVE_MEMPOOL_MAX_TTL": "7200",
+            "NATIVE_PAYMENT_LANE_WALLET_PARALLELISM": "12",
+            "NATIVE_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_SPAM_CONFIRM_TIMEOUT_SECONDS": "30",
+            "NATIVE_SPAM_TRANSFER_TIMEOUT_SECONDS": "120",
+            "BLOCK_LIMIT_MULTIPLIER": "1",
+            "NATIVE_SPAM_KEEP_ARTIFACTS": "0",
+            "NATIVE_SPAM_GENESIS_PROGRESS_EVERY": "256",
+            "NATIVE_PAYMENT_LANES_CAPABILITY": "2048",
+            "BLOCK_SIZE_UNDERLOAD_KB": "4096",
+            "NATIVE_SPAM_PROGRESS_INTERVAL_SECONDS": "5",
+            "SIMPLEX_TARGET_RATE_MS": "300",
+            "TON_SIMPLEX_MAX_TPS": "1",
+            "TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS": "1000",
+            "TON_NATIVE_EXT_MSG_TRANSPORT_WINDOW": "1024"
+          },
+          "cpuset": "0-8,12-20",
+          "nano_cpus": 17999998976,
+          "memory_limit_bytes": 0,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_shared-data/_data",
+              "destination": "/usr/share/data",
+              "rw": true
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_ton-db-val0/_data",
+              "destination": "/var/ton-work/db",
+              "rw": true
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_native-load-wallets/_data",
+              "destination": "/var/ton-work/db/native-spam/wallets",
+              "rw": true
+            }
+          ]
+        },
+        "native-load-generator": {
+          "environment": {
+            "NATIVE_LOAD_CANONICAL_RETRY_BACKOFF_SECONDS": "0.25",
+            "NATIVE_LOAD_START_NONCE": "0",
+            "NATIVE_LOAD_WORKERS": "6",
+            "NATIVE_LOAD_MAX_RETRIES": "8",
+            "NATIVE_LOAD_PAYMENT_LANE_LITESERVER_TIMEOUT_SECONDS": "5",
+            "NATIVE_LOAD_VALID_FOR_SECONDS": "7200",
+            "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+            "NATIVE_LOAD_REPORT_INTERVAL_SECONDS": "1",
+            "NATIVE_LOAD_FINALITY_POLL_SECONDS": "10",
+            "NATIVE_LOAD_AUTO_NONCE": "1",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_POLL_SECONDS": "2",
+            "NATIVE_LOAD_WALLET_DIR": "/wallets",
+            "NATIVE_LOAD_DURATION_SECONDS": "300",
+            "NATIVE_LOAD_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_LOAD_SOURCE_OFFSET": "0",
+            "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+            "NATIVE_LOAD_AMOUNT": "0.000000001",
+            "NATIVE_LOAD_CANONICAL_RETRY_MAX_BACKOFF_SECONDS": "5",
+            "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+            "NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER": "1",
+            "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+            "NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_BACKOFF_MS": "250",
+            "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+            "NATIVE_LOAD_FEE": "0",
+            "NATIVE_LOAD_SIGNERS": "6",
+            "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+            "NATIVE_LOAD_CONNECTIONS": "12",
+            "NATIVE_LOAD_CANONICAL_RETRY_LIMIT": "5",
+            "NATIVE_PAYMENT_LANES_ENABLED": "1",
+            "NATIVE_LOAD_FINALITY_SAMPLE_SOURCES": "256",
+            "NATIVE_LOAD_SOURCES": "24576",
+            "NATIVE_LOAD_RETRY_HORIZON_SECONDS": "90",
+            "NATIVE_LOAD_TARGET_TPS": "60000",
+            "NATIVE_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_LOAD_CANONICAL_POLL_SECONDS": "0.25",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_STABLE_OBSERVATIONS": "2",
+            "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+            "NATIVE_LOAD_RETRY_BACKOFF_MS": "100",
+            "NATIVE_LOAD_WARMUP_SECONDS": "60",
+            "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+            "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+            "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+            "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "16",
+            "NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_MAX_BACKOFF_MS": "2000",
+            "NATIVE_LOAD_GLOBAL_CONFIG": "/usr/share/data/global.config.json",
+            "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+            "NATIVE_LOAD_REPAIR_COOLDOWN_SECONDS": "10",
+            "NATIVE_LOAD_RAMP_SECONDS": "30",
+            "NATIVE_LOAD_QUERY_TIMEOUT_SECONDS": "10",
+            "NATIVE_LOAD_INFLIGHT": "65536",
+            "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS": "900",
+            "NATIVE_LOAD_CANONICAL_QUERY_TIMEOUT_SECONDS": "30"
+          },
+          "cpuset": "9-10,21-22",
+          "nano_cpus": 4000000000,
+          "memory_limit_bytes": 8589934592,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_shared-data/_data",
+              "destination": "/usr/share/data",
+              "rw": false
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_native-load-wallets/_data",
+              "destination": "/wallets",
+              "rw": false
+            }
+          ]
+        },
+        "session-stats": {
+          "environment": {},
+          "cpuset": "11,23",
+          "nano_cpus": 1000000000,
+          "memory_limit_bytes": 0,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_session-stats-data/_data",
+              "destination": "/data",
+              "rw": true
+            },
+            {
+              "type": "bind",
+              "source": "/var/lib/docker/volumes",
+              "destination": "/docker-volumes",
+              "rw": false
+            },
+            {
+              "type": "bind",
+              "source": "/",
+              "destination": "/hostfs",
+              "rw": false
+            }
+          ]
+        }
+      },
+      "host": {
+        "kernel": "Linux 6.8.0-139-generic x86_64 GNU/Linux",
+        "cpu_model": "AMD Ryzen 9 3900X 12-Core Processor",
+        "host_vcpus": 24,
+        "host_memory_bytes": 134984433664,
+        "docker": {
+          "version": "28.3.2",
+          "cgroup_driver": "cgroupfs",
+          "cgroup_version": "2"
+        },
+        "smt_active": true,
+        "numa_nodes": 1,
+        "compose_version": "2.39.1-desktop.1"
+      },
+      "validator_identity": {
+        "container_id": "b50c994fcbedc4e9d5becf79af5e7d25aebe3a45956d1732de162b42fc618a2f",
+        "image_id": "sha256:020eafda13aa003b420bcb7bd6910bc506ed3cb4442d78d6eab582b67eb8cca6",
+        "started_at": "2026-09-06T13:13:11.693904691Z",
+        "restart_count": 0,
+        "running": true,
+        "validator_process": {
+          "pid": 30,
+          "start_ticks": 10799271
+        }
+      },
+      "container_uptime_at_measure_start_s": 284.2790961265564,
+      "reproducibility": {
+        "valid": false,
+        "reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "separate from proof correctness and capacity validity; dirty source or unpinned images make the run difficult to reproduce but do not alter canonical proof results"
+      },
+      "declared_parallel_threshold": 512,
+      "lane_manifest_sha256": "a8c594819938d55106ff6473ab91a73f667b12a0b2b1165015ea282b7e1dde6b",
+      "capacity_comparison_eligible": false,
+      "failed_checks": [
+        {
+          "check": "status",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected_or_missing_gates"
+          }
+        },
+        {
+          "check": "comparison_eligible",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "failed_or_missing_gates",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "ingress_capacity_valid"
+            ]
+          }
+        },
+        {
+          "check": "load_level_acceptance.valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "load_level_acceptance.classification",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected"
+          }
+        },
+        {
+          "check": "load_level_acceptance.capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "offer_target_attained",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "offer_target_at_least_95_percent",
+          "passed": false
+        }
+      ]
+    },
+    "proof-b2": {
+      "label": "proof-b2",
+      "checks": [
+        {
+          "check": "saved_summary_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_launch_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_label",
+          "passed": true
+        },
+        {
+          "check": "saved_bundle",
+          "passed": true
+        },
+        {
+          "check": "raw_run_metadata",
+          "passed": true
+        },
+        {
+          "check": "raw_summary_strict_evidence",
+          "passed": true
+        },
+        {
+          "check": "saved_strict_evidence",
+          "passed": true
+        },
+        {
+          "check": "saved_acceptance",
+          "passed": true
+        },
+        {
+          "check": "saved_load_level",
+          "passed": true
+        },
+        {
+          "check": "saved_images",
+          "passed": true
+        },
+        {
+          "check": "raw_generator_final",
+          "passed": true
+        },
+        {
+          "check": "saved_run.run_id",
+          "passed": true
+        },
+        {
+          "check": "saved_run.started_at",
+          "passed": true
+        },
+        {
+          "check": "saved_run.finished_at",
+          "passed": true
+        },
+        {
+          "check": "saved_run.elapsed_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_run.benchmark_exit_code",
+          "passed": true
+        },
+        {
+          "check": "saved_run.generator_container_exit_code",
+          "passed": true
+        },
+        {
+          "check": "saved_run.interrupted",
+          "passed": true
+        },
+        {
+          "check": "saved_run.env_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_run.reproducibility",
+          "passed": true
+        },
+        {
+          "check": "git_revision",
+          "passed": true
+        },
+        {
+          "check": "source.revision",
+          "passed": true
+        },
+        {
+          "check": "git_dirty",
+          "passed": true
+        },
+        {
+          "check": "source.dirty",
+          "passed": true
+        },
+        {
+          "check": "benchmark_exit_code",
+          "passed": true
+        },
+        {
+          "check": "generator_container_exit_code",
+          "passed": true
+        },
+        {
+          "check": "interrupted",
+          "passed": true
+        },
+        {
+          "check": "final",
+          "passed": true
+        },
+        {
+          "check": "phase",
+          "passed": true
+        },
+        {
+          "check": "interrupted",
+          "passed": true
+        },
+        {
+          "check": "drain_timed_out",
+          "passed": true
+        },
+        {
+          "check": "status",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected_or_missing_gates"
+          }
+        },
+        {
+          "check": "comparison_eligible",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "failed_or_missing_gates",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "ingress_capacity_valid"
+            ]
+          }
+        },
+        {
+          "check": "strict_identity.valid",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.native_parent_attempts_equal_physical",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.query_identity",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.distinct_batch_source_groups",
+          "passed": true
+        },
+        {
+          "check": "load_level_acceptance.valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "load_level_acceptance.classification",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected"
+          }
+        },
+        {
+          "check": "load_level_acceptance.capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "validator_pool.cleanup_acceptance.valid",
+          "passed": true
+        },
+        {
+          "check": "generator.valid_canonical_run",
+          "passed": true
+        },
+        {
+          "check": "chain_correctness_valid",
+          "passed": true
+        },
+        {
+          "check": "run_complete",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "native_signed_run_quantum_required",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_valid",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_telemetry_contract_valid",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_benchmark_profile_valid",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_required",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_valid",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_required",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_enforced",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_valid",
+          "passed": true
+        },
+        {
+          "check": "strict_image_reuse_required",
+          "passed": true
+        },
+        {
+          "check": "strict_image_reuse_valid",
+          "passed": true
+        },
+        {
+          "check": "validator_cleanup_valid",
+          "passed": true
+        },
+        {
+          "check": "correctness_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "run_incomplete_reasons",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput",
+              "offered_load_not_above_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "native_signed_run_quantum_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "validator_cleanup_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "benchmark_result_valid",
+          "passed": true
+        },
+        {
+          "check": "chain_correctness_valid",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "canonical_result_valid",
+          "passed": true
+        },
+        {
+          "check": "canonical_follower_final_catchup_complete",
+          "passed": true
+        },
+        {
+          "check": "offer_target_attained",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "correctness_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "run_incomplete_reasons",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "launch_prefix",
+          "passed": true
+        },
+        {
+          "check": "launch_suffix",
+          "passed": true
+        },
+        {
+          "check": "launch_cwd",
+          "passed": true
+        },
+        {
+          "check": "launch_result",
+          "passed": true
+        },
+        {
+          "check": "launch_exact_declared_environment",
+          "passed": true
+        },
+        {
+          "check": "saved_launch_settings",
+          "passed": true
+        },
+        {
+          "check": "target_tps",
+          "passed": true
+        },
+        {
+          "check": "measure_elapsed_s",
+          "passed": true
+        },
+        {
+          "check": "adaptive_max_cwnd",
+          "passed": true
+        },
+        {
+          "check": "effective_cwnd_cap",
+          "passed": true
+        },
+        {
+          "check": "native_signed_runs_enabled",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_requested",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_enabled",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_target_size",
+          "passed": true
+        },
+        {
+          "check": "native_payment_lane_depth",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_coalesce_ms",
+          "passed": true
+        },
+        {
+          "check": "submit_coalesce_ms",
+          "passed": true
+        },
+        {
+          "check": "submit_max_queries_per_client",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_normal_quantum_violations",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_effective_quantum_min",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_effective_quantum_max",
+          "passed": true
+        },
+        {
+          "check": "max_source_canonical_backlog_configured",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_max_size",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_terminal_tail_messages",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_terminal_tail_logical_transfers",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.steady_offered",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.offered",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_chain_measure_transfers",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_measured_offers_at_measure_end",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_measured_offers_after_drain",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_total_after_drain",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.logical_submission_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_submission_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_queries",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batches",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_messages",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_source_runs",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_source_run_max_size",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_max_size",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.max_per_client_admission_queries",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.inflight",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.admission_queries_inflight",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_normal_messages",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_normal_logical_transfers",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.load_start_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.measure_start_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.measure_end_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_window_ms",
+          "passed": true
+        },
+        {
+          "check": "ramp_and_warmup_ms",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_start_unix_s",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_end_unix_s",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_duration_s",
+          "passed": true
+        },
+        {
+          "check": "load_start_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_start_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_end_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "offered_rate_from_count",
+          "passed": true
+        },
+        {
+          "check": "canonical_rate_from_count_and_bucket",
+          "passed": true
+        },
+        {
+          "check": "cohort_rate_from_count",
+          "passed": true
+        },
+        {
+          "check": "positive_canonical_and_actual_overload",
+          "passed": false
+        },
+        {
+          "check": "offer_target_at_least_95_percent",
+          "passed": false
+        },
+        {
+          "check": "target_attainment_ratio",
+          "passed": true
+        },
+        {
+          "check": "canonical_backpressure_at_most_one_percent",
+          "passed": true
+        },
+        {
+          "check": "all_measured_offers_proven_after_drain",
+          "passed": true
+        },
+        {
+          "check": "all_offers_proven_after_drain",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.offered_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_chain_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.proof_cohort_observed_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.measure_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_gen_utime_bucket_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_chain_transfers",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.offered_over_canonical",
+          "passed": true
+        },
+        {
+          "check": "rates.offered_above_canonical",
+          "passed": true
+        },
+        {
+          "check": "capacity_load.offered_above_canonical",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "capacity_load.invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offered_load_not_above_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "capacity_load_offered_rate",
+          "passed": true
+        },
+        {
+          "check": "capacity_load_canonical_rate",
+          "passed": true
+        },
+        {
+          "check": "positive_parent_attempts",
+          "passed": true
+        },
+        {
+          "check": "positive_normal_signed_runs",
+          "passed": true
+        },
+        {
+          "check": "normal_signed_run_quantum_16",
+          "passed": true
+        },
+        {
+          "check": "logical_attempt_bounds_with_valid_repair_tails",
+          "passed": true
+        },
+        {
+          "check": "native_attempts_equal_physical",
+          "passed": true
+        },
+        {
+          "check": "query_accounting_identity",
+          "passed": true
+        },
+        {
+          "check": "one_source_group_per_batched_parent",
+          "passed": true
+        },
+        {
+          "check": "batching_count_bounds",
+          "passed": true
+        },
+        {
+          "check": "physical_batch_size_and_distinct_heads",
+          "passed": true
+        },
+        {
+          "check": "bounded_query_credit",
+          "passed": true
+        },
+        {
+          "check": "inflight",
+          "passed": true
+        },
+        {
+          "check": "admission_queries_inflight",
+          "passed": true
+        },
+        {
+          "check": "required",
+          "passed": true
+        },
+        {
+          "check": "valid",
+          "passed": true
+        },
+        {
+          "check": "validator_before.object",
+          "passed": true
+        },
+        {
+          "check": "validator_before.container_id",
+          "passed": true
+        },
+        {
+          "check": "validator_before.image_id",
+          "passed": true
+        },
+        {
+          "check": "validator_before.running",
+          "passed": true
+        },
+        {
+          "check": "validator_before.restart_count",
+          "passed": true
+        },
+        {
+          "check": "validator_before.validator_process.pid",
+          "passed": true
+        },
+        {
+          "check": "validator_before.validator_process.start_ticks",
+          "passed": true
+        },
+        {
+          "check": "validator_after.object",
+          "passed": true
+        },
+        {
+          "check": "validator_after.container_id",
+          "passed": true
+        },
+        {
+          "check": "validator_after.image_id",
+          "passed": true
+        },
+        {
+          "check": "validator_after.running",
+          "passed": true
+        },
+        {
+          "check": "validator_after.restart_count",
+          "passed": true
+        },
+        {
+          "check": "validator_after.validator_process.pid",
+          "passed": true
+        },
+        {
+          "check": "validator_after.validator_process.start_ticks",
+          "passed": true
+        },
+        {
+          "check": "validator_full_identity_unchanged",
+          "passed": true
+        },
+        {
+          "check": "strict_setup_identity",
+          "passed": true
+        },
+        {
+          "check": "validator_frozen_image",
+          "passed": true
+        },
+        {
+          "check": "generator_frozen_image_before",
+          "passed": true
+        },
+        {
+          "check": "generator_frozen_image_after",
+          "passed": true
+        },
+        {
+          "check": "generator_container_id",
+          "passed": true
+        },
+        {
+          "check": "generator_container_unchanged",
+          "passed": true
+        },
+        {
+          "check": "exact_services_once",
+          "passed": true
+        },
+        {
+          "check": "genesis.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "genesis.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "genesis.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "genesis.exit_code",
+          "passed": true
+        },
+        {
+          "check": "genesis.frozen_image",
+          "passed": true
+        },
+        {
+          "check": "genesis.frozen_image_id",
+          "passed": true
+        },
+        {
+          "check": "genesis.source_revision",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_record",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_record",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.exit_code",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.frozen_image",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.frozen_image_id",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.source_revision",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "session-stats.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "session-stats.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "session-stats.exit_code",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_TARGET_TPS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_RAMP_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_WARMUP_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_DURATION_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_MAX_CANONICAL_BACKLOG",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_MAX_CWND",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_RUN_BATCHING",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_BATCH_SIZE",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_COALESCE_MS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_TRANSFER_RUNS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_INFLIGHT",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.TON_SIMPLEX_MAX_TPS",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.TON_NATIVE_CHECKPOINT_RETAIN_INGRESS",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_PAYMENT_LANES_ENABLED",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_TRANSFER_RUNS_ENABLED",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_started_at",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_restart_count",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_running",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_health",
+          "passed": true
+        },
+        {
+          "check": "runtime_generator_exited",
+          "passed": true
+        },
+        {
+          "check": "service_image_records_once",
+          "passed": true
+        },
+        {
+          "check": "genesis.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "genesis.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "genesis.image_source_revision",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.image_source_revision",
+          "passed": true
+        },
+        {
+          "check": "session-stats.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "session-stats.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "timestamps_ordered",
+          "passed": true
+        },
+        {
+          "check": "run_elapsed_seconds",
+          "passed": true
+        },
+        {
+          "check": "host_identity_present",
+          "passed": true
+        }
+      ],
+      "artifacts": {
+        "/home/neodix/gitProjects/corton-nommander-ton-sidechain/doc/benchmarks/results/cycles-20260906b-proof-b2.json": {
+          "sha256": "f16af81e9588de1279958b7c52739142d5906912229ee6bd2e4215d1271e9175",
+          "bytes": 47298
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b2/benchmark-summary.json": {
+          "sha256": "430cd18cda969e2d09d7928817adb089cb3dace2b885a29d136019050300ceed",
+          "bytes": 235877
+        },
+        "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-b2-command.json": {
+          "sha256": "c1eb97616ccf33f88ce31f6c57c4a1a4f74307f5f459ce9afab01facb559c2ea",
+          "bytes": 1178
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b2/run-metadata.json": {
+          "sha256": "ed25a1052e8124e9d1d295bd02abea16ac4df76aa176bb87194d3fc283a3719e",
+          "bytes": 23750
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b2/strict-image-reuse.json": {
+          "sha256": "2ffade7d8873ec928d90c9f82ff54f746ddf7f101cc959d8f8327014b47f9dca",
+          "bytes": 1337
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b2/generator-summary.json": {
+          "sha256": "94a446068f9e7bb7eb57bffc25e3eeae7bb65e9d6cd3b299dd26e6345cd76a91",
+          "bytes": 53136
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b2/strict-image-reuse-before.json": {
+          "sha256": "db1834a55ee39ab346a426374c517066deaede0b78aab0e0d175b656113c43d3",
+          "bytes": 302
+        }
+      },
+      "rates": {
+        "offered_tps": 54617.333333333336,
+        "canonical_chain_tps": 54781.80602006689,
+        "proof_cohort_observed_tps": 53576.96,
+        "measure_seconds": 300,
+        "canonical_gen_utime_bucket_seconds": 299,
+        "canonical_chain_transfers": 16379760,
+        "offered_over_canonical": 0.9969976768076374
+      },
+      "source_revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9",
+      "source_image_declared": {
+        "tag": "ghcr.io/corton-nommander/ton:cycle-proof-6a96c953",
+        "id": "sha256:854da925d3499a4368cde064fba66c3da717bb19c5b08ed3991d55ab6ac20afd",
+        "revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9"
+      },
+      "service_image_ids": {
+        "genesis": "sha256:020eafda13aa003b420bcb7bd6910bc506ed3cb4442d78d6eab582b67eb8cca6",
+        "native-load-generator": "sha256:452253f924566664a91a557a5b4d8dcccd55f678b3837aad66be2ff1eedff9a9",
+        "session-stats": "sha256:5f3576b583a98779069ea7e4900db2b3d74289aa99b230414c5226c1db792cb0"
+      },
+      "normalized_runtime": {
+        "genesis": {
+          "environment": {
+            "NATIVE_SPAM_FEE": "0",
+            "GENESIS_HEARTBEAT_SECONDS": "30",
+            "NATIVE_PAYMENT_LANE_WALLET_RETRIES": "128",
+            "NATIVE_SPAM_MODE": "pipeline",
+            "NATIVE_TRANSFER_RUNS_CAPABILITY": "1024",
+            "NATIVE_LOAD_SOURCES": "24576",
+            "SIMPLEX_SLOTS_PER_LEADER_WINDOW": "4",
+            "TON_NATIVE_EXECUTOR_THREADS": "8",
+            "BLOCK_SIZE_SOFT_KB": "8704",
+            "NATIVE_SPAM_SOURCES": "1000",
+            "SIMPLEX_MAX_LEADER_WINDOW_DESYNC": "700",
+            "NATIVE_SPAM_TOPUP_TIMEOUT_SECONDS": "180",
+            "NATIVE_TRANSFER_RUNS_GLOBAL_VERSION": "15",
+            "TON_NATIVE_COLLATOR_QUEUE_LIMIT": "18432",
+            "BLOCK_GAS_LIMIT_UNDERLOAD": "2000000",
+            "NATIVE_TRANSFER_RUNS_ENABLED": "1",
+            "TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS": "0",
+            "NATIVE_SPAM_AMOUNT": "0.000000001",
+            "NATIVE_SPAM_RUN": "0",
+            "SIMPLEX_FIRST_BLOCK_TIMEOUT_MS": "500",
+            "NATIVE_SPAM_CONFIRM_PARALLELISM": "192",
+            "NATIVE_SPAM_GENESIS_DESTINATIONS": "1",
+            "MAX_SPLIT": "2",
+            "NATIVE_SPAM_CONFIRM_MODE": "optimistic",
+            "NATIVE_PAYMENT_LANES_ENABLED": "1",
+            "NATIVE_SPAM_ROUNDS": "0",
+            "NATIVE_SPAM_DURATION_SECONDS": "600",
+            "NATIVE_SPAM_TOPUP_AMOUNT": "10",
+            "NATIVE_SPAM_PARALLELISM": "192",
+            "NATIVE_SPAM_FORCE_TOPUP": "0",
+            "BLOCK_GAS_LIMIT_SOFT": "10000000",
+            "MIN_SPLIT": "2",
+            "NATIVE_SPAM_CONFIRM_POLL_SECONDS": "0.2",
+            "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0",
+            "TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS": "8000",
+            "BLOCK_SIZE_HARD_KB": "9216",
+            "ACTUAL_MIN_SPLIT": "2",
+            "NATIVE_PAYMENT_LANES_GLOBAL_VERSION": "16",
+            "BLOCK_GAS_LIMIT_HARD": "20000000",
+            "TON_NATIVE_MEMPOOL_MAX_TTL": "7200",
+            "NATIVE_PAYMENT_LANE_WALLET_PARALLELISM": "12",
+            "NATIVE_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_SPAM_CONFIRM_TIMEOUT_SECONDS": "30",
+            "NATIVE_SPAM_TRANSFER_TIMEOUT_SECONDS": "120",
+            "BLOCK_LIMIT_MULTIPLIER": "1",
+            "NATIVE_SPAM_KEEP_ARTIFACTS": "0",
+            "NATIVE_SPAM_GENESIS_PROGRESS_EVERY": "256",
+            "NATIVE_PAYMENT_LANES_CAPABILITY": "2048",
+            "BLOCK_SIZE_UNDERLOAD_KB": "4096",
+            "NATIVE_SPAM_PROGRESS_INTERVAL_SECONDS": "5",
+            "SIMPLEX_TARGET_RATE_MS": "300",
+            "TON_SIMPLEX_MAX_TPS": "1",
+            "TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS": "1000",
+            "TON_NATIVE_EXT_MSG_TRANSPORT_WINDOW": "1024"
+          },
+          "cpuset": "0-8,12-20",
+          "nano_cpus": 17999998976,
+          "memory_limit_bytes": 0,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_shared-data/_data",
+              "destination": "/usr/share/data",
+              "rw": true
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_ton-db-val0/_data",
+              "destination": "/var/ton-work/db",
+              "rw": true
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_native-load-wallets/_data",
+              "destination": "/var/ton-work/db/native-spam/wallets",
+              "rw": true
+            }
+          ]
+        },
+        "native-load-generator": {
+          "environment": {
+            "NATIVE_LOAD_WORKERS": "6",
+            "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+            "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+            "NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_BACKOFF_MS": "250",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_POLL_SECONDS": "2",
+            "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+            "NATIVE_LOAD_AUTO_NONCE": "1",
+            "NATIVE_LOAD_CANONICAL_RETRY_BACKOFF_SECONDS": "0.25",
+            "NATIVE_LOAD_RETRY_HORIZON_SECONDS": "90",
+            "NATIVE_LOAD_START_NONCE": "0",
+            "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "16",
+            "NATIVE_LOAD_RAMP_SECONDS": "30",
+            "NATIVE_LOAD_CANONICAL_QUERY_TIMEOUT_SECONDS": "30",
+            "NATIVE_LOAD_REPORT_INTERVAL_SECONDS": "1",
+            "NATIVE_LOAD_PAYMENT_LANE_LITESERVER_TIMEOUT_SECONDS": "5",
+            "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+            "NATIVE_PAYMENT_LANES_ENABLED": "1",
+            "NATIVE_LOAD_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+            "NATIVE_LOAD_TARGET_TPS": "60000",
+            "NATIVE_LOAD_CANONICAL_RETRY_MAX_BACKOFF_SECONDS": "5",
+            "NATIVE_LOAD_SIGNERS": "6",
+            "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+            "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+            "NATIVE_LOAD_CONNECTIONS": "12",
+            "NATIVE_LOAD_CANONICAL_POLL_SECONDS": "0.25",
+            "NATIVE_LOAD_FINALITY_SAMPLE_SOURCES": "256",
+            "NATIVE_LOAD_MAX_RETRIES": "8",
+            "NATIVE_LOAD_VALID_FOR_SECONDS": "7200",
+            "NATIVE_LOAD_CANONICAL_RETRY_LIMIT": "5",
+            "NATIVE_LOAD_AMOUNT": "0.000000001",
+            "NATIVE_LOAD_INFLIGHT": "65536",
+            "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+            "NATIVE_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS": "900",
+            "NATIVE_LOAD_WALLET_DIR": "/wallets",
+            "NATIVE_LOAD_FINALITY_POLL_SECONDS": "10",
+            "NATIVE_LOAD_GLOBAL_CONFIG": "/usr/share/data/global.config.json",
+            "NATIVE_LOAD_FEE": "0",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_STABLE_OBSERVATIONS": "2",
+            "NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER": "1",
+            "NATIVE_LOAD_REPAIR_COOLDOWN_SECONDS": "10",
+            "NATIVE_LOAD_WARMUP_SECONDS": "60",
+            "NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_MAX_BACKOFF_MS": "2000",
+            "NATIVE_LOAD_SOURCE_OFFSET": "0",
+            "NATIVE_LOAD_DURATION_SECONDS": "300",
+            "NATIVE_LOAD_RETRY_BACKOFF_MS": "100",
+            "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+            "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+            "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+            "NATIVE_LOAD_SOURCES": "24576",
+            "NATIVE_LOAD_QUERY_TIMEOUT_SECONDS": "10"
+          },
+          "cpuset": "9-10,21-22",
+          "nano_cpus": 4000000000,
+          "memory_limit_bytes": 8589934592,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_shared-data/_data",
+              "destination": "/usr/share/data",
+              "rw": false
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_native-load-wallets/_data",
+              "destination": "/wallets",
+              "rw": false
+            }
+          ]
+        },
+        "session-stats": {
+          "environment": {},
+          "cpuset": "11,23",
+          "nano_cpus": 1000000000,
+          "memory_limit_bytes": 0,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_session-stats-data/_data",
+              "destination": "/data",
+              "rw": true
+            },
+            {
+              "type": "bind",
+              "source": "/var/lib/docker/volumes",
+              "destination": "/docker-volumes",
+              "rw": false
+            },
+            {
+              "type": "bind",
+              "source": "/",
+              "destination": "/hostfs",
+              "rw": false
+            }
+          ]
+        }
+      },
+      "host": {
+        "kernel": "Linux 6.8.0-139-generic x86_64 GNU/Linux",
+        "cpu_model": "AMD Ryzen 9 3900X 12-Core Processor",
+        "host_vcpus": 24,
+        "host_memory_bytes": 134984433664,
+        "docker": {
+          "version": "28.3.2",
+          "cgroup_driver": "cgroupfs",
+          "cgroup_version": "2"
+        },
+        "smt_active": true,
+        "numa_nodes": 1,
+        "compose_version": "2.39.1-desktop.1"
+      },
+      "validator_identity": {
+        "container_id": "b50c994fcbedc4e9d5becf79af5e7d25aebe3a45956d1732de162b42fc618a2f",
+        "image_id": "sha256:020eafda13aa003b420bcb7bd6910bc506ed3cb4442d78d6eab582b67eb8cca6",
+        "started_at": "2026-09-06T13:13:11.693904691Z",
+        "restart_count": 0,
+        "running": true,
+        "validator_process": {
+          "pid": 30,
+          "start_ticks": 10799271
+        }
+      },
+      "container_uptime_at_measure_start_s": 883.8560960292816,
+      "reproducibility": {
+        "valid": false,
+        "reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "separate from proof correctness and capacity validity; dirty source or unpinned images make the run difficult to reproduce but do not alter canonical proof results"
+      },
+      "declared_parallel_threshold": 512,
+      "lane_manifest_sha256": "a8c594819938d55106ff6473ab91a73f667b12a0b2b1165015ea282b7e1dde6b",
+      "capacity_comparison_eligible": false,
+      "failed_checks": [
+        {
+          "check": "status",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected_or_missing_gates"
+          }
+        },
+        {
+          "check": "comparison_eligible",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "failed_or_missing_gates",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "ingress_capacity_valid"
+            ]
+          }
+        },
+        {
+          "check": "load_level_acceptance.valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "load_level_acceptance.classification",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected"
+          }
+        },
+        {
+          "check": "load_level_acceptance.capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput",
+              "offered_load_not_above_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "offer_target_attained",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "positive_canonical_and_actual_overload",
+          "passed": false
+        },
+        {
+          "check": "offer_target_at_least_95_percent",
+          "passed": false
+        },
+        {
+          "check": "capacity_load.offered_above_canonical",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "capacity_load.invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offered_load_not_above_canonical_throughput"
+            ]
+          }
+        }
+      ]
+    },
+    "proof-a2": {
+      "label": "proof-a2",
+      "checks": [
+        {
+          "check": "saved_summary_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_launch_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_label",
+          "passed": true
+        },
+        {
+          "check": "saved_bundle",
+          "passed": true
+        },
+        {
+          "check": "raw_run_metadata",
+          "passed": true
+        },
+        {
+          "check": "raw_summary_strict_evidence",
+          "passed": true
+        },
+        {
+          "check": "saved_strict_evidence",
+          "passed": true
+        },
+        {
+          "check": "saved_acceptance",
+          "passed": true
+        },
+        {
+          "check": "saved_load_level",
+          "passed": true
+        },
+        {
+          "check": "saved_images",
+          "passed": true
+        },
+        {
+          "check": "raw_generator_final",
+          "passed": true
+        },
+        {
+          "check": "saved_run.run_id",
+          "passed": true
+        },
+        {
+          "check": "saved_run.started_at",
+          "passed": true
+        },
+        {
+          "check": "saved_run.finished_at",
+          "passed": true
+        },
+        {
+          "check": "saved_run.elapsed_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_run.benchmark_exit_code",
+          "passed": true
+        },
+        {
+          "check": "saved_run.generator_container_exit_code",
+          "passed": true
+        },
+        {
+          "check": "saved_run.interrupted",
+          "passed": true
+        },
+        {
+          "check": "saved_run.env_sha256",
+          "passed": true
+        },
+        {
+          "check": "saved_run.reproducibility",
+          "passed": true
+        },
+        {
+          "check": "git_revision",
+          "passed": true
+        },
+        {
+          "check": "source.revision",
+          "passed": true
+        },
+        {
+          "check": "git_dirty",
+          "passed": true
+        },
+        {
+          "check": "source.dirty",
+          "passed": true
+        },
+        {
+          "check": "benchmark_exit_code",
+          "passed": true
+        },
+        {
+          "check": "generator_container_exit_code",
+          "passed": true
+        },
+        {
+          "check": "interrupted",
+          "passed": true
+        },
+        {
+          "check": "final",
+          "passed": true
+        },
+        {
+          "check": "phase",
+          "passed": true
+        },
+        {
+          "check": "interrupted",
+          "passed": true
+        },
+        {
+          "check": "drain_timed_out",
+          "passed": true
+        },
+        {
+          "check": "status",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected_or_missing_gates"
+          }
+        },
+        {
+          "check": "comparison_eligible",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "failed_or_missing_gates",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "ingress_capacity_valid"
+            ]
+          }
+        },
+        {
+          "check": "strict_identity.valid",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.native_parent_attempts_equal_physical",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.query_identity",
+          "passed": true
+        },
+        {
+          "check": "transport_accounting.distinct_batch_source_groups",
+          "passed": true
+        },
+        {
+          "check": "load_level_acceptance.valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "load_level_acceptance.classification",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected"
+          }
+        },
+        {
+          "check": "load_level_acceptance.capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "validator_pool.cleanup_acceptance.valid",
+          "passed": true
+        },
+        {
+          "check": "generator.valid_canonical_run",
+          "passed": true
+        },
+        {
+          "check": "chain_correctness_valid",
+          "passed": true
+        },
+        {
+          "check": "run_complete",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "native_signed_run_quantum_required",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_valid",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_telemetry_contract_valid",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_quantum_benchmark_profile_valid",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_required",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_valid",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_required",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_enforced",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_valid",
+          "passed": true
+        },
+        {
+          "check": "strict_image_reuse_required",
+          "passed": true
+        },
+        {
+          "check": "strict_image_reuse_valid",
+          "passed": true
+        },
+        {
+          "check": "validator_cleanup_valid",
+          "passed": true
+        },
+        {
+          "check": "correctness_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "run_incomplete_reasons",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "native_signed_run_quantum_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "canonical_lane_balance_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "validator_cleanup_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "benchmark_result_valid",
+          "passed": true
+        },
+        {
+          "check": "chain_correctness_valid",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "canonical_result_valid",
+          "passed": true
+        },
+        {
+          "check": "canonical_follower_final_catchup_complete",
+          "passed": true
+        },
+        {
+          "check": "offer_target_attained",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "correctness_invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "run_incomplete_reasons",
+          "passed": true
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "launch_prefix",
+          "passed": true
+        },
+        {
+          "check": "launch_suffix",
+          "passed": true
+        },
+        {
+          "check": "launch_cwd",
+          "passed": true
+        },
+        {
+          "check": "launch_result",
+          "passed": true
+        },
+        {
+          "check": "launch_exact_declared_environment",
+          "passed": true
+        },
+        {
+          "check": "saved_launch_settings",
+          "passed": true
+        },
+        {
+          "check": "target_tps",
+          "passed": true
+        },
+        {
+          "check": "measure_elapsed_s",
+          "passed": true
+        },
+        {
+          "check": "adaptive_max_cwnd",
+          "passed": true
+        },
+        {
+          "check": "effective_cwnd_cap",
+          "passed": true
+        },
+        {
+          "check": "native_signed_runs_enabled",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_requested",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_enabled",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_target_size",
+          "passed": true
+        },
+        {
+          "check": "native_payment_lane_depth",
+          "passed": true
+        },
+        {
+          "check": "native_run_batching_coalesce_ms",
+          "passed": true
+        },
+        {
+          "check": "submit_coalesce_ms",
+          "passed": true
+        },
+        {
+          "check": "submit_max_queries_per_client",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_normal_quantum_violations",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_effective_quantum_min",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_effective_quantum_max",
+          "passed": true
+        },
+        {
+          "check": "max_source_canonical_backlog_configured",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_max_size",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_terminal_tail_messages",
+          "passed": true
+        },
+        {
+          "check": "native_signed_run_terminal_tail_logical_transfers",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.steady_offered",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.offered",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_chain_measure_transfers",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_measured_offers_at_measure_end",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_measured_offers_after_drain",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.canonical_total_after_drain",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.logical_submission_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_submission_attempts",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_queries",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batches",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_messages",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_source_runs",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_source_run_max_size",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.wire_batch_max_size",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.max_per_client_admission_queries",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.inflight",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.admission_queries_inflight",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_normal_messages",
+          "passed": true
+        },
+        {
+          "check": "counter_present_integer.native_signed_run_normal_logical_transfers",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.load_start_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.measure_start_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "timestamp_integer.measure_end_unix_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_window_ms",
+          "passed": true
+        },
+        {
+          "check": "ramp_and_warmup_ms",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_start_unix_s",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_end_unix_s",
+          "passed": true
+        },
+        {
+          "check": "canonical_gen_utime_bucket_duration_s",
+          "passed": true
+        },
+        {
+          "check": "load_start_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_start_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "measure_end_seconds_match_ms",
+          "passed": true
+        },
+        {
+          "check": "offered_rate_from_count",
+          "passed": true
+        },
+        {
+          "check": "canonical_rate_from_count_and_bucket",
+          "passed": true
+        },
+        {
+          "check": "cohort_rate_from_count",
+          "passed": true
+        },
+        {
+          "check": "positive_canonical_and_actual_overload",
+          "passed": true
+        },
+        {
+          "check": "offer_target_at_least_95_percent",
+          "passed": false
+        },
+        {
+          "check": "target_attainment_ratio",
+          "passed": true
+        },
+        {
+          "check": "canonical_backpressure_at_most_one_percent",
+          "passed": true
+        },
+        {
+          "check": "all_measured_offers_proven_after_drain",
+          "passed": true
+        },
+        {
+          "check": "all_offers_proven_after_drain",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.offered_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_chain_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.proof_cohort_observed_tps",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.measure_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_gen_utime_bucket_seconds",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.canonical_chain_transfers",
+          "passed": true
+        },
+        {
+          "check": "saved_rate.offered_over_canonical",
+          "passed": true
+        },
+        {
+          "check": "rates.offered_above_canonical",
+          "passed": true
+        },
+        {
+          "check": "capacity_load.offered_above_canonical",
+          "passed": true
+        },
+        {
+          "check": "capacity_load.invalid_reasons",
+          "passed": true
+        },
+        {
+          "check": "capacity_load_offered_rate",
+          "passed": true
+        },
+        {
+          "check": "capacity_load_canonical_rate",
+          "passed": true
+        },
+        {
+          "check": "positive_parent_attempts",
+          "passed": true
+        },
+        {
+          "check": "positive_normal_signed_runs",
+          "passed": true
+        },
+        {
+          "check": "normal_signed_run_quantum_16",
+          "passed": true
+        },
+        {
+          "check": "logical_attempt_bounds_with_valid_repair_tails",
+          "passed": true
+        },
+        {
+          "check": "native_attempts_equal_physical",
+          "passed": true
+        },
+        {
+          "check": "query_accounting_identity",
+          "passed": true
+        },
+        {
+          "check": "one_source_group_per_batched_parent",
+          "passed": true
+        },
+        {
+          "check": "batching_count_bounds",
+          "passed": true
+        },
+        {
+          "check": "physical_batch_size_and_distinct_heads",
+          "passed": true
+        },
+        {
+          "check": "bounded_query_credit",
+          "passed": true
+        },
+        {
+          "check": "inflight",
+          "passed": true
+        },
+        {
+          "check": "admission_queries_inflight",
+          "passed": true
+        },
+        {
+          "check": "required",
+          "passed": true
+        },
+        {
+          "check": "valid",
+          "passed": true
+        },
+        {
+          "check": "validator_before.object",
+          "passed": true
+        },
+        {
+          "check": "validator_before.container_id",
+          "passed": true
+        },
+        {
+          "check": "validator_before.image_id",
+          "passed": true
+        },
+        {
+          "check": "validator_before.running",
+          "passed": true
+        },
+        {
+          "check": "validator_before.restart_count",
+          "passed": true
+        },
+        {
+          "check": "validator_before.validator_process.pid",
+          "passed": true
+        },
+        {
+          "check": "validator_before.validator_process.start_ticks",
+          "passed": true
+        },
+        {
+          "check": "validator_after.object",
+          "passed": true
+        },
+        {
+          "check": "validator_after.container_id",
+          "passed": true
+        },
+        {
+          "check": "validator_after.image_id",
+          "passed": true
+        },
+        {
+          "check": "validator_after.running",
+          "passed": true
+        },
+        {
+          "check": "validator_after.restart_count",
+          "passed": true
+        },
+        {
+          "check": "validator_after.validator_process.pid",
+          "passed": true
+        },
+        {
+          "check": "validator_after.validator_process.start_ticks",
+          "passed": true
+        },
+        {
+          "check": "validator_full_identity_unchanged",
+          "passed": true
+        },
+        {
+          "check": "strict_setup_identity",
+          "passed": true
+        },
+        {
+          "check": "validator_frozen_image",
+          "passed": true
+        },
+        {
+          "check": "generator_frozen_image_before",
+          "passed": true
+        },
+        {
+          "check": "generator_frozen_image_after",
+          "passed": true
+        },
+        {
+          "check": "generator_container_id",
+          "passed": true
+        },
+        {
+          "check": "generator_container_unchanged",
+          "passed": true
+        },
+        {
+          "check": "exact_services_once",
+          "passed": true
+        },
+        {
+          "check": "genesis.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_record",
+          "passed": true
+        },
+        {
+          "check": "genesis.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "genesis.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "genesis.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "genesis.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "genesis.exit_code",
+          "passed": true
+        },
+        {
+          "check": "genesis.frozen_image",
+          "passed": true
+        },
+        {
+          "check": "genesis.frozen_image_id",
+          "passed": true
+        },
+        {
+          "check": "genesis.source_revision",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_record",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_record",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.exit_code",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.frozen_image",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.frozen_image_id",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.source_revision",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mounts_present",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_record",
+          "passed": true
+        },
+        {
+          "check": "session-stats.mount_destinations_unique",
+          "passed": true
+        },
+        {
+          "check": "session-stats.cpuset_present",
+          "passed": true
+        },
+        {
+          "check": "session-stats.nano_cpus_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.memory_limit_bytes_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.restart_count_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.exit_code_integer",
+          "passed": true
+        },
+        {
+          "check": "session-stats.oom_killed",
+          "passed": true
+        },
+        {
+          "check": "session-stats.exit_code",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_TARGET_TPS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_RAMP_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_WARMUP_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_DURATION_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_MAX_CANONICAL_BACKLOG",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_MAX_CWND",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_RUN_BATCHING",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_BATCH_SIZE",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_SUBMIT_COALESCE_MS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_TRANSFER_RUNS",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_generator_env.NATIVE_LOAD_ADAPTIVE_INFLIGHT",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.TON_SIMPLEX_MAX_TPS",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.TON_NATIVE_CHECKPOINT_RETAIN_INGRESS",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_PAYMENT_LANE_DEPTH",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_PAYMENT_LANES_ENABLED",
+          "passed": true
+        },
+        {
+          "check": "effective_genesis_env.NATIVE_TRANSFER_RUNS_ENABLED",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_started_at",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_restart_count",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_running",
+          "passed": true
+        },
+        {
+          "check": "runtime_validator_health",
+          "passed": true
+        },
+        {
+          "check": "runtime_generator_exited",
+          "passed": true
+        },
+        {
+          "check": "service_image_records_once",
+          "passed": true
+        },
+        {
+          "check": "genesis.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "genesis.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "genesis.image_source_revision",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "native-load-generator.image_source_revision",
+          "passed": true
+        },
+        {
+          "check": "session-stats.tag_resolves_to_image",
+          "passed": true
+        },
+        {
+          "check": "session-stats.image_created_before_plan",
+          "passed": true
+        },
+        {
+          "check": "timestamps_ordered",
+          "passed": true
+        },
+        {
+          "check": "run_elapsed_seconds",
+          "passed": true
+        },
+        {
+          "check": "host_identity_present",
+          "passed": true
+        }
+      ],
+      "artifacts": {
+        "/home/neodix/gitProjects/corton-nommander-ton-sidechain/doc/benchmarks/results/cycles-20260906b-proof-a2.json": {
+          "sha256": "909965161579da63115c7d3f2870d2f49d561886a7d75629cb21938f5eb6aa44",
+          "bytes": 34145
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a2/benchmark-summary.json": {
+          "sha256": "457c5cb3741b633af1646698f9a87b72d489fd0e4bb0f3608edc3283a595fc53",
+          "bytes": 221200
+        },
+        "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-a2-command.json": {
+          "sha256": "4884442e70933a14656a7376e15ac732c812751e0612f3fc60b40b8484dbb38e",
+          "bytes": 1181
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a2/run-metadata.json": {
+          "sha256": "8c48346a00a24741a0699caab01ed42f7816c5c0afb079dc9409092d1b9ebf23",
+          "bytes": 23763
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a2/strict-image-reuse.json": {
+          "sha256": "85469da2fba021ba245c7b4dab16ea4b8eb8779628ec3e435028c7580f9908cb",
+          "bytes": 1337
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a2/generator-summary.json": {
+          "sha256": "39fd222a60d9ff6003e6d4b1e05bd00a6a237e5a2ac2675d9753df5ff1f31f85",
+          "bytes": 41982
+        },
+        "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a2/strict-image-reuse-before.json": {
+          "sha256": "15bd6562db221ff1c91c8d08589aca586d659cd0729daf20e7e5cf927cd0b1c3",
+          "bytes": 302
+        }
+      },
+      "rates": {
+        "offered_tps": 49136.64,
+        "canonical_chain_tps": 49108.28093645485,
+        "proof_cohort_observed_tps": 48258.56,
+        "measure_seconds": 300,
+        "canonical_gen_utime_bucket_seconds": 299,
+        "canonical_chain_transfers": 14683376,
+        "offered_over_canonical": 1.000577480274291
+      },
+      "source_revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124",
+      "source_image_declared": {
+        "tag": "ghcr.io/corton-nommander/ton:cycle-coalesce-4caa92df",
+        "id": "sha256:536fbe9ad5643bda183062f40be36bca19562bccc325010e7b6396b8bfce3500",
+        "revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124"
+      },
+      "service_image_ids": {
+        "genesis": "sha256:dd84211cccf6397d895fb0e6489c2ed712d1bbc19af3047f2a6f935bd8286b4a",
+        "native-load-generator": "sha256:b152a246e082cd38bce4d1ec362a85db68e0535e435d9a801d0f2687784f4503",
+        "session-stats": "sha256:5f3576b583a98779069ea7e4900db2b3d74289aa99b230414c5226c1db792cb0"
+      },
+      "normalized_runtime": {
+        "genesis": {
+          "environment": {
+            "NATIVE_SPAM_CONFIRM_POLL_SECONDS": "0.2",
+            "NATIVE_SPAM_AMOUNT": "0.000000001",
+            "MIN_SPLIT": "2",
+            "BLOCK_SIZE_UNDERLOAD_KB": "4096",
+            "NATIVE_SPAM_RUN": "0",
+            "NATIVE_SPAM_CONFIRM_MODE": "optimistic",
+            "NATIVE_SPAM_TOPUP_AMOUNT": "10",
+            "SIMPLEX_FIRST_BLOCK_TIMEOUT_MS": "500",
+            "TON_NATIVE_MEMPOOL_MAX_TTL": "7200",
+            "NATIVE_SPAM_PARALLELISM": "192",
+            "TON_NATIVE_COLLATOR_QUEUE_LIMIT": "18432",
+            "NATIVE_SPAM_GENESIS_PROGRESS_EVERY": "256",
+            "NATIVE_TRANSFER_RUNS_CAPABILITY": "1024",
+            "NATIVE_SPAM_DURATION_SECONDS": "600",
+            "MAX_SPLIT": "2",
+            "NATIVE_TRANSFER_RUNS_ENABLED": "1",
+            "NATIVE_SPAM_TRANSFER_TIMEOUT_SECONDS": "120",
+            "ACTUAL_MIN_SPLIT": "2",
+            "NATIVE_LOAD_SOURCES": "24576",
+            "NATIVE_PAYMENT_LANE_WALLET_PARALLELISM": "12",
+            "TON_NATIVE_EXECUTOR_THREADS": "8",
+            "TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS": "8000",
+            "SIMPLEX_TARGET_RATE_MS": "300",
+            "NATIVE_PAYMENT_LANE_WALLET_RETRIES": "128",
+            "NATIVE_SPAM_MODE": "pipeline",
+            "SIMPLEX_MAX_LEADER_WINDOW_DESYNC": "700",
+            "TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS": "0",
+            "NATIVE_SPAM_TOPUP_TIMEOUT_SECONDS": "180",
+            "BLOCK_GAS_LIMIT_SOFT": "10000000",
+            "TON_SIMPLEX_MAX_TPS": "1",
+            "BLOCK_LIMIT_MULTIPLIER": "1",
+            "NATIVE_PAYMENT_LANES_ENABLED": "1",
+            "NATIVE_SPAM_ROUNDS": "0",
+            "NATIVE_PAYMENT_LANES_CAPABILITY": "2048",
+            "BLOCK_GAS_LIMIT_UNDERLOAD": "2000000",
+            "GENESIS_HEARTBEAT_SECONDS": "30",
+            "SIMPLEX_SLOTS_PER_LEADER_WINDOW": "4",
+            "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0",
+            "NATIVE_TRANSFER_RUNS_GLOBAL_VERSION": "15",
+            "TON_NATIVE_EXT_MSG_TRANSPORT_WINDOW": "1024",
+            "NATIVE_SPAM_FORCE_TOPUP": "0",
+            "NATIVE_SPAM_CONFIRM_PARALLELISM": "192",
+            "BLOCK_SIZE_HARD_KB": "9216",
+            "NATIVE_SPAM_PROGRESS_INTERVAL_SECONDS": "5",
+            "NATIVE_SPAM_KEEP_ARTIFACTS": "0",
+            "NATIVE_PAYMENT_LANES_GLOBAL_VERSION": "16",
+            "NATIVE_SPAM_SOURCES": "1000",
+            "TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS": "1000",
+            "NATIVE_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_SPAM_CONFIRM_TIMEOUT_SECONDS": "30",
+            "NATIVE_SPAM_FEE": "0",
+            "BLOCK_GAS_LIMIT_HARD": "20000000",
+            "BLOCK_SIZE_SOFT_KB": "8704",
+            "NATIVE_SPAM_GENESIS_DESTINATIONS": "1"
+          },
+          "cpuset": "0-8,12-20",
+          "nano_cpus": 17999998976,
+          "memory_limit_bytes": 0,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_shared-data/_data",
+              "destination": "/usr/share/data",
+              "rw": true
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_ton-db-val0/_data",
+              "destination": "/var/ton-work/db",
+              "rw": true
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_native-load-wallets/_data",
+              "destination": "/var/ton-work/db/native-spam/wallets",
+              "rw": true
+            }
+          ]
+        },
+        "native-load-generator": {
+          "environment": {
+            "NATIVE_LOAD_WORKERS": "6",
+            "NATIVE_LOAD_FINALITY_SAMPLE_SOURCES": "256",
+            "NATIVE_LOAD_REPORT_INTERVAL_SECONDS": "1",
+            "NATIVE_LOAD_CANONICAL_POLL_SECONDS": "0.25",
+            "NATIVE_LOAD_PAYMENT_LANE_LITESERVER_TIMEOUT_SECONDS": "5",
+            "NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_BACKOFF_MS": "250",
+            "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+            "NATIVE_LOAD_WARMUP_SECONDS": "60",
+            "NATIVE_LOAD_DURATION_SECONDS": "300",
+            "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_POLL_SECONDS": "2",
+            "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+            "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_STABLE_OBSERVATIONS": "2",
+            "NATIVE_LOAD_RETRY_HORIZON_SECONDS": "90",
+            "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+            "NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_MAX_BACKOFF_MS": "2000",
+            "NATIVE_LOAD_GLOBAL_CONFIG": "/usr/share/data/global.config.json",
+            "NATIVE_LOAD_SOURCE_OFFSET": "0",
+            "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+            "NATIVE_LOAD_RAMP_SECONDS": "30",
+            "NATIVE_LOAD_SIGNERS": "6",
+            "NATIVE_LOAD_QUERY_TIMEOUT_SECONDS": "10",
+            "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+            "NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER": "1",
+            "NATIVE_LOAD_REPAIR_COOLDOWN_SECONDS": "10",
+            "NATIVE_LOAD_TARGET_TPS": "60000",
+            "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+            "NATIVE_LOAD_CANONICAL_QUERY_TIMEOUT_SECONDS": "30",
+            "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+            "NATIVE_LOAD_WALLET_DIR": "/wallets",
+            "NATIVE_LOAD_START_NONCE": "0",
+            "NATIVE_LOAD_CONNECTIONS": "12",
+            "NATIVE_LOAD_CANONICAL_RETRY_MAX_BACKOFF_SECONDS": "5",
+            "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+            "NATIVE_LOAD_FEE": "0",
+            "NATIVE_LOAD_INFLIGHT": "65536",
+            "NATIVE_PAYMENT_LANES_ENABLED": "1",
+            "NATIVE_LOAD_SOURCES": "24576",
+            "NATIVE_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS": "900",
+            "NATIVE_LOAD_RETRY_BACKOFF_MS": "100",
+            "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+            "NATIVE_LOAD_AUTO_NONCE": "1",
+            "NATIVE_LOAD_VALID_FOR_SECONDS": "7200",
+            "NATIVE_LOAD_MAX_RETRIES": "8",
+            "NATIVE_LOAD_PAYMENT_LANE_DEPTH": "2",
+            "NATIVE_LOAD_FINALITY_POLL_SECONDS": "10",
+            "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "16",
+            "NATIVE_LOAD_CANONICAL_RETRY_BACKOFF_SECONDS": "0.25",
+            "NATIVE_LOAD_CANONICAL_RETRY_LIMIT": "5",
+            "NATIVE_LOAD_AMOUNT": "0.000000001",
+            "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180"
+          },
+          "cpuset": "9-10,21-22",
+          "nano_cpus": 4000000000,
+          "memory_limit_bytes": 8589934592,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_shared-data/_data",
+              "destination": "/usr/share/data",
+              "rw": false
+            },
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_native-load-wallets/_data",
+              "destination": "/wallets",
+              "rw": false
+            }
+          ]
+        },
+        "session-stats": {
+          "environment": {},
+          "cpuset": "11,23",
+          "nano_cpus": 1000000000,
+          "memory_limit_bytes": 0,
+          "mounts": [
+            {
+              "type": "volume",
+              "source": "/var/lib/docker/volumes/mylocalton-desktop_session-stats-data/_data",
+              "destination": "/data",
+              "rw": true
+            },
+            {
+              "type": "bind",
+              "source": "/var/lib/docker/volumes",
+              "destination": "/docker-volumes",
+              "rw": false
+            },
+            {
+              "type": "bind",
+              "source": "/",
+              "destination": "/hostfs",
+              "rw": false
+            }
+          ]
+        }
+      },
+      "host": {
+        "kernel": "Linux 6.8.0-139-generic x86_64 GNU/Linux",
+        "cpu_model": "AMD Ryzen 9 3900X 12-Core Processor",
+        "host_vcpus": 24,
+        "host_memory_bytes": 134984433664,
+        "docker": {
+          "version": "28.3.2",
+          "cgroup_driver": "cgroupfs",
+          "cgroup_version": "2"
+        },
+        "smt_active": true,
+        "numa_nodes": 1,
+        "compose_version": "2.39.1-desktop.1"
+      },
+      "validator_identity": {
+        "container_id": "ae7c8d8698dd2b3b947dbf511b0ce36fe46b68baf6c732d702c76b756ed8cdbf",
+        "image_id": "sha256:dd84211cccf6397d895fb0e6489c2ed712d1bbc19af3047f2a6f935bd8286b4a",
+        "started_at": "2026-09-06T13:35:07.221949025Z",
+        "restart_count": 0,
+        "running": true,
+        "validator_process": {
+          "pid": 31,
+          "start_ticks": 10930760
+        }
+      },
+      "container_uptime_at_measure_start_s": 308.60505080223083,
+      "reproducibility": {
+        "valid": false,
+        "reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "separate from proof correctness and capacity validity; dirty source or unpinned images make the run difficult to reproduce but do not alter canonical proof results"
+      },
+      "declared_parallel_threshold": 512,
+      "lane_manifest_sha256": "a8c594819938d55106ff6473ab91a73f667b12a0b2b1165015ea282b7e1dde6b",
+      "capacity_comparison_eligible": false,
+      "failed_checks": [
+        {
+          "check": "status",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected_or_missing_gates"
+          }
+        },
+        {
+          "check": "comparison_eligible",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "failed_or_missing_gates",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "ingress_capacity_valid"
+            ]
+          }
+        },
+        {
+          "check": "load_level_acceptance.valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "load_level_acceptance.classification",
+          "passed": false,
+          "detail": {
+            "expected": "capacity_eligible",
+            "actual": "rejected"
+          }
+        },
+        {
+          "check": "load_level_acceptance.capacity_claim_allowed",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "ingress_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "chain_capacity_valid",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "offer_target_attained",
+          "passed": false,
+          "detail": {
+            "expected": true,
+            "actual": false
+          }
+        },
+        {
+          "check": "ingress_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "offer_target_not_attained"
+            ]
+          }
+        },
+        {
+          "check": "chain_capacity_invalid_reasons",
+          "passed": false,
+          "detail": {
+            "expected": [],
+            "actual": [
+              "insufficient_load_over_canonical_throughput"
+            ]
+          }
+        },
+        {
+          "check": "offer_target_at_least_95_percent",
+          "passed": false
+        }
+      ]
+    }
+  },
+  "series_checks": [
+    {
+      "check": "all_four_arms_capacity_eligible",
+      "passed": false
+    },
+    {
+      "check": "all_four_comparison_contexts_complete",
+      "passed": true
+    },
+    {
+      "check": "proof-b1.fixed_effective_env_resources_mounts",
+      "passed": true
+    },
+    {
+      "check": "proof-b1.same_host_runtime",
+      "passed": true
+    },
+    {
+      "check": "proof-b1.same_auxiliary_image",
+      "passed": true
+    },
+    {
+      "check": "proof-b2.fixed_effective_env_resources_mounts",
+      "passed": true
+    },
+    {
+      "check": "proof-b2.same_host_runtime",
+      "passed": true
+    },
+    {
+      "check": "proof-b2.same_auxiliary_image",
+      "passed": true
+    },
+    {
+      "check": "proof-a2.fixed_effective_env_resources_mounts",
+      "passed": true
+    },
+    {
+      "check": "proof-a2.same_host_runtime",
+      "passed": true
+    },
+    {
+      "check": "proof-a2.same_auxiliary_image",
+      "passed": true
+    },
+    {
+      "check": "proof-a1_before_proof-b1",
+      "passed": true
+    },
+    {
+      "check": "proof-b1_before_proof-b2",
+      "passed": true
+    },
+    {
+      "check": "proof-b2_before_proof-a2",
+      "passed": true
+    },
+    {
+      "check": "proof-a1_proof-a2.immutable_service_images",
+      "passed": true
+    },
+    {
+      "check": "proof-b1_proof-b2.immutable_service_images",
+      "passed": true
+    },
+    {
+      "check": "b1_b2_full_validator_container_and_daemon_identity",
+      "passed": true
+    }
+  ],
+  "capacity_comparison_eligible": false,
+  "matched_pairs": [
+    {
+      "control": "proof-a1",
+      "treatment": "proof-b1",
+      "control_canonical_tps": 53152.214046822744,
+      "treatment_canonical_tps": 53314.782608695656,
+      "canonical_tps_gain_pct": 0.30585473209019387,
+      "descriptive_only_unless_all_series_gates_pass": true
+    },
+    {
+      "control": "proof-a2",
+      "treatment": "proof-b2",
+      "control_canonical_tps": 49108.28093645485,
+      "treatment_canonical_tps": 54781.80602006689,
+      "canonical_tps_gain_pct": 11.553092422342104,
+      "descriptive_only_unless_all_series_gates_pass": true
+    }
+  ],
+  "lane_manifest_observation": {
+    "sha256_by_arm": {
+      "proof-a1": "a8c594819938d55106ff6473ab91a73f667b12a0b2b1165015ea282b7e1dde6b",
+      "proof-b1": "a8c594819938d55106ff6473ab91a73f667b12a0b2b1165015ea282b7e1dde6b",
+      "proof-b2": "a8c594819938d55106ff6473ab91a73f667b12a0b2b1165015ea282b7e1dde6b",
+      "proof-a2": "a8c594819938d55106ff6473ab91a73f667b12a0b2b1165015ea282b7e1dde6b"
+    },
+    "identical_nonempty_all_four": true,
+    "gate": false,
+    "semantics": "Report-only source-population corroboration; immutable manifest content was not a separate predeclared promotion gate."
+  },
+  "selection": {
+    "selected_revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124",
+    "measured_higher_tps_candidate": false,
+    "repeatable_at_least_two_percent_claim_allowed": false,
+    "reason": "ineligible_or_incomplete_series_retain_incumbent",
+    "statistical_significance_claim": false,
+    "isolated_proof_tps_attribution": false,
+    "changes_batching_default": false
+  },
+  "limitations": [
+    "Two fixed pairs support descriptive repeatability only; no statistical significance or universal capacity claim.",
+    "Direct incumbent versus additive telemetry plus proof optimization; TPS changes cannot be assigned solely to proof traversal.",
+    "Container age at measurement start is observed from timestamps. PID/start ticks establish daemon identity, not absolute daemon uptime without boot-time/clock-tick calibration.",
+    "No cache-readiness telemetry or maximum cache-age limit was predeclared. B2 intentionally reuses the B1 process; A2 returns to the control image. Cache and database history remain possible confounds despite fixed mounts and warmup.",
+    "Equal mount sources establish storage-location continuity, not unchanged data contents or database/cache working sets.",
+    "Session-stats may lack OCI source revision; its immutable image must match across all arms. The predeclared auxiliary provenance gap is disclosed separately from core correctness/capacity acceptance.",
+    "Source base-image IDs and parallel threshold are declared in the immutable plan. Runtime evidence independently checks exact derived service IDs and OCI revisions, not Docker ancestry or an unexported threshold.",
+    "Image creation times precede the declaration and strict identities cover setup/load boundaries. Absence of unrelated compiler/tests/microbenchmarks is an operator declaration; these artifacts cannot independently prove host-wide workload exclusion."
+  ]
+}

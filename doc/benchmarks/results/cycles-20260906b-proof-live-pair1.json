@@ -1,0 +1,93 @@
+{
+  "control": "proof-a1",
+  "treatment": "proof-b1",
+  "configuration_mismatches": [],
+  "configuration_complete": true,
+  "comparison_eligible": false,
+  "capacity_comparison_eligible": false,
+  "descriptive_changes_pct": {
+    "canonical_tps_change_pct": 0.3058547320901823,
+    "offered_tps_change_pct": 0.2476729355750109,
+    "proof_cohort_tps_change_pct": 1.005630177505708,
+    "native_execute_us_per_accepted_change_pct": -0.618692541606265,
+    "nonce_rate_change_pct": 97.15451225048261,
+    "scans_per_selected_change_pct": 4.657139851073197,
+    "excluded_per_selected_change_pct": null
+  },
+  "semantics": "Descriptive changes remain visible for rejected runs but cannot support claims. Zero control denominator yields null.",
+  "declared_source_revisions": [
+    "4caa92dfc90f38f21c3f66c92dd408b6d9c52124",
+    "6a96c953508844b97447b3f7fc6b0e25ad62fcd9"
+  ],
+  "same_launch_settings": true,
+  "same_effective_environments": true,
+  "same_resource_limits": true,
+  "same_harness_revision_and_clean": true,
+  "same_env_file": true,
+  "declared_images_verified": true,
+  "same_auxiliary_image": true,
+  "integration_accounting_valid": true,
+  "strict_code_comparison_semantics": "Both image versions are prebuilt once; each arm requires full internal image/container/daemon continuity. Source-image switches occur before setup and warmup, outside measurements. No same-process claim across different validator images.",
+  "rates": {
+    "control": {
+      "offered_tps": 53274.56,
+      "canonical_chain_tps": 53152.214046822744,
+      "proof_cohort_observed_tps": 52090.72,
+      "observer_discovery_tps": 64681.29192657951,
+      "offered_over_canonical": 1.0023018035160205,
+      "offered_above_canonical": true,
+      "measure_seconds": 300,
+      "canonical_gen_utime_bucket_seconds": 299,
+      "canonical_chain_transfers": 15892512,
+      "semantics": "Canonical chain TPS is proof-checked production by gen_utime; proof-cohort TPS is a measured-offer cohort/checkpoint rate; observer discovery TPS is catch-up, never capacity."
+    },
+    "treatment": {
+      "offered_tps": 53406.50666666667,
+      "canonical_chain_tps": 53314.782608695656,
+      "proof_cohort_observed_tps": 52614.56,
+      "observer_discovery_tps": 162043.7771395042,
+      "offered_over_canonical": 1.0017204244954767,
+      "offered_above_canonical": true,
+      "measure_seconds": 300,
+      "canonical_gen_utime_bucket_seconds": 299,
+      "canonical_chain_transfers": 15941120,
+      "semantics": "Canonical chain TPS is proof-checked production by gen_utime; proof-cohort TPS is a measured-offer cohort/checkpoint rate; observer discovery TPS is catch-up, never capacity."
+    }
+  },
+  "cpu": {
+    "control": {
+      "genesis": {
+        "samples": 149,
+        "mean_cores": 9.400906040268456,
+        "max_cores": 12.478699999999998
+      },
+      "native-load-generator": {
+        "samples": 149,
+        "mean_cores": 0.7412422818791946,
+        "max_cores": 1.1787
+      },
+      "session-stats": {
+        "samples": 149,
+        "mean_cores": 0.9250449664429531,
+        "max_cores": 1.0971
+      }
+    },
+    "treatment": {
+      "genesis": {
+        "samples": 149,
+        "mean_cores": 9.532793288590604,
+        "max_cores": 12.5288
+      },
+      "native-load-generator": {
+        "samples": 149,
+        "mean_cores": 0.7575281879194631,
+        "max_cores": 1.4581
+      },
+      "session-stats": {
+        "samples": 149,
+        "mean_cores": 0.9237543624161073,
+        "max_cores": 1.0756999999999999
+      }
+    }
+  }
+}

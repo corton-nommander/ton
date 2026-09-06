@@ -17,6 +17,7 @@
 #include "crypto/Ed25519.h"
 #include "td/actor/actor.h"
 #include "td/utils/OptionParser.h"
+#include "td/utils/ScopeGuard.h"
 #include "td/utils/Time.h"
 #include "td/utils/filesystem.h"
 #include "td/utils/port/signals.h"
@@ -552,6 +553,9 @@ struct WorkerStats {
   double initial_congestion_window{0.0};
   double effective_cwnd_cap{0.0};
   double pacing_tokens{0.0};
+  double snapshot_elapsed_seconds{0.0};
+  native_load::PacingTelemetry pacing;
+  native_load::IssueWaitSnapshot native_client_issue_wait;
   double measure_elapsed_seconds{0.0};
   double drain_to_anchor_seconds{0.0};
   double canonical_backpressure_seconds{0.0};
@@ -569,6 +573,34 @@ struct WorkerStats {
   TaskErrorReasonCounters task_errors_by_reason;
   TaskErrorReasonCounters retries_by_reason;
 };
+
+void write_pacing_telemetry(const WorkerStats& stats) {
+  const auto& pacing = stats.pacing;
+  std::cout << ",\"pacing_telemetry\":{\"clipped_tokens\":" << pacing.clipped_tokens
+            << ",\"measure_clipped_tokens\":" << pacing.measure_clipped_tokens
+            << ",\"clipped_updates\":" << pacing.clipped_updates
+            << ",\"measure_clipped_updates\":" << pacing.measure_clipped_updates;
+  auto interval = [](const char* name, const native_load::ObservedIntervalMax& value) {
+    std::cout << ",\"" << name << "_max_s\":" << value.all_seconds
+              << ",\"measure_" << name << "_max_s\":" << value.measure_seconds;
+  };
+  interval("token_update_gap", pacing.update_gap);
+  interval("pump_gap", pacing.pump_gap);
+  interval("pump_duration", pacing.pump_duration);
+  interval("alarm_lateness", pacing.alarm_lateness);
+  auto boundary = [](const char* name, const native_load::RefillBoundaryObservation& value) {
+    std::cout << ",\"" << name << "_samples\":" << value.samples
+              << ",\"" << name << "_refilled_tokens\":" << value.refilled_tokens
+              << ",\"" << name << "_max_service_lag_s\":" << value.max_service_lag_seconds;
+  };
+  boundary("measure_start", pacing.measure_start);
+  boundary("measure_end", pacing.measure_end);
+  const auto& wait = stats.native_client_issue_wait;
+  std::cout << ",\"native_client_issue_wait_worker_s\":" << wait.seconds
+            << ",\"measure_native_client_issue_wait_worker_s\":" << wait.measure_seconds
+            << ",\"native_client_issue_wait_events\":" << wait.events
+            << ",\"measure_native_client_issue_wait_events\":" << wait.measure_events << '}';
+}
 
 struct CanonicalTransferObservation {
   std::size_t wallet_idx{0};
@@ -649,10 +681,12 @@ class NativeLoadWorker final : public td::actor::Actor {
     }
     start_at_ = start_at;
     last_token_at_ = start_at;
+    last_pump_at_ = start_at;
     next_sample_at_ = start_at + options_.finality_poll_seconds;
     next_publish_at_ = start_at;
     started_ = true;
     alarm_timestamp() = td::Timestamp::in(std::max(0.001, start_at_ - td::Time::now()));
+    scheduled_worker_alarm_at_ = get_alarm_timestamp().at();
   }
 
   void request_graceful_stop() {
@@ -924,6 +958,11 @@ class NativeLoadWorker final : public td::actor::Actor {
   double next_drain_scan_at_{0.0};
   double last_token_at_{0.0};
   double pacing_tokens_{0.0};
+  double last_pump_at_{0.0};
+  double scheduled_worker_alarm_at_{0.0};
+  native_load::IssueWaitTelemetry native_client_issue_wait_;
+  td::uint32 client_issue_wait_quantum_{0};
+  std::size_t client_issue_wait_wallet_{0};
   td::uint32 native_signed_run_quantum_{0};
   ScanKind scan_kind_{ScanKind::none};
   ScanKind pending_scan_{ScanKind::none};
@@ -948,6 +987,9 @@ class NativeLoadWorker final : public td::actor::Actor {
   double pacing_rate_at(double at) const;
   double pacing_burst_cap_at(double at) const;
   void update_tokens(double now);
+  native_load::MeasureWindow measure_window() const;
+  void close_client_issue_wait(double now);
+  void close_recovered_client_issue_wait(double now);
   bool is_measure_phase(double now) const;
   bool can_issue(double now) const;
   bool source_backlog_full(const Wallet& wallet) const;
@@ -1482,6 +1524,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       total.max_per_client_admission_queries =
           std::max(total.max_per_client_admission_queries, value.max_per_client_admission_queries);
       total.pacing_tokens += value.pacing_tokens;
+      total.pacing.merge(value.pacing);
+      total.native_client_issue_wait.merge(value.native_client_issue_wait);
       total.measure_elapsed_seconds = std::max(total.measure_elapsed_seconds, value.measure_elapsed_seconds);
       total.drain_to_anchor_seconds = std::max(total.drain_to_anchor_seconds, value.drain_to_anchor_seconds);
       total.canonical_backpressure_seconds =
@@ -1961,7 +2005,23 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"clients_at_cwnd_cap\":" << total.clients_at_cwnd_cap
         << ",\"cwnd_cap_limited_acks\":" << total.cwnd_cap_limited_acks
         << ",\"congestion_window_sampled_peak\":" << congestion_window_sampled_peak_
-        << ",\"pacing_tokens\":" << total.pacing_tokens
+        << ",\"pacing_tokens\":" << total.pacing_tokens;
+    write_pacing_telemetry(total);
+    std::cout << ",\"worker_pacing_snapshots\":[";
+    for (std::size_t worker = 0; worker < snapshots_.size(); ++worker) {
+      const auto& snapshot = snapshots_[worker];
+      if (worker != 0) {
+        std::cout << ',';
+      }
+      std::cout << "{\"worker_id\":" << worker
+                << ",\"snapshot_elapsed_s\":" << snapshot.snapshot_elapsed_seconds
+                << ",\"measure_elapsed_s\":" << snapshot.measure_elapsed_seconds
+                << ",\"steady_offered\":" << snapshot.steady_offered
+                << ",\"pacing_tokens\":" << snapshot.pacing_tokens;
+      write_pacing_telemetry(snapshot);
+      std::cout << '}';
+    }
+    std::cout << ']'
         << ",\"rtt_ms\":{\"p50\":" << total.request_latency.percentile(0.50)
         << ",\"p95\":" << total.request_latency.percentile(0.95)
         << ",\"p99\":" << total.request_latency.percentile(0.99) << ",\"max\":" << total.request_latency.max_ms
@@ -2186,6 +2246,9 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"native_signed_run_repair_tail_semantics\":\"only a freshly signed finite drain-repair suffix may contain fewer outputs than the normal quantum; admitted repairs reuse their original exact parent\""
               << ",\"native_signed_run_terminal_tail_semantics\":\"the sole ordinary short-run exception advances the exclusive uint64 nonce cursor exactly to UINT64_MAX without wrapping it\""
               << ",\"native_signed_run_cwnd_floor_clamps_semantics\":\"AIMD loss responses whose halved window was raised to one effective signed-run quantum\""
+              << ",\"pacing_telemetry_semantics\":\"clipped tokens integrate overflow after bucket fill using the unchanged endpoint-trapezoid refill; measure values use the configured half-open phase; all-run includes drain; boundary refilled balances precede the next issuance turn and service lag measures that delayed update; timing maxima use full intervals or their measured intersection; disabled pacing has no refill observations\""
+              << ",\"native_client_issue_wait_semantics\":\"summed worker-seconds from an observed whole-quantum normal NTRN client-capacity hold until credit release, another ordered hold, source quarantine or issue end; active/source/canonical/pacing precedence excludes those holds, query-only holds are separate; duration is an observed state, not counter-derived or wall-time union\""
+              << ",\"worker_pacing_snapshots_semantics\":\"latest asynchronous worker snapshots; elapsed seconds share one monotonic run start; final offered counts use the configured measurement duration\""
               << ",\"native_signed_run_issue_holds_semantics\":\"blocked normal issue opportunities; issue decisions use active, source, canonical, pacing, current free-client capacity, then admission-query credit precedence, while source also counts quantum-ineligible queue suppression\""
               << ",\"native_payment_lane_depth_semantics\":\"client-side source/destination address-prefix preflight depth; zero disables the check and consensus remains authoritative\""
               << ",\"wire_attempts_semantics\":\"physical external BOC bodies submitted to liteServer; an NTRN parent contributes one even when it authorizes multiple logical transfers\""
@@ -3178,6 +3241,10 @@ void NativeLoadWorker::alarm() {
   }
   if (started_) {
     auto now = td::Time::now();
+    if (scheduled_worker_alarm_at_ > 0.0) {
+      stats_.pacing.alarm_lateness.observe(scheduled_worker_alarm_at_, now, measure_window());
+    }
+    scheduled_worker_alarm_at_ = 0.0;
     update_phase(now);
     auto issue_end = start_at_ + options_.ramp_seconds + options_.warmup_seconds + options_.duration_seconds;
     if (!sending_done_ && options_.auto_nonce && !options_.canonical_block_follower &&
@@ -3204,6 +3271,7 @@ void NativeLoadWorker::alarm() {
     if (submit_coalescer_.armed() && submit_coalescer_.deadline() > td::Time::now()) {
       alarm_timestamp().relax(td::Timestamp::at(submit_coalescer_.deadline()));
     }
+    scheduled_worker_alarm_at_ = get_alarm_timestamp().at();
   }
 }
 
@@ -3245,9 +3313,36 @@ void NativeLoadWorker::update_tokens(double now) {
   }
   auto old_rate = pacing_rate_at(last_token_at_);
   auto new_rate = pacing_rate_at(now);
+  auto cap = pacing_burst_cap_at(now);
+  stats_.pacing.observe_refill(last_token_at_, now, pacing_tokens_, old_rate,
+                             new_rate, cap, measure_window());
   pacing_tokens_ += (old_rate + new_rate) * 0.5 * (now - last_token_at_);
-  pacing_tokens_ = std::min(pacing_tokens_, pacing_burst_cap_at(now));
+  pacing_tokens_ = std::min(pacing_tokens_, cap);
   last_token_at_ = now;
+}
+
+native_load::MeasureWindow NativeLoadWorker::measure_window() const {
+  const auto begin = start_at_ + options_.ramp_seconds + options_.warmup_seconds;
+  return {begin, begin + options_.duration_seconds};
+}
+
+void NativeLoadWorker::close_client_issue_wait(double now) {
+  if (native_client_issue_wait_.active()) {
+    // A late phase callback must not count the drain as an issuance hold.
+    auto window = measure_window();
+    native_client_issue_wait_.update(false, std::min(now, window.end), window);
+    client_issue_wait_quantum_ = 0;
+  }
+}
+
+void NativeLoadWorker::close_recovered_client_issue_wait(double now) {
+  // No extra client scan on the ordinary unblocked path. This is called before
+  // response parsing so freed credit stops the hold immediately, even if proof
+  // resolution already made the corresponding task inactive.
+  if (native_client_issue_wait_.active() &&
+      largest_client_available_capacity() >= client_issue_wait_quantum_) {
+    close_client_issue_wait(now);
+  }
 }
 
 bool NativeLoadWorker::is_measure_phase(double now) const {
@@ -3451,6 +3546,7 @@ void NativeLoadWorker::enqueue_ready_wallet(std::size_t wallet_idx) {
     ++stats_.submit_coalesce_windows;
     if (submit_coalescer_.deadline() > now) {
       alarm_timestamp().relax(td::Timestamp::at(submit_coalescer_.deadline()));
+      scheduled_worker_alarm_at_ = get_alarm_timestamp().at();
     }
   }
   if (!ready_wallets_.enqueue(wallet_idx)) {
@@ -3474,6 +3570,14 @@ void NativeLoadWorker::pump() {
     return;
   }
   auto now = td::Time::now();
+  const auto pump_started_at = now;
+  const auto window = measure_window();
+  stats_.pacing.pump_gap.observe(last_pump_at_, now, window);
+  last_pump_at_ = std::max(last_pump_at_, now);
+  SCOPE_EXIT {
+    stats_.pacing.pump_duration.observe(pump_started_at, td::Time::now(), window);
+  };
+  close_recovered_client_issue_wait(now);
   // Callback-driven pumping can cross a phase boundary between 10 ms alarms.
   // Establish the immutable measured nonce range before issuing at that time,
   // and stop issuing immediately when the measurement window closes.
@@ -3508,6 +3612,7 @@ void NativeLoadWorker::pump() {
   while (active_tasks_ < options_.max_inflight && can_issue(now)) {
     auto wallet_idx = find_available_wallet();
     if (!wallet_idx) {
+      close_client_issue_wait(now);
       break;
     }
     auto& wallet = wallets_[wallet_idx.value()];
@@ -3552,6 +3657,14 @@ void NativeLoadWorker::pump() {
             canonical_capacity, options_.target_tps > 0.0, pacing_credit,
             largest_client_available_capacity(),
             largest_client_query_dispatchable_capacity());
+        const bool client_held = hold_reason == native_load::NativeSignedRunIssueHoldReason::client_capacity;
+        native_client_issue_wait_.update(client_held, now, window);
+        if (client_held) {
+          client_issue_wait_quantum_ = plan.logical_count;
+          client_issue_wait_wallet_ = wallet_idx.value();
+        } else {
+          client_issue_wait_quantum_ = 0;
+        }
         if (hold_reason != native_load::NativeSignedRunIssueHoldReason::none) {
           note_native_signed_run_hold(hold_reason);
         } else {
@@ -4405,6 +4518,7 @@ void NativeLoadWorker::on_result(std::shared_ptr<TransferTask> task, std::size_t
   clients_[client_idx].inflight -= logical_count;
   CHECK(native_load::release_admission_query_credit(
       clients_[client_idx].admission_queries_inflight));
+  close_recovered_client_issue_wait(td::Time::now());
   if (sending_done_ && native_signed_run_repair_capacity_held_) {
     next_drain_scan_at_ = std::min(next_drain_scan_at_, td::Time::now());
   }
@@ -4463,6 +4577,7 @@ void NativeLoadWorker::on_batch_result(std::vector<std::shared_ptr<TransferTask>
   clients_[client_idx].inflight -= logical_count;
   CHECK(native_load::release_admission_query_credit(
       clients_[client_idx].admission_queries_inflight));
+  close_recovered_client_issue_wait(td::Time::now());
   auto now = td::Time::now();
   if (sending_done_ && native_signed_run_repair_capacity_held_) {
     next_drain_scan_at_ = std::min(next_drain_scan_at_, now);
@@ -4741,6 +4856,9 @@ void NativeLoadWorker::abandon_wallet_after_retry_horizon(std::shared_ptr<Transf
     ++stats_.canonical_state_lag_retry_exhausted;
   }
   wallet.disabled = true;
+  if (native_client_issue_wait_.active() && client_issue_wait_wallet_ == task->wallet_idx) {
+    close_client_issue_wait(td::Time::now());
+  }
   invalidate_available_wallet(task->wallet_idx);
   invalidate_ready_wallet(task->wallet_idx);
   auto pending_logical = active_logical_tasks(wallet);
@@ -4804,6 +4922,9 @@ void NativeLoadWorker::disable_wallet_for_conflict(std::size_t wallet_idx, td::S
     return;
   }
   wallet.disabled = true;
+  if (native_client_issue_wait_.active() && client_issue_wait_wallet_ == wallet_idx) {
+    close_client_issue_wait(td::Time::now());
+  }
   invalidate_available_wallet(wallet_idx);
   invalidate_ready_wallet(wallet_idx);
   auto pending_logical = active_logical_tasks(wallet);
@@ -4827,6 +4948,9 @@ void NativeLoadWorker::reject_task(std::shared_ptr<TransferTask> task, td::Slice
   }
   ++stats_.rejected;
   wallet.disabled = true;
+  if (native_client_issue_wait_.active() && client_issue_wait_wallet_ == task->wallet_idx) {
+    close_client_issue_wait(td::Time::now());
+  }
   invalidate_available_wallet(task->wallet_idx);
   invalidate_ready_wallet(task->wallet_idx);
   auto pending_logical = active_logical_tasks(wallet);
@@ -4845,6 +4969,7 @@ void NativeLoadWorker::begin_drain(double now) {
   if (sending_done_) {
     return;
   }
+  close_client_issue_wait(now);
   sending_done_ = true;
   stats_.sending_done = true;
   update_backpressure_state(now);
@@ -5016,6 +5141,9 @@ void NativeLoadWorker::refresh_stats() {
     }
   }
   stats_.pacing_tokens = pacing_tokens_;
+  stats_.snapshot_elapsed_seconds = started_ ? std::max(0.0, now - start_at_) : 0.0;
+  stats_.native_client_issue_wait = native_client_issue_wait_.snapshot(
+      std::min(now, measure_window().end), measure_window());
   stats_.canonical_backlog = canonical_backlog_;
   stats_.canonical_backpressure_paused = canonical_backpressure_paused_;
   stats_.canonical_backpressure_seconds =

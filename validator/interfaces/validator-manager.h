@@ -403,12 +403,6 @@ struct CollationStats {
     static constexpr std::array<const char*, 7> suffixes{
         "le64", "65_80", "81_128", "129_256", "257_511", "512", "gt512"};
     std::array<td::uint64, 7> buckets{};
-    // Add finer production-size counters without changing the historical
-    // coarse buckets. These four disjoint sub-buckets always sum to le64;
-    // zero-account attempts remain included in the first bucket.
-    static constexpr std::array<std::size_t, 3> small_upper_bounds{8, 16, 32};
-    static constexpr std::array<const char*, 4> small_suffixes{"le8", "9_16", "17_32", "33_64"};
-    std::array<td::uint64, 4> small_buckets{};
 
     void record(std::size_t accounts) {
       std::size_t bucket = 0;
@@ -416,22 +410,12 @@ struct CollationStats {
         ++bucket;
       }
       ++buckets[bucket];
-      if (accounts <= upper_bounds.front()) {
-        std::size_t small_bucket = 0;
-        while (small_bucket < small_upper_bounds.size() && accounts > small_upper_bounds[small_bucket]) {
-          ++small_bucket;
-        }
-        ++small_buckets[small_bucket];
-      }
     }
 
     std::string to_str(td::Slice prefix) const {
       std::string result;
       for (std::size_t i = 0; i < buckets.size(); ++i) {
         result += PSTRING() << " " << prefix << "_" << suffixes[i] << "=" << buckets[i];
-      }
-      for (std::size_t i = 0; i < small_buckets.size(); ++i) {
-        result += PSTRING() << " " << prefix << "_" << small_suffixes[i] << "=" << small_buckets[i];
       }
       return result;
     }

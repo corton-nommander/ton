@@ -178,15 +178,12 @@ TEST(CollatorExternalWaitStats, AccountsAndSerializesNativeDeferrals) {
 
 TEST(CollatorExternalWaitStats, NativeAccountHistogramsPreserveThresholdBoundaries) {
   ton::validator::CollationStats stats;
-  // Both edges of the coarse and fine buckets, including empty/rejected
-  // fragments. Values above 64 must not contribute to the additive sub-bins.
-  for (auto accounts : {0u, 1u, 8u, 9u, 16u, 17u, 32u, 33u, 64u, 65u, 80u, 81u, 128u, 129u, 256u,
-                        257u, 511u, 512u, 513u, 4096u}) {
+  // Both edges of each disjoint bucket, including empty/rejected fragments.
+  for (auto accounts : {0u, 64u, 65u, 80u, 81u, 128u, 129u, 256u, 257u, 511u, 512u, 513u, 4096u}) {
     stats.native_microbatch_account_histogram.record(accounts);
     stats.record_native_staged_updates(accounts, 1);
   }
-  constexpr std::array<td::uint64, 7> expected{9, 2, 2, 2, 2, 1, 2};
-  constexpr std::array<td::uint64, 4> small_expected{3, 2, 2, 2};
+  constexpr std::array<td::uint64, 7> expected{2, 2, 2, 2, 2, 1, 2};
   for (bool cpu : {false, true}) {
     const auto serialized = stats.work_time_to_str(cpu);
     for (std::size_t i = 0; i < expected.size(); ++i) {
@@ -195,20 +192,7 @@ TEST(CollatorExternalWaitStats, NativeAccountHistogramsPreserveThresholdBoundari
       ASSERT_TRUE(contains_exact_stat(serialized, (std::string{"native_microbatch_accounts_"} + suffix + "=").c_str(), expected[i]));
       ASSERT_TRUE(contains_exact_stat(serialized, (std::string{"native_staged_updates_"} + suffix + "=").c_str(), expected[i]));
     }
-    td::uint64 small_total = 0;
-    for (std::size_t i = 0; i < small_expected.size(); ++i) {
-      auto suffix = stats.native_microbatch_account_histogram.small_suffixes[i];
-      ASSERT_EQ(stats.native_microbatch_account_histogram.small_buckets[i], small_expected[i]);
-      ASSERT_EQ(stats.native_staged_update_histogram.small_buckets[i], small_expected[i]);
-      ASSERT_TRUE(contains_exact_stat(serialized, (std::string{"native_microbatch_accounts_"} + suffix + "=").c_str(),
-                                      small_expected[i]));
-      ASSERT_TRUE(contains_exact_stat(serialized, (std::string{"native_staged_updates_"} + suffix + "=").c_str(),
-                                      small_expected[i]));
-      small_total += stats.native_microbatch_account_histogram.small_buckets[i];
-    }
-    ASSERT_EQ(small_total, stats.native_microbatch_account_histogram.buckets[0]);
-    ASSERT_EQ(small_total, stats.native_staged_update_histogram.buckets[0]);
-    ASSERT_TRUE(contains_exact_stat(serialized, "native_staged_workers_1=", 20));
+    ASSERT_TRUE(contains_exact_stat(serialized, "native_staged_workers_1=", 13));
     ASSERT_TRUE(contains_exact_stat(serialized, "native_staged_workers_other=", 0));
   }
   stats.record_native_staged_updates(512, 2);
@@ -217,18 +201,5 @@ TEST(CollatorExternalWaitStats, NativeAccountHistogramsPreserveThresholdBoundari
   stats.record_native_staged_updates(512, 6);
   for (std::size_t i = 1; i < 5; ++i) {
     ASSERT_EQ(stats.native_staged_worker_histogram[i], 1u);
-  }
-}
-
-TEST(CollatorExternalWaitStats, NativeSmallAccountHistogramsSerializeEmptyCounters) {
-  ton::validator::CollationStats stats;
-  for (bool cpu : {false, true}) {
-    const auto serialized = stats.work_time_to_str(cpu);
-    ASSERT_TRUE(contains_exact_stat(serialized, "native_microbatch_accounts_le64=", 0));
-    ASSERT_TRUE(contains_exact_stat(serialized, "native_staged_updates_le64=", 0));
-    for (auto suffix : stats.native_microbatch_account_histogram.small_suffixes) {
-      ASSERT_TRUE(contains_exact_stat(serialized, (std::string{"native_microbatch_accounts_"} + suffix + "=").c_str(), 0));
-      ASSERT_TRUE(contains_exact_stat(serialized, (std::string{"native_staged_updates_"} + suffix + "=").c_str(), 0));
-    }
   }
 }

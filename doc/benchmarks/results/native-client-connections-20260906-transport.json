@@ -1,0 +1,468 @@
+{
+  "schema_version": 1,
+  "scope": "read-only completed sweep2 transport and arithmetic audit",
+  "source_analysis_sha256": "7619687066c89741d0338dce60e12a80efe18a0d050a998c94c13673dc604fa9",
+  "all_transport_arithmetic_checks_pass": true,
+  "same_service_images_all_arms": true,
+  "service_image_ids": {
+    "genesis": "sha256:8d8030a6d82b912ca2fd7ab089f402299c9a7bc2cbc8c207c08820dd6e989edb",
+    "native-load-generator": "sha256:322c9b5cc6e74d884563d97008b53d76979a584eec05dfa875f0a6bdc2313871",
+    "session-stats": "sha256:5f3576b583a98779069ea7e4900db2b3d74289aa99b230414c5226c1db792cb0"
+  },
+  "same_validator_process_all_arms": true,
+  "validator_identity": {
+    "container_id": "22fa35704e789c3de0cc0017e6c63e99667780e59ac35f5b1721f38fe11be68a",
+    "image_id": "sha256:8d8030a6d82b912ca2fd7ab089f402299c9a7bc2cbc8c207c08820dd6e989edb",
+    "started_at": "2026-09-06T16:44:25.437156726Z",
+    "restart_count": 0,
+    "running": true,
+    "validator_process": {
+      "pid": 12136,
+      "start_ticks": 141510
+    }
+  },
+  "shared_configuration": {
+    "load_mode": "bounded_unpaced",
+    "configured_workers": 6,
+    "configured_signers": 6,
+    "configured_sources": 24576,
+    "adaptive_initial_cwnd": 32768,
+    "initial_congestion_window": 32768,
+    "native_signed_run_target_size": 16,
+    "native_run_batching_coalesce_ms": 20
+  },
+  "latency_scope_correction": {
+    "emitted_semantics": "per-admission-message callback latency; each returned batch message contributes one sample rather than one sample per RPC",
+    "observed_implementation": "on_result and on_batch_result insert one latency sample per logical child; each fixed 16 parent adds 16 identical samples. Counts are logical-child weighted, not physical-parent/RPC sample counts. All arms have fixed 16 density, so this constant replication does not change their percentile comparison.",
+    "source": "lite-client/native-load-generator.cpp:326,4428,4487",
+    "measured_window_latency_available": false,
+    "percentile_semantics": "Reported p50/p95/p99 values are histogram bucket upper bounds (LatencyHistogram::percentile), not exact percentile times. Whole-run values include warmup, ramp, measurement and drain."
+  },
+  "cpu_scope": "Approximate unweighted Docker container gauge sample means only; exact measured-window or isolated process CPU unavailable.",
+  "reproducibility_caveat": "Every arm has reproducible=false solely because the same session-stats image lacks its source revision label; strict validator/generator process/image reuse passed.",
+  "observation_limit": "Single sequential 10/50/100 sweep, no repeatability or optimum claim. The 10/50 arms offered less than canonical throughput, so their chain capacity is unproven. The 100 arm passes reported chain-capacity eligibility.",
+  "arms": [
+    {
+      "connections": 10,
+      "measured": {
+        "offered_logical_tps": 62528.08888888889,
+        "admission_logical_tps": 62528.08888888889,
+        "canonical_chain_logical_tps": 62800.804469273746,
+        "offered_above_canonical": false,
+        "offer_window": {
+          "start_unix_s": 1788715229.5448163,
+          "end_unix_s": 1788715409.5448163,
+          "duration_s": 180
+        },
+        "canonical_gen_utime_window": {
+          "start_unix_s": 1788715230,
+          "end_unix_s": 1788715409,
+          "duration_s": 179,
+          "boundary_rule": "whole [gen_utime,gen_utime+1) buckets fully contained in the millisecond measurement window"
+        },
+        "offer_cohort_observed_tps": 60883.02222222222,
+        "offer_target_attainment_ratio": 1,
+        "canonical_overdrive_ratio": 0.9956574508449444,
+        "canonical_backpressure_seconds": 0,
+        "canonical_backpressure_fraction": 0,
+        "semantics": "Offered/admission rates use their steady logical counters and offer-window duration. Canonical chain rate uses fully contained integer block gen_utime seconds. Offer-cohort observation is a separate proof-progress metric, not production TPS."
+      },
+      "whole_run_transport": {
+        "wire_queries": 93466,
+        "wire_parent_attempts": 1377352,
+        "wire_batches": 86402,
+        "wire_batch_parent_attempts": 1370288,
+        "standalone_queries": 7064,
+        "mean_parents_per_batch_rpc": 15.859447697969955,
+        "mean_parents_per_all_admission_rpc": 14.736396122654227,
+        "rpc_per_1000_unique_admitted_logical_transfers": 6.032841958723707,
+        "parent_attempts_per_unique_signed_parent": 1.4224375815859482,
+        "retry_schedules": 409006,
+        "retry_schedules_per_unique_signed_parent": 0.42239420677803663,
+        "retries_by_reason": {
+          "timeout": 0,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 34,
+          "not_ready": 408972,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "repeat_admission_successes_logical": 0,
+        "reported_callback_latency_histogram_ms": {
+          "p50": 200,
+          "p95": 500,
+          "p99": 1000,
+          "max": 3748.326738999822,
+          "samples": 22037632,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false
+        },
+        "rtt_samples_per_wire_parent_attempt": 16.0,
+        "signed_density_all": 16.0,
+        "signed_density_normal": 16.0
+      },
+      "approximate_cpu_samples": [
+        {
+          "container": "genesis",
+          "samples": 90,
+          "container_ids": [
+            "22fa35704e78"
+          ],
+          "identity_stable": true,
+          "first_recorded_epoch": 1788715230,
+          "last_recorded_epoch": 1788715409,
+          "unweighted_mean_cpu_cores_approximate": 10.422738888888889,
+          "maximum_sample_cpu_cores": 11.8981,
+          "semantics": "Only gauge records timestamped inside the offer window. Unweighted sample mean; unknown gauge intervals may cross boundaries. Not exact integrated measured-window CPU."
+        },
+        {
+          "container": "native-load-generator",
+          "samples": 90,
+          "container_ids": [
+            "257fc974ae82"
+          ],
+          "identity_stable": true,
+          "first_recorded_epoch": 1788715230,
+          "last_recorded_epoch": 1788715409,
+          "unweighted_mean_cpu_cores_approximate": 0.7953166666666667,
+          "maximum_sample_cpu_cores": 1.4757,
+          "semantics": "Only gauge records timestamped inside the offer window. Unweighted sample mean; unknown gauge intervals may cross boundaries. Not exact integrated measured-window CPU."
+        }
+      ],
+      "capacity_claim_allowed": false,
+      "independent_gates": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": true,
+        "ingress_capacity_invalid_reasons": [],
+        "chain_capacity_valid": false,
+        "chain_capacity_invalid_reasons": [
+          "offered_load_not_above_canonical_throughput"
+        ],
+        "capacity_load": {
+          "measured_offered_avg_tps": 62528.08888888889,
+          "measured_canonical_chain_avg_tps": 62800.804469273746,
+          "offered_above_canonical": false,
+          "invalid_reasons": [
+            "offered_load_not_above_canonical_throughput"
+          ]
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_valid": true,
+        "native_run_batching_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      }
+    },
+    {
+      "connections": 50,
+      "measured": {
+        "offered_logical_tps": 62955.73333333333,
+        "admission_logical_tps": 62955.73333333333,
+        "canonical_chain_logical_tps": 63433.117318435754,
+        "offered_above_canonical": false,
+        "offer_window": {
+          "start_unix_s": 1788715645.5871022,
+          "end_unix_s": 1788715825.5871022,
+          "duration_s": 180
+        },
+        "canonical_gen_utime_window": {
+          "start_unix_s": 1788715646,
+          "end_unix_s": 1788715825,
+          "duration_s": 179,
+          "boundary_rule": "whole [gen_utime,gen_utime+1) buckets fully contained in the millisecond measurement window"
+        },
+        "offer_cohort_observed_tps": 61279.02222222222,
+        "offer_target_attainment_ratio": 1,
+        "canonical_overdrive_ratio": 0.9924742152792847,
+        "canonical_backpressure_seconds": 0,
+        "canonical_backpressure_fraction": 0,
+        "semantics": "Offered/admission rates use their steady logical counters and offer-window duration. Canonical chain rate uses fully contained integer block gen_utime seconds. Offer-cohort observation is a separate proof-progress metric, not production TPS."
+      },
+      "whole_run_transport": {
+        "wire_queries": 86183,
+        "wire_parent_attempts": 1719239,
+        "wire_batches": 85008,
+        "wire_batch_parent_attempts": 1718064,
+        "standalone_queries": 1175,
+        "mean_parents_per_batch_rpc": 20.21061547148504,
+        "mean_parents_per_all_admission_rpc": 19.948702180244364,
+        "rpc_per_1000_unique_admitted_logical_transfers": 5.572762825055738,
+        "parent_attempts_per_unique_signed_parent": 1.7787101746907865,
+        "retry_schedules": 752613,
+        "retry_schedules_per_unique_signed_parent": 0.7786470646050705,
+        "retries_by_reason": {
+          "timeout": 0,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 77,
+          "not_ready": 752536,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "repeat_admission_successes_logical": 0,
+        "reported_callback_latency_histogram_ms": {
+          "p50": 500,
+          "p95": 500,
+          "p99": 1000,
+          "max": 3828.610011999899,
+          "samples": 27507824,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false
+        },
+        "rtt_samples_per_wire_parent_attempt": 16.0,
+        "signed_density_all": 16.0,
+        "signed_density_normal": 16.0
+      },
+      "approximate_cpu_samples": [
+        {
+          "container": "genesis",
+          "samples": 90,
+          "container_ids": [
+            "22fa35704e78"
+          ],
+          "identity_stable": true,
+          "first_recorded_epoch": 1788715646,
+          "last_recorded_epoch": 1788715825,
+          "unweighted_mean_cpu_cores_approximate": 10.04438888888889,
+          "maximum_sample_cpu_cores": 12.451300000000002,
+          "semantics": "Only gauge records timestamped inside the offer window. Unweighted sample mean; unknown gauge intervals may cross boundaries. Not exact integrated measured-window CPU."
+        },
+        {
+          "container": "native-load-generator",
+          "samples": 90,
+          "container_ids": [
+            "f75b90774caa"
+          ],
+          "identity_stable": true,
+          "first_recorded_epoch": 1788715646,
+          "last_recorded_epoch": 1788715825,
+          "unweighted_mean_cpu_cores_approximate": 0.8812811111111111,
+          "maximum_sample_cpu_cores": 1.6087,
+          "semantics": "Only gauge records timestamped inside the offer window. Unweighted sample mean; unknown gauge intervals may cross boundaries. Not exact integrated measured-window CPU."
+        }
+      ],
+      "capacity_claim_allowed": false,
+      "independent_gates": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": true,
+        "ingress_capacity_invalid_reasons": [],
+        "chain_capacity_valid": false,
+        "chain_capacity_invalid_reasons": [
+          "offered_load_not_above_canonical_throughput"
+        ],
+        "capacity_load": {
+          "measured_offered_avg_tps": 62955.73333333333,
+          "measured_canonical_chain_avg_tps": 63433.117318435754,
+          "offered_above_canonical": false,
+          "invalid_reasons": [
+            "offered_load_not_above_canonical_throughput"
+          ]
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_valid": true,
+        "native_run_batching_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      }
+    },
+    {
+      "connections": 100,
+      "measured": {
+        "offered_logical_tps": 63214.48888888889,
+        "admission_logical_tps": 63214.48888888889,
+        "canonical_chain_logical_tps": 60250.27932960894,
+        "offered_above_canonical": true,
+        "offer_window": {
+          "start_unix_s": 1788716071.3573596,
+          "end_unix_s": 1788716251.3573596,
+          "duration_s": 180
+        },
+        "canonical_gen_utime_window": {
+          "start_unix_s": 1788716072,
+          "end_unix_s": 1788716251,
+          "duration_s": 179,
+          "boundary_rule": "whole [gen_utime,gen_utime+1) buckets fully contained in the millisecond measurement window"
+        },
+        "offer_cohort_observed_tps": 59070.84444444445,
+        "offer_target_attainment_ratio": 1,
+        "canonical_overdrive_ratio": 1.0491982708173644,
+        "canonical_backpressure_seconds": 0,
+        "canonical_backpressure_fraction": 0,
+        "semantics": "Offered/admission rates use their steady logical counters and offer-window duration. Canonical chain rate uses fully contained integer block gen_utime seconds. Offer-cohort observation is a separate proof-progress metric, not production TPS."
+      },
+      "whole_run_transport": {
+        "wire_queries": 101974,
+        "wire_parent_attempts": 1723698,
+        "wire_batches": 101011,
+        "wire_batch_parent_attempts": 1722735,
+        "standalone_queries": 963,
+        "mean_parents_per_batch_rpc": 17.05492471117007,
+        "mean_parents_per_all_admission_rpc": 16.90330868652794,
+        "rpc_per_1000_unique_admitted_logical_transfers": 6.596706498506953,
+        "parent_attempts_per_unique_signed_parent": 1.784098660139006,
+        "retry_schedules": 756940,
+        "retry_schedules_per_unique_signed_parent": 0.7834641798073788,
+        "retries_by_reason": {
+          "timeout": 2,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 0,
+          "not_ready": 756938,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "repeat_admission_successes_logical": 8496,
+        "reported_callback_latency_histogram_ms": {
+          "p50": 500,
+          "p95": 1000,
+          "p99": 1000,
+          "max": 3873.1232850000197,
+          "samples": 27579168,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false
+        },
+        "rtt_samples_per_wire_parent_attempt": 16.0,
+        "signed_density_all": 16.0,
+        "signed_density_normal": 16.0
+      },
+      "approximate_cpu_samples": [
+        {
+          "container": "genesis",
+          "samples": 89,
+          "container_ids": [
+            "22fa35704e78"
+          ],
+          "identity_stable": true,
+          "first_recorded_epoch": 1788716073,
+          "last_recorded_epoch": 1788716251,
+          "unweighted_mean_cpu_cores_approximate": 9.71063595505618,
+          "maximum_sample_cpu_cores": 12.564300000000001,
+          "semantics": "Only gauge records timestamped inside the offer window. Unweighted sample mean; unknown gauge intervals may cross boundaries. Not exact integrated measured-window CPU."
+        },
+        {
+          "container": "native-load-generator",
+          "samples": 89,
+          "container_ids": [
+            "6b4ed004703e"
+          ],
+          "identity_stable": true,
+          "first_recorded_epoch": 1788716073,
+          "last_recorded_epoch": 1788716251,
+          "unweighted_mean_cpu_cores_approximate": 0.8737157303370786,
+          "maximum_sample_cpu_cores": 1.4077000000000002,
+          "semantics": "Only gauge records timestamped inside the offer window. Unweighted sample mean; unknown gauge intervals may cross boundaries. Not exact integrated measured-window CPU."
+        }
+      ],
+      "capacity_claim_allowed": true,
+      "independent_gates": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": true,
+        "ingress_capacity_invalid_reasons": [],
+        "chain_capacity_valid": true,
+        "chain_capacity_invalid_reasons": [],
+        "capacity_load": {
+          "measured_offered_avg_tps": 63214.48888888889,
+          "measured_canonical_chain_avg_tps": 60250.27932960894,
+          "offered_above_canonical": true,
+          "invalid_reasons": []
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_valid": true,
+        "native_run_batching_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      }
+    }
+  ]
+}

@@ -363,3 +363,33 @@ the generator is stopped and no measurement remains running.
 commits, harness revision, defaults and unproven targets. The final independent
 audit verified all four raw-summary hashes, actual environments, identities,
 proof cleanup, counter arithmetic, retry ratios and rejected capacity decisions.
+
+
+## Native client APIs and 10/50/100 persistent connection sweep
+
+Native tonlib address/state, signed message construction, exact hashes and ordered
+batch submission are implemented and live-verified. A later fresh-network sweep
+used persistent ADNL/TCP submissions against one unchanged validator/liteserver,
+with 60 seconds warm-up and 180 seconds measurement per arm.
+
+| Connections | Offered/admitted logical TPS | Canonical logical TPS | Capacity result |
+| ---: | ---: | ---: | --- |
+| 10 | 62,528.09 | 62,800.80 | Observation only |
+| 50 | 62,955.73 | 63,433.12 | Observation only |
+| 100 | 63,214.49 | 60,250.28 | Eligible |
+
+All arms passed proof, completion, 16-transfer signed-parent density, lane,
+batching, ingress, cleanup and strict image/process reuse. All drained to zero.
+Only 100 clients supplied sufficient offered overdrive (4.92%) for chain-capacity
+acceptance. The descriptive 50-versus-10 gain is 1.01%; 100 versus 50 is -5.02%.
+No repeatable gain or historical code-level uplift is claimed: the old containers
+and volumes were absent, so this used a freshly provisioned four-lane chain.
+
+[Full client sweep report](native-client-connections-2026-09-06.md) and
+[machine-readable results](benchmarks/results/native-client-connections-20260906.json)
+save the commits, all classifications, raw hashes, exact images, live API test,
+and both the highest observed (50) and capacity-qualified (100) configurations.
+The later active validator image is `cycle-clients-ed666c9a`, with the corrected
+prebuilt generator `cycle-clients-ed666c9a-h2`; the validator remained unchanged
+throughout the completed series and the generator is stopped. Session Stats still
+lacks a source-revision label, preserving the separate reproducibility limitation.

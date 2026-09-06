@@ -1,0 +1,686 @@
+{
+  "schema_version": 1,
+  "test": "tonlib-native-json-liteserver-integration",
+  "all_gates_passed": true,
+  "started_unix_seconds": 1788714433.630854,
+  "requests": [
+    {
+      "query": "init",
+      "response_type": "options.info",
+      "elapsed_seconds": 0.0006551190017489716,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "importUnencryptedKey",
+      "response_type": "key",
+      "elapsed_seconds": 0.04719081599614583,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountAddress",
+      "response_type": "accountAddress",
+      "elapsed_seconds": 6.808098987676203e-05,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "unpackAccountAddress",
+      "response_type": "unpackedAccountAddress",
+      "elapsed_seconds": 3.693999315146357e-05,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.0061609880067408085,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.002765315002761781,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "getAccountState",
+      "response_type": "fullAccountState",
+      "elapsed_seconds": 0.002382759004831314,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "raw.getAccountState",
+      "response_type": "raw.fullAccountState",
+      "elapsed_seconds": 0.0025072110001929104,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "importUnencryptedKey",
+      "response_type": "key",
+      "elapsed_seconds": 0.046769699998549186,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountAddress",
+      "response_type": "accountAddress",
+      "elapsed_seconds": 7.019100303296e-05,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "unpackAccountAddress",
+      "response_type": "unpackedAccountAddress",
+      "elapsed_seconds": 4.46699996246025e-05,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.0039538699929835275,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.0028416559944162145,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "getAccountState",
+      "response_type": "fullAccountState",
+      "elapsed_seconds": 0.0026645039906725287,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "raw.getAccountState",
+      "response_type": "raw.fullAccountState",
+      "elapsed_seconds": 0.002665653999429196,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.createTransferRun",
+      "response_type": "error",
+      "elapsed_seconds": 0.00018594300490804017,
+      "expected_error": true,
+      "error_code": 0
+    },
+    {
+      "query": "native.createTransferRun",
+      "response_type": "error",
+      "elapsed_seconds": 0.0001311410014750436,
+      "expected_error": true,
+      "error_code": 0
+    },
+    {
+      "query": "native.createTransferRun",
+      "response_type": "error",
+      "elapsed_seconds": 0.00012423099542502314,
+      "expected_error": true,
+      "error_code": 0
+    },
+    {
+      "query": "raw.sendMessageBatch",
+      "response_type": "error",
+      "elapsed_seconds": 3.920099698007107e-05,
+      "expected_error": true,
+      "error_code": 0
+    },
+    {
+      "query": "native.createTransferRun",
+      "response_type": "error",
+      "elapsed_seconds": 5.426000279840082e-05,
+      "expected_error": true,
+      "error_code": 0
+    },
+    {
+      "query": "native.createTransferRun",
+      "response_type": "error",
+      "elapsed_seconds": 0.09129972200025804,
+      "expected_error": true,
+      "error_code": 0
+    },
+    {
+      "query": "native.createTransfer",
+      "response_type": "native.message",
+      "elapsed_seconds": 0.09145732400065754,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.createTransferRun",
+      "response_type": "native.message",
+      "elapsed_seconds": 0.09192114000325091,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "raw.sendMessage",
+      "response_type": "ok",
+      "elapsed_seconds": 0.0037504569918382913,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.0031217089999699965,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.004002239991677925,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.0061161470075603575,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.createTransferRun",
+      "response_type": "native.message",
+      "elapsed_seconds": 0.10889935400336981,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "raw.sendMessageReturnHash",
+      "response_type": "raw.extMessageInfo",
+      "elapsed_seconds": 0.004793150001205504,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.0036398560041561723,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.004451426008017734,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.004777501002536155,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.createTransferRun",
+      "response_type": "native.message",
+      "elapsed_seconds": 0.12216247100150213,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.createTransferRun",
+      "response_type": "native.message",
+      "elapsed_seconds": 0.09462585399160162,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.createTransferRun",
+      "response_type": "native.message",
+      "elapsed_seconds": 0.09816666999540757,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "raw.sendMessageBatch",
+      "response_type": "raw.sendMessageBatchResult",
+      "elapsed_seconds": 0.002358400000957772,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.0032279909937642515,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.004125091989408247,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.004566427000099793,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.0029368680116022006,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.0028993970045121387,
+      "expected_error": false,
+      "error_code": null
+    },
+    {
+      "query": "native.getAccountState",
+      "response_type": "native.fullAccountState",
+      "elapsed_seconds": 0.0025739319971762598,
+      "expected_error": false,
+      "error_code": null
+    }
+  ],
+  "capacity_or_tps_claim": null,
+  "inputs": {
+    "library": "build/benchmarks/client-connections-20260906/libtonlibjson-image.so",
+    "library_sha256": "cfc94d09fc68aea5af6fdf34fc8fca155900d38f4759a7d4b1176a468d52fe4c",
+    "config": "build/benchmarks/client-connections-20260906/host-global.config.json",
+    "config_sha256": "fe9b2f261a587e9771adc2e78bfbdeb96603dad7ef3c81f7ab80358dc80f5ed2",
+    "zerostate_root_hash": "2GkRThzcUKzJFXhg9S8hwvpcMIHd2ljWlKO3Pt5RvT0=",
+    "source_indices": [
+      0,
+      1
+    ],
+    "payment_lane_depth": 2,
+    "logical_count_per_run": 16,
+    "amount_per_transfer": "1",
+    "fee_per_transfer": "1"
+  },
+  "accounts_before": [
+    {
+      "source": "0:04e9b28ed3bf541618b324219d52060fc5144e0ac1426d0106a97f90c79c1f76",
+      "destination": "0:24ff17e9ba56ae93c87d35ce00212fdb5b6218b02ae64dd8b5d43a4da9cc1349",
+      "before": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQAE6bKO079UFhizJCGdUgYPxRROCsFCbQEGqX-Qx5wfdo2q"
+        },
+        "balance": "9999999904",
+        "nonce": "48",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 845,
+          "root_hash": "8yQRhCW4dwBDqmFKkJBXvJZXmrfP7vHJXnqcjIqO1bQ=",
+          "file_hash": "ySkrTgxheeIaeRY6Yv0K0j1PxRAw1phrB186hXaMDeI="
+        },
+        "sync_utime": 1788714267,
+        "@extra": "5"
+      },
+      "destination_before": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQAk_xfpulauk8h9Nc4AIS_bW2IYsCrmTdi11DpNqcwTSS41"
+        },
+        "balance": "49",
+        "nonce": "0",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 845,
+          "root_hash": "8yQRhCW4dwBDqmFKkJBXvJZXmrfP7vHJXnqcjIqO1bQ=",
+          "file_hash": "ySkrTgxheeIaeRY6Yv0K0j1PxRAw1phrB186hXaMDeI="
+        },
+        "sync_utime": 1788714267,
+        "@extra": "6"
+      }
+    },
+    {
+      "source": "0:70a254a39845e063249937f2d11b201328a17cdbd3b592bd67820bc51b60930c",
+      "destination": "0:58cfc1c343373b2e5f8656da1ed5d875b2b11d2c5b8739d107f36704705190ec",
+      "before": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQBwolSjmEXgYySZN_LRGyATKKF829O1kr1nggvFG2CTDK89"
+        },
+        "balance": "9999999968",
+        "nonce": "16",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 846,
+          "root_hash": "3Pq2eIV5CCC6bJP81K6W79ozfIIXK5XBmPB/WJ97FWE=",
+          "file_hash": "qXPQG7k121ccv+J8dUeDrTT3qK8ra4ZvmO1Tm0Wz0ww="
+        },
+        "sync_utime": 1788714267,
+        "@extra": "12"
+      },
+      "destination_before": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQBYz8HDQzc7Ll-GVtoe1dh1srEdLFuHOdEH82cEcFGQ7Epv"
+        },
+        "balance": "17",
+        "nonce": "0",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 846,
+          "root_hash": "3Pq2eIV5CCC6bJP81K6W79ozfIIXK5XBmPB/WJ97FWE=",
+          "file_hash": "qXPQG7k121ccv+J8dUeDrTT3qK8ra4ZvmO1Tm0Wz0ww="
+        },
+        "sync_utime": 1788714267,
+        "@extra": "13"
+      }
+    }
+  ],
+  "submission_attempts": [
+    {
+      "api": "raw.sendMessage",
+      "hashes": [
+        "eXW4x45Obd+S2FhzWRODuUb1vhbfE1EhpGrtxTbCxNQ="
+      ]
+    },
+    {
+      "api": "raw.sendMessageReturnHash",
+      "hashes": [
+        "ViHwaN6DrVkzh6bKmsiTyjqqlBq1UD3xPwvEO1yDC0o="
+      ]
+    },
+    {
+      "api": "raw.sendMessageBatch",
+      "hashes": [
+        "jtX2ma5yeYFYgX/PRujTB9Dd77ABlH7lgiCWRh4sd7w=",
+        "Vnw9uIR3iyZVR4P/n1h3cMBKsLTY2bVaXXFfNvuv7PE=",
+        "HnQaUViQzwRXzub39sDoo6BeIZhCU27nf3A0RuVPxT8="
+      ]
+    }
+  ],
+  "scalar_constructed_hash": "9nPKekMQWNjJEagki8OusPuWpkw8CPpwvmbUyq7S54s=",
+  "raw_send_result": {
+    "@type": "ok",
+    "@extra": "24"
+  },
+  "after_raw_source": {
+    "@type": "native.fullAccountState",
+    "address": {
+      "@type": "accountAddress",
+      "account_address": "EQAE6bKO079UFhizJCGdUgYPxRROCsFCbQEGqX-Qx5wfdo2q"
+    },
+    "balance": "9999999872",
+    "nonce": "64",
+    "flags": 0,
+    "block_id": {
+      "@type": "ton.blockIdExt",
+      "workchain": -1,
+      "shard": "-9223372036854775808",
+      "seqno": 848,
+      "root_hash": "LgmRUKVVTWKMBXsSF7Px2rPB92VTEPmabffUBQcZc/E=",
+      "file_hash": "pf/UIgbHBi/TtZl/Nn/fHV65O2kHTJnvLZGi7ojqRGc="
+    },
+    "sync_utime": 1788714429,
+    "@extra": "27"
+  },
+  "single_send_result": {
+    "@type": "raw.extMessageInfo",
+    "hash": "ViHwaN6DrVkzh6bKmsiTyjqqlBq1UD3xPwvEO1yDC0o=",
+    "hash_norm": "ViHwaN6DrVkzh6bKmsiTyjqqlBq1UD3xPwvEO1yDC0o=",
+    "@extra": "29"
+  },
+  "after_single_source": {
+    "@type": "native.fullAccountState",
+    "address": {
+      "@type": "accountAddress",
+      "account_address": "EQAE6bKO079UFhizJCGdUgYPxRROCsFCbQEGqX-Qx5wfdo2q"
+    },
+    "balance": "9999999840",
+    "nonce": "80",
+    "flags": 0,
+    "block_id": {
+      "@type": "ton.blockIdExt",
+      "workchain": -1,
+      "shard": "-9223372036854775808",
+      "seqno": 850,
+      "root_hash": "aEHzBDM5syuZcIqCs4bMqqe4dga0cFfhRSwSaGWNFX0=",
+      "file_hash": "8SlFp7SmWxAn4SOb8Qfq7RYF6xdCMl0OI+bLdjrhOOk="
+    },
+    "sync_utime": 1788714434,
+    "@extra": "32"
+  },
+  "batch_result": {
+    "@type": "raw.sendMessageBatchResult",
+    "results": [
+      {
+        "@type": "raw.sendMessageResult",
+        "status": 1,
+        "code": 0,
+        "message": "",
+        "hash": "jtX2ma5yeYFYgX/PRujTB9Dd77ABlH7lgiCWRh4sd7w=",
+        "hash_norm": "jtX2ma5yeYFYgX/PRujTB9Dd77ABlH7lgiCWRh4sd7w="
+      },
+      {
+        "@type": "raw.sendMessageResult",
+        "status": 0,
+        "code": 0,
+        "message": "Wrong signature",
+        "hash": "Vnw9uIR3iyZVR4P/n1h3cMBKsLTY2bVaXXFfNvuv7PE=",
+        "hash_norm": "Vnw9uIR3iyZVR4P/n1h3cMBKsLTY2bVaXXFfNvuv7PE="
+      },
+      {
+        "@type": "raw.sendMessageResult",
+        "status": 1,
+        "code": 0,
+        "message": "",
+        "hash": "HnQaUViQzwRXzub39sDoo6BeIZhCU27nf3A0RuVPxT8=",
+        "hash_norm": "HnQaUViQzwRXzub39sDoo6BeIZhCU27nf3A0RuVPxT8="
+      }
+    ],
+    "@extra": "36"
+  },
+  "accounts": [
+    {
+      "source": "0:04e9b28ed3bf541618b324219d52060fc5144e0ac1426d0106a97f90c79c1f76",
+      "destination": "0:24ff17e9ba56ae93c87d35ce00212fdb5b6218b02ae64dd8b5d43a4da9cc1349",
+      "before": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQAE6bKO079UFhizJCGdUgYPxRROCsFCbQEGqX-Qx5wfdo2q"
+        },
+        "balance": "9999999904",
+        "nonce": "48",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 845,
+          "root_hash": "8yQRhCW4dwBDqmFKkJBXvJZXmrfP7vHJXnqcjIqO1bQ=",
+          "file_hash": "ySkrTgxheeIaeRY6Yv0K0j1PxRAw1phrB186hXaMDeI="
+        },
+        "sync_utime": 1788714267,
+        "@extra": "5"
+      },
+      "destination_before": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQAk_xfpulauk8h9Nc4AIS_bW2IYsCrmTdi11DpNqcwTSS41"
+        },
+        "balance": "49",
+        "nonce": "0",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 845,
+          "root_hash": "8yQRhCW4dwBDqmFKkJBXvJZXmrfP7vHJXnqcjIqO1bQ=",
+          "file_hash": "ySkrTgxheeIaeRY6Yv0K0j1PxRAw1phrB186hXaMDeI="
+        },
+        "sync_utime": 1788714267,
+        "@extra": "6"
+      },
+      "after": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQAE6bKO079UFhizJCGdUgYPxRROCsFCbQEGqX-Qx5wfdo2q"
+        },
+        "balance": "9999999808",
+        "nonce": "96",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 853,
+          "root_hash": "Ucwairpng3r3vNZreuPUuMGJm3+5og3rZx2XZoCWBOw=",
+          "file_hash": "KTDzaJDuzvnordG2lt5yeYvJBd6wMEdHGVLCO9YQ9V8="
+        },
+        "sync_utime": 1788714434,
+        "@extra": "39"
+      },
+      "destination_after": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQAk_xfpulauk8h9Nc4AIS_bW2IYsCrmTdi11DpNqcwTSS41"
+        },
+        "balance": "97",
+        "nonce": "0",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 853,
+          "root_hash": "Ucwairpng3r3vNZreuPUuMGJm3+5og3rZx2XZoCWBOw=",
+          "file_hash": "KTDzaJDuzvnordG2lt5yeYvJBd6wMEdHGVLCO9YQ9V8="
+        },
+        "sync_utime": 1788714434,
+        "@extra": "40"
+      }
+    },
+    {
+      "source": "0:70a254a39845e063249937f2d11b201328a17cdbd3b592bd67820bc51b60930c",
+      "destination": "0:58cfc1c343373b2e5f8656da1ed5d875b2b11d2c5b8739d107f36704705190ec",
+      "before": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQBwolSjmEXgYySZN_LRGyATKKF829O1kr1nggvFG2CTDK89"
+        },
+        "balance": "9999999968",
+        "nonce": "16",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 846,
+          "root_hash": "3Pq2eIV5CCC6bJP81K6W79ozfIIXK5XBmPB/WJ97FWE=",
+          "file_hash": "qXPQG7k121ccv+J8dUeDrTT3qK8ra4ZvmO1Tm0Wz0ww="
+        },
+        "sync_utime": 1788714267,
+        "@extra": "12"
+      },
+      "destination_before": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQBYz8HDQzc7Ll-GVtoe1dh1srEdLFuHOdEH82cEcFGQ7Epv"
+        },
+        "balance": "17",
+        "nonce": "0",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 846,
+          "root_hash": "3Pq2eIV5CCC6bJP81K6W79ozfIIXK5XBmPB/WJ97FWE=",
+          "file_hash": "qXPQG7k121ccv+J8dUeDrTT3qK8ra4ZvmO1Tm0Wz0ww="
+        },
+        "sync_utime": 1788714267,
+        "@extra": "13"
+      },
+      "after": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQBwolSjmEXgYySZN_LRGyATKKF829O1kr1nggvFG2CTDK89"
+        },
+        "balance": "9999999936",
+        "nonce": "32",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 853,
+          "root_hash": "Ucwairpng3r3vNZreuPUuMGJm3+5og3rZx2XZoCWBOw=",
+          "file_hash": "KTDzaJDuzvnordG2lt5yeYvJBd6wMEdHGVLCO9YQ9V8="
+        },
+        "sync_utime": 1788714434,
+        "@extra": "41"
+      },
+      "destination_after": {
+        "@type": "native.fullAccountState",
+        "address": {
+          "@type": "accountAddress",
+          "account_address": "EQBYz8HDQzc7Ll-GVtoe1dh1srEdLFuHOdEH82cEcFGQ7Epv"
+        },
+        "balance": "33",
+        "nonce": "0",
+        "flags": 0,
+        "block_id": {
+          "@type": "ton.blockIdExt",
+          "workchain": -1,
+          "shard": "-9223372036854775808",
+          "seqno": 853,
+          "root_hash": "Ucwairpng3r3vNZreuPUuMGJm3+5og3rZx2XZoCWBOw=",
+          "file_hash": "KTDzaJDuzvnordG2lt5yeYvJBd6wMEdHGVLCO9YQ9V8="
+        },
+        "sync_utime": 1788714434,
+        "@extra": "42"
+      }
+    }
+  ],
+  "accepted_parents": 4,
+  "accepted_logical_transfers": 64,
+  "rejected_invalid_signature_parents": 1,
+  "independent_native_cell_hash_checks": 8,
+  "finished_unix_seconds": 1788714436.02988
+}

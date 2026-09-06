@@ -1,0 +1,2978 @@
+{
+  "schema": "native-client-connections-record-v1",
+  "recorded_utc": "2026-09-06T17:45:01.943513+00:00",
+  "source_runtime_revision": "ed666c9a36674d15c08d2fd3564bc080aad677af",
+  "source_test_doc_revision": "8d343fc424458876081226f0b8adcff0f00e9c61",
+  "harness_revision": "44ffe58f9be160de351ebc99d77b8d52dfa91cca",
+  "raw_sweep": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/client-connections-20260906-sweep2",
+  "raw_sweep_summary_sha256": "1ac427805492ae07a38570c2df10ba43831924eaa5e73e500b54d9b7b930696e",
+  "plan_sha256": "67dc5c91ffd1eab3dde334c0fb4a78e78fa0565f9bd6d76a22820ea5309a83f2",
+  "frozen_preflight_sha256": "53da51c60258066251fc9770cb550c722a3d09a13a32c7eb8438fa91311988ac",
+  "new_network": true,
+  "zerostate_root_hash": "2GkRThzcUKzJFXhg9S8hwvpcMIHd2ljWlKO3Pt5RvT0=",
+  "images": {
+    "genesis": {
+      "image_id": "sha256:8d8030a6d82b912ca2fd7ab089f402299c9a7bc2cbc8c207c08820dd6e989edb",
+      "reference": "ghcr.io/neodix42/mylocalton-docker:cycle-clients-ed666c9a",
+      "revision": "ed666c9a36674d15c08d2fd3564bc080aad677af"
+    },
+    "native-load-generator": {
+      "image_id": "sha256:322c9b5cc6e74d884563d97008b53d76979a584eec05dfa875f0a6bdc2313871",
+      "reference": "mylocalton-native-load-generator:cycle-clients-ed666c9a-h2",
+      "revision": "ed666c9a36674d15c08d2fd3564bc080aad677af"
+    },
+    "session-stats": {
+      "image_id": "sha256:5f3576b583a98779069ea7e4900db2b3d74289aa99b230414c5226c1db792cb0",
+      "reference": "ghcr.io/neodix42/ton-session-stats:side",
+      "revision": null
+    }
+  },
+  "validator": {
+    "identity": {
+      "container_id": "22fa35704e789c3de0cc0017e6c63e99667780e59ac35f5b1721f38fe11be68a",
+      "image_id": "sha256:8d8030a6d82b912ca2fd7ab089f402299c9a7bc2cbc8c207c08820dd6e989edb",
+      "started_at": "2026-09-06T16:44:25.437156726Z",
+      "restart_count": 0,
+      "running": true,
+      "validator_process": {
+        "pid": 12136,
+        "start_ticks": 141510
+      }
+    },
+    "resources": {
+      "NanoCpus": 17999998976,
+      "CpuQuota": 0,
+      "CpuPeriod": 0,
+      "CpusetCpus": "0-8,12-20",
+      "Memory": 0,
+      "mounts": [
+        {
+          "Type": "volume",
+          "Name": "mylocalton-desktop_shared-data",
+          "Source": "/var/lib/docker/volumes/mylocalton-desktop_shared-data/_data",
+          "Destination": "/usr/share/data",
+          "RW": true
+        },
+        {
+          "Type": "volume",
+          "Name": "mylocalton-desktop_ton-db-val0",
+          "Source": "/var/lib/docker/volumes/mylocalton-desktop_ton-db-val0/_data",
+          "Destination": "/var/ton-work/db",
+          "RW": true
+        },
+        {
+          "Type": "volume",
+          "Name": "mylocalton-desktop_native-load-wallets",
+          "Source": "/var/lib/docker/volumes/mylocalton-desktop_native-load-wallets/_data",
+          "Destination": "/var/ton-work/db/native-spam/wallets",
+          "RW": true
+        }
+      ],
+      "environment_sha256": "a9f0905afc53fa8382bfc49e6a1b8ace3bab0436bfd1716793d0fc1ae6cd51af",
+      "command_sha256": "b19cd5723aae8e7ec7b81d15ff31396b6060ebef1b6450ebed297855703b1d40"
+    }
+  },
+  "endpoint": {
+    "config_path": "/usr/share/data/global.config.json",
+    "config_sha256": "76b534bb54452693d91c049f27fcdd7ad20839f3133cc58cc8c6c472e9ada6c8",
+    "liteserver": {
+      "id": {
+        "@type": "pub.ed25519",
+        "key": "E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY="
+      },
+      "ip": -1407450870,
+      "port": 40004
+    },
+    "liteserver_count": 1,
+    "semantics": "local validator public key; configured connections are submission clients; canonical follower uses additional connections"
+  },
+  "plan": {
+    "arm_timeout_seconds": 1920,
+    "arms": [
+      {
+        "connections": 10,
+        "distribution": [
+          {
+            "clients": [
+              {
+                "inflight": 21846,
+                "initial_cwnd": 2731,
+                "max_cwnd": 5462
+              },
+              {
+                "inflight": 21845,
+                "initial_cwnd": 2731,
+                "max_cwnd": 5461
+              }
+            ],
+            "connections": 2,
+            "signers": 1,
+            "source_offset": 0,
+            "sources": 4096,
+            "worker": 0
+          },
+          {
+            "clients": [
+              {
+                "inflight": 21846,
+                "initial_cwnd": 2731,
+                "max_cwnd": 5462
+              },
+              {
+                "inflight": 21845,
+                "initial_cwnd": 2731,
+                "max_cwnd": 5461
+              }
+            ],
+            "connections": 2,
+            "signers": 1,
+            "source_offset": 4096,
+            "sources": 4096,
+            "worker": 1
+          },
+          {
+            "clients": [
+              {
+                "inflight": 21846,
+                "initial_cwnd": 2731,
+                "max_cwnd": 5462
+              },
+              {
+                "inflight": 21845,
+                "initial_cwnd": 2730,
+                "max_cwnd": 5461
+              }
+            ],
+            "connections": 2,
+            "signers": 1,
+            "source_offset": 8192,
+            "sources": 4096,
+            "worker": 2
+          },
+          {
+            "clients": [
+              {
+                "inflight": 21846,
+                "initial_cwnd": 2731,
+                "max_cwnd": 5462
+              },
+              {
+                "inflight": 21845,
+                "initial_cwnd": 2730,
+                "max_cwnd": 5461
+              }
+            ],
+            "connections": 2,
+            "signers": 1,
+            "source_offset": 12288,
+            "sources": 4096,
+            "worker": 3
+          },
+          {
+            "clients": [
+              {
+                "inflight": 43690,
+                "initial_cwnd": 5461,
+                "max_cwnd": 10922
+              }
+            ],
+            "connections": 1,
+            "signers": 1,
+            "source_offset": 16384,
+            "sources": 4096,
+            "worker": 4
+          },
+          {
+            "clients": [
+              {
+                "inflight": 43690,
+                "initial_cwnd": 5461,
+                "max_cwnd": 10922
+              }
+            ],
+            "connections": 1,
+            "signers": 1,
+            "source_offset": 20480,
+            "sources": 4096,
+            "worker": 5
+          }
+        ],
+        "environment": {
+          "BENCHMARK_IMAGES_PREBUILT": "1",
+          "BENCHMARK_RECREATE_GENESIS": "0",
+          "BENCHMARK_STRICT_GENESIS_REUSE": "1",
+          "BENCHMARK_STRICT_IMAGE_REUSE": "1",
+          "COMPOSE_PROFILES": "",
+          "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+          "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND": "32768",
+          "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+          "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+          "NATIVE_LOAD_AUTO_NONCE": "1",
+          "NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER": "1",
+          "NATIVE_LOAD_CONNECTIONS": "10",
+          "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+          "NATIVE_LOAD_DURATION_SECONDS": "180",
+          "NATIVE_LOAD_GLOBAL_CONFIG": "/usr/share/data/global.config.json",
+          "NATIVE_LOAD_INFLIGHT": "262144",
+          "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+          "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+          "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+          "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+          "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+          "NATIVE_LOAD_RAMP_SECONDS": "0",
+          "NATIVE_LOAD_SIGNERS": "6",
+          "NATIVE_LOAD_SOURCES": "24576",
+          "NATIVE_LOAD_SOURCE_OFFSET": "0",
+          "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+          "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+          "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+          "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "1",
+          "NATIVE_LOAD_TARGET_TPS": "0",
+          "NATIVE_LOAD_WARMUP_SECONDS": "60",
+          "NATIVE_LOAD_WORKERS": "6",
+          "TON_BUILD_PULL": "false"
+        }
+      },
+      {
+        "connections": 50,
+        "distribution": [
+          {
+            "clients": [
+              {
+                "inflight": 4855,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4855,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4855,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4855,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4855,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4854,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4854,
+                "initial_cwnd": 607,
+                "max_cwnd": 1213
+              },
+              {
+                "inflight": 4854,
+                "initial_cwnd": 607,
+                "max_cwnd": 1213
+              },
+              {
+                "inflight": 4854,
+                "initial_cwnd": 606,
+                "max_cwnd": 1213
+              }
+            ],
+            "connections": 9,
+            "signers": 1,
+            "source_offset": 0,
+            "sources": 4096,
+            "worker": 0
+          },
+          {
+            "clients": [
+              {
+                "inflight": 4855,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4855,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4855,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4855,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4855,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4854,
+                "initial_cwnd": 607,
+                "max_cwnd": 1214
+              },
+              {
+                "inflight": 4854,
+                "initial_cwnd": 607,
+                "max_cwnd": 1213
+              },
+              {
+                "inflight": 4854,
+                "initial_cwnd": 607,
+                "max_cwnd": 1213
+              },
+              {
+                "inflight": 4854,
+                "initial_cwnd": 606,
+                "max_cwnd": 1213
+              }
+            ],
+            "connections": 9,
+            "signers": 1,
+            "source_offset": 4096,
+            "sources": 4096,
+            "worker": 1
+          },
+          {
+            "clients": [
+              {
+                "inflight": 5462,
+                "initial_cwnd": 683,
+                "max_cwnd": 1366
+              },
+              {
+                "inflight": 5462,
+                "initial_cwnd": 683,
+                "max_cwnd": 1366
+              },
+              {
+                "inflight": 5462,
+                "initial_cwnd": 683,
+                "max_cwnd": 1366
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 683,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 683,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              }
+            ],
+            "connections": 8,
+            "signers": 1,
+            "source_offset": 8192,
+            "sources": 4096,
+            "worker": 2
+          },
+          {
+            "clients": [
+              {
+                "inflight": 5462,
+                "initial_cwnd": 683,
+                "max_cwnd": 1366
+              },
+              {
+                "inflight": 5462,
+                "initial_cwnd": 683,
+                "max_cwnd": 1366
+              },
+              {
+                "inflight": 5462,
+                "initial_cwnd": 683,
+                "max_cwnd": 1366
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 683,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 683,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              }
+            ],
+            "connections": 8,
+            "signers": 1,
+            "source_offset": 12288,
+            "sources": 4096,
+            "worker": 3
+          },
+          {
+            "clients": [
+              {
+                "inflight": 5462,
+                "initial_cwnd": 683,
+                "max_cwnd": 1366
+              },
+              {
+                "inflight": 5462,
+                "initial_cwnd": 683,
+                "max_cwnd": 1366
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 683,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 683,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 683,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              }
+            ],
+            "connections": 8,
+            "signers": 1,
+            "source_offset": 16384,
+            "sources": 4096,
+            "worker": 4
+          },
+          {
+            "clients": [
+              {
+                "inflight": 5462,
+                "initial_cwnd": 683,
+                "max_cwnd": 1366
+              },
+              {
+                "inflight": 5462,
+                "initial_cwnd": 683,
+                "max_cwnd": 1366
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 683,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 683,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 683,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              },
+              {
+                "inflight": 5461,
+                "initial_cwnd": 682,
+                "max_cwnd": 1365
+              }
+            ],
+            "connections": 8,
+            "signers": 1,
+            "source_offset": 20480,
+            "sources": 4096,
+            "worker": 5
+          }
+        ],
+        "environment": {
+          "BENCHMARK_IMAGES_PREBUILT": "1",
+          "BENCHMARK_RECREATE_GENESIS": "0",
+          "BENCHMARK_STRICT_GENESIS_REUSE": "1",
+          "BENCHMARK_STRICT_IMAGE_REUSE": "1",
+          "COMPOSE_PROFILES": "",
+          "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+          "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND": "32768",
+          "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+          "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+          "NATIVE_LOAD_AUTO_NONCE": "1",
+          "NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER": "1",
+          "NATIVE_LOAD_CONNECTIONS": "50",
+          "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+          "NATIVE_LOAD_DURATION_SECONDS": "180",
+          "NATIVE_LOAD_GLOBAL_CONFIG": "/usr/share/data/global.config.json",
+          "NATIVE_LOAD_INFLIGHT": "262144",
+          "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+          "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+          "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+          "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+          "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+          "NATIVE_LOAD_RAMP_SECONDS": "0",
+          "NATIVE_LOAD_SIGNERS": "6",
+          "NATIVE_LOAD_SOURCES": "24576",
+          "NATIVE_LOAD_SOURCE_OFFSET": "0",
+          "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+          "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+          "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+          "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "1",
+          "NATIVE_LOAD_TARGET_TPS": "0",
+          "NATIVE_LOAD_WARMUP_SECONDS": "60",
+          "NATIVE_LOAD_WORKERS": "6",
+          "TON_BUILD_PULL": "false"
+        }
+      },
+      {
+        "connections": 100,
+        "distribution": [
+          {
+            "clients": [
+              {
+                "inflight": 2571,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              }
+            ],
+            "connections": 17,
+            "signers": 1,
+            "source_offset": 0,
+            "sources": 4096,
+            "worker": 0
+          },
+          {
+            "clients": [
+              {
+                "inflight": 2571,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              }
+            ],
+            "connections": 17,
+            "signers": 1,
+            "source_offset": 4096,
+            "sources": 4096,
+            "worker": 1
+          },
+          {
+            "clients": [
+              {
+                "inflight": 2571,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              }
+            ],
+            "connections": 17,
+            "signers": 1,
+            "source_offset": 8192,
+            "sources": 4096,
+            "worker": 2
+          },
+          {
+            "clients": [
+              {
+                "inflight": 2571,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 322,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 643
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              },
+              {
+                "inflight": 2570,
+                "initial_cwnd": 321,
+                "max_cwnd": 642
+              }
+            ],
+            "connections": 17,
+            "signers": 1,
+            "source_offset": 12288,
+            "sources": 4096,
+            "worker": 3
+          },
+          {
+            "clients": [
+              {
+                "inflight": 2731,
+                "initial_cwnd": 342,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 342,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 342,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 342,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 342,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 341,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 341,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 341,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 341,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 341,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              }
+            ],
+            "connections": 16,
+            "signers": 1,
+            "source_offset": 16384,
+            "sources": 4096,
+            "worker": 4
+          },
+          {
+            "clients": [
+              {
+                "inflight": 2731,
+                "initial_cwnd": 342,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 342,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 342,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 342,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 342,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 341,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 341,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 341,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 341,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2731,
+                "initial_cwnd": 341,
+                "max_cwnd": 683
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              },
+              {
+                "inflight": 2730,
+                "initial_cwnd": 341,
+                "max_cwnd": 682
+              }
+            ],
+            "connections": 16,
+            "signers": 1,
+            "source_offset": 20480,
+            "sources": 4096,
+            "worker": 5
+          }
+        ],
+        "environment": {
+          "BENCHMARK_IMAGES_PREBUILT": "1",
+          "BENCHMARK_RECREATE_GENESIS": "0",
+          "BENCHMARK_STRICT_GENESIS_REUSE": "1",
+          "BENCHMARK_STRICT_IMAGE_REUSE": "1",
+          "COMPOSE_PROFILES": "",
+          "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+          "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND": "32768",
+          "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+          "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+          "NATIVE_LOAD_AUTO_NONCE": "1",
+          "NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER": "1",
+          "NATIVE_LOAD_CONNECTIONS": "100",
+          "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+          "NATIVE_LOAD_DURATION_SECONDS": "180",
+          "NATIVE_LOAD_GLOBAL_CONFIG": "/usr/share/data/global.config.json",
+          "NATIVE_LOAD_INFLIGHT": "262144",
+          "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+          "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+          "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+          "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+          "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+          "NATIVE_LOAD_RAMP_SECONDS": "0",
+          "NATIVE_LOAD_SIGNERS": "6",
+          "NATIVE_LOAD_SOURCES": "24576",
+          "NATIVE_LOAD_SOURCE_OFFSET": "0",
+          "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+          "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+          "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+          "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "1",
+          "NATIVE_LOAD_TARGET_TPS": "0",
+          "NATIVE_LOAD_WARMUP_SECONDS": "60",
+          "NATIVE_LOAD_WORKERS": "6",
+          "TON_BUILD_PULL": "false"
+        }
+      }
+    ],
+    "common_environment": {
+      "BENCHMARK_IMAGES_PREBUILT": "1",
+      "BENCHMARK_RECREATE_GENESIS": "0",
+      "BENCHMARK_STRICT_GENESIS_REUSE": "1",
+      "BENCHMARK_STRICT_IMAGE_REUSE": "1",
+      "COMPOSE_PROFILES": "",
+      "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+      "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND": "32768",
+      "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+      "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+      "NATIVE_LOAD_AUTO_NONCE": "1",
+      "NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER": "1",
+      "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+      "NATIVE_LOAD_DURATION_SECONDS": "180",
+      "NATIVE_LOAD_GLOBAL_CONFIG": "/usr/share/data/global.config.json",
+      "NATIVE_LOAD_INFLIGHT": "262144",
+      "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+      "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+      "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+      "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+      "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+      "NATIVE_LOAD_RAMP_SECONDS": "0",
+      "NATIVE_LOAD_SIGNERS": "6",
+      "NATIVE_LOAD_SOURCES": "24576",
+      "NATIVE_LOAD_SOURCE_OFFSET": "0",
+      "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+      "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+      "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+      "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "1",
+      "NATIVE_LOAD_TARGET_TPS": "0",
+      "NATIVE_LOAD_WARMUP_SECONDS": "60",
+      "NATIVE_LOAD_WORKERS": "6",
+      "TON_BUILD_PULL": "false"
+    },
+    "connection_counts": [
+      10,
+      50,
+      100
+    ],
+    "effective_workers": 6,
+    "env_file": "/home/neodix/gitProjects/MyLocalTonDocker/.env.physical",
+    "env_sha256": "4d63139638c35101a9d0ced0f95ff4d568d61643ea0eb2d99f13ad893d90be04",
+    "lane_depth": 2,
+    "limitations": [
+      "Sequential ascending sweep, not a randomized or statistically significant comparison.",
+      "Same local validator and liteserver; loopback/container networking does not establish remote-client capacity.",
+      "Query credits are per submission connection and therefore their aggregate limit grows with connection count.",
+      "All windows/backlogs are logical transfers; batches count intact physical signed parents (normally 16 transfers each).",
+      "Cache/database age and chain history advance between arms; canonical follower connections are additional.",
+      "Admission is a pending acknowledgment; capacity claims require every unchanged existing acceptance gate."
+    ],
+    "load_mode": "bounded_unpaced",
+    "requested_workers": 6,
+    "schema": "native-connections-sweep-plan-v1"
+  },
+  "arms": [
+    {
+      "admitted_logical_tps": 62528.08888888889,
+      "canonical_backlog_at_measure_end": 296112,
+      "canonical_backlog_sampled_peak": 440432,
+      "canonical_logical_tps": 62800.804469273746,
+      "capacity_claim_allowed": false,
+      "classification": "observation_only",
+      "connections": 10,
+      "continue_safe": true,
+      "launch_sha256": "5603733f3bdb0d1d817f9f88ff61ee2d336c6de1383d1f73e0e9f443507d718d",
+      "load_mode": "bounded_unpaced",
+      "measure_elapsed_s": 180,
+      "measured_admitted_logical_transfers": 11255056,
+      "measured_offered_logical_transfers": 11255056,
+      "offered_logical_tps": 62528.08888888889,
+      "original_acceptance": {
+        "canonical_lane_balance_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "capacity_load": {
+          "invalid_reasons": [
+            "offered_load_not_above_canonical_throughput"
+          ],
+          "measured_canonical_chain_avg_tps": 62800.804469273746,
+          "measured_offered_avg_tps": 62528.08888888889,
+          "offered_above_canonical": false
+        },
+        "chain_capacity_invalid_reasons": [
+          "offered_load_not_above_canonical_throughput"
+        ],
+        "chain_capacity_valid": false,
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "ingress_capacity_invalid_reasons": [],
+        "ingress_capacity_valid": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_valid": true,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "reproducible": false,
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions",
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "validator_cleanup_valid": true
+      },
+      "original_load_level_acceptance": {
+        "capacity_claim_allowed": false,
+        "classification": "load_validation",
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity",
+        "valid": true
+      },
+      "raw_bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/client-connections-20260906-sweep2/01-10-connections",
+      "stop_reasons": [],
+      "summary_sha256": "7d677a5651a5f768d16069845aa5996925ec5967c0fff0a282ce16b701ab78a4",
+      "target_attainment": "not_applicable",
+      "target_tps": 0,
+      "wrapper_exit": 0,
+      "generator_final": {
+        "schema": "native-load-v2",
+        "final": true,
+        "phase": "finished",
+        "elapsed_s": 245.26776469000015,
+        "load_start_unix_s": 1788715169.5448163,
+        "measure_start_unix_s": 1788715229.5448163,
+        "measure_end_unix_s": 1788715409.5448163,
+        "load_start_unix_ms": 1788715169545,
+        "measure_start_unix_ms": 1788715229545,
+        "measure_end_unix_ms": 1788715409545,
+        "canonical_gen_utime_bucket_start_unix_s": 1788715230,
+        "canonical_gen_utime_bucket_end_unix_s": 1788715409,
+        "canonical_gen_utime_bucket_duration_s": 179,
+        "target_tps": 0,
+        "load_mode": "bounded_unpaced",
+        "rate_limit_enabled": false,
+        "target_tps_applicable": false,
+        "configured_connections": 10,
+        "configured_workers": 6,
+        "configured_signers": 6,
+        "configured_sources": 24576,
+        "adaptive_initial_cwnd": 32768,
+        "offered": 15492864,
+        "steady_offered": 11255056,
+        "offered_tps": 0,
+        "submitted": 15492864,
+        "steady_submitted": 11255056,
+        "repair_submitted": 0,
+        "sign_operations": 968346,
+        "sign_tps": 0,
+        "sign_errors": 0,
+        "native_signed_runs_enabled": true,
+        "native_run_batching_requested": true,
+        "native_run_batching_coalesce_ms": 20,
+        "native_run_batching_enabled": true,
+        "native_signed_run_target_size": 16,
+        "native_payment_lane_depth": 2,
+        "native_signed_run_messages": 968304,
+        "native_signed_run_logical_transfers": 15492864,
+        "native_signed_run_submission_attempts": 1377352,
+        "native_signed_run_proof_resolutions": 968304,
+        "native_signed_run_max_size": 16,
+        "native_signed_run_normal_messages": 968304,
+        "native_signed_run_normal_logical_transfers": 15492864,
+        "native_signed_run_normal_quantum_violations": 0,
+        "native_signed_run_repair_messages": 0,
+        "native_signed_run_repair_logical_transfers": 0,
+        "native_signed_run_repair_tail_messages": 0,
+        "native_signed_run_repair_tail_logical_transfers": 0,
+        "native_signed_run_terminal_tail_messages": 0,
+        "native_signed_run_terminal_tail_logical_transfers": 0,
+        "native_signed_run_effective_quantum_min": 16,
+        "native_signed_run_effective_quantum_max": 16,
+        "native_signed_run_cwnd_floor_clamps": 0,
+        "native_signed_run_issue_holds": {
+          "active_capacity": 401277,
+          "source_capacity": 1092,
+          "canonical_capacity": 0,
+          "pacing_credit": 0,
+          "client_capacity": 792154,
+          "query_credit": 0
+        },
+        "wire_attempts": 1377352,
+        "wire_tps": 0,
+        "logical_submission_attempts": 22037632,
+        "logical_submission_attempt_tps": 0,
+        "wire_queries": 93466,
+        "wire_query_tps": 0,
+        "wire_batches": 86402,
+        "wire_batch_messages": 1370288,
+        "wire_batch_avg_size": 15.859447697969955,
+        "wire_batch_max_size": 64,
+        "wire_batch_source_run_target": 1,
+        "wire_batch_source_runs": 1370288,
+        "wire_batch_source_run_avg_size": 1,
+        "wire_batch_source_run_max_size": 1,
+        "submit_coalesce_ms": 20,
+        "submit_max_queries_per_client": 64,
+        "submit_coalesce_windows": 1148,
+        "submit_coalesce_blocked_pumps": 39717,
+        "submit_coalesce_deadline_dispatches": 74762,
+        "submit_coalesce_full_batch_dispatches": 1196,
+        "source_issue_bursts": 968304,
+        "source_issue_burst_messages": 968304,
+        "source_issue_burst_avg_size": 1,
+        "source_issue_burst_max_size": 1,
+        "source_issue_burst_logical_transfers": 15492864,
+        "source_issue_burst_logical_avg_size": 16,
+        "source_issue_burst_logical_max_size": 16,
+        "retries": 409006,
+        "retry_exhausted": 0,
+        "retry_horizon_exhausted": 0,
+        "retry_exhausted_sources": 0,
+        "canonical_state_lag_retry_exhausted": 0,
+        "retry_horizon_s": 90,
+        "canonical_state_lag_retry_backoff_ms": 250,
+        "canonical_state_lag_retry_max_backoff_ms": 2000,
+        "resigned": 42,
+        "repair_offered": 0,
+        "mempool_accepted": 15492864,
+        "stored": 15492864,
+        "admitted": 15492864,
+        "mempool_accept_tps": 0,
+        "steady_mempool_accepted": 11255056,
+        "repair_accepted": 0,
+        "repeat_admission_successes": 0,
+        "accepted_inferred": 0,
+        "duplicate_nonce_conflicts": 0,
+        "canonical_inferred_too_old": 0,
+        "proof_observed_resolved": 0,
+        "canonical_hash_matched": 15492864,
+        "canonical_hash_conflicts": 0,
+        "repair_suppressed": 0,
+        "measure_elapsed_s": 180,
+        "steady_offered_avg_tps": 62528.08888888889,
+        "offer_target_attainment_ratio": 1,
+        "offer_target_attained": true,
+        "canonical_overdrive_ratio": 0.9956574508449444,
+        "steady_mempool_accept_avg_tps": 62528.08888888889,
+        "rejected": 0,
+        "submission_errors_by_reason": {
+          "full": 0,
+          "rate_limit": 0,
+          "nonce": 0,
+          "expired": 42,
+          "balance": 0,
+          "invalid": 0,
+          "other": 0
+        },
+        "timeouts": 42,
+        "transport_errors": 0,
+        "server_errors": 409006,
+        "parse_errors": 0,
+        "task_errors_by_reason": {
+          "timeout": 42,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 34,
+          "not_ready": 408972,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "retries_by_reason": {
+          "timeout": 0,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 34,
+          "not_ready": 408972,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "nonce_gaps": 0,
+        "external_nonce_conflicts": 0,
+        "inflight": 0,
+        "admission_queries_inflight": 0,
+        "clients_at_query_cap": 0,
+        "clients_at_query_cap_sampled_peak": 0,
+        "query_credit_stalls": 0,
+        "max_per_client_admission_queries": 23,
+        "canonical_backlog": 0,
+        "canonical_backlog_sampled_peak": 440432,
+        "canonical_backpressure_paused": false,
+        "canonical_backpressure_events": 0,
+        "canonical_backpressure_s": 0,
+        "measure_canonical_backpressure_events": 0,
+        "measure_canonical_backpressure_s": 0,
+        "measure_canonical_backpressure_fraction": 0,
+        "source_backpressure_stalls": 0,
+        "head_blocked_ready_notifications": 57642,
+        "head_blocked_ready_scans": 0,
+        "ready_source_queue_pushes": 43284152,
+        "ready_source_queue_stale_entries": 0,
+        "ready_source_queue_excluded_rotations": 0,
+        "ready_source_queue_max_depth": 2640,
+        "max_source_canonical_backlog_configured": 128,
+        "max_source_canonical_backlog_effective": 128,
+        "sources_at_canonical_backlog_cap": 0,
+        "max_source_canonical_backlog_current": 0,
+        "max_active_tasks_per_source": 0,
+        "signing": 0,
+        "ready": 0,
+        "retry_wait": 0,
+        "active_tasks": 0,
+        "active_sources": 0,
+        "interrupted": false,
+        "drain_timed_out": false,
+        "congestion_window": 13073.032762563884,
+        "initial_congestion_window": 32768,
+        "adaptive_max_cwnd": 65536,
+        "effective_cwnd_cap": 65536,
+        "clients_at_cwnd_cap": 0,
+        "cwnd_cap_limited_acks": 0,
+        "congestion_window_sampled_peak": 33351.85200913183,
+        "pacing_tokens": 0,
+        "rtt_ms": {
+          "p50": 200,
+          "p95": 500,
+          "p99": 1000,
+          "max": 3748.326738999822,
+          "samples": 22037632,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false
+        },
+        "sign_ms": {
+          "p50": 100,
+          "p95": 200,
+          "p99": 200,
+          "max": 313.6504210001476,
+          "samples": 968346,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false
+        },
+        "anchor_latency_sample_ms": {
+          "p50": 5000,
+          "p95": 10000,
+          "p99": 20000,
+          "max": 21988.756575000025,
+          "samples": 119744,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false,
+          "poll_resolution_s": 10
+        },
+        "anchor_scan_errors": 0,
+        "canonical_chain_blocks": 3367,
+        "canonical_follower_block_discovery_rate": 15.615382357912853,
+        "canonical_chain_native_blocks": 3367,
+        "canonical_chain_measure_native_blocks": 2348,
+        "canonical_chain_native_transfers": 15492864,
+        "canonical_chain_avg_native_transfers_per_block": 4601.385209385209,
+        "canonical_chain_measure_avg_native_transfers_per_block": 4787.6252129471895,
+        "canonical_chain_max_native_transfers_per_block": 18432,
+        "canonical_chain_measure_max_native_transfers_per_block": 18432,
+        "canonical_chain_max_blocks_per_gen_utime_second": 26,
+        "canonical_chain_measure_max_blocks_per_gen_utime_second": 26,
+        "canonical_follower_discovery_tps": 13366.767298373403,
+        "canonical_chain_measure_transfers": 11241344,
+        "canonical_chain_measure_avg_tps": 62800.804469273746,
+        "canonical_chain_measure_peak_1s_tps": 122752,
+        "canonical_follower_errors": 0,
+        "canonical_follower_fatal_errors": 0,
+        "canonical_follower_transient_timeouts": 0,
+        "canonical_follower_transient_liteserver_timeouts": 0,
+        "canonical_follower_transient_cancellations": 0,
+        "canonical_follower_transient_not_ready": 0,
+        "canonical_follower_transient_retries": 0,
+        "canonical_follower_transient_recoveries": 0,
+        "canonical_follower_retry_exhausted": 0,
+        "canonical_follower_reconnects": 0,
+        "canonical_follower_retry_streak": 0,
+        "canonical_follower_retry_limit": 5,
+        "canonical_follower_retry_backoff_s": 0.25,
+        "canonical_follower_retry_max_backoff_s": 5,
+        "canonical_follower_query_timeout_s": 30,
+        "canonical_follower_reorgs": 0,
+        "canonical_follower_basechain_leaf_shards": 4,
+        "canonical_lane_balance": {
+          "enabled": true,
+          "required": true,
+          "valid": true,
+          "depth_valid": true,
+          "tolerance_valid": true,
+          "topology_complete": true,
+          "totals_reconcile": true,
+          "aggregate_reconciled": true,
+          "every_lane_active": true,
+          "within_tolerance": true,
+          "measured_transfers_sum_overflow": false,
+          "depth": 2,
+          "tolerance_bps": 500,
+          "minimum_allowed_equal_share_bps": 9500,
+          "maximum_allowed_equal_share_bps": 10500,
+          "expected_lanes": 4,
+          "observed_lanes": 4,
+          "measured_transfers": 11241344,
+          "aggregate_measured_transfers": 11241344,
+          "lane_measured_transfers_sum": 11241344,
+          "measured_transfers_sum": 11241344,
+          "min_measured_transfers": 2805232,
+          "max_measured_transfers": 2812624,
+          "min_equal_share_bps": 9981,
+          "max_equal_share_bps": 10008,
+          "measured_avg_tps": 62800.804469273746,
+          "lanes": [
+            {
+              "shard": "(0,2000000000000000)",
+              "depth": 2,
+              "tip": "(0,2000000000000000,859):9D54B6F73F58053EF764B058260AEC2E6DBF741E142D20866933B15A3D429197:4BD355A7A9505F6C650C1F42D8C73DCDCA581EE97545F7AB1067FE589A451DBE",
+              "tip_seqno": 859,
+              "blocks": 844,
+              "native_blocks": 844,
+              "measured_native_blocks": 586,
+              "native_transfers": 3873600,
+              "measured_native_transfers": 2811120,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 15704.581005586591,
+              "measured_share": 0.25006974255035697,
+              "equal_share_bps": 10002,
+              "equal_share_ratio": 1.0002
+            },
+            {
+              "shard": "(0,6000000000000000)",
+              "depth": 2,
+              "tip": "(0,6000000000000000,853):040776C586D2DC17B16ECE2D39C1A6FB6AE66CBA6F8CFD72EAB0406E77162EC5:16C9CCE8071344F15438E2954433D8D1D20AB7F5AE5040481A5C020F8A71451E",
+              "tip_seqno": 853,
+              "blocks": 838,
+              "native_blocks": 838,
+              "measured_native_blocks": 587,
+              "native_transfers": 3872768,
+              "measured_native_transfers": 2812624,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 15712.983240223464,
+              "measured_share": 0.250203534381654,
+              "equal_share_bps": 10008,
+              "equal_share_ratio": 1.0008
+            },
+            {
+              "shard": "(0,a000000000000000)",
+              "depth": 2,
+              "tip": "(0,a000000000000000,854):E251CE3ABE5268DE2A2C45E5E1C5EE2C45C5C65539410D67A0B42DC3AA03C51E:42540F0E7734030BFFD0F2A9AD4C14DF8918E5C5D2F9F16D831C3286BFEDF01E",
+              "tip_seqno": 854,
+              "blocks": 839,
+              "native_blocks": 839,
+              "measured_native_blocks": 587,
+              "native_transfers": 3872272,
+              "measured_native_transfers": 2805232,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 15671.687150837988,
+              "measured_share": 0.2495459617640026,
+              "equal_share_bps": 9981,
+              "equal_share_ratio": 0.9981
+            },
+            {
+              "shard": "(0,e000000000000000)",
+              "depth": 2,
+              "tip": "(0,e000000000000000,861):017456A55C77279B15BE4ADF958F36401778B67E977E65EE3F9570BD736D47EA:2FA482A12401EE52711B37CBB9BF76332F06C80AD36CE92BAE2F32C56DA6B920",
+              "tip_seqno": 861,
+              "blocks": 846,
+              "native_blocks": 846,
+              "measured_native_blocks": 588,
+              "native_transfers": 3874224,
+              "measured_native_transfers": 2812368,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 15711.553072625698,
+              "measured_share": 0.2501807613039864,
+              "equal_share_bps": 10007,
+              "equal_share_ratio": 1.0007
+            }
+          ],
+          "invalid_reasons": []
+        },
+        "canonical_follower_lag_blocks": 0,
+        "canonical_follower_max_lag_blocks": 18,
+        "canonical_follower_enabled": true,
+        "canonical_follower_final_catchup_complete": true,
+        "canonical_result_valid": true,
+        "benchmark_result_valid": true,
+        "chain_correctness_valid": true,
+        "ingress_capacity_valid": true,
+        "chain_capacity_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_incomplete_reasons": [],
+        "ingress_capacity_invalid_reasons": [],
+        "chain_capacity_invalid_reasons": [],
+        "canonical_at_measure_end": 10958944,
+        "canonical_measured_offers_at_measure_end": 10958944,
+        "canonical_measured_offers_at_first_post_measure_checkpoint": 10958944,
+        "canonical_total_at_measure_end": 15196752,
+        "canonical_backlog_at_measure_end": 296112,
+        "canonical_measured_offer_cohort_observed_avg_tps": 60883.02222222222,
+        "canonical_after_drain": 11255056,
+        "canonical_measured_offers_after_drain": 11255056,
+        "canonical_total_after_drain": 15492864,
+        "canonical_total_backlog_after_drain": 0,
+        "canonical_backlog_after_drain": 0,
+        "drain_to_anchor_s": 5.266799052999886,
+        "finalized": null,
+        "finalized_semantics": "not_independently_observed",
+        "admission_semantics": "liteServer.sendMessage or ordered sendMessageBatch item status=1; not block inclusion",
+        "native_signed_run_semantics": "when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash",
+        "native_run_batching_semantics": "explicit default-off intact NTRN transport grouping; fresh source heads share one absolute submit-coalesce-ms deadline or release a physical/logical-credit-full batch early; retries, repairs and drain bypass waiting; no parent splitting or padding",
+        "native_signed_run_normal_quantum_semantics": "ordinary NTRN issuance uses one fixed logical quantum capped once by static worker, source, canonical-backlog, and the smallest per-client dispatch ceiling; transient residuals hold instead of shrinking it",
+        "native_signed_run_repair_tail_semantics": "only a freshly signed finite drain-repair suffix may contain fewer outputs than the normal quantum; admitted repairs reuse their original exact parent",
+        "native_signed_run_terminal_tail_semantics": "the sole ordinary short-run exception advances the exclusive uint64 nonce cursor exactly to UINT64_MAX without wrapping it",
+        "native_signed_run_cwnd_floor_clamps_semantics": "AIMD loss responses whose halved window was raised to one effective signed-run quantum",
+        "native_signed_run_issue_holds_semantics": "blocked normal issue opportunities; issue decisions use active, source, canonical, pacing, current free-client capacity, then admission-query credit precedence, while source also counts quantum-ineligible queue suppression",
+        "native_payment_lane_depth_semantics": "client-side source/destination address-prefix preflight depth; zero disables the check and consensus remains authoritative",
+        "wire_attempts_semantics": "physical external BOC bodies submitted to liteServer; an NTRN parent contributes one even when it authorizes multiple logical transfers",
+        "logical_submission_attempts_semantics": "logical transfers represented by every admission attempt, including retries; use alongside wire_attempts to measure NTRN message amortization",
+        "wire_batch_source_run_semantics": "physical envelopes in each source group of a sendMessageBatch; scalar groups use adjacent ascending nonces, NTRN groups contain one intact ready parent per distinct source, and source heads remain fair",
+        "source_issue_burst_semantics": "fair round-robin sources issue bounded contiguous work per turn; scalar mode counts one physical message per nonce, while signed-run mode constructs one physical NTRN parent carrying its reported logical transfer count",
+        "head_blocked_ready_notifications_semantics": "O(1) ready-state notifications for non-head same-source tasks; they do not enter or rotate through the dispatch queue",
+        "head_blocked_ready_scans_semantics": "deprecated compatibility counter; source-head scheduling avoids blocked-task scans and leaves this at zero",
+        "ready_source_queue_semantics": "at most one live dispatch entry per source; stale generation entries and bounded same-batch source exclusions are reported separately",
+        "sources_at_canonical_backlog_cap_semantics": "sources unable to issue one more scalar transfer, one full effective NTRN quantum, or any NTRN after the exclusive uint64 nonce cursor is exhausted",
+        "task_errors_by_reason_semantics": "one mutually exclusive typed classification per failed admission result; canonical_state_lag requires an explicit canonical-watermark snapshot-lag diagnostic",
+        "retries_by_reason_semantics": "retry schedules by the typed error that caused them; counts schedules, not distinct transfers",
+        "retry_exhausted_semantics": "source-head retry horizon expirations, not short max_retries backoff cycles; the source is quarantined because later native nonces cannot safely skip the unresolved head",
+        "canonical_state_lag_retry_semantics": "bounded exponential retry without AIMD decrease until retry_horizon_s; intended to span temporary admission snapshots older than the latest canonical watermark",
+        "latency_histogram_overflow_semantics": "overflow counts samples above overflow_lower_bound_ms; percentile_in_overflow flags a percentile that cannot be resolved within finite histogram buckets",
+        "benchmark_result_valid_semantics": "final proof-consistent run with complete measured and total cohorts, zero drain timeout, no fatal or retry-exhausted follower failure, and a final contiguous catch-up to the anchored shard tip",
+        "chain_correctness_valid_semantics": "proof-consistent canonical follower result; independent from whether generator or node scheduling limited the offered load",
+        "ingress_capacity_valid_semantics": "correct final run reaching at least 95 percent of the configured offered-TPS target, with at most one percent of the measured window stopped by canonical-backlog pressure and no generator retry exhaustion, signing failure, or transport failure",
+        "chain_capacity_valid_semantics": "correct final run with no observer-backpressure distortion or generator failure, where load either reached the configured target or exceeded proof-observed canonical throughput by at least five percent",
+        "canonical_follower_errors_semantics": "fatal proof, decoded-data, hash, or ancestry validity failures only; transient transport or liteserver-availability failures and exhausted retry streaks are reported separately",
+        "canonical_follower_transient_timeouts_semantics": "aggregate ADNL timeout (652) and liteserver query-deadline (-503) responses discarded and retried within the bounded follower retry budget from the last completely committed followed tip",
+        "canonical_follower_transient_liteserver_timeouts_semantics": "subset of canonical_follower_transient_timeouts received as liteServer.error code -503",
+        "canonical_follower_transient_not_ready_semantics": "liteserver availability responses (651) discarded and retried within the bounded follower retry budget from the last completely committed followed tip",
+        "canonical_follower_transient_retries_semantics": "retry polls actually dispatched after a forced follower-client reconnect",
+        "canonical_follower_transient_recoveries_semantics": "consecutive transient failure streaks ended by one complete proof-checked poll",
+        "canonical_follower_reconnects_semantics": "forced resets of the dedicated follower liteserver client after timeout, cancellation, or not-ready availability response",
+        "canonical_follower_retry_exhausted_semantics": "transient failure streaks exceeding canonical_follower_retry_limit; any exhausted streak invalidates the benchmark even if later polling recovers",
+        "canonical_follower_final_catchup_complete_semantics": "final poll atomically verified every basechain block back to the previously committed tip before workers were finalized",
+        "canonical_follower_basechain_leaf_shards_semantics": "number of proof-anchored basechain leaf tips followed as one fixed topology; changed topology is a correctness failure rather than an unobserved history transition",
+        "repeat_admission_successes_semantics": "status=1 responses for a nonce whose admission was already counted; excluded from mempool_accepted and TPS",
+        "duplicate_semantics": "different or concurrently unresolved message owns the nonce; conflict, never admission or canonical proof",
+        "accepted_inferred_semantics": "deprecated proof-resolution counter; do not use as TPS",
+        "canonical_inferred_semantics": "too-old response from node; not proof-observed",
+        "canonical_hash_match_semantics": "decoded canonical source, nonce, and external-cell hash exactly match a transfer signed by this run",
+        "canonical_chain_semantics": "verified basechain blocks referenced by ShardHashes proven against the configured liteserver masterchain tip",
+        "canonical_follower_discovery_tps_semantics": "observer catch-up throughput; not chain production TPS",
+        "canonical_gen_utime_bucket_semantics": "only integer gen_utime seconds whose complete [second,second+1) interval lies inside the millisecond measurement window; start is ceil(measure_start_ms/1000), end is floor(measure_end_ms/1000) and exclusive",
+        "canonical_chain_measure_peak_1s_tps_semantics": "maximum transfers assigned to one fully contained integer block gen_utime second; see canonical_gen_utime_bucket_* boundaries",
+        "canonical_chain_block_packing_semantics": "native transfer batch entries decoded from proof-checked canonical blocks; measured gen_utime metrics exclude partial boundary seconds",
+        "capacity_invalid_reasons_semantics": "stable machine-readable reason codes keep proof correctness, run completion, ingress capacity, and chain capacity failures distinct",
+        "canonical_backlog_sampled_peak_semantics": "maximum summed latest-worker backlog gauge at report samples; not an exact instantaneous peak",
+        "congestion_window_sampled_peak_semantics": "maximum summed latest-worker AIMD window gauge at report samples",
+        "submit_max_queries_per_client_semantics": "per persistent client bound on concurrent admission sendMessage or sendMessageBatch RPCs; zero preserves unlimited per-client query behavior and anchor scans do not consume this credit",
+        "clients_at_query_cap_semantics": "current number of persistent clients with all configured admission-query credit consumed; zero when the cap is disabled",
+        "clients_at_query_cap_sampled_peak_semantics": "maximum summed clients_at_query_cap gauge at report samples",
+        "query_credit_stalls_semantics": "dispatch passes with a queued ready-source entry and message capacity but no client admission-query credit; a persistent counter across transient cap saturation",
+        "max_per_client_admission_queries_semantics": "largest concurrently in-flight admission RPC count observed on any one persistent client; batch messages share one RPC credit",
+        "rtt_ms_semantics": "per-admission-message callback latency; each returned batch message contributes one sample rather than one sample per RPC",
+        "adaptive_max_cwnd_semantics": "global message-count ceiling distributed exactly across workers and persistent connections; zero retains the max_inflight hard-limit behavior",
+        "cwnd_cap_limited_acks_semantics": "successful admission items whose additive AIMD increase was clipped by the configured adaptive_max_cwnd ceiling",
+        "canonical_at_measure_end_semantics": "legacy cohort alias sampled by the first fully verified follower poll whose masterchain query began after offering ended",
+        "canonical_measured_offer_cohort_observed_avg_tps_semantics": "measured-offer cohort proven by the first post-measure checkpoint divided by offer-window duration; not chain-window production TPS",
+        "canonical_measured_offer_semantics": "measured-phase issued nonce cohort; distinct from chain progress during the measurement window",
+        "canonical_semantics": "proof_checked_against_configured_liteserver_tip_shard_history"
+      },
+      "raw_summary_sha256": "7d677a5651a5f768d16069845aa5996925ec5967c0fff0a282ce16b701ab78a4"
+    },
+    {
+      "admitted_logical_tps": 62955.73333333333,
+      "canonical_backlog_at_measure_end": 301808,
+      "canonical_backlog_sampled_peak": 749216,
+      "canonical_logical_tps": 63433.117318435754,
+      "capacity_claim_allowed": false,
+      "classification": "observation_only",
+      "connections": 50,
+      "continue_safe": true,
+      "launch_sha256": "e6d29575b05927f5c193f6ed14d4bdd5854bee8421bda2fdb8744cbd26b3f536",
+      "load_mode": "bounded_unpaced",
+      "measure_elapsed_s": 180,
+      "measured_admitted_logical_transfers": 11332032,
+      "measured_offered_logical_transfers": 11332032,
+      "offered_logical_tps": 62955.73333333333,
+      "original_acceptance": {
+        "canonical_lane_balance_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "capacity_load": {
+          "invalid_reasons": [
+            "offered_load_not_above_canonical_throughput"
+          ],
+          "measured_canonical_chain_avg_tps": 63433.117318435754,
+          "measured_offered_avg_tps": 62955.73333333333,
+          "offered_above_canonical": false
+        },
+        "chain_capacity_invalid_reasons": [
+          "offered_load_not_above_canonical_throughput"
+        ],
+        "chain_capacity_valid": false,
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "ingress_capacity_invalid_reasons": [],
+        "ingress_capacity_valid": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_valid": true,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "reproducible": false,
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions",
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "validator_cleanup_valid": true
+      },
+      "original_load_level_acceptance": {
+        "capacity_claim_allowed": false,
+        "classification": "load_validation",
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity",
+        "valid": true
+      },
+      "raw_bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/client-connections-20260906-sweep2/02-50-connections",
+      "stop_reasons": [],
+      "summary_sha256": "0458023c789883d6e8519111222282b3619834d3ea55ad1392065667f2c4087b",
+      "target_attainment": "not_applicable",
+      "target_tps": 0,
+      "wrapper_exit": 0,
+      "generator_final": {
+        "schema": "native-load-v2",
+        "final": true,
+        "phase": "finished",
+        "elapsed_s": 264.94687661800026,
+        "load_start_unix_s": 1788715585.5871022,
+        "measure_start_unix_s": 1788715645.5871022,
+        "measure_end_unix_s": 1788715825.5871022,
+        "load_start_unix_ms": 1788715585587,
+        "measure_start_unix_ms": 1788715645587,
+        "measure_end_unix_ms": 1788715825587,
+        "canonical_gen_utime_bucket_start_unix_s": 1788715646,
+        "canonical_gen_utime_bucket_end_unix_s": 1788715825,
+        "canonical_gen_utime_bucket_duration_s": 179,
+        "target_tps": 0,
+        "load_mode": "bounded_unpaced",
+        "rate_limit_enabled": false,
+        "target_tps_applicable": false,
+        "configured_connections": 50,
+        "configured_workers": 6,
+        "configured_signers": 6,
+        "configured_sources": 24576,
+        "adaptive_initial_cwnd": 32768,
+        "offered": 15465040,
+        "steady_offered": 11332032,
+        "offered_tps": 0,
+        "submitted": 15465040,
+        "steady_submitted": 11332032,
+        "repair_submitted": 0,
+        "sign_operations": 966626,
+        "sign_tps": 0,
+        "sign_errors": 0,
+        "native_signed_runs_enabled": true,
+        "native_run_batching_requested": true,
+        "native_run_batching_coalesce_ms": 20,
+        "native_run_batching_enabled": true,
+        "native_signed_run_target_size": 16,
+        "native_payment_lane_depth": 2,
+        "native_signed_run_messages": 966565,
+        "native_signed_run_logical_transfers": 15465040,
+        "native_signed_run_submission_attempts": 1719239,
+        "native_signed_run_proof_resolutions": 966565,
+        "native_signed_run_max_size": 16,
+        "native_signed_run_normal_messages": 966565,
+        "native_signed_run_normal_logical_transfers": 15465040,
+        "native_signed_run_normal_quantum_violations": 0,
+        "native_signed_run_repair_messages": 0,
+        "native_signed_run_repair_logical_transfers": 0,
+        "native_signed_run_repair_tail_messages": 0,
+        "native_signed_run_repair_tail_logical_transfers": 0,
+        "native_signed_run_terminal_tail_messages": 0,
+        "native_signed_run_terminal_tail_logical_transfers": 0,
+        "native_signed_run_effective_quantum_min": 16,
+        "native_signed_run_effective_quantum_max": 16,
+        "native_signed_run_cwnd_floor_clamps": 0,
+        "native_signed_run_issue_holds": {
+          "active_capacity": 717293,
+          "source_capacity": 4052,
+          "canonical_capacity": 0,
+          "pacing_credit": 0,
+          "client_capacity": 464363,
+          "query_credit": 0
+        },
+        "wire_attempts": 1719239,
+        "wire_tps": 0,
+        "logical_submission_attempts": 27507824,
+        "logical_submission_attempt_tps": 0,
+        "wire_queries": 86183,
+        "wire_query_tps": 0,
+        "wire_batches": 85008,
+        "wire_batch_messages": 1718064,
+        "wire_batch_avg_size": 20.21061547148504,
+        "wire_batch_max_size": 64,
+        "wire_batch_source_run_target": 1,
+        "wire_batch_source_runs": 1718064,
+        "wire_batch_source_run_avg_size": 1,
+        "wire_batch_source_run_max_size": 1,
+        "submit_coalesce_ms": 20,
+        "submit_max_queries_per_client": 64,
+        "submit_coalesce_windows": 2824,
+        "submit_coalesce_blocked_pumps": 119297,
+        "submit_coalesce_deadline_dispatches": 56134,
+        "submit_coalesce_full_batch_dispatches": 2545,
+        "source_issue_bursts": 966565,
+        "source_issue_burst_messages": 966565,
+        "source_issue_burst_avg_size": 1,
+        "source_issue_burst_max_size": 1,
+        "source_issue_burst_logical_transfers": 15465040,
+        "source_issue_burst_logical_avg_size": 16,
+        "source_issue_burst_logical_max_size": 16,
+        "retries": 752613,
+        "retry_exhausted": 0,
+        "retry_horizon_exhausted": 0,
+        "retry_exhausted_sources": 0,
+        "canonical_state_lag_retry_exhausted": 0,
+        "retry_horizon_s": 90,
+        "canonical_state_lag_retry_backoff_ms": 250,
+        "canonical_state_lag_retry_max_backoff_ms": 2000,
+        "resigned": 61,
+        "repair_offered": 0,
+        "mempool_accepted": 15465040,
+        "stored": 15465040,
+        "admitted": 15465040,
+        "mempool_accept_tps": 0,
+        "steady_mempool_accepted": 11332032,
+        "repair_accepted": 0,
+        "repeat_admission_successes": 0,
+        "accepted_inferred": 0,
+        "duplicate_nonce_conflicts": 0,
+        "canonical_inferred_too_old": 0,
+        "proof_observed_resolved": 0,
+        "canonical_hash_matched": 15465040,
+        "canonical_hash_conflicts": 0,
+        "repair_suppressed": 0,
+        "measure_elapsed_s": 180,
+        "steady_offered_avg_tps": 62955.73333333333,
+        "offer_target_attainment_ratio": 1,
+        "offer_target_attained": true,
+        "canonical_overdrive_ratio": 0.9924742152792847,
+        "steady_mempool_accept_avg_tps": 62955.73333333333,
+        "rejected": 0,
+        "submission_errors_by_reason": {
+          "full": 0,
+          "rate_limit": 0,
+          "nonce": 0,
+          "expired": 61,
+          "balance": 0,
+          "invalid": 0,
+          "other": 0
+        },
+        "timeouts": 61,
+        "transport_errors": 0,
+        "server_errors": 752613,
+        "parse_errors": 0,
+        "task_errors_by_reason": {
+          "timeout": 61,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 77,
+          "not_ready": 752536,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "retries_by_reason": {
+          "timeout": 0,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 77,
+          "not_ready": 752536,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "nonce_gaps": 0,
+        "external_nonce_conflicts": 0,
+        "inflight": 0,
+        "admission_queries_inflight": 0,
+        "clients_at_query_cap": 0,
+        "clients_at_query_cap_sampled_peak": 0,
+        "query_credit_stalls": 0,
+        "max_per_client_admission_queries": 7,
+        "canonical_backlog": 0,
+        "canonical_backlog_sampled_peak": 749216,
+        "canonical_backpressure_paused": false,
+        "canonical_backpressure_events": 0,
+        "canonical_backpressure_s": 0,
+        "measure_canonical_backpressure_events": 0,
+        "measure_canonical_backpressure_s": 0,
+        "measure_canonical_backpressure_fraction": 0,
+        "source_backpressure_stalls": 0,
+        "head_blocked_ready_notifications": 151261,
+        "head_blocked_ready_scans": 0,
+        "ready_source_queue_pushes": 49236171,
+        "ready_source_queue_stale_entries": 0,
+        "ready_source_queue_excluded_rotations": 0,
+        "ready_source_queue_max_depth": 2263,
+        "max_source_canonical_backlog_configured": 128,
+        "max_source_canonical_backlog_effective": 128,
+        "sources_at_canonical_backlog_cap": 0,
+        "max_source_canonical_backlog_current": 0,
+        "max_active_tasks_per_source": 0,
+        "signing": 0,
+        "ready": 0,
+        "retry_wait": 0,
+        "active_tasks": 0,
+        "active_sources": 0,
+        "interrupted": false,
+        "drain_timed_out": false,
+        "congestion_window": 33502.92907630374,
+        "initial_congestion_window": 32768,
+        "adaptive_max_cwnd": 65536,
+        "effective_cwnd_cap": 65536,
+        "clients_at_cwnd_cap": 0,
+        "cwnd_cap_limited_acks": 0,
+        "congestion_window_sampled_peak": 38810.879942612824,
+        "pacing_tokens": 0,
+        "rtt_ms": {
+          "p50": 500,
+          "p95": 500,
+          "p99": 1000,
+          "max": 3828.610011999899,
+          "samples": 27507824,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false
+        },
+        "sign_ms": {
+          "p50": 100,
+          "p95": 200,
+          "p99": 500,
+          "max": 303.4439430002749,
+          "samples": 966626,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false
+        },
+        "anchor_latency_sample_ms": {
+          "p50": 10000,
+          "p95": 10000,
+          "p99": 20000,
+          "max": 71541.00677099996,
+          "samples": 107520,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false,
+          "poll_resolution_s": 10
+        },
+        "anchor_scan_errors": 0,
+        "canonical_chain_blocks": 2752,
+        "canonical_follower_block_discovery_rate": 9.269356162972583,
+        "canonical_chain_native_blocks": 2748,
+        "canonical_chain_measure_native_blocks": 1868,
+        "canonical_chain_native_transfers": 15465040,
+        "canonical_chain_avg_native_transfers_per_block": 5627.743813682679,
+        "canonical_chain_measure_avg_native_transfers_per_block": 6078.441113490364,
+        "canonical_chain_max_native_transfers_per_block": 18432,
+        "canonical_chain_measure_max_native_transfers_per_block": 18432,
+        "canonical_chain_max_blocks_per_gen_utime_second": 19,
+        "canonical_chain_measure_max_blocks_per_gen_utime_second": 18,
+        "canonical_follower_discovery_tps": 2076.335780505859,
+        "canonical_chain_measure_transfers": 11354528,
+        "canonical_chain_measure_avg_tps": 63433.117318435754,
+        "canonical_chain_measure_peak_1s_tps": 133216,
+        "canonical_follower_errors": 0,
+        "canonical_follower_fatal_errors": 0,
+        "canonical_follower_transient_timeouts": 0,
+        "canonical_follower_transient_liteserver_timeouts": 0,
+        "canonical_follower_transient_cancellations": 0,
+        "canonical_follower_transient_not_ready": 0,
+        "canonical_follower_transient_retries": 0,
+        "canonical_follower_transient_recoveries": 0,
+        "canonical_follower_retry_exhausted": 0,
+        "canonical_follower_reconnects": 0,
+        "canonical_follower_retry_streak": 0,
+        "canonical_follower_retry_limit": 5,
+        "canonical_follower_retry_backoff_s": 0.25,
+        "canonical_follower_retry_max_backoff_s": 5,
+        "canonical_follower_query_timeout_s": 30,
+        "canonical_follower_reorgs": 0,
+        "canonical_follower_basechain_leaf_shards": 4,
+        "canonical_lane_balance": {
+          "enabled": true,
+          "required": true,
+          "valid": true,
+          "depth_valid": true,
+          "tolerance_valid": true,
+          "topology_complete": true,
+          "totals_reconcile": true,
+          "aggregate_reconciled": true,
+          "every_lane_active": true,
+          "within_tolerance": true,
+          "measured_transfers_sum_overflow": false,
+          "depth": 2,
+          "tolerance_bps": 500,
+          "minimum_allowed_equal_share_bps": 9500,
+          "maximum_allowed_equal_share_bps": 10500,
+          "expected_lanes": 4,
+          "observed_lanes": 4,
+          "measured_transfers": 11354528,
+          "aggregate_measured_transfers": 11354528,
+          "lane_measured_transfers_sum": 11354528,
+          "measured_transfers_sum": 11354528,
+          "min_measured_transfers": 2830416,
+          "max_measured_transfers": 2849408,
+          "min_equal_share_bps": 9971,
+          "max_equal_share_bps": 10037,
+          "measured_avg_tps": 63433.117318435754,
+          "lanes": [
+            {
+              "shard": "(0,2000000000000000)",
+              "depth": 2,
+              "tip": "(0,2000000000000000,1547):680810B511EF82CA2F48BC23A323FEBC683986803C2A9B122A0EFB9101815C83:9606F92DF33FC2C3DA692CC4BDD876105F05AECF544B04D132E93213C8787CBA",
+              "tip_seqno": 1547,
+              "blocks": 687,
+              "native_blocks": 686,
+              "measured_native_blocks": 468,
+              "native_transfers": 3869696,
+              "measured_native_transfers": 2849408,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 15918.480446927375,
+              "measured_share": 0.25094904869669615,
+              "equal_share_bps": 10037,
+              "equal_share_ratio": 1.0037
+            },
+            {
+              "shard": "(0,6000000000000000)",
+              "depth": 2,
+              "tip": "(0,6000000000000000,1551):F902D746695AE3DDE79B38C441A109261BDC2905106D72259B1B3D4B9CA173E5:FBA862AA9CB7BB2537F7B7AF6E06279D9990BA737B1F0CEE791A7564867CF226",
+              "tip_seqno": 1551,
+              "blocks": 697,
+              "native_blocks": 696,
+              "measured_native_blocks": 469,
+              "native_transfers": 3867984,
+              "measured_native_transfers": 2832960,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 15826.59217877095,
+              "measured_share": 0.24950046360359496,
+              "equal_share_bps": 9980,
+              "equal_share_ratio": 0.998
+            },
+            {
+              "shard": "(0,a000000000000000)",
+              "depth": 2,
+              "tip": "(0,a000000000000000,1542):3626CC877A94963014CEFDA12B757F44479A5D841397437CF4420610427E5DC7:3AF26CB35344BAF6FB2E071CD5F85D8373D9D590FF4B333B8C90AC32293754E3",
+              "tip_seqno": 1542,
+              "blocks": 687,
+              "native_blocks": 686,
+              "measured_native_blocks": 466,
+              "native_transfers": 3868128,
+              "measured_native_transfers": 2841744,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 15875.664804469274,
+              "measured_share": 0.2502740756815255,
+              "equal_share_bps": 10010,
+              "equal_share_ratio": 1.001
+            },
+            {
+              "shard": "(0,e000000000000000)",
+              "depth": 2,
+              "tip": "(0,e000000000000000,1543):97547755ACA1E623B474E726C2206AB7ADAA9AC256BE9E817E831687A3B8A75C:1B9C65519A2F62C9E198370963AA3BC5E4D06E5B3E97BC38EF5A4CA00CDC9C5E",
+              "tip_seqno": 1543,
+              "blocks": 681,
+              "native_blocks": 680,
+              "measured_native_blocks": 465,
+              "native_transfers": 3859232,
+              "measured_native_transfers": 2830416,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 15812.379888268157,
+              "measured_share": 0.2492764120181834,
+              "equal_share_bps": 9971,
+              "equal_share_ratio": 0.9971
+            }
+          ],
+          "invalid_reasons": []
+        },
+        "canonical_follower_lag_blocks": 0,
+        "canonical_follower_max_lag_blocks": 15,
+        "canonical_follower_enabled": true,
+        "canonical_follower_final_catchup_complete": true,
+        "canonical_result_valid": true,
+        "benchmark_result_valid": true,
+        "chain_correctness_valid": true,
+        "ingress_capacity_valid": true,
+        "chain_capacity_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_incomplete_reasons": [],
+        "ingress_capacity_invalid_reasons": [],
+        "chain_capacity_invalid_reasons": [],
+        "canonical_at_measure_end": 11030224,
+        "canonical_measured_offers_at_measure_end": 11030224,
+        "canonical_measured_offers_at_first_post_measure_checkpoint": 11030224,
+        "canonical_total_at_measure_end": 15163232,
+        "canonical_backlog_at_measure_end": 301808,
+        "canonical_measured_offer_cohort_observed_avg_tps": 61279.02222222222,
+        "canonical_after_drain": 11332032,
+        "canonical_measured_offers_after_drain": 11332032,
+        "canonical_total_after_drain": 15465040,
+        "canonical_total_backlog_after_drain": 0,
+        "canonical_backlog_after_drain": 0,
+        "drain_to_anchor_s": 24.946267012000135,
+        "finalized": null,
+        "finalized_semantics": "not_independently_observed",
+        "admission_semantics": "liteServer.sendMessage or ordered sendMessageBatch item status=1; not block inclusion",
+        "native_signed_run_semantics": "when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash",
+        "native_run_batching_semantics": "explicit default-off intact NTRN transport grouping; fresh source heads share one absolute submit-coalesce-ms deadline or release a physical/logical-credit-full batch early; retries, repairs and drain bypass waiting; no parent splitting or padding",
+        "native_signed_run_normal_quantum_semantics": "ordinary NTRN issuance uses one fixed logical quantum capped once by static worker, source, canonical-backlog, and the smallest per-client dispatch ceiling; transient residuals hold instead of shrinking it",
+        "native_signed_run_repair_tail_semantics": "only a freshly signed finite drain-repair suffix may contain fewer outputs than the normal quantum; admitted repairs reuse their original exact parent",
+        "native_signed_run_terminal_tail_semantics": "the sole ordinary short-run exception advances the exclusive uint64 nonce cursor exactly to UINT64_MAX without wrapping it",
+        "native_signed_run_cwnd_floor_clamps_semantics": "AIMD loss responses whose halved window was raised to one effective signed-run quantum",
+        "native_signed_run_issue_holds_semantics": "blocked normal issue opportunities; issue decisions use active, source, canonical, pacing, current free-client capacity, then admission-query credit precedence, while source also counts quantum-ineligible queue suppression",
+        "native_payment_lane_depth_semantics": "client-side source/destination address-prefix preflight depth; zero disables the check and consensus remains authoritative",
+        "wire_attempts_semantics": "physical external BOC bodies submitted to liteServer; an NTRN parent contributes one even when it authorizes multiple logical transfers",
+        "logical_submission_attempts_semantics": "logical transfers represented by every admission attempt, including retries; use alongside wire_attempts to measure NTRN message amortization",
+        "wire_batch_source_run_semantics": "physical envelopes in each source group of a sendMessageBatch; scalar groups use adjacent ascending nonces, NTRN groups contain one intact ready parent per distinct source, and source heads remain fair",
+        "source_issue_burst_semantics": "fair round-robin sources issue bounded contiguous work per turn; scalar mode counts one physical message per nonce, while signed-run mode constructs one physical NTRN parent carrying its reported logical transfer count",
+        "head_blocked_ready_notifications_semantics": "O(1) ready-state notifications for non-head same-source tasks; they do not enter or rotate through the dispatch queue",
+        "head_blocked_ready_scans_semantics": "deprecated compatibility counter; source-head scheduling avoids blocked-task scans and leaves this at zero",
+        "ready_source_queue_semantics": "at most one live dispatch entry per source; stale generation entries and bounded same-batch source exclusions are reported separately",
+        "sources_at_canonical_backlog_cap_semantics": "sources unable to issue one more scalar transfer, one full effective NTRN quantum, or any NTRN after the exclusive uint64 nonce cursor is exhausted",
+        "task_errors_by_reason_semantics": "one mutually exclusive typed classification per failed admission result; canonical_state_lag requires an explicit canonical-watermark snapshot-lag diagnostic",
+        "retries_by_reason_semantics": "retry schedules by the typed error that caused them; counts schedules, not distinct transfers",
+        "retry_exhausted_semantics": "source-head retry horizon expirations, not short max_retries backoff cycles; the source is quarantined because later native nonces cannot safely skip the unresolved head",
+        "canonical_state_lag_retry_semantics": "bounded exponential retry without AIMD decrease until retry_horizon_s; intended to span temporary admission snapshots older than the latest canonical watermark",
+        "latency_histogram_overflow_semantics": "overflow counts samples above overflow_lower_bound_ms; percentile_in_overflow flags a percentile that cannot be resolved within finite histogram buckets",
+        "benchmark_result_valid_semantics": "final proof-consistent run with complete measured and total cohorts, zero drain timeout, no fatal or retry-exhausted follower failure, and a final contiguous catch-up to the anchored shard tip",
+        "chain_correctness_valid_semantics": "proof-consistent canonical follower result; independent from whether generator or node scheduling limited the offered load",
+        "ingress_capacity_valid_semantics": "correct final run reaching at least 95 percent of the configured offered-TPS target, with at most one percent of the measured window stopped by canonical-backlog pressure and no generator retry exhaustion, signing failure, or transport failure",
+        "chain_capacity_valid_semantics": "correct final run with no observer-backpressure distortion or generator failure, where load either reached the configured target or exceeded proof-observed canonical throughput by at least five percent",
+        "canonical_follower_errors_semantics": "fatal proof, decoded-data, hash, or ancestry validity failures only; transient transport or liteserver-availability failures and exhausted retry streaks are reported separately",
+        "canonical_follower_transient_timeouts_semantics": "aggregate ADNL timeout (652) and liteserver query-deadline (-503) responses discarded and retried within the bounded follower retry budget from the last completely committed followed tip",
+        "canonical_follower_transient_liteserver_timeouts_semantics": "subset of canonical_follower_transient_timeouts received as liteServer.error code -503",
+        "canonical_follower_transient_not_ready_semantics": "liteserver availability responses (651) discarded and retried within the bounded follower retry budget from the last completely committed followed tip",
+        "canonical_follower_transient_retries_semantics": "retry polls actually dispatched after a forced follower-client reconnect",
+        "canonical_follower_transient_recoveries_semantics": "consecutive transient failure streaks ended by one complete proof-checked poll",
+        "canonical_follower_reconnects_semantics": "forced resets of the dedicated follower liteserver client after timeout, cancellation, or not-ready availability response",
+        "canonical_follower_retry_exhausted_semantics": "transient failure streaks exceeding canonical_follower_retry_limit; any exhausted streak invalidates the benchmark even if later polling recovers",
+        "canonical_follower_final_catchup_complete_semantics": "final poll atomically verified every basechain block back to the previously committed tip before workers were finalized",
+        "canonical_follower_basechain_leaf_shards_semantics": "number of proof-anchored basechain leaf tips followed as one fixed topology; changed topology is a correctness failure rather than an unobserved history transition",
+        "repeat_admission_successes_semantics": "status=1 responses for a nonce whose admission was already counted; excluded from mempool_accepted and TPS",
+        "duplicate_semantics": "different or concurrently unresolved message owns the nonce; conflict, never admission or canonical proof",
+        "accepted_inferred_semantics": "deprecated proof-resolution counter; do not use as TPS",
+        "canonical_inferred_semantics": "too-old response from node; not proof-observed",
+        "canonical_hash_match_semantics": "decoded canonical source, nonce, and external-cell hash exactly match a transfer signed by this run",
+        "canonical_chain_semantics": "verified basechain blocks referenced by ShardHashes proven against the configured liteserver masterchain tip",
+        "canonical_follower_discovery_tps_semantics": "observer catch-up throughput; not chain production TPS",
+        "canonical_gen_utime_bucket_semantics": "only integer gen_utime seconds whose complete [second,second+1) interval lies inside the millisecond measurement window; start is ceil(measure_start_ms/1000), end is floor(measure_end_ms/1000) and exclusive",
+        "canonical_chain_measure_peak_1s_tps_semantics": "maximum transfers assigned to one fully contained integer block gen_utime second; see canonical_gen_utime_bucket_* boundaries",
+        "canonical_chain_block_packing_semantics": "native transfer batch entries decoded from proof-checked canonical blocks; measured gen_utime metrics exclude partial boundary seconds",
+        "capacity_invalid_reasons_semantics": "stable machine-readable reason codes keep proof correctness, run completion, ingress capacity, and chain capacity failures distinct",
+        "canonical_backlog_sampled_peak_semantics": "maximum summed latest-worker backlog gauge at report samples; not an exact instantaneous peak",
+        "congestion_window_sampled_peak_semantics": "maximum summed latest-worker AIMD window gauge at report samples",
+        "submit_max_queries_per_client_semantics": "per persistent client bound on concurrent admission sendMessage or sendMessageBatch RPCs; zero preserves unlimited per-client query behavior and anchor scans do not consume this credit",
+        "clients_at_query_cap_semantics": "current number of persistent clients with all configured admission-query credit consumed; zero when the cap is disabled",
+        "clients_at_query_cap_sampled_peak_semantics": "maximum summed clients_at_query_cap gauge at report samples",
+        "query_credit_stalls_semantics": "dispatch passes with a queued ready-source entry and message capacity but no client admission-query credit; a persistent counter across transient cap saturation",
+        "max_per_client_admission_queries_semantics": "largest concurrently in-flight admission RPC count observed on any one persistent client; batch messages share one RPC credit",
+        "rtt_ms_semantics": "per-admission-message callback latency; each returned batch message contributes one sample rather than one sample per RPC",
+        "adaptive_max_cwnd_semantics": "global message-count ceiling distributed exactly across workers and persistent connections; zero retains the max_inflight hard-limit behavior",
+        "cwnd_cap_limited_acks_semantics": "successful admission items whose additive AIMD increase was clipped by the configured adaptive_max_cwnd ceiling",
+        "canonical_at_measure_end_semantics": "legacy cohort alias sampled by the first fully verified follower poll whose masterchain query began after offering ended",
+        "canonical_measured_offer_cohort_observed_avg_tps_semantics": "measured-offer cohort proven by the first post-measure checkpoint divided by offer-window duration; not chain-window production TPS",
+        "canonical_measured_offer_semantics": "measured-phase issued nonce cohort; distinct from chain progress during the measurement window",
+        "canonical_semantics": "proof_checked_against_configured_liteserver_tip_shard_history"
+      },
+      "raw_summary_sha256": "0458023c789883d6e8519111222282b3619834d3ea55ad1392065667f2c4087b"
+    },
+    {
+      "admitted_logical_tps": 63214.48888888889,
+      "canonical_backlog_at_measure_end": 745856,
+      "canonical_backlog_sampled_peak": 898224,
+      "canonical_logical_tps": 60250.27932960894,
+      "capacity_claim_allowed": true,
+      "classification": "capacity_eligible",
+      "connections": 100,
+      "continue_safe": true,
+      "launch_sha256": "b7867b3c51d9eecae33e6db4d862442bcac518f7aecfe35350bb407244226e3a",
+      "load_mode": "bounded_unpaced",
+      "measure_elapsed_s": 180,
+      "measured_admitted_logical_transfers": 11378608,
+      "measured_offered_logical_transfers": 11378608,
+      "offered_logical_tps": 63214.48888888889,
+      "original_acceptance": {
+        "canonical_lane_balance_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "capacity_load": {
+          "invalid_reasons": [],
+          "measured_canonical_chain_avg_tps": 60250.27932960894,
+          "measured_offered_avg_tps": 63214.48888888889,
+          "offered_above_canonical": true
+        },
+        "chain_capacity_invalid_reasons": [],
+        "chain_capacity_valid": true,
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "ingress_capacity_invalid_reasons": [],
+        "ingress_capacity_valid": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_valid": true,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "reproducible": false,
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions",
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "validator_cleanup_valid": true
+      },
+      "original_load_level_acceptance": {
+        "capacity_claim_allowed": true,
+        "classification": "capacity_eligible",
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity",
+        "valid": true
+      },
+      "raw_bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/client-connections-20260906-sweep2/03-100-connections",
+      "stop_reasons": [],
+      "summary_sha256": "f90b85081b05afce50fecce0799ab47667cf678941a9abf064b41f7bc36169c7",
+      "target_attainment": "not_applicable",
+      "target_tps": 0,
+      "wrapper_exit": 0,
+      "generator_final": {
+        "schema": "native-load-v2",
+        "final": true,
+        "phase": "finished",
+        "elapsed_s": 267.5419016980004,
+        "load_start_unix_s": 1788716011.3573596,
+        "measure_start_unix_s": 1788716071.3573596,
+        "measure_end_unix_s": 1788716251.3573596,
+        "load_start_unix_ms": 1788716011357,
+        "measure_start_unix_ms": 1788716071357,
+        "measure_end_unix_ms": 1788716251357,
+        "canonical_gen_utime_bucket_start_unix_s": 1788716072,
+        "canonical_gen_utime_bucket_end_unix_s": 1788716251,
+        "canonical_gen_utime_bucket_duration_s": 179,
+        "target_tps": 0,
+        "load_mode": "bounded_unpaced",
+        "rate_limit_enabled": false,
+        "target_tps_applicable": false,
+        "configured_connections": 100,
+        "configured_workers": 6,
+        "configured_signers": 6,
+        "configured_sources": 24576,
+        "adaptive_initial_cwnd": 32768,
+        "offered": 15458320,
+        "steady_offered": 11378608,
+        "offered_tps": 0,
+        "submitted": 15458320,
+        "steady_submitted": 11378608,
+        "repair_submitted": 8496,
+        "sign_operations": 966227,
+        "sign_tps": 0,
+        "sign_errors": 0,
+        "native_signed_runs_enabled": true,
+        "native_run_batching_requested": true,
+        "native_run_batching_coalesce_ms": 20,
+        "native_run_batching_enabled": true,
+        "native_signed_run_target_size": 16,
+        "native_payment_lane_depth": 2,
+        "native_signed_run_messages": 966145,
+        "native_signed_run_logical_transfers": 15458320,
+        "native_signed_run_submission_attempts": 1723698,
+        "native_signed_run_proof_resolutions": 966145,
+        "native_signed_run_max_size": 16,
+        "native_signed_run_normal_messages": 966145,
+        "native_signed_run_normal_logical_transfers": 15458320,
+        "native_signed_run_normal_quantum_violations": 0,
+        "native_signed_run_repair_messages": 0,
+        "native_signed_run_repair_logical_transfers": 0,
+        "native_signed_run_repair_tail_messages": 0,
+        "native_signed_run_repair_tail_logical_transfers": 0,
+        "native_signed_run_terminal_tail_messages": 0,
+        "native_signed_run_terminal_tail_logical_transfers": 0,
+        "native_signed_run_effective_quantum_min": 16,
+        "native_signed_run_effective_quantum_max": 16,
+        "native_signed_run_cwnd_floor_clamps": 0,
+        "native_signed_run_issue_holds": {
+          "active_capacity": 732598,
+          "source_capacity": 4594,
+          "canonical_capacity": 0,
+          "pacing_credit": 0,
+          "client_capacity": 464083,
+          "query_credit": 0
+        },
+        "wire_attempts": 1723698,
+        "wire_tps": 0,
+        "logical_submission_attempts": 27579168,
+        "logical_submission_attempt_tps": 0,
+        "wire_queries": 101974,
+        "wire_query_tps": 0,
+        "wire_batches": 101011,
+        "wire_batch_messages": 1722735,
+        "wire_batch_avg_size": 17.05492471117007,
+        "wire_batch_max_size": 42,
+        "wire_batch_source_run_target": 1,
+        "wire_batch_source_runs": 1722735,
+        "wire_batch_source_run_avg_size": 1,
+        "wire_batch_source_run_max_size": 1,
+        "submit_coalesce_ms": 20,
+        "submit_max_queries_per_client": 64,
+        "submit_coalesce_windows": 4001,
+        "submit_coalesce_blocked_pumps": 134918,
+        "submit_coalesce_deadline_dispatches": 65078,
+        "submit_coalesce_full_batch_dispatches": 3812,
+        "source_issue_bursts": 966145,
+        "source_issue_burst_messages": 966145,
+        "source_issue_burst_avg_size": 1,
+        "source_issue_burst_max_size": 1,
+        "source_issue_burst_logical_transfers": 15458320,
+        "source_issue_burst_logical_avg_size": 16,
+        "source_issue_burst_logical_max_size": 16,
+        "retries": 756940,
+        "retry_exhausted": 0,
+        "retry_horizon_exhausted": 0,
+        "retry_exhausted_sources": 0,
+        "canonical_state_lag_retry_exhausted": 0,
+        "retry_horizon_s": 90,
+        "canonical_state_lag_retry_backoff_ms": 250,
+        "canonical_state_lag_retry_max_backoff_ms": 2000,
+        "resigned": 82,
+        "repair_offered": 8496,
+        "mempool_accepted": 15458320,
+        "stored": 15458320,
+        "admitted": 15458320,
+        "mempool_accept_tps": 0,
+        "steady_mempool_accepted": 11378608,
+        "repair_accepted": 0,
+        "repeat_admission_successes": 8496,
+        "accepted_inferred": 0,
+        "duplicate_nonce_conflicts": 0,
+        "canonical_inferred_too_old": 0,
+        "proof_observed_resolved": 0,
+        "canonical_hash_matched": 15458320,
+        "canonical_hash_conflicts": 0,
+        "repair_suppressed": 0,
+        "measure_elapsed_s": 180,
+        "steady_offered_avg_tps": 63214.48888888889,
+        "offer_target_attainment_ratio": 1,
+        "offer_target_attained": true,
+        "canonical_overdrive_ratio": 1.0491982708173644,
+        "steady_mempool_accept_avg_tps": 63214.48888888889,
+        "rejected": 0,
+        "submission_errors_by_reason": {
+          "full": 0,
+          "rate_limit": 0,
+          "nonce": 0,
+          "expired": 82,
+          "balance": 0,
+          "invalid": 0,
+          "other": 0
+        },
+        "timeouts": 84,
+        "transport_errors": 0,
+        "server_errors": 756938,
+        "parse_errors": 0,
+        "task_errors_by_reason": {
+          "timeout": 84,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 0,
+          "not_ready": 756938,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "retries_by_reason": {
+          "timeout": 2,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 0,
+          "not_ready": 756938,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "nonce_gaps": 0,
+        "external_nonce_conflicts": 0,
+        "inflight": 0,
+        "admission_queries_inflight": 0,
+        "clients_at_query_cap": 0,
+        "clients_at_query_cap_sampled_peak": 0,
+        "query_credit_stalls": 0,
+        "max_per_client_admission_queries": 6,
+        "canonical_backlog": 0,
+        "canonical_backlog_sampled_peak": 898224,
+        "canonical_backpressure_paused": false,
+        "canonical_backpressure_events": 0,
+        "canonical_backpressure_s": 0,
+        "measure_canonical_backpressure_events": 0,
+        "measure_canonical_backpressure_s": 0,
+        "measure_canonical_backpressure_fraction": 0,
+        "source_backpressure_stalls": 0,
+        "head_blocked_ready_notifications": 174797,
+        "head_blocked_ready_scans": 0,
+        "ready_source_queue_pushes": 51702997,
+        "ready_source_queue_stale_entries": 0,
+        "ready_source_queue_excluded_rotations": 0,
+        "ready_source_queue_max_depth": 2268,
+        "max_source_canonical_backlog_configured": 128,
+        "max_source_canonical_backlog_effective": 128,
+        "sources_at_canonical_backlog_cap": 0,
+        "max_source_canonical_backlog_current": 0,
+        "max_active_tasks_per_source": 0,
+        "signing": 0,
+        "ready": 0,
+        "retry_wait": 0,
+        "active_tasks": 0,
+        "active_sources": 0,
+        "interrupted": false,
+        "drain_timed_out": false,
+        "congestion_window": 48886.36999577786,
+        "initial_congestion_window": 32768,
+        "adaptive_max_cwnd": 65536,
+        "effective_cwnd_cap": 65536,
+        "clients_at_cwnd_cap": 47,
+        "cwnd_cap_limited_acks": 921238,
+        "congestion_window_sampled_peak": 50663.2409740456,
+        "pacing_tokens": 0,
+        "rtt_ms": {
+          "p50": 500,
+          "p95": 1000,
+          "p99": 1000,
+          "max": 3873.1232850000197,
+          "samples": 27579168,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false
+        },
+        "sign_ms": {
+          "p50": 100,
+          "p95": 200,
+          "p99": 200,
+          "max": 302.0427739998013,
+          "samples": 966227,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false
+        },
+        "anchor_latency_sample_ms": {
+          "p50": 10000,
+          "p95": 20000,
+          "p99": 30000,
+          "max": 64876.83887200001,
+          "samples": 131152,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false,
+          "poll_resolution_s": 10
+        },
+        "anchor_scan_errors": 0,
+        "canonical_chain_blocks": 2449,
+        "canonical_follower_block_discovery_rate": 27.697621630055625,
+        "canonical_chain_native_blocks": 2447,
+        "canonical_chain_measure_native_blocks": 1678,
+        "canonical_chain_native_transfers": 15458320,
+        "canonical_chain_avg_native_transfers_per_block": 6317.253780138945,
+        "canonical_chain_measure_avg_native_transfers_per_block": 6427.175208581645,
+        "canonical_chain_max_native_transfers_per_block": 18432,
+        "canonical_chain_measure_max_native_transfers_per_block": 18432,
+        "canonical_chain_max_blocks_per_gen_utime_second": 16,
+        "canonical_chain_measure_max_blocks_per_gen_utime_second": 16,
+        "canonical_follower_discovery_tps": 3397.57491995349,
+        "canonical_chain_measure_transfers": 10784800,
+        "canonical_chain_measure_avg_tps": 60250.27932960894,
+        "canonical_chain_measure_peak_1s_tps": 129024,
+        "canonical_follower_errors": 0,
+        "canonical_follower_fatal_errors": 0,
+        "canonical_follower_transient_timeouts": 0,
+        "canonical_follower_transient_liteserver_timeouts": 0,
+        "canonical_follower_transient_cancellations": 0,
+        "canonical_follower_transient_not_ready": 0,
+        "canonical_follower_transient_retries": 0,
+        "canonical_follower_transient_recoveries": 0,
+        "canonical_follower_retry_exhausted": 0,
+        "canonical_follower_reconnects": 0,
+        "canonical_follower_retry_streak": 0,
+        "canonical_follower_retry_limit": 5,
+        "canonical_follower_retry_backoff_s": 0.25,
+        "canonical_follower_retry_max_backoff_s": 5,
+        "canonical_follower_query_timeout_s": 30,
+        "canonical_follower_reorgs": 0,
+        "canonical_follower_basechain_leaf_shards": 4,
+        "canonical_lane_balance": {
+          "enabled": true,
+          "required": true,
+          "valid": true,
+          "depth_valid": true,
+          "tolerance_valid": true,
+          "topology_complete": true,
+          "totals_reconcile": true,
+          "aggregate_reconciled": true,
+          "every_lane_active": true,
+          "within_tolerance": true,
+          "measured_transfers_sum_overflow": false,
+          "depth": 2,
+          "tolerance_bps": 500,
+          "minimum_allowed_equal_share_bps": 9500,
+          "maximum_allowed_equal_share_bps": 10500,
+          "expected_lanes": 4,
+          "observed_lanes": 4,
+          "measured_transfers": 10784800,
+          "aggregate_measured_transfers": 10784800,
+          "lane_measured_transfers_sum": 10784800,
+          "measured_transfers_sum": 10784800,
+          "min_measured_transfers": 2669952,
+          "max_measured_transfers": 2725536,
+          "min_equal_share_bps": 9902,
+          "max_equal_share_bps": 10108,
+          "measured_avg_tps": 60250.27932960894,
+          "lanes": [
+            {
+              "shard": "(0,2000000000000000)",
+              "depth": 2,
+              "tip": "(0,2000000000000000,2159):05EB17BFB124EC65810865948F7AFE0F43C841BC79E0ED90E60E510776E1B89D:157F674158FBFBEA04EBAF91BB4D21313216CF7965795EA3FF78ECED21F46B4E",
+              "tip_seqno": 2159,
+              "blocks": 610,
+              "native_blocks": 609,
+              "measured_native_blocks": 421,
+              "native_transfers": 3867664,
+              "measured_native_transfers": 2696208,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 15062.614525139665,
+              "measured_share": 0.2500007417847341,
+              "equal_share_bps": 10000,
+              "equal_share_ratio": 1
+            },
+            {
+              "shard": "(0,6000000000000000)",
+              "depth": 2,
+              "tip": "(0,6000000000000000,2160):037AFE8A12F34AEC37ED23F276011536EFEDEC9D2BDB5D4481D605B59B8C5F93:D4234100F21A438879948B8FC492A8EF92CE6576349A405334689789422D0FC3",
+              "tip_seqno": 2160,
+              "blocks": 607,
+              "native_blocks": 607,
+              "measured_native_blocks": 414,
+              "native_transfers": 3863968,
+              "measured_native_transfers": 2693104,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 15045.27374301676,
+              "measured_share": 0.24971292930791483,
+              "equal_share_bps": 9988,
+              "equal_share_ratio": 0.9988
+            },
+            {
+              "shard": "(0,a000000000000000)",
+              "depth": 2,
+              "tip": "(0,a000000000000000,2159):78EC30573D23F0C65FB4B99DF15F84A82E4A6E2986CC37AEE3F7952EC10C2A49:E0F805CA21BAC53CB397AF526E3EB1604D2823199E07732134C48F15CFB0607F",
+              "tip_seqno": 2159,
+              "blocks": 615,
+              "native_blocks": 614,
+              "measured_native_blocks": 420,
+              "native_transfers": 3863552,
+              "measured_native_transfers": 2669952,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 14915.932960893855,
+              "measured_share": 0.24756620428751577,
+              "equal_share_bps": 9902,
+              "equal_share_ratio": 0.9902
+            },
+            {
+              "shard": "(0,e000000000000000)",
+              "depth": 2,
+              "tip": "(0,e000000000000000,2162):4C4FDA71333BB614BE1532C8C5EC2703C3C09DEBC66CC2E76E16E1CBC3E3F4D6:313CE2998CDFD8FE49C4E6D1BD019CE47836109051A50D68930923198AE8333A",
+              "tip_seqno": 2162,
+              "blocks": 617,
+              "native_blocks": 617,
+              "measured_native_blocks": 423,
+              "native_transfers": 3863136,
+              "measured_native_transfers": 2725536,
+              "max_native_transfers_per_block": 18432,
+              "measured_max_native_transfers_per_block": 18432,
+              "measured_avg_tps": 15226.458100558659,
+              "measured_share": 0.25272012461983534,
+              "equal_share_bps": 10108,
+              "equal_share_ratio": 1.0108
+            }
+          ],
+          "invalid_reasons": []
+        },
+        "canonical_follower_lag_blocks": 0,
+        "canonical_follower_max_lag_blocks": 12,
+        "canonical_follower_enabled": true,
+        "canonical_follower_final_catchup_complete": true,
+        "canonical_result_valid": true,
+        "benchmark_result_valid": true,
+        "chain_correctness_valid": true,
+        "ingress_capacity_valid": true,
+        "chain_capacity_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_incomplete_reasons": [],
+        "ingress_capacity_invalid_reasons": [],
+        "chain_capacity_invalid_reasons": [],
+        "canonical_at_measure_end": 10632752,
+        "canonical_measured_offers_at_measure_end": 10632752,
+        "canonical_measured_offers_at_first_post_measure_checkpoint": 10632752,
+        "canonical_total_at_measure_end": 14712464,
+        "canonical_backlog_at_measure_end": 745856,
+        "canonical_measured_offer_cohort_observed_avg_tps": 59070.84444444445,
+        "canonical_after_drain": 11378608,
+        "canonical_measured_offers_after_drain": 11378608,
+        "canonical_total_after_drain": 15458320,
+        "canonical_total_backlog_after_drain": 0,
+        "canonical_backlog_after_drain": 0,
+        "drain_to_anchor_s": 27.54112846499993,
+        "finalized": null,
+        "finalized_semantics": "not_independently_observed",
+        "admission_semantics": "liteServer.sendMessage or ordered sendMessageBatch item status=1; not block inclusion",
+        "native_signed_run_semantics": "when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash",
+        "native_run_batching_semantics": "explicit default-off intact NTRN transport grouping; fresh source heads share one absolute submit-coalesce-ms deadline or release a physical/logical-credit-full batch early; retries, repairs and drain bypass waiting; no parent splitting or padding",
+        "native_signed_run_normal_quantum_semantics": "ordinary NTRN issuance uses one fixed logical quantum capped once by static worker, source, canonical-backlog, and the smallest per-client dispatch ceiling; transient residuals hold instead of shrinking it",
+        "native_signed_run_repair_tail_semantics": "only a freshly signed finite drain-repair suffix may contain fewer outputs than the normal quantum; admitted repairs reuse their original exact parent",
+        "native_signed_run_terminal_tail_semantics": "the sole ordinary short-run exception advances the exclusive uint64 nonce cursor exactly to UINT64_MAX without wrapping it",
+        "native_signed_run_cwnd_floor_clamps_semantics": "AIMD loss responses whose halved window was raised to one effective signed-run quantum",
+        "native_signed_run_issue_holds_semantics": "blocked normal issue opportunities; issue decisions use active, source, canonical, pacing, current free-client capacity, then admission-query credit precedence, while source also counts quantum-ineligible queue suppression",
+        "native_payment_lane_depth_semantics": "client-side source/destination address-prefix preflight depth; zero disables the check and consensus remains authoritative",
+        "wire_attempts_semantics": "physical external BOC bodies submitted to liteServer; an NTRN parent contributes one even when it authorizes multiple logical transfers",
+        "logical_submission_attempts_semantics": "logical transfers represented by every admission attempt, including retries; use alongside wire_attempts to measure NTRN message amortization",
+        "wire_batch_source_run_semantics": "physical envelopes in each source group of a sendMessageBatch; scalar groups use adjacent ascending nonces, NTRN groups contain one intact ready parent per distinct source, and source heads remain fair",
+        "source_issue_burst_semantics": "fair round-robin sources issue bounded contiguous work per turn; scalar mode counts one physical message per nonce, while signed-run mode constructs one physical NTRN parent carrying its reported logical transfer count",
+        "head_blocked_ready_notifications_semantics": "O(1) ready-state notifications for non-head same-source tasks; they do not enter or rotate through the dispatch queue",
+        "head_blocked_ready_scans_semantics": "deprecated compatibility counter; source-head scheduling avoids blocked-task scans and leaves this at zero",
+        "ready_source_queue_semantics": "at most one live dispatch entry per source; stale generation entries and bounded same-batch source exclusions are reported separately",
+        "sources_at_canonical_backlog_cap_semantics": "sources unable to issue one more scalar transfer, one full effective NTRN quantum, or any NTRN after the exclusive uint64 nonce cursor is exhausted",
+        "task_errors_by_reason_semantics": "one mutually exclusive typed classification per failed admission result; canonical_state_lag requires an explicit canonical-watermark snapshot-lag diagnostic",
+        "retries_by_reason_semantics": "retry schedules by the typed error that caused them; counts schedules, not distinct transfers",
+        "retry_exhausted_semantics": "source-head retry horizon expirations, not short max_retries backoff cycles; the source is quarantined because later native nonces cannot safely skip the unresolved head",
+        "canonical_state_lag_retry_semantics": "bounded exponential retry without AIMD decrease until retry_horizon_s; intended to span temporary admission snapshots older than the latest canonical watermark",
+        "latency_histogram_overflow_semantics": "overflow counts samples above overflow_lower_bound_ms; percentile_in_overflow flags a percentile that cannot be resolved within finite histogram buckets",
+        "benchmark_result_valid_semantics": "final proof-consistent run with complete measured and total cohorts, zero drain timeout, no fatal or retry-exhausted follower failure, and a final contiguous catch-up to the anchored shard tip",
+        "chain_correctness_valid_semantics": "proof-consistent canonical follower result; independent from whether generator or node scheduling limited the offered load",
+        "ingress_capacity_valid_semantics": "correct final run reaching at least 95 percent of the configured offered-TPS target, with at most one percent of the measured window stopped by canonical-backlog pressure and no generator retry exhaustion, signing failure, or transport failure",
+        "chain_capacity_valid_semantics": "correct final run with no observer-backpressure distortion or generator failure, where load either reached the configured target or exceeded proof-observed canonical throughput by at least five percent",
+        "canonical_follower_errors_semantics": "fatal proof, decoded-data, hash, or ancestry validity failures only; transient transport or liteserver-availability failures and exhausted retry streaks are reported separately",
+        "canonical_follower_transient_timeouts_semantics": "aggregate ADNL timeout (652) and liteserver query-deadline (-503) responses discarded and retried within the bounded follower retry budget from the last completely committed followed tip",
+        "canonical_follower_transient_liteserver_timeouts_semantics": "subset of canonical_follower_transient_timeouts received as liteServer.error code -503",
+        "canonical_follower_transient_not_ready_semantics": "liteserver availability responses (651) discarded and retried within the bounded follower retry budget from the last completely committed followed tip",
+        "canonical_follower_transient_retries_semantics": "retry polls actually dispatched after a forced follower-client reconnect",
+        "canonical_follower_transient_recoveries_semantics": "consecutive transient failure streaks ended by one complete proof-checked poll",
+        "canonical_follower_reconnects_semantics": "forced resets of the dedicated follower liteserver client after timeout, cancellation, or not-ready availability response",
+        "canonical_follower_retry_exhausted_semantics": "transient failure streaks exceeding canonical_follower_retry_limit; any exhausted streak invalidates the benchmark even if later polling recovers",
+        "canonical_follower_final_catchup_complete_semantics": "final poll atomically verified every basechain block back to the previously committed tip before workers were finalized",
+        "canonical_follower_basechain_leaf_shards_semantics": "number of proof-anchored basechain leaf tips followed as one fixed topology; changed topology is a correctness failure rather than an unobserved history transition",
+        "repeat_admission_successes_semantics": "status=1 responses for a nonce whose admission was already counted; excluded from mempool_accepted and TPS",
+        "duplicate_semantics": "different or concurrently unresolved message owns the nonce; conflict, never admission or canonical proof",
+        "accepted_inferred_semantics": "deprecated proof-resolution counter; do not use as TPS",
+        "canonical_inferred_semantics": "too-old response from node; not proof-observed",
+        "canonical_hash_match_semantics": "decoded canonical source, nonce, and external-cell hash exactly match a transfer signed by this run",
+        "canonical_chain_semantics": "verified basechain blocks referenced by ShardHashes proven against the configured liteserver masterchain tip",
+        "canonical_follower_discovery_tps_semantics": "observer catch-up throughput; not chain production TPS",
+        "canonical_gen_utime_bucket_semantics": "only integer gen_utime seconds whose complete [second,second+1) interval lies inside the millisecond measurement window; start is ceil(measure_start_ms/1000), end is floor(measure_end_ms/1000) and exclusive",
+        "canonical_chain_measure_peak_1s_tps_semantics": "maximum transfers assigned to one fully contained integer block gen_utime second; see canonical_gen_utime_bucket_* boundaries",
+        "canonical_chain_block_packing_semantics": "native transfer batch entries decoded from proof-checked canonical blocks; measured gen_utime metrics exclude partial boundary seconds",
+        "capacity_invalid_reasons_semantics": "stable machine-readable reason codes keep proof correctness, run completion, ingress capacity, and chain capacity failures distinct",
+        "canonical_backlog_sampled_peak_semantics": "maximum summed latest-worker backlog gauge at report samples; not an exact instantaneous peak",
+        "congestion_window_sampled_peak_semantics": "maximum summed latest-worker AIMD window gauge at report samples",
+        "submit_max_queries_per_client_semantics": "per persistent client bound on concurrent admission sendMessage or sendMessageBatch RPCs; zero preserves unlimited per-client query behavior and anchor scans do not consume this credit",
+        "clients_at_query_cap_semantics": "current number of persistent clients with all configured admission-query credit consumed; zero when the cap is disabled",
+        "clients_at_query_cap_sampled_peak_semantics": "maximum summed clients_at_query_cap gauge at report samples",
+        "query_credit_stalls_semantics": "dispatch passes with a queued ready-source entry and message capacity but no client admission-query credit; a persistent counter across transient cap saturation",
+        "max_per_client_admission_queries_semantics": "largest concurrently in-flight admission RPC count observed on any one persistent client; batch messages share one RPC credit",
+        "rtt_ms_semantics": "per-admission-message callback latency; each returned batch message contributes one sample rather than one sample per RPC",
+        "adaptive_max_cwnd_semantics": "global message-count ceiling distributed exactly across workers and persistent connections; zero retains the max_inflight hard-limit behavior",
+        "cwnd_cap_limited_acks_semantics": "successful admission items whose additive AIMD increase was clipped by the configured adaptive_max_cwnd ceiling",
+        "canonical_at_measure_end_semantics": "legacy cohort alias sampled by the first fully verified follower poll whose masterchain query began after offering ended",
+        "canonical_measured_offer_cohort_observed_avg_tps_semantics": "measured-offer cohort proven by the first post-measure checkpoint divided by offer-window duration; not chain-window production TPS",
+        "canonical_measured_offer_semantics": "measured-phase issued nonce cohort; distinct from chain progress during the measurement window",
+        "canonical_semantics": "proof_checked_against_configured_liteserver_tip_shard_history"
+      },
+      "raw_summary_sha256": "f90b85081b05afce50fecce0799ab47667cf678941a9abf064b41f7bc36169c7"
+    }
+  ],
+  "highest_observed": {
+    "connections": 50,
+    "canonical_logical_tps": 63433.117318435754,
+    "capacity_claim_allowed": false,
+    "environment": {
+      "BENCHMARK_IMAGES_PREBUILT": "1",
+      "BENCHMARK_RECREATE_GENESIS": "0",
+      "BENCHMARK_STRICT_GENESIS_REUSE": "1",
+      "BENCHMARK_STRICT_IMAGE_REUSE": "1",
+      "COMPOSE_PROFILES": "",
+      "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+      "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND": "32768",
+      "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+      "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+      "NATIVE_LOAD_AUTO_NONCE": "1",
+      "NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER": "1",
+      "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+      "NATIVE_LOAD_DURATION_SECONDS": "180",
+      "NATIVE_LOAD_GLOBAL_CONFIG": "/usr/share/data/global.config.json",
+      "NATIVE_LOAD_INFLIGHT": "262144",
+      "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+      "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+      "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+      "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+      "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+      "NATIVE_LOAD_RAMP_SECONDS": "0",
+      "NATIVE_LOAD_SIGNERS": "6",
+      "NATIVE_LOAD_SOURCES": "24576",
+      "NATIVE_LOAD_SOURCE_OFFSET": "0",
+      "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+      "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+      "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+      "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "1",
+      "NATIVE_LOAD_TARGET_TPS": "0",
+      "NATIVE_LOAD_WARMUP_SECONDS": "60",
+      "NATIVE_LOAD_WORKERS": "6",
+      "TON_BUILD_PULL": "false",
+      "TON_BRANCH": "cycle-clients-ed666c9a",
+      "NATIVE_LOAD_IMAGE": "mylocalton-native-load-generator:cycle-clients-ed666c9a-h2",
+      "TON_SIMPLEX_MAX_TPS": "1",
+      "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0",
+      "NATIVE_LOAD_CONNECTIONS": "50"
+    }
+  },
+  "highest_capacity_eligible": {
+    "connections": 100,
+    "canonical_logical_tps": 60250.27932960894,
+    "offered_margin_percent": 4.919827081736439,
+    "environment": {
+      "BENCHMARK_IMAGES_PREBUILT": "1",
+      "BENCHMARK_RECREATE_GENESIS": "0",
+      "BENCHMARK_STRICT_GENESIS_REUSE": "1",
+      "BENCHMARK_STRICT_IMAGE_REUSE": "1",
+      "COMPOSE_PROFILES": "",
+      "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+      "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND": "32768",
+      "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+      "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+      "NATIVE_LOAD_AUTO_NONCE": "1",
+      "NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER": "1",
+      "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+      "NATIVE_LOAD_DURATION_SECONDS": "180",
+      "NATIVE_LOAD_GLOBAL_CONFIG": "/usr/share/data/global.config.json",
+      "NATIVE_LOAD_INFLIGHT": "262144",
+      "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+      "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+      "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+      "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+      "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+      "NATIVE_LOAD_RAMP_SECONDS": "0",
+      "NATIVE_LOAD_SIGNERS": "6",
+      "NATIVE_LOAD_SOURCES": "24576",
+      "NATIVE_LOAD_SOURCE_OFFSET": "0",
+      "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+      "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+      "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+      "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "1",
+      "NATIVE_LOAD_TARGET_TPS": "0",
+      "NATIVE_LOAD_WARMUP_SECONDS": "60",
+      "NATIVE_LOAD_WORKERS": "6",
+      "TON_BUILD_PULL": "false",
+      "TON_BRANCH": "cycle-clients-ed666c9a",
+      "NATIVE_LOAD_IMAGE": "mylocalton-native-load-generator:cycle-clients-ed666c9a-h2",
+      "TON_SIMPLEX_MAX_TPS": "1",
+      "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0",
+      "NATIVE_LOAD_CONNECTIONS": "100"
+    }
+  },
+  "descriptive_differences": {
+    "50_vs_10_canonical_percent": 1.0068546963779346,
+    "100_vs_50_canonical_percent": -5.017628209644654,
+    "causal_or_repeatable_gain_claim": false
+  },
+  "validation": {
+    "generator_policy_tests_passed": 58,
+    "tonlib_offline_tests_passed": 27,
+    "native_status_regressions_rerun_passed": 12,
+    "sweep_tests_passed": 16,
+    "full_harness_reporting_suite_passed": true,
+    "live_api_passed": true,
+    "live_api_report_sha256": "9994b6ba87bfa3e17f81b40476141547a90db741160aa0d9809fe77c1577e721",
+    "total_canonical_integration_transfers_before_timing": 128
+  },
+  "setup_attempts": [
+    {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/client-connections-20260906/tonlib-integration-1.json",
+      "sha256": "48c2a3da17886dc810882d674f5b375c80535df052fb5799f1f6bfd88e8d2a00",
+      "result": "Test assertion incorrectly required nonzero rejection code; server correctly returned status0/code0/Wrong signature. All64 accepted logical transfers subsequently reconciled.",
+      "reconciliation_sha256": "1a1587cda756a7643a4b4c7376a54841d560edbd26f249ec8b344f84c7717af3"
+    },
+    {
+      "path": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/client-connections-20260906-sweep1",
+      "result": "Pre-load failure: capability parser did not accept actual <arg> help suffix; no generator records or offered load. Fixed in harness44ffe58; new generator-only image prebuilt before complete sweep."
+    }
+  ],
+  "final_state": {
+    "validator_unchanged_and_healthy": true,
+    "generator_stopped": true,
+    "generator_exit_code": 0,
+    "no_measurement_running": true
+  },
+  "limitations": [
+    "Sequential ascending sweep, not a randomized or statistically significant comparison.",
+    "Same local validator and liteserver; loopback/container networking does not establish remote-client capacity.",
+    "Query credits are per submission connection and therefore their aggregate limit grows with connection count.",
+    "All windows/backlogs are logical transfers; batches count intact physical signed parents (normally 16 transfers each).",
+    "Cache/database age and chain history advance between arms; canonical follower connections are additional.",
+    "Admission is a pending acknowledgment; capacity claims require every unchanged existing acceptance gate.",
+    "Fresh chain; historical50k runs used a different network/history and do not establish a code-level gain.",
+    "Session Stats source revision label is absent; separate source reproducibility remains false despite exact image/process reuse.",
+    "Offer/admission rates use180s; canonical rates use179 fully contained gen_utime seconds.",
+    "Whole-run RTT histograms are logical-child weighted; all parents have16 logical outputs, preserving this sweep comparison."
+  ]
+}

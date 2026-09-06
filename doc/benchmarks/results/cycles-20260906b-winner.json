@@ -11,10 +11,15 @@
       "evidence": "cycles-20260906b-batch-size-screen.json",
       "canonical_tps_descriptive_change_pct": -6.306329075533398,
       "reason": "Ingress target failed; control offered below canonical; no eligible capacity pair."
+    },
+    {
+      "candidate": "window24576_target60000",
+      "evidence": "cycles-20260906b-window24k-calibration.json",
+      "reason": "Load calibration only; achieved 92.66% target, below unchanged 95% gate."
     }
   ],
   "active_experiments": [
-    "window24k-calibration"
+    "measurement_instrumentation"
   ],
   "policy": {
     "native_staged_parallel_threshold": 512,

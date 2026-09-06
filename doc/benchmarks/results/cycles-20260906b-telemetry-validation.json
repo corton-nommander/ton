@@ -1,0 +1,28 @@
+{
+  "source_commits": [
+    "379f593c",
+    "185002f3",
+    "19e32eea"
+  ],
+  "harness_commit": "096aea7",
+  "build_exit_code": 0,
+  "ctest_exit_code": 0,
+  "focused_suites_passed": 4,
+  "reporting_regressions_exit_code": 0,
+  "shell_syntax_exit_code": 0,
+  "live_load_during_build_or_tests": false,
+  "logs": {
+    "build": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/telemetry-build.log",
+      "sha256": "2c3e3c219c2ef608af7a0dd07e60154f51283dd7b7a514a92035e8feff934e18"
+    },
+    "ctest": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/telemetry-ctest.log",
+      "sha256": "513dfb525920adeccb528deaaee892a5bc255d6ceb0c6875d6e67db944b1a6c3"
+    },
+    "harness": {
+      "path": "/tmp/cycles-20260906b-harness-tests.log",
+      "sha256": "256ac2dee616f766bc2b187abc28b6fbfbdbd3b805d4888117fdf14b01f472c3"
+    }
+  }
+}

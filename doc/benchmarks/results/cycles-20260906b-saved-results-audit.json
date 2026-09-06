@@ -1,0 +1,41 @@
+{
+  "scope": "read-only saved result/raw bundle audit; no builds or performance tests",
+  "checks": 188,
+  "failures": [],
+  "runs": [
+    {
+      "label": "batch64-a1",
+      "summary_sha256": "8ee66eebcbddd3507601cb863c56394ec877fc08342b1e019fa8cf8720f3eebc",
+      "offered_tps": 53572,
+      "canonical_tps": 53649.627118644064,
+      "target_attainment": 0.9740363636363636,
+      "classification": "load_validation",
+      "capacity_claim_allowed": false,
+      "strict_identity_verified": true
+    },
+    {
+      "label": "batch16-b1",
+      "summary_sha256": "72cb250a11506e30a64892e96f65acf21f56ee6a0fda558ae652ee225d4ecbba",
+      "offered_tps": 50587.73333333333,
+      "canonical_tps": 50266.30508474576,
+      "target_attainment": 0.9197769696969696,
+      "classification": "rejected_or_missing_gates",
+      "capacity_claim_allowed": false,
+      "strict_identity_verified": true
+    },
+    {
+      "label": "window24k-calibration",
+      "summary_sha256": "141a684bd73124b3bd6725d7e518e2c7e419f1f41466b7366d8e9f496a9fe99f",
+      "offered_tps": 55596.8,
+      "canonical_tps": 54884.8813559322,
+      "target_attainment": 0.9266133333333334,
+      "classification": "rejected_or_missing_gates",
+      "capacity_claim_allowed": false,
+      "strict_identity_verified": true
+    }
+  ],
+  "notes": [
+    "All three summaries explicitly report reproducibility=false because the auxiliary session-stats image lacks source-revision labels. Generator/validator identities and labeled revision match; this is not a failed strict reuse or capacity gate."
+  ],
+  "no_material_mismatch": true
+}

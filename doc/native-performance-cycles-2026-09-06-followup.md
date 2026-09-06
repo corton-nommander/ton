@@ -43,3 +43,36 @@ changed only the declared physical batch size. [Full comparison](benchmarks/resu
 A separate load calibration now tests target 60,000 with aggregate window 24,576
 and 64-parent batches on the same prebuilt image. It changes load parameters to
 seek sufficient offered load and cannot be counted as a code speedup.
+
+The larger-window calibration offered 55,596.80 TPS and produced 54,884.88
+canonical TPS (1.30% offered margin). It still failed the unchanged 95% ingress
+gate: 92.66% of its 60,000 target. Proof, cleanup, strict continuity and normal
+16-output density passed. This result is retained as load calibration, with no
+code-speedup or capacity promotion. [Saved evidence](benchmarks/results/cycles-20260906b-window24k-calibration.json).
+
+## Cycle 6: locate client and admission delays
+
+The next image adds measurement only: pacing credit discarded by the existing
+bucket cap, pump/update/alarm timing maxima, measured client-capacity wait
+worker-seconds, asynchronous worker timestamps, final admission retry causes and
+batch residence timings. It also splits the existing <=64 account histograms
+into <=8, 9–16, 17–32 and 33–64. No pacing, retry, checkpoint or worker policy
+changes belong to this image.
+
+Metric scopes are documented in [pacing diagnostics](native-load-pacing-diagnostics.md)
+and [admission diagnostics](native-admission-diagnostics.md). Harness commit
+`096aea7` captures additive full-run admission deltas and measured fine trie
+populations. Its reporting regressions and shell syntax checks passed; missing
+old-image counters remain explicitly unavailable. Source build and focused C++
+regressions precede image preparation and the next measurement.
+
+Instrumentation validation completed: the generator and validator built, and all
+four focused CTest suites passed (pacing policy, query accounting, native batch
+admission, and collation-stat serialization). Intermediate source commits are
+`379f593c`, `185002f3`, and `19e32eea`. An independent
+[188-check audit](benchmarks/results/cycles-20260906b-saved-results-audit.json)
+found no material mismatch in the three saved runs or winner decision.
+
+The first diagnostic measurement uses target 58,000, window 24,576, 64 physical
+parents per RPC and 20 ms coalescing. This is a declared load calibration; only
+subsequent matched runs at fixed settings can establish a code improvement.

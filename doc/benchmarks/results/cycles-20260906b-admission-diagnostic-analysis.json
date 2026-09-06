@@ -1,0 +1,375 @@
+{
+  "schema": "native-admission-diagnostics-analysis-v1",
+  "completed_bundle": true,
+  "run": {
+    "run_id": "20260906T121132Z",
+    "started_at": "2026-09-06T12:11:40Z",
+    "finished_at": "2026-09-06T12:15:58Z",
+    "elapsed_seconds": 258,
+    "benchmark_exit_code": 0,
+    "generator_container_exit_code": 0,
+    "interrupted": false,
+    "env_sha256": "4d63139638c35101a9d0ced0f95ff4d568d61643ea0eb2d99f13ad893d90be04",
+    "git_revision": "096aea7ff4d0ef2eb69732645fcc865e8320ebf8",
+    "git_dirty": false
+  },
+  "existing_acceptance": {
+    "chain_correctness_valid": true,
+    "correctness_invalid_reasons": [],
+    "run_complete": true,
+    "run_incomplete_reasons": [],
+    "ingress_capacity_valid": false,
+    "ingress_capacity_invalid_reasons": [
+      "offer_target_not_attained"
+    ],
+    "chain_capacity_valid": false,
+    "chain_capacity_invalid_reasons": [
+      "insufficient_load_over_canonical_throughput",
+      "offered_load_not_above_canonical_throughput"
+    ],
+    "capacity_load": {
+      "measured_offered_avg_tps": 55020,
+      "measured_canonical_chain_avg_tps": 55041.898305084746,
+      "offered_above_canonical": false,
+      "invalid_reasons": [
+        "offered_load_not_above_canonical_throughput"
+      ]
+    },
+    "native_signed_run_quantum_required": true,
+    "native_signed_run_quantum_valid": true,
+    "native_signed_run_quantum_telemetry_contract_valid": true,
+    "native_signed_run_quantum_benchmark_profile_valid": true,
+    "native_signed_run_quantum_invalid_reasons": [],
+    "canonical_lane_balance_required": true,
+    "canonical_lane_balance_valid": true,
+    "canonical_lane_balance_invalid_reasons": [],
+    "native_run_batching_required": true,
+    "native_run_batching_enforced": true,
+    "native_run_batching_valid": true,
+    "native_run_batching_invalid_reasons": [],
+    "strict_image_reuse_required": true,
+    "strict_image_reuse_valid": true,
+    "validator_cleanup_valid": true,
+    "validator_cleanup_invalid_reasons": [],
+    "reproducible": false,
+    "reproducibility_reasons": [
+      "one_or_more_images_lack_source_revision_label"
+    ],
+    "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+  },
+  "existing_load_level_acceptance": {
+    "valid": false,
+    "classification": "rejected",
+    "capacity_claim_allowed": false,
+    "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+  },
+  "diagnostic_valid": true,
+  "diagnostic_problems": [],
+  "availability": "complete",
+  "scope": "Full generator-run boundary deltas, including ramp/warmup/drain; not a measurement-only cohort.",
+  "server": {
+    "code651_total": 41945,
+    "causes_ranked": [
+      {
+        "cause": "snapshot_changed",
+        "count": 41945,
+        "share_of_server_code651": 1.0
+      },
+      {
+        "cause": "account_changed_verification",
+        "count": 0,
+        "share_of_server_code651": 0.0
+      },
+      {
+        "cause": "account_changed_insertion",
+        "count": 0,
+        "share_of_server_code651": 0.0
+      },
+      {
+        "cause": "account_changed_commit",
+        "count": 0,
+        "share_of_server_code651": 0.0
+      },
+      {
+        "cause": "canonical_watermark_lag",
+        "count": 0,
+        "share_of_server_code651": 0.0
+      },
+      {
+        "cause": "masterchain_unavailable",
+        "count": 0,
+        "share_of_server_code651": 0.0
+      },
+      {
+        "cause": "shard_unavailable",
+        "count": 0,
+        "share_of_server_code651": 0.0
+      },
+      {
+        "cause": "mempool_full",
+        "count": 0,
+        "share_of_server_code651": 0.0
+      },
+      {
+        "cause": "per_address_limit",
+        "count": 0,
+        "share_of_server_code651": 0.0
+      },
+      {
+        "cause": "other",
+        "count": 0,
+        "share_of_server_code651": 0.0
+      }
+    ],
+    "snapshot_changed_share_of_code651": 1.0,
+    "snapshot_changed_is_strict_majority": true,
+    "dominance_rule": "Strictly more than 50% of server code-651 outcomes; diagnostic only, not a performance or capacity claim.",
+    "completed_physical_input_statuses": 514952,
+    "code651_per_completed_physical_input_status": 0.08145419378893566,
+    "final_active_batches": 0,
+    "finished_batches_delta": 43154,
+    "aborted_batches_delta": 0,
+    "final_cumulative_aborted_batches": 0,
+    "timing_delta_means": {
+      "residence": {
+        "samples_delta": 43154,
+        "sum_s_delta": 2797.658803,
+        "mean_s": 0.0648296520137183
+      },
+      "aborted_residence": {
+        "samples_delta": 0,
+        "sum_s_delta": 0.0,
+        "mean_s": null
+      },
+      "shard_wait": {
+        "samples_delta": 11430,
+        "sum_s_delta": 314.337272,
+        "mean_s": 0.027501073665791773
+      },
+      "verification": {
+        "samples_delta": 43154,
+        "sum_s_delta": 2417.451551,
+        "mean_s": 0.056019176692774716
+      },
+      "snapshot_age": {
+        "samples_delta": 43154,
+        "sum_s_delta": 2759.703455,
+        "mean_s": 0.06395011945590212
+      },
+      "changed_snapshot_age": {
+        "samples_delta": 3548,
+        "sum_s_delta": 339.647662,
+        "mean_s": 0.09572932976324691
+      }
+    },
+    "lifetime_cumulative_maxima": {
+      "scope": "Validator lifetime at before/after full-run boundaries, including earlier work. Never subtract maxima; these are not this run's maxima.",
+      "timings": {
+        "residence": {
+          "before_s": 0.0,
+          "after_s": 0.685939
+        },
+        "aborted_residence": {
+          "before_s": 0.0,
+          "after_s": 0.0
+        },
+        "shard_wait": {
+          "before_s": 0.0,
+          "after_s": 0.224193
+        },
+        "verification": {
+          "before_s": 0.0,
+          "after_s": 0.425255
+        },
+        "snapshot_age": {
+          "before_s": 0.0,
+          "after_s": 0.684931
+        },
+        "changed_snapshot_age": {
+          "before_s": 0.0,
+          "after_s": 0.472227
+        }
+      },
+      "peak_active_batches_before": 0,
+      "peak_active_batches_after": 139
+    }
+  },
+  "generator": {
+    "native_signed_runs_enabled": true,
+    "native_run_batching_enabled": true,
+    "native_parent_attempts": 514952,
+    "wire_attempts": 514952,
+    "native_only_attempt_denominator_confirmed": true,
+    "retry_categories": {
+      "not_ready": {
+        "retries": 41945,
+        "task_errors": 41945,
+        "retries_per_native_parent_attempt": 0.08145419378893566
+      },
+      "canonical_state_lag": {
+        "retries": 0,
+        "task_errors": 0,
+        "retries_per_native_parent_attempt": 0.0
+      },
+      "full": {
+        "retries": 0,
+        "task_errors": 0,
+        "retries_per_native_parent_attempt": 0.0
+      },
+      "rate_limit": {
+        "retries": 0,
+        "task_errors": 0,
+        "retries_per_native_parent_attempt": 0.0
+      },
+      "timeout": {
+        "retries": 0,
+        "task_errors": 2,
+        "retries_per_native_parent_attempt": 0.0
+      },
+      "transport": {
+        "retries": 0,
+        "task_errors": 0,
+        "retries_per_native_parent_attempt": 0.0
+      },
+      "parse": {
+        "retries": 0,
+        "task_errors": 0,
+        "retries_per_native_parent_attempt": 0.0
+      }
+    },
+    "not_ready_retry_and_task_error_counts_equal": true
+  },
+  "cross_check": {
+    "sanity_problems": [],
+    "denominators_are_equated": false,
+    "server_minus_generator_not_ready_count": 0,
+    "count_difference_is_an_invariant": false,
+    "semantics": "Server rates divide completed physical pool input statuses. Generator rates divide its full-run native parent attempts, including retries/repairs. A server result need not reach the RPC caller; upstream query/cache rejections never reach the pool; code651 includes capacity/watermark categories that the generator can classify separately. Pool batches can include other traffic. Compare category counts as attribution evidence only; equal denominators or retry counts are not required."
+  },
+  "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-telemetry-b1",
+  "provenance": {
+    "benchmark-summary.json": {
+      "sha256": "a17eba8b5f1419da244edbeba944783b1c22401c6108c4b97feba6e21f3d8f10"
+    },
+    "validator-pool-summary.json": {
+      "sha256": "fee525d0053587f2ba125a8f1b21aaca71586e92a63669afcb098fe65e99f80a",
+      "matches_embedded_benchmark_component": true
+    },
+    "generator-summary.json": {
+      "sha256": "128c9952066ebcfdb8586d5965e82df906944b7bf5ea5db94b81f65ba61f6845",
+      "matches_embedded_benchmark_component": true
+    },
+    "analysis_helper": {
+      "path": "build/benchmarks/cycles-20260906b/summarize-admission-diagnostics.py",
+      "sha256": "4e893667a62c78e354de24bc0114f77d64a2136efb340533d963a5d9b76b7b81"
+    },
+    "raw_validator_stat_checks": {
+      "before": {
+        "artifact": "validator-stats-before.txt",
+        "sha256": "51c22462389725fa98ce5fe3354f5c4a5b8d074d2bbcdf1bddd77a80ac1436c5",
+        "exact_matching_fields": 33,
+        "duplicate_fields": false
+      },
+      "after": {
+        "artifact": "validator-stats-after.txt",
+        "sha256": "bcd8a49e283e29f90927373c04f902659ce7d15ffd0dce395bd2c8b2c2d91aeb",
+        "exact_matching_fields": 33,
+        "duplicate_fields": false
+      }
+    }
+  },
+  "strict_image_reuse": {
+    "required": true,
+    "valid": true,
+    "validator_before": {
+      "container_id": "b5d21fd9296fdfb357490c957198424572d1577d3fb9ba0070b246e22fdc23ac",
+      "image_id": "sha256:e7e98fd666dd3f963a6ad4739a3625035a3a59f4920a2f7abcb37eb0a16ef587",
+      "started_at": "2026-09-06T12:09:48.439085883Z",
+      "restart_count": 0,
+      "running": true,
+      "validator_process": {
+        "pid": 31,
+        "start_ticks": 10418885
+      }
+    },
+    "validator_after": {
+      "container_id": "b5d21fd9296fdfb357490c957198424572d1577d3fb9ba0070b246e22fdc23ac",
+      "image_id": "sha256:e7e98fd666dd3f963a6ad4739a3625035a3a59f4920a2f7abcb37eb0a16ef587",
+      "started_at": "2026-09-06T12:09:48.439085883Z",
+      "restart_count": 0,
+      "running": true,
+      "validator_process": {
+        "pid": 31,
+        "start_ticks": 10418885
+      }
+    },
+    "generator_image_before": "sha256:d7dab511a50bd9448357d48911285b1dbabf6d0c41a194f36d2c4f6acb7f7392",
+    "generator_image_after": "sha256:d7dab511a50bd9448357d48911285b1dbabf6d0c41a194f36d2c4f6acb7f7392",
+    "generator_container_before": "5a058b210c2052609512ed1cccddeb9be5c89c30dc22b4e0bc2433b84a4e9a2d",
+    "generator_container_after": "5a058b210c2052609512ed1cccddeb9be5c89c30dc22b4e0bc2433b84a4e9a2d",
+    "semantics": "prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"
+  },
+  "additional_admission_evidence": {
+    "completed_batches": 43154,
+    "completed_physical_statuses": 514952,
+    "accepted_physical_statuses": 473005,
+    "rejected_physical_statuses": 41947,
+    "rejected_statuses_other_than_code651": 2,
+    "changed_snapshot_batches": 3548,
+    "changed_snapshot_fraction_of_snapshot_checked_batches": 0.08221717569634333,
+    "non_changed_snapshot_mean_s": 0.0611032619552593,
+    "verification_wall_sum_fraction_of_batch_residence_wall_sum": 0.8640980624255202,
+    "shard_manager_waits": 11430,
+    "shard_manager_wait_errors": 0,
+    "scope": "All values cover the full generator-run capture. Verification is prechecks plus dispatch/group wall wait, not verifier CPU."
+  },
+  "related_pacing_evidence": {
+    "measure_target_logical_offers": 3480000,
+    "measure_actual_logical_offers": 3301200,
+    "measure_offer_deficit": 178800,
+    "measure_clipped_tokens": 178522.12851396817,
+    "measure_boundary_refilled_balance_change": 277.8714860316355,
+    "deficit_minus_clipping_minus_boundary_change": 1.9315393728902563e-10,
+    "measure_client_capacity_hold_worker_seconds": 58.41362564187148,
+    "measure_start_boundary_samples": 6,
+    "measure_end_boundary_samples": 6,
+    "scope": "Measured generator phase only, distinct from server full-run timing. Token accounting closes the offer deficit; it does not establish which server delay caused clipping."
+  },
+  "findings": [
+    "All 41,945 server code-651 outcomes were snapshot_changed (100%); every account-revision, watermark, unavailable-state, capacity and other cause was zero.",
+    "The full-run retry rate was 41,945 / 514,952 = 8.1454%. Server completed physical statuses and generator parent attempts happened to match here; the helper does not require denominator equality.",
+    "There were 43,154 completed batches, zero final active batches and zero aborted batches. The cumulative peak was 139 active batches; the before-snapshot peak and timing counters were zero.",
+    "Mean batch residence was 64.830 ms; prechecks/signature dispatch/group wait averaged 56.019 ms (86.41% of aggregate residence wall time). This is wall residence, not verifier CPU.",
+    "Snapshot changes affected 3,548 batches (8.2217% of snapshot checks). Their mean snapshot age was 95.729 ms, versus 63.950 ms overall and 61.103 ms in the remaining checks; longer residence is associated with invalidation, not proven causal.",
+    "The generator recorded two timeout task errors in addition to not_ready; server rejections above code-651 likewise numbered two, with no shard-manager await errors. No timeout retry was recorded.",
+    "Measured offered load was 55,020 TPS against a 58,000 target (94.8621%) and 55,041.898 canonical TPS. The run failed target attainment and actual offered-above-canonical gates; capacity claims remain disallowed."
+  ],
+  "limitations": [
+    "The cause counters locate the rejection guard; they do not reveal whether the new masterchain snapshot retained the same source shard top, config root, signing domain and destination locality. The safely avoidable fraction is unknown.",
+    "Server deltas include ramp, warmup and drain. They do not isolate the 60-second measured cohort or compare coalescing modes by themselves.",
+    "Stage means and maxima do not provide wait percentiles, scheduler queue depth, verifier CPU cost, or per-parent timing/cause correlation. Timings overlap and must not be added as independent CPU costs.",
+    "Maxima are retained as validator-lifetime before/after observations. They are not measurement-window maxima, even though the before counters in this run were zero.",
+    "The token deficit reconciles clipping plus boundary balance change, but these aggregates cannot assign clipped tokens specifically to snapshot retries versus other client-capacity delays.",
+    "Proof correctness, cleanup, and within-run strict image/daemon continuity passed. A single rejected capacity run does not establish a throughput improvement or repeatability."
+  ],
+  "recommended_next_bounded_action": {
+    "action": "Prepare a shadow-only exact snapshot-equivalence classifier for snapshot_changed outcomes before relaxing admission policy.",
+    "why": "Snapshot_changed is the only observed retry cause, but the current telemetry cannot separate harmless masterchain advances from relevant state/config changes.",
+    "conditions_to_count_separately": [
+      "The current masterchain strictly descends from the pinned masterchain, verified by exact block identity/ancestry.",
+      "The full config-dictionary root and signing-domain hash are unchanged, including native run mode and lane policy.",
+      "The currently referenced source shard has the same full BlockIdExt and verified state evidence as the pinned source view.",
+      "Every output remains local to that current source shard and satisfies the same lane policy.",
+      "The canonical account revision, nonce interval, balance reservation and existing deadline/expiry conditions remain valid at the final reservation decision."
+    ],
+    "first_scope": "Batch admission only, with counters at the existing rejection point; keep rejection behavior and cache-generation/global-watermark rules unchanged during classification.",
+    "tests_before_any_policy_candidate": [
+      "Accept the classifier only for an ancestor MC advance with equal config/domain/source top and valid destinations.",
+      "Reject equal-height different-hash/nonancestor MC, changed config/domain/mode/lane depth, splits/merges or destination remapping.",
+      "Reject changed source shard top even when nonce and balance match, and changed account revision or expired/deadline work.",
+      "Preserve mixed-source and duplicate-input ordered outcomes; any later await requires refreshing equivalence evidence before a new reservation."
+    ],
+    "measurement_protocol": "If a large equivalent subset is observed and focused tests pass, use prebuilt strict-reuse paired repetitions with unchanged target, credit, proof, cleanup and offered-above-canonical gates.",
+    "policy_or_performance_action_executed": false
+  }
+}

@@ -1,0 +1,273 @@
+{
+  "schema": "native-trie-population-analysis-v1",
+  "run": "cycles-20260906b-telemetry-b1",
+  "source_files": {
+    "validator_pipeline": {
+      "path": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-telemetry-b1/validator-pipeline-summary.json",
+      "sha256": "a0e9dbaf4c9d2b06db24e5ef7303f25e5e16ebc999ae0aa4b94c9905436fdd9a"
+    },
+    "benchmark_summary": {
+      "path": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-telemetry-b1/benchmark-summary.json",
+      "sha256": "a17eba8b5f1419da244edbeba944783b1c22401c6108c4b97feba6e21f3d8f10"
+    },
+    "lane_manifest": {
+      "path": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-telemetry-b1/native-payment-lanes.manifest",
+      "sha256": "a8c594819938d55106ff6473ab91a73f667b12a0b2b1165015ea282b7e1dde6b"
+    }
+  },
+  "measured_window_unix_s": {
+    "start": 1788696889.406,
+    "end": 1788696949.406
+  },
+  "semantics": "Measured collated-candidate execution/staging attempts, including any rolled-back work; accepted candidate work is not a canonical TPS denominator. Stage totals reconstructed as samples*average; nested stages must not be summed.",
+  "run_eligibility": {
+    "classification": "rejected",
+    "capacity_claim_allowed": false,
+    "offered_tps": 55020,
+    "canonical_tps": 55041.898305084746,
+    "ingress_invalid_reasons": [
+      "offer_target_not_attained"
+    ],
+    "chain_invalid_reasons": [
+      "insufficient_load_over_canonical_throughput",
+      "offered_load_not_above_canonical_throughput"
+    ],
+    "proof_correct": true,
+    "run_complete": true,
+    "quantum_valid": true,
+    "strict_image_reuse_valid": true,
+    "limitation": "Capacity-rejected diagnostic. Population and component costs remain descriptive; no TPS gain or instrumentation-overhead conclusion is inferred here."
+  },
+  "capture": {
+    "candidate_records": 431,
+    "accepted_candidate_transfers": 3290048,
+    "coarse_complete": true,
+    "coarse_reconciled": true,
+    "fine_complete": true,
+    "fine_reconciled": true
+  },
+  "microbatch_accounts": {
+    "total_attempts": 6960,
+    "bins": {
+      "le8": 71,
+      "9_16": 119,
+      "17_32": 310,
+      "33_64": 6460,
+      "65_80": 0,
+      "81_128": 0,
+      "129_256": 0,
+      "257_511": 0,
+      "512": 0,
+      "gt512": 0
+    },
+    "percent_of_attempts": {
+      "le8": 1.0201149425287357,
+      "9_16": 1.7097701149425288,
+      "17_32": 4.454022988505747,
+      "33_64": 92.816091954023,
+      "65_80": 0.0,
+      "81_128": 0.0,
+      "129_256": 0.0,
+      "257_511": 0.0,
+      "512": 0.0,
+      "gt512": 0.0
+    },
+    "legacy_le64": 6960,
+    "fine_sum_matches_legacy_le64": true
+  },
+  "staged_updates": {
+    "total_attempts": 2715,
+    "bins": {
+      "le8": 37,
+      "9_16": 73,
+      "17_32": 218,
+      "33_64": 812,
+      "65_80": 39,
+      "81_128": 119,
+      "129_256": 1417,
+      "257_511": 0,
+      "512": 0,
+      "gt512": 0
+    },
+    "percent_of_attempts": {
+      "le8": 1.3627992633517496,
+      "9_16": 2.6887661141804786,
+      "17_32": 8.029465930018416,
+      "33_64": 29.90791896869245,
+      "65_80": 1.4364640883977902,
+      "81_128": 4.383057090239411,
+      "129_256": 52.1915285451197,
+      "257_511": 0.0,
+      "512": 0.0,
+      "gt512": 0.0
+    },
+    "legacy_le64": 1140,
+    "fine_sum_matches_legacy_le64": true
+  },
+  "workers": {
+    "1": 2715,
+    "2": 0,
+    "4": 0,
+    "8": 0,
+    "other": 0
+  },
+  "checkpoint_context": {
+    "base_snapshots": 431,
+    "rebuilds": 2715,
+    "mean_rebuilds_per_candidate": 6.299303944315545,
+    "mean_update_records_per_rebuild": 151.47550644567218,
+    "rebuild_wall_us_per_rebuild": 1808.7863720073665,
+    "rebuild_fraction_of_native_commit": 0.3473639700283452
+  },
+  "stage_costs": {
+    "native_execute": {
+      "samples": 431,
+      "wall_seconds": 4.467364,
+      "wall_us_per_accepted_candidate_transfer": 1.3578415877215162
+    },
+    "native_commit": {
+      "samples": 431,
+      "wall_seconds": 14.137491,
+      "wall_us_per_accepted_candidate_transfer": 4.297047033964245
+    },
+    "native_staged_dict_set": {
+      "samples": 431,
+      "wall_seconds": 6.716273,
+      "wall_us_per_accepted_candidate_transfer": 2.0413905815355893
+    },
+    "native_stat_checkpoint_rebuild": {
+      "samples": 431,
+      "wall_seconds": 4.910855,
+      "wall_us_per_accepted_candidate_transfer": 1.4926393171163466
+    },
+    "create_state_merkle_update": {
+      "samples": 431,
+      "wall_seconds": 6.630729,
+      "wall_us_per_accepted_candidate_transfer": 2.0153897450736276
+    }
+  },
+  "topology": {
+    "manifest_depth": 2,
+    "manifest_records": 24576,
+    "per_lane": [
+      {
+        "lane": 0,
+        "unique_sources": 6144,
+        "unique_destinations": 6144,
+        "unique_native_endpoints": 12288
+      },
+      {
+        "lane": 1,
+        "unique_sources": 6144,
+        "unique_destinations": 6144,
+        "unique_native_endpoints": 12288
+      },
+      {
+        "lane": 2,
+        "unique_sources": 6144,
+        "unique_destinations": 6144,
+        "unique_native_endpoints": 12288
+      },
+      {
+        "lane": 3,
+        "unique_sources": 6144,
+        "unique_destinations": 6144,
+        "unique_native_endpoints": 12288
+      }
+    ],
+    "follow_up_base_accounts": 12288,
+    "interpretation": "12,288 is the verified count of distinct native source/destination endpoints per lane. It is a representative native-account scale, not a measured exact ShardAccounts root cardinality; system/other accounts may also exist."
+  },
+  "findings": [
+    "92.82% of microbatches contain 33\u201364 unique accounts; fine microbatch bins therefore must not be substituted for staged update populations.",
+    "52.19% of staged calls lie in 129\u2013256 updates and 29.91% in 33\u201364; only 12.08% are at most 32. Every staged call uses one worker and none reaches 257.",
+    "Checkpoint rebuild remains material at 1.4926 us per accepted candidate transfer and 34.74% of native_commit; staged trie costs 2.0414 us and final Merkle update costs 2.0154 us per accepted candidate transfer.",
+    "The histogram contains interval counts only. It does not reveal exact point frequencies inside 129\u2013256, joint checkpoint-count/topology distributions, or runtime concrete-DataCell eligibility. No production weights are assigned to benchmark points."
+  ],
+  "recommended_initial_screen": {
+    "decision": "Proceed with the already-prepared isolated proof candidate after root applies/builds and passes regressions.",
+    "driver_args": [
+      "--rounds",
+      "3",
+      "--iterations",
+      "3",
+      "--base-accounts",
+      "4096",
+      "--base-proof-leaves",
+      "64",
+      "--mode",
+      "all"
+    ],
+    "order": [
+      "a1",
+      "b1",
+      "b2",
+      "a2"
+    ],
+    "distributions": [
+      "uniform",
+      "prefix2"
+    ],
+    "modes": [
+      "plain_prior",
+      "tracked_prior",
+      "foreign_usage"
+    ],
+    "updates": [
+      8,
+      16,
+      32,
+      64,
+      80,
+      128,
+      192,
+      256,
+      512
+    ],
+    "checkpoints": [
+      1,
+      4,
+      16
+    ],
+    "expected_cases_per_arm": 162,
+    "expected_csv_rows_per_arm": 486,
+    "expected_timed_checkpoint_comparisons_per_arm": 10206,
+    "expected_timed_checkpoint_comparisons_all_arms": 40824,
+    "expected_warmup_checkpoint_comparisons_per_arm": 2268,
+    "runtime_scope": "Use 3x3 for the initial broad screen. Wall runtime is unmeasured; these operation counts are not a duration guarantee. All modes retain fallback-cost evidence; 512 remains boundary coverage rather than an observed production population.",
+    "comparison": "Per-case copy/proof/trial wall and CPU medians, paired A1/B1 and A2/B2 plus pooled same-case medians; preserve all cases and report worst foreign_usage regression."
+  },
+  "conditional_follow_up": {
+    "condition": "Only after exact accounting passes and the initial paired screen shows repeatable proof-component improvement across relevant tracked cases without a material fallback penalty.",
+    "driver_args": [
+      "--rounds",
+      "5",
+      "--iterations",
+      "5",
+      "--base-accounts",
+      "12288",
+      "--base-proof-leaves",
+      "64",
+      "--mode",
+      "tracked_prior"
+    ],
+    "order": [
+      "a1",
+      "b1",
+      "b2",
+      "a2"
+    ],
+    "expected_cases_per_arm": 54,
+    "expected_csv_rows_per_arm": 270,
+    "expected_timed_checkpoint_comparisons_per_arm": 9450,
+    "expected_timed_checkpoint_comparisons_all_arms": 37800,
+    "interpretation": "Use prefix2 cases as the lane-topology subset while retaining uniform results. Inspect 64/128/192/256 individually; do not split observed interval mass between benchmark points or infer a production-weighted gain. Keep 8/16/32/80/512 for coverage."
+  },
+  "policy": {
+    "parallel_update_threshold": 512,
+    "checkpoint_ingress_retention_enabled": false,
+    "tps_or_capacity_claim": false,
+    "production_weighting": null
+  },
+  "task_status": "Read-only extraction and this JSON artifact only. No crypto patch application, builds, tests, offline benchmark, Docker mutation, or live workload executed by this task."
+}

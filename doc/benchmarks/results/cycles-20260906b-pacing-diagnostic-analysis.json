@@ -1,0 +1,33 @@
+{
+  "source_result": "doc/benchmarks/results/cycles-20260906b-telemetry-b1.json",
+  "summary_sha256": "a17eba8b5f1419da244edbeba944783b1c22401c6108c4b97feba6e21f3d8f10",
+  "checks": {
+    "six_complete_workers": true,
+    "worker_offered_reconciles": true,
+    "worker_clipping_reconciles": true,
+    "boundary_samples_complete": true,
+    "token_conservation_within_one_millionth": true
+  },
+  "valid": true,
+  "target_credit": 3480000,
+  "measured_offered_transfers": 3301200,
+  "deficit": 178800,
+  "measured_clipped_credit": 178522.12851396817,
+  "boundary_refilled_balance_delta": 277.8714860316355,
+  "conservation_residual": 1.9315393728902563e-10,
+  "measured_client_wait_worker_seconds": 58.41362564187148,
+  "worker_observation_seconds": 360,
+  "measured_client_wait_worker_fraction": 0.16226007122742075,
+  "max_measured_pump_gap_seconds": 0.05296656100836117,
+  "max_measured_pump_duration_seconds": 0.007602368001244031,
+  "interpretation": "Discarded pacing credit plus endpoint balance accounts for the entire offered deficit. Observed client waits are substantial; maximum pump gap is below100ms. This establishes credit accounting, not whether a larger bucket/window improves canonical capacity.",
+  "next_calibration": {
+    "target_tps": 60000,
+    "adaptive_max_cwnd": 65536,
+    "adaptive_initial_rtt_seconds": 0.5,
+    "batch_size": 64,
+    "coalesce_ms": 20,
+    "same_prebuilt_image_and_process": true,
+    "pacing_policy_unchanged": true
+  }
+}

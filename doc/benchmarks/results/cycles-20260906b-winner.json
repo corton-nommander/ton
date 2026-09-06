@@ -16,10 +16,20 @@
       "candidate": "window24576_target60000",
       "evidence": "cycles-20260906b-window24k-calibration.json",
       "reason": "Load calibration only; achieved 92.66% target, below unchanged 95% gate."
+    },
+    {
+      "candidate": "instrumentation_overhead_pair",
+      "evidence": "cycles-20260906b-telemetry-screen.json",
+      "reason": "Both arms fail ingress and offered-margin gates; +29.48% raw TPS change is not a speedup."
+    },
+    {
+      "candidate": "window65536_initial_rtt_0.5_target60000",
+      "evidence": "cycles-20260906b-window64k-calibration.json",
+      "reason": "Achieved93.737% target below95%; no promotion."
     }
   ],
   "active_experiments": [
-    "measurement_instrumentation"
+    "proof_accounting_fast_path_offline"
   ],
   "policy": {
     "native_staged_parallel_threshold": 512,

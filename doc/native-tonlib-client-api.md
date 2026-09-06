@@ -75,7 +75,7 @@ For ordinary external inbound TON messages, the existing normalized hash behavio
 Valid envelopes with incorrect signatures, stale/future nonces or insufficient balances are submitted for the server's per-item decision. The response is `raw.sendMessageBatchResult` with one `raw.sendMessageResult` for each original input position:
 
 - `status`: 1 for admission success, 0 for rejection.
-- `code`, `message`: the server's rejection status; success uses 0 and an empty message.
+- `code`, `message`: the server's diagnostic fields; success uses 0 and an empty message. A rejected item can also have `code: 0` (for example, `status: 0, code: 0, message: "Wrong signature"`). Determine acceptance from `status`, never from `code` alone.
 - `hash`, `hash_norm`: the original envelope's exact and normalized hashes, including for rejected items. Native values are identical as described above.
 
 Duplicates retain their original positions. A batch can be partially accepted; it is not a transaction across all parents. An individual signed run retains its own atomic protocol semantics. A response with a mismatched count, missing status, unsupported status value or inconsistent success status fails the RPC result validation.

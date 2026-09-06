@@ -333,7 +333,7 @@ def run(args, report):
                     and unb64(result["hash_norm"]) == expected_hashes[index], "Batch item hash/order mismatch")
             if index != 1:
                 require(result["code"] == 0 and result["message"] == "", "Successful batch item contains an error")
-        require(statuses[1]["code"] != 0 and "signature" in statuses[1]["message"].lower(),
+        require(statuses[1]["status"] == 0 and "signature" in statuses[1]["message"].lower(),
                 "Invalid parent was not rejected for signature validation")
         finals = []
         for index, wallet in enumerate(wallets):

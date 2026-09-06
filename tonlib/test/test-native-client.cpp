@@ -315,6 +315,20 @@ TEST(TonlibNative, BatchResultsPreserveOrderedPartialFailures) {
   }
   ASSERT_EQ(results[1].code, -400);
   ASSERT_EQ(results[1].message, "bad signature");
+
+  // The liteserver may preserve a Status::Error with numeric code zero.
+  // Admission status alone distinguishes this rejection from success.
+  response.results_[1]->code_ = 0;
+  response.results_[1]->message_ = "Wrong signature";
+  auto zero_code = native::batch_results(prepared.hashes, response).move_as_ok();
+  ASSERT_TRUE(zero_code[0].accepted);
+  ASSERT_TRUE(!zero_code[1].accepted);
+  ASSERT_TRUE(zero_code[2].accepted);
+  ASSERT_EQ(zero_code[1].code, 0);
+  ASSERT_EQ(zero_code[1].message, "Wrong signature");
+  ASSERT_EQ(zero_code[1].hashes.hash, prepared.hashes[1].hash);
+  ASSERT_EQ(zero_code[1].hashes.hash_norm, prepared.hashes[1].hash_norm);
+
   response.results_[0]->status_ = 2;
   ASSERT_TRUE(native::batch_results(prepared.hashes, response).is_error());
   response.results_[0]->status_ = 1;

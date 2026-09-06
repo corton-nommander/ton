@@ -267,28 +267,99 @@ this experiment warrants longer paired repetitions. Repeated ready probing can
 add allocation/queue overhead; no performance gain is assumed.
 
 
-The coalescer integration passes all gates:53,541.6 offered TPS,53,486.37
+The coalescer integration passes all gates: 53,541.6 offered TPS, 53,486.37
 canonical TPS, zero outstanding logical/query credits and canonical backlog
-after drain. Exactly16 logical outputs per parent attempt and ordered query
-accounting reconcile. It batches99.801% of parents, averaging11.387 per batch;
-43,990 RPCs represent490,788 parent attempts, a91.037% reduction versus one RPC
-per parent. Measured generator CPU averages0.734 cores, validator8.652 cores.
-The offered margin is only0.103%, so this single screen does not prove maximum
+after drain. Exactly 16 logical outputs per parent attempt and ordered query
+accounting reconcile. It batches 99.801% of parents, averaging 11.387 per batch;
+43,990 RPCs represent 490,788 parent attempts, a 91.037% reduction versus one RPC
+per parent. Measured generator CPU averages 0.734 cores, validator 8.652 cores.
+The offered margin is only 0.103%, so this single screen does not prove maximum
 capacity or a TPS improvement. [Diagnostic evidence](benchmarks/results/cycles-20260906-coalesce-diagnostic-55k-cwnd12288.json)
 retains all counters and gates.
 
 The predeclared [180-second off/on/on/off protocol](benchmarks/results/cycles-20260906-coalescer-abba-plan.json)
-now proceeds at the same55k target/window/query limits. No images are rebuilt
+ran at the same 55k target/window/query limits. No images are rebuilt
 or validator restarted between arms. Every arm is preserved; capacity gain and
 repeatability require both eligible comparisons, not a selected best run.
 
 
-The first180-second pair is saved. Control offers51,907.64 TPS and produces
-52,291.49 canonical TPS; treatment offers53,817.69 and produces53,877.99.
-The descriptive canonical difference is+3.03%, with native execution cost
-1.38769 to1.31576 microseconds/accepted (-5.18%). Control fails target attainment
+The first 180-second pair is saved. Control offers 51,907.64 TPS and produces
+52,291.49 canonical TPS; treatment offers 53,817.69 and produces53,877.99.
+The descriptive canonical difference is +3.03%, with native execution cost
+1.38769 to 1.31576 microseconds/accepted (-5.18%). Control fails target attainment
 and both arms offer below their canonical window rates, so the pair cannot
 support a capacity improvement. Proof, run completion, quantum, transport-credit
 accounting, lane, cleanup and strict identity checks pass.
 [First long pair](benchmarks/results/cycles-20260906-coalescer-long-pair1.json)
 is retained before the reversed-order repetition; no best-run selection occurs.
+
+
+## Completed 180-second coalescer A/B/B/A series
+
+All four arms used identical prebuilt validator and generator images and the
+same validator container, daemon PID and kernel start ticks. Only the batching
+flag changed. Proof completion, 16-output quantum, lane balance, query/logical
+credit reconciliation, strict continuity and final cleanup pass in every arm.
+
+| Metric | Off A1 | On B1 | On B2 | Off A2 |
+| --- | ---: | ---: | ---: | ---: |
+| Offered TPS | 51,907.64 | 53,817.69 | 52,638.58 | 52,090.93 |
+| Canonical TPS | 52,291.49 | 53,877.99 | 51,638.97 | 51,035.53 |
+| Execute microseconds / accepted | 1.38769 | 1.31576 | 1.29674 | 1.43572 |
+| Generator mean CPU cores | 0.7833 | 0.7257 | 0.7131 | 0.7674 |
+| Queries saved per parent attempt | 0% | 91.36% | 91.29% | 0% |
+| Not-ready retry schedules / parent attempts | 1.40% | 7.78% | 7.82% | 1.30% |
+| Capacity classification | Rejected | Load validation | Eligible | Rejected |
+
+Both controls fail 95% offered target attainment. A1 and B1 also offer less
+than canonical production. Only B2 is individually capacity-eligible. The
+[complete aggregate](benchmarks/results/cycles-20260906-coalescer-long-abba.json)
+preserves all arms, both pairs, input hashes and eligibility decisions.
+
+Descriptive TPS changes are +3.03% and +1.18%; native execution cost changes
+are -5.18% and -9.68%. Neither pair supports a capacity gain, and the >=2% TPS
+or >=15% execution targets are not established. Generator sampled CPU per
+offered transfer falls 10.64% and 8.04%. Validator sampled CPU per canonical
+transfer changes +0.01% and +0.34%, so no overall validator CPU saving is claimed.
+CPU figures use Docker samples within the measured window, with interval and
+workload limitations; native execution timings use accepted candidate transfers.
+
+The transport grouping effect repeats: over 99.8% of parents are batched,
+averaging 11.77 and 11.68 parents per batch. The higher not-ready retry count
+is a material tradeoff. These are full-run retry schedules per physical attempt,
+not distinct failed transfers. Every offer eventually resolves by canonical
+proof. Overlapping admission snapshots are a possible explanation for the
+additional retries; typed counters alone do not establish the cause. Batching
+remains explicitly default-off.
+
+## Retained changes and remaining targets
+
+Four improvement/commit/test/evidence cycles are complete. Source-state reuse
+and serial sorted-update trie construction remain enabled. Independent trie
+microbenchmarks repeated 13.2–15.4% and 18.3–19.6% wall-time reductions at
+32 and 64 tracked depth-2 updates. The load generator has tested opt-in intact
+parent batching and bounded coalescing, with enforced requested/effective mode
+telemetry. The trie parallel threshold remains 512 and ingress checkpoint
+retention remains off.
+
+No repeatable eligible TPS gain is claimed. The original nonce-floor and
+heap-free-scratch changes were already in the user's committed baseline and
+are not isolated by these new cycles; their original numerical targets remain
+unvalidated here. All failed runs are retained. The session-stats image still
+lacks a source-revision label, so source reproducibility remains reported false
+even though strict image/process reuse passes.
+
+The remaining admission/pacing limit needs lost-token and held-time evidence
+before another capacity calibration. The [pacing audit](benchmarks/results/cycles-20260906-pacing-audit.md)
+finds no cohort or quantum-rounding error. A 100 ms token bucket silently clips
+excess credit, and admission latency tails exceed that interval; existing event
+counts cannot quantify clipping or time blocked. Targets and gates were not
+relaxed to compensate.
+
+
+Final local runtime is healthy on prebuilt image `cycle-coalesce-4caa92df`;
+the generator is stopped and no measurement remains running.
+[Final state](benchmarks/results/cycles-20260906-final-state.json) records code
+commits, harness revision, defaults and unproven targets. The final independent
+audit verified all four raw-summary hashes, actual environments, identities,
+proof cleanup, counter arithmetic, retry ratios and rejected capacity decisions.

@@ -1,9 +1,9 @@
 {
-  "label": "coalesce-a1-55k-180s",
-  "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906-coalesce-a1-55k-180s",
+  "label": "coalesce-a2-55k-180s",
+  "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906-coalesce-a2-55k-180s",
   "status": "rejected_or_missing_gates",
   "comparison_eligible": false,
-  "summary_sha256": "11ddb5de4d569ee12ea7cb3c8c1d68a4c1f26a531631ef2e54d5a2784a55fb00",
+  "summary_sha256": "72dce1d05f160e46c9e658518f32f7216341713c9730c1014ac75cc12465f9a2",
   "strict_identity": {
     "valid": true,
     "invalid_reasons": [],
@@ -34,8 +34,8 @@
       },
       "generator_image_before": "sha256:b152a246e082cd38bce4d1ec362a85db68e0535e435d9a801d0f2687784f4503",
       "generator_image_after": "sha256:b152a246e082cd38bce4d1ec362a85db68e0535e435d9a801d0f2687784f4503",
-      "generator_container_before": "17d1b132aa94acf65ddf2ef7dfb3fac450c8430ea4fe6f0ae01e618dec2b8bf2",
-      "generator_container_after": "17d1b132aa94acf65ddf2ef7dfb3fac450c8430ea4fe6f0ae01e618dec2b8bf2",
+      "generator_container_before": "88823293f5295545f6a537c27915bf4079776c5cbee6d9b19d804590cc6bcc00",
+      "generator_container_after": "88823293f5295545f6a537c27915bf4079776c5cbee6d9b19d804590cc6bcc00",
       "semantics": "prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"
     }
   },
@@ -50,16 +50,13 @@
     ],
     "chain_capacity_valid": false,
     "chain_capacity_invalid_reasons": [
-      "insufficient_load_over_canonical_throughput",
-      "offered_load_not_above_canonical_throughput"
+      "insufficient_load_over_canonical_throughput"
     ],
     "capacity_load": {
-      "measured_offered_avg_tps": 51907.64444444444,
-      "measured_canonical_chain_avg_tps": 52291.486033519555,
-      "offered_above_canonical": false,
-      "invalid_reasons": [
-        "offered_load_not_above_canonical_throughput"
-      ]
+      "measured_offered_avg_tps": 52090.933333333334,
+      "measured_canonical_chain_avg_tps": 51035.530726256984,
+      "offered_above_canonical": true,
+      "invalid_reasons": []
     },
     "native_signed_run_quantum_required": true,
     "native_signed_run_quantum_valid": true,
@@ -101,10 +98,10 @@
     "canonical_lane_balance": []
   },
   "run": {
-    "run_id": "20260905T235241Z",
-    "started_at": "2026-09-05T23:52:47Z",
-    "finished_at": "2026-09-05T23:58:59Z",
-    "elapsed_seconds": 372,
+    "run_id": "20260906T001557Z",
+    "started_at": "2026-09-06T00:16:03Z",
+    "finished_at": "2026-09-06T00:22:19Z",
+    "elapsed_seconds": 376,
     "benchmark_exit_code": 0,
     "generator_container_exit_code": 0,
     "interrupted": false,
@@ -198,15 +195,15 @@
     "ingress_capacity_valid"
   ],
   "rates": {
-    "offered_tps": 51907.64444444444,
-    "canonical_chain_tps": 52291.486033519555,
-    "proof_cohort_observed_tps": 50626.311111111114,
-    "observer_discovery_tps": 101056.35656040456,
-    "offered_over_canonical": 0.9926595777211406,
-    "offered_above_canonical": false,
+    "offered_tps": 52090.933333333334,
+    "canonical_chain_tps": 51035.530726256984,
+    "proof_cohort_observed_tps": 50108.444444444445,
+    "observer_discovery_tps": 77599.3759766654,
+    "offered_over_canonical": 1.020679761571155,
+    "offered_above_canonical": true,
     "measure_seconds": 180,
     "canonical_gen_utime_bucket_seconds": 179,
-    "canonical_chain_transfers": 9360176,
+    "canonical_chain_transfers": 9135360,
     "semantics": "Canonical chain TPS is proof-checked production by gen_utime; proof-cohort TPS is a measured-offer cohort/checkpoint rate; observer discovery TPS is catch-up, never capacity."
   },
   "signed_density": {
@@ -217,13 +214,13 @@
     "effective_max": 16,
     "all_run_telemetry": {
       "native_signed_run_target_size": 16,
-      "native_signed_run_messages": 838234,
-      "native_signed_run_logical_transfers": 13411744,
-      "native_signed_run_submission_attempts": 850130,
-      "native_signed_run_proof_resolutions": 838234,
+      "native_signed_run_messages": 820635,
+      "native_signed_run_logical_transfers": 13130160,
+      "native_signed_run_submission_attempts": 831474,
+      "native_signed_run_proof_resolutions": 820635,
       "native_signed_run_max_size": 16,
-      "native_signed_run_normal_messages": 838234,
-      "native_signed_run_normal_logical_transfers": 13411744,
+      "native_signed_run_normal_messages": 820635,
+      "native_signed_run_normal_logical_transfers": 13130160,
       "native_signed_run_normal_quantum_violations": 0,
       "native_signed_run_repair_messages": 0,
       "native_signed_run_repair_logical_transfers": 0,
@@ -238,8 +235,8 @@
         "active_capacity": 0,
         "source_capacity": 0,
         "canonical_capacity": 0,
-        "pacing_credit": 1464102,
-        "client_capacity": 289049,
+        "pacing_credit": 1403504,
+        "client_capacity": 318579,
         "query_credit": 0
       },
       "native_signed_run_semantics": "when enabled, one NTRN parent authorizes 1..16 contiguous nonces; capacity and retry accounting use child logical transfers, the parent BOC is never split, and proof resolution waits for every child to match its parent hash",
@@ -261,159 +258,159 @@
   },
   "measured_raw_counter_capture": {
     "available": true,
-    "rows": 1272,
+    "rows": 1311,
     "malformed_lines": 0,
     "counters": {
       "native_checkpoint_ingress_retentions": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_deferral_state_nonce_mismatch_entries": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 0.0
+        "rows_with_field": 1311,
+        "sum": 26224.0
       },
       "native_execute": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 13.026767999999997
+        "rows_with_field": 1311,
+        "sum": 13.610219999999975
       },
       "native_microbatch_accepted": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 9387376.0
+        "rows_with_field": 1311,
+        "sum": 9479728.0
       },
       "native_microbatch_accounts_129_256": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_microbatch_accounts_257_511": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_microbatch_accounts_512": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_microbatch_accounts_65_80": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_microbatch_accounts_81_128": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_microbatch_accounts_gt512": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_microbatch_accounts_le64": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 20832.0
+        "rows_with_field": 1311,
+        "sum": 21686.0
       },
       "native_microbatch_input": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 9387376.0
+        "rows_with_field": 1311,
+        "sum": 9505952.0
       },
       "native_registered_run_reuses": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 586711.0
+        "rows_with_field": 1311,
+        "sum": 594122.0
       },
       "native_staged_dict_set": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 19.637507000000003
+        "rows_with_field": 1311,
+        "sum": 20.69746000000001
       },
       "native_staged_updates_129_256": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 3434.0
+        "rows_with_field": 1311,
+        "sum": 3333.0
       },
       "native_staged_updates_257_511": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_staged_updates_512": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_staged_updates_65_80": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 209.0
+        "rows_with_field": 1311,
+        "sum": 218.0
       },
       "native_staged_updates_81_128": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 615.0
+        "rows_with_field": 1311,
+        "sum": 708.0
       },
       "native_staged_updates_gt512": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_staged_updates_le64": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 5755.0
+        "rows_with_field": 1311,
+        "sum": 6809.0
       },
       "native_staged_workers_1": {
         "capture_complete": true,
-        "rows_with_field": 1272,
-        "sum": 10013.0
+        "rows_with_field": 1311,
+        "sum": 11068.0
       },
       "native_staged_workers_2": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_staged_workers_4": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_staged_workers_8": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       },
       "native_staged_workers_other": {
         "capture_complete": true,
-        "rows_with_field": 1272,
+        "rows_with_field": 1311,
         "sum": 0.0
       }
     }
   },
   "measured_native": {
-    "candidate_blocks": 1272,
-    "accepted_transfers": 9387376.0,
-    "native_execute_seconds": 13.026767999999997,
-    "native_execute_us_per_accepted": 1.3876900211518104,
-    "nonce_mismatch_entries": 0.0,
-    "nonce_mismatches_per_million_accepted": 0.0,
-    "registered_run_reuses": 586711.0,
-    "registered_reuses_per_million_accepted": 62500.0,
-    "native_staged_dict_seconds": 19.637507000000003,
+    "candidate_blocks": 1311,
+    "accepted_transfers": 9479728.0,
+    "native_execute_seconds": 13.610219999999975,
+    "native_execute_us_per_accepted": 1.4357184087982247,
+    "nonce_mismatch_entries": 26224.0,
+    "nonce_mismatches_per_million_accepted": 2766.3240970627007,
+    "registered_run_reuses": 594122.0,
+    "registered_reuses_per_million_accepted": 62672.89525606642,
+    "native_staged_dict_seconds": 20.69746000000001,
     "checkpoint_ingress_retentions": 0.0,
     "staged_worker_histograms": {
       "semantics": "counts of execution/staged-trie attempts including rollback; not committed TPS",
-      "records_total": 1272,
+      "records_total": 1311,
       "capture_complete": true,
       "reconciled": true,
       "microbatch_accounts": {
-        "le64": 20832,
+        "le64": 21686,
         "65_80": 0,
         "81_128": 0,
         "129_256": 0,
@@ -422,16 +419,16 @@
         "gt512": 0
       },
       "staged_updates": {
-        "le64": 5755,
-        "65_80": 209,
-        "81_128": 615,
-        "129_256": 3434,
+        "le64": 6809,
+        "65_80": 218,
+        "81_128": 708,
+        "129_256": 3333,
         "257_511": 0,
         "512": 0,
         "gt512": 0
       },
       "staged_workers": {
-        "1": 10013,
+        "1": 11068,
         "2": 0,
         "4": 0,
         "8": 0,
@@ -442,10 +439,10 @@
     "deferrals": {
       "semantics": "native delayed-entry reasons summed across collated candidates; every _entries counter counts logical transfers and the 19 reasons must partition native_microbatch_delayed; missing or mixed source telemetry is reported as unavailable",
       "capture_complete": true,
-      "records_total": 1272,
-      "records_with_telemetry": 1272,
-      "native_microbatch_delayed": 0,
-      "reason_entries_sum": 0,
+      "records_total": 1311,
+      "records_with_telemetry": 1311,
+      "native_microbatch_delayed": 26224,
+      "reason_entries_sum": 26224,
       "delayed_accounting_error": 0,
       "native_checkpoint_rollback_entries": 0,
       "checkpoint_reason_entries_sum": 0,
@@ -467,7 +464,7 @@
       "native_deferral_account_balance_unrepresentable_entries": 0,
       "native_deferral_state_invalid_fields_entries": 0,
       "native_deferral_state_invalid_signature_entries": 0,
-      "native_deferral_state_nonce_mismatch_entries": 0,
+      "native_deferral_state_nonce_mismatch_entries": 26224,
       "native_deferral_state_nonce_overflow_entries": 0,
       "native_deferral_state_invalid_source_entries": 0,
       "native_deferral_state_invalid_destination_entries": 0,
@@ -476,8 +473,8 @@
       "prebatch": {
         "semantics": "prebatch requeues summed across collated candidates and excluded from native_microbatch_delayed; _entries count decoded logical transfers, while _works count physical input envelopes and are not additive with entries",
         "capture_complete": true,
-        "records_total": 1272,
-        "records_with_telemetry": 1272,
+        "records_total": 1311,
+        "records_with_telemetry": 1311,
         "native_prebatch_protocol_capacity_requeue_works": 0,
         "native_prebatch_protocol_capacity_requeue_entries": 0,
         "native_prebatch_carryover_requeue_works": 0,
@@ -488,23 +485,23 @@
     "checkpoint_coalescing": {
       "semantics": "native exact-checkpoint coalescing counters summed across collated candidates; group maxima are maxima across candidates; missing or mixed source telemetry is reported as unavailable",
       "capture_complete": true,
-      "records_total": 1272,
-      "records_with_telemetry": 1272,
-      "native_checkpoint_groups": 10013,
-      "native_checkpoint_group_entries": 9387376,
-      "native_checkpoint_group_fragments": 20832,
+      "records_total": 1311,
+      "records_with_telemetry": 1311,
+      "native_checkpoint_groups": 11068,
+      "native_checkpoint_group_entries": 9479728,
+      "native_checkpoint_group_fragments": 21686,
       "native_checkpoint_group_max_entries": 2048,
       "native_checkpoint_group_max_fragments": 4,
-      "native_checkpoint_average_entries_per_group": 937.5188255268151,
-      "native_checkpoint_average_fragments_per_group": 2.0804953560371517,
-      "native_checkpoint_flush_capacity": 3127,
-      "native_checkpoint_flush_ingress": 6864,
+      "native_checkpoint_average_entries_per_group": 856.4987350921575,
+      "native_checkpoint_average_fragments_per_group": 1.9593422479219371,
+      "native_checkpoint_flush_capacity": 3025,
+      "native_checkpoint_flush_ingress": 8025,
       "native_checkpoint_flush_deadline": 0,
       "native_checkpoint_flush_fanout": 0,
       "native_checkpoint_flush_headroom": 0,
-      "native_checkpoint_flush_latency": 22,
-      "native_checkpoint_refill_continuations": 1204,
-      "native_checkpoint_refill_expirations": 1238,
+      "native_checkpoint_flush_latency": 18,
+      "native_checkpoint_refill_continuations": 1414,
+      "native_checkpoint_refill_expirations": 1370,
       "native_checkpoint_ingress_retentions": 0,
       "native_checkpoint_ingress_retention_max_dirty_accounts": 0,
       "native_checkpoint_rollbacks": 0,
@@ -512,15 +509,15 @@
     },
     "stage_distributions": {
       "preinit": {
-        "samples": 1272,
-        "avg": 0.00015718632075471665,
-        "p50": 0.000152,
-        "p95": 0.000232,
-        "p99": 0.000284,
-        "max": 0.000486
+        "samples": 1311,
+        "avg": 0.00016241037376048842,
+        "p50": 0.000157,
+        "p95": 0.000234,
+        "p99": 0.000292,
+        "max": 0.001197
       },
       "native_prepare": {
-        "samples": 1272,
+        "samples": 1311,
         "avg": 0,
         "p50": 0.0,
         "p95": 0.0,
@@ -528,79 +525,79 @@
         "max": 0.0
       },
       "native_execute": {
-        "samples": 1272,
-        "avg": 0.010241169811320762,
-        "p50": 0.008796,
-        "p95": 0.024326,
-        "p99": 0.02904,
-        "max": 0.136345
+        "samples": 1311,
+        "avg": 0.010381556064073214,
+        "p50": 0.008312,
+        "p95": 0.02539,
+        "p99": 0.030197,
+        "max": 0.129056
       },
       "native_commit": {
-        "samples": 1272,
-        "avg": 0.0360460141509434,
-        "p50": 0.02672,
-        "p95": 0.109224,
-        "p99": 0.147017,
-        "max": 0.182712
+        "samples": 1311,
+        "avg": 0.038606207475209806,
+        "p50": 0.026757,
+        "p95": 0.113997,
+        "p99": 0.164167,
+        "max": 0.457034
       },
       "native_account_cell_build": {
-        "samples": 1272,
-        "avg": 0.000522255503144654,
-        "p50": 0.000437,
-        "p95": 0.001247,
-        "p99": 0.001432,
-        "max": 0.009034
+        "samples": 1311,
+        "avg": 0.000522312738367658,
+        "p50": 0.000416,
+        "p95": 0.001287,
+        "p99": 0.001511,
+        "max": 0.005252
       },
       "native_staged_dict_set": {
-        "samples": 1272,
-        "avg": 0.015438291666666694,
-        "p50": 0.013889,
-        "p95": 0.036278,
-        "p99": 0.042822,
-        "max": 0.075823
+        "samples": 1311,
+        "avg": 0.01578753623188407,
+        "p50": 0.013414,
+        "p95": 0.037238,
+        "p99": 0.044054,
+        "max": 0.358058
       },
       "native_stat_checkpoint_rebuild": {
-        "samples": 1272,
-        "avg": 0.014800226415094342,
-        "p50": 0.008096,
-        "p95": 0.059132,
-        "p99": 0.08695,
-        "max": 0.117999
+        "samples": 1311,
+        "avg": 0.016930471395881014,
+        "p50": 0.008319,
+        "p95": 0.065168,
+        "p99": 0.104905,
+        "max": 0.212301
       },
       "native_proof_preflight": {
-        "samples": 1272,
-        "avg": 6.20911949685534e-06,
+        "samples": 1311,
+        "avg": 6.654462242562924e-06,
         "p50": 5e-06,
-        "p95": 1.9e-05,
-        "p99": 2.9e-05,
-        "max": 4e-05
+        "p95": 2.1e-05,
+        "p99": 3.2e-05,
+        "max": 5.3e-05
       },
       "native_state_install": {
-        "samples": 1272,
-        "avg": 0.0011244174528301871,
-        "p50": 0.000904,
-        "p95": 0.002722,
-        "p99": 0.003407,
-        "max": 0.012488
+        "samples": 1311,
+        "avg": 0.0011321754385964914,
+        "p50": 0.000896,
+        "p95": 0.002811,
+        "p99": 0.003411,
+        "max": 0.006267
       },
       "native_canonical_dict_install": {
-        "samples": 1272,
-        "avg": 2.8867924528301916e-06,
+        "samples": 1311,
+        "avg": 2.990083905415712e-06,
         "p50": 3e-06,
         "p95": 5e-06,
-        "p99": 8e-06,
-        "max": 2e-05
+        "p99": 7e-06,
+        "max": 2.3e-05
       },
       "native_batch_serialize": {
-        "samples": 1272,
-        "avg": 0.005166109276729561,
-        "p50": 0.003607,
-        "p95": 0.013529,
-        "p99": 0.01966,
-        "max": 0.10741
+        "samples": 1311,
+        "avg": 0.005002469107551487,
+        "p50": 0.003594,
+        "p95": 0.013827,
+        "p99": 0.017232,
+        "max": 0.029367
       },
       "final_storage_stat": {
-        "samples": 1272,
+        "samples": 1311,
         "avg": 0,
         "p50": 0.0,
         "p95": 0.0,
@@ -608,52 +605,52 @@
         "max": 0.0
       },
       "combine_account_transactions": {
-        "samples": 1272,
-        "avg": 0.000575842767295598,
-        "p50": 0.000424,
-        "p95": 0.001506,
-        "p99": 0.001943,
-        "max": 0.005375
+        "samples": 1311,
+        "avg": 0.0005761594202898552,
+        "p50": 0.000421,
+        "p95": 0.001491,
+        "p99": 0.001942,
+        "max": 0.00831
       },
       "create_shard_state": {
-        "samples": 1272,
-        "avg": 0.014663647798742154,
-        "p50": 0.013058,
-        "p95": 0.031277,
-        "p99": 0.039017,
-        "max": 0.0502
+        "samples": 1311,
+        "avg": 0.014748580472921444,
+        "p50": 0.013518,
+        "p95": 0.03234,
+        "p99": 0.036951,
+        "max": 0.069904
       },
       "create_state_merkle_update": {
-        "samples": 1272,
-        "avg": 0.014619828616352212,
-        "p50": 0.013011,
-        "p95": 0.03123,
-        "p99": 0.038968,
-        "max": 0.050145
+        "samples": 1311,
+        "avg": 0.014703156369183838,
+        "p50": 0.013481,
+        "p95": 0.032292,
+        "p99": 0.036865,
+        "max": 0.069849
       },
       "create_block": {
-        "samples": 1272,
-        "avg": 0.00815142610062892,
-        "p50": 0.006422,
-        "p95": 0.019719,
-        "p99": 0.026042,
-        "max": 0.108499
+        "samples": 1311,
+        "avg": 0.008037451563691842,
+        "p50": 0.006472,
+        "p95": 0.019994,
+        "p99": 0.024883,
+        "max": 0.035341
       },
       "create_collated_data": {
-        "samples": 1272,
-        "avg": 4.553459119496826e-06,
-        "p50": 4e-06,
-        "p95": 8e-06,
-        "p99": 1.3e-05,
-        "max": 2.5e-05
+        "samples": 1311,
+        "avg": 4.7818459191456625e-06,
+        "p50": 5e-06,
+        "p95": 9e-06,
+        "p99": 1.6e-05,
+        "max": 2.4e-05
       },
       "create_block_candidate": {
-        "samples": 1272,
-        "avg": 0.007523147798742135,
-        "p50": 0.004965,
-        "p95": 0.020736,
-        "p99": 0.026746,
-        "max": 0.03189
+        "samples": 1311,
+        "avg": 0.007782427917620142,
+        "p50": 0.005072,
+        "p95": 0.021706,
+        "p99": 0.026183,
+        "max": 0.067113
       }
     },
     "raw_rows_match_summary": true,
@@ -664,42 +661,42 @@
     "monotonic_shared_fields_valid": true,
     "invalid_or_missing_delta_fields": [],
     "delta": {
-      "installs": 2844,
-      "masterchain_installs": 750,
-      "scanned": 1824987,
-      "selected": 876426,
-      "selected_logical": 14022816,
-      "direct_link_hits": 1824987,
+      "installs": 2677,
+      "masterchain_installs": 720,
+      "scanned": 1920789,
+      "selected": 875397,
+      "selected_logical": 14006352,
+      "direct_link_hits": 1920789,
       "direct_link_fallbacks": 0,
-      "active": 1824947,
-      "inactive": 40,
+      "active": 1920789,
+      "inactive": 0,
       "excluded": 0,
       "expired": 0,
       "delivered_skips": 0,
-      "ready_sources": 939871,
-      "head_gaps": 5119592,
+      "ready_sources": 1016864,
+      "head_gaps": 4857866,
       "head_missing_watermark": 0,
-      "head_missing_nonce": 5119592,
+      "head_missing_nonce": 4857866,
       "head_uncommitted": 0,
       "head_missing_hash_index": 0,
       "head_missing_priority": 0,
       "head_missing_message": 0,
       "head_nonce_mismatch": 0,
-      "speculative_exhausted": 876452,
-      "runs": 876426,
-      "run_messages": 14022816,
-      "delayed": 586,
-      "reactivated": 470,
-      "reactivation_wakes": 1,
-      "scheduler_builds": 2094,
-      "source_scans": 5722546,
-      "source_refreshes": 455546,
-      "source_probes": 7821031,
-      "stale_ready_tokens": 106
+      "speculative_exhausted": 858899,
+      "runs": 875397,
+      "run_messages": 14006352,
+      "delayed": 2254,
+      "reactivated": 2254,
+      "reactivation_wakes": 2,
+      "scheduler_builds": 1957,
+      "source_scans": 5549007,
+      "source_refreshes": 436522,
+      "source_probes": 7637615,
+      "stale_ready_tokens": 349
     },
-    "scans_per_selected_physical": 2.082305864956083,
+    "scans_per_selected_physical": 2.1941918923642643,
     "excluded_per_selected_physical": 0.0,
-    "source_scans_per_selected_physical": 6.5294114962358485,
+    "source_scans_per_selected_physical": 6.3388462606109,
     "semantics": "Before/after generator execution, including ramp/warmup/drain. Do not divide these counters by measured-only native accepted transfers."
   },
   "capacity_claim_allowed": false,
@@ -720,18 +717,18 @@
     "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
     "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.2"
   },
-  "launch_command_sha256": "1ffbaf44b6dbf5874bf465f937c10d41982ec9665d88422542d76138e45a7c44",
+  "launch_command_sha256": "a835d8b85f30c97110b790dccf94e480a1d268f56f0386d4cd1b6b695ee89d2b",
   "native_run_batching": {
     "native_run_batching_requested": false,
     "native_run_batching_enabled": false,
     "native_run_batching_coalesce_ms": 0,
-    "wire_queries": 850130,
+    "wire_queries": 831474,
     "wire_batches": 0,
     "wire_batch_messages": 0,
     "wire_batch_avg_size": 0,
-    "wire_attempts": 850130,
-    "logical_submission_attempts": 13602080,
-    "native_signed_run_submission_attempts": 850130,
+    "wire_attempts": 831474,
+    "logical_submission_attempts": 13303584,
+    "native_signed_run_submission_attempts": 831474,
     "wire_batch_max_size": 0,
     "wire_batch_source_run_max_size": 0
   },
@@ -762,13 +759,13 @@
     "too_new": 0,
     "expired": 0,
     "canonical_state_lag": 0,
-    "not_ready": 11896,
+    "not_ready": 10839,
     "balance": 0,
     "invalid": 0,
     "signing": 0,
     "server_other": 0
   },
-  "not_ready_schedules_per_parent_attempt": 0.013993153988213568,
+  "not_ready_schedules_per_parent_attempt": 0.013035885668102671,
   "retry_schedule_semantics": "Full-run typed retry schedules divided by physical parent attempts; schedules can repeat for one parent and are not distinct logical transfers.",
   "coalescer": {
     "submit_coalesce_ms": 20,
@@ -780,18 +777,18 @@
   "measured_container_cpu": {
     "genesis": {
       "samples": 89,
-      "mean_cores": 8.849688764044943,
-      "max_cores": 11.0009
+      "mean_cores": 8.895655056179775,
+      "max_cores": 11.7898
     },
     "native-load-generator": {
       "samples": 89,
-      "mean_cores": 0.7833123595505618,
-      "max_cores": 1.0305
+      "mean_cores": 0.7673685393258427,
+      "max_cores": 1.0116
     },
     "session-stats": {
       "samples": 89,
-      "mean_cores": 0.8365011235955057,
-      "max_cores": 1.0489
+      "mean_cores": 0.9022134831460674,
+      "max_cores": 1.0586
     }
   },
   "measured_container_cpu_semantics": "Mean Docker CPU samples whose sample timestamps fall inside the measured window; sampled interval CPU, not per-stage instrumentation.",
@@ -799,15 +796,15 @@
     "active_capacity": 0,
     "source_capacity": 0,
     "canonical_capacity": 0,
-    "pacing_credit": 1464102,
-    "client_capacity": 289049,
+    "pacing_credit": 1403504,
+    "client_capacity": 318579,
     "query_credit": 0
   },
   "generator_backpressure_fraction": 0,
   "generator_admission_window": 12288,
-  "generator_peak_backlog": 523888,
+  "generator_peak_backlog": 800448,
   "measured_collation_us_per_accepted": {
-    "work_time_s": 5.303672613092305,
-    "cpu_work_time_s": 5.292022392626008
+    "work_time_s": 5.452641362705758,
+    "cpu_work_time_s": 5.455639444507263
   }
 }

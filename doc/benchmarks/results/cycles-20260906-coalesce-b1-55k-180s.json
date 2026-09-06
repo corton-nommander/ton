@@ -742,6 +742,25 @@
     "native_run_batching_valid": true,
     "native_run_batching_invalid_reasons": []
   },
+  "retry_schedules_by_reason": {
+    "timeout": 0,
+    "transport": 0,
+    "parse": 0,
+    "full": 0,
+    "rate_limit": 0,
+    "duplicate": 0,
+    "too_old": 0,
+    "too_new": 0,
+    "expired": 0,
+    "canonical_state_lag": 0,
+    "not_ready": 72112,
+    "balance": 0,
+    "invalid": 0,
+    "signing": 0,
+    "server_other": 0
+  },
+  "not_ready_schedules_per_parent_attempt": 0.07780801343124794,
+  "retry_schedule_semantics": "Full-run typed retry schedules divided by physical parent attempts; schedules can repeat for one parent and are not distinct logical transfers.",
   "coalescer": {
     "submit_coalesce_ms": 20,
     "submit_coalesce_windows": 72522,

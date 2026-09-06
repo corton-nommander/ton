@@ -1,0 +1,24 @@
+{
+  "schema": "native-performance-cycle-final-state-v1",
+  "cycles_completed": 4,
+  "code_commits": {
+    "source_state_reuse": "22c0d00b",
+    "quantum_backpressure_accounting": "c81d9589",
+    "serial_sorted_trie": "7e51f921",
+    "intact_parent_batching": "d5fc1b9a",
+    "bounded_coalescer": "4caa92df"
+  },
+  "harness_revision": "0cc494e3f14b27c06fb155635375a248d4cc775f",
+  "validator_tag": "cycle-coalesce-4caa92df",
+  "validator_healthy": true,
+  "generator_stopped": true,
+  "native_run_batching_default": 0,
+  "ingress_checkpoint_retention": 0,
+  "staged_trie_parallel_threshold": 512,
+  "repeatable_two_percent_capacity_gain_proven": false,
+  "native_execution_fifteen_percent_gain_proven": false,
+  "nonce_floor_and_fixed_scratch_original_changes_isolated_in_new_cycles": false,
+  "results_report": "doc/native-performance-cycles-2026-09-06.md",
+  "long_series": "doc/benchmarks/results/cycles-20260906-coalescer-long-abba.json",
+  "final_independent_audit": "Raw hashes, counters, proofs, modes, actual environments, credit cleanup, all four immutable image/process identities, aggregate arithmetic and failed gates verified without correction."
+}

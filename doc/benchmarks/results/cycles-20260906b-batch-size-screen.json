@@ -1,0 +1,133 @@
+{
+  "control": "batch64-a1",
+  "treatment": "batch16-b1",
+  "configuration_mismatches": [],
+  "configuration_complete": true,
+  "comparison_eligible": false,
+  "capacity_comparison_eligible": false,
+  "descriptive_changes_pct": {
+    "canonical_tps_change_pct": -6.306329075533398,
+    "offered_tps_change_pct": -5.570571691679746,
+    "proof_cohort_tps_change_pct": -10.110145676539943,
+    "native_execute_us_per_accepted_change_pct": 5.738010163707358,
+    "nonce_rate_change_pct": null,
+    "scans_per_selected_change_pct": -3.148535883050968,
+    "excluded_per_selected_change_pct": null
+  },
+  "semantics": "Descriptive changes remain visible for rejected runs but cannot support claims. Zero control denominator yields null.",
+  "declared_experiment": {
+    "NATIVE_LOAD_SUBMIT_BATCH_SIZE": [
+      "64",
+      "16"
+    ]
+  },
+  "launch_setting_differences": {
+    "NATIVE_LOAD_SUBMIT_BATCH_SIZE": [
+      "64",
+      "16"
+    ]
+  },
+  "only_declared_settings_changed": true,
+  "generator_environment_differences": {
+    "NATIVE_LOAD_SUBMIT_BATCH_SIZE": [
+      "64",
+      "16"
+    ]
+  },
+  "effective_experiment_matches": true,
+  "same_validator_environment": true,
+  "same_harness_revision_and_clean": true,
+  "same_env_file": true,
+  "same_validator_process_between_arms": true,
+  "same_generator_image_between_arms": true,
+  "batch_mode_valid": true,
+  "integration_accounting_valid": true,
+  "rates": {
+    "control": {
+      "offered_tps": 53572,
+      "canonical_chain_tps": 53649.627118644064,
+      "proof_cohort_observed_tps": 49534.4,
+      "observer_discovery_tps": 47661.406592155625,
+      "offered_over_canonical": 0.9985530725409816,
+      "offered_above_canonical": false,
+      "measure_seconds": 60,
+      "canonical_gen_utime_bucket_seconds": 59,
+      "canonical_chain_transfers": 3165328,
+      "semantics": "Canonical chain TPS is proof-checked production by gen_utime; proof-cohort TPS is a measured-offer cohort/checkpoint rate; observer discovery TPS is catch-up, never capacity."
+    },
+    "treatment": {
+      "offered_tps": 50587.73333333333,
+      "canonical_chain_tps": 50266.30508474576,
+      "proof_cohort_observed_tps": 44526.4,
+      "observer_discovery_tps": 71272.62677420893,
+      "offered_over_canonical": 1.006394507176242,
+      "offered_above_canonical": true,
+      "measure_seconds": 60,
+      "canonical_gen_utime_bucket_seconds": 59,
+      "canonical_chain_transfers": 2965712,
+      "semantics": "Canonical chain TPS is proof-checked production by gen_utime; proof-cohort TPS is a measured-offer cohort/checkpoint rate; observer discovery TPS is catch-up, never capacity."
+    }
+  },
+  "not_ready_schedules_per_parent_attempt": {
+    "control": 0.08103625710853352,
+    "treatment": 0.0967288974643028
+  },
+  "cpu": {
+    "control": {
+      "genesis": {
+        "samples": 30,
+        "mean_cores": 8.934053333333333,
+        "max_cores": 11.2181
+      },
+      "native-load-generator": {
+        "samples": 30,
+        "mean_cores": 0.7190533333333333,
+        "max_cores": 0.961
+      },
+      "session-stats": {
+        "samples": 30,
+        "mean_cores": 1.02101,
+        "max_cores": 1.0539
+      }
+    },
+    "treatment": {
+      "genesis": {
+        "samples": 30,
+        "mean_cores": 9.459373333333334,
+        "max_cores": 11.791400000000001
+      },
+      "native-load-generator": {
+        "samples": 30,
+        "mean_cores": 0.7171133333333334,
+        "max_cores": 1.0223
+      },
+      "session-stats": {
+        "samples": 30,
+        "mean_cores": 1.0225633333333333,
+        "max_cores": 1.0604
+      }
+    }
+  },
+  "transport": {
+    "control": {
+      "native_parent_attempts_equal_physical": true,
+      "query_identity": true,
+      "distinct_batch_source_groups": true,
+      "logical_outputs_per_physical_attempt": 16.0,
+      "batched_physical_fraction": 0.9977531498952427,
+      "final_inflight": 0,
+      "final_admission_queries_inflight": 0,
+      "max_per_client_admission_queries": 18
+    },
+    "treatment": {
+      "native_parent_attempts_equal_physical": true,
+      "query_identity": true,
+      "distinct_batch_source_groups": true,
+      "logical_outputs_per_physical_attempt": 16.0,
+      "batched_physical_fraction": 0.996823735728272,
+      "final_inflight": 0,
+      "final_admission_queries_inflight": 0,
+      "max_per_client_admission_queries": 18
+    }
+  }
+}

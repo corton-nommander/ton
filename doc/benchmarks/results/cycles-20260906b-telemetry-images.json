@@ -1,0 +1,68 @@
+{
+  "revision": "68900d7f31f7772440ccb57be87b5fabf07e3166",
+  "tag": "cycle-telemetry-68900d7f",
+  "source_command": [
+    "docker",
+    "buildx",
+    "build",
+    "--load",
+    "--platform",
+    "linux/amd64",
+    "--progress",
+    "plain",
+    "--build-arg",
+    "NINJA_JOBS=4",
+    "--build-arg",
+    "PORTABLE=0",
+    "--build-arg",
+    "TON_ARCH=native",
+    "--build-arg",
+    "VCS_REF=68900d7f31f7772440ccb57be87b5fabf07e3166",
+    "--build-arg",
+    "VCS_DATE=2026-09-06T15:54:14+04:00",
+    "--build-arg",
+    "BUILD_DATE=2026-09-06T15:54:14+04:00",
+    "-t",
+    "ghcr.io/corton-nommander/ton:cycle-telemetry-68900d7f",
+    "."
+  ],
+  "derived_command": [
+    "bash",
+    "-c",
+    "source benchmark/native-payment-lanes-profile.sh; native_payment_lanes_profile_env 2 env \"$@\"",
+    "cycle-build",
+    "TON_BRANCH=cycle-telemetry-68900d7f",
+    "TON_BUILD_PULL=false",
+    "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=0",
+    "docker",
+    "compose",
+    "--project-name",
+    "mylocalton-desktop",
+    "--env-file",
+    ".env.physical",
+    "--profile",
+    "native-load-generator",
+    "build",
+    "genesis",
+    "native-load-generator"
+  ],
+  "harness_revision": "096aea7ff4d0ef2eb69732645fcc865e8320ebf8",
+  "started_utc": "2026-09-06T11:54:14.864217+00:00",
+  "source_exit_code": 0,
+  "derived_exit_code": 0,
+  "images": [
+    {
+      "tag": "ghcr.io/corton-nommander/ton:cycle-telemetry-68900d7f",
+      "id": "sha256:3b5f5afc9a88d0da3b01b4776232e57c52af2d38042f5073d8085908b3c326c6"
+    },
+    {
+      "tag": "ghcr.io/neodix42/mylocalton-docker:cycle-telemetry-68900d7f",
+      "id": "sha256:e7e98fd666dd3f963a6ad4739a3625035a3a59f4920a2f7abcb37eb0a16ef587"
+    },
+    {
+      "tag": "mylocalton-native-load-generator:cycle-telemetry-68900d7f",
+      "id": "sha256:d7dab511a50bd9448357d48911285b1dbabf6d0c41a194f36d2c4f6acb7f7392"
+    }
+  ],
+  "finished_utc": "2026-09-06T12:02:45.721154+00:00"
+}

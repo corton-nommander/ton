@@ -1,0 +1,19 @@
+{
+  "experiment": "instrumentation overhead and diagnostics; no policy change",
+  "order": [
+    "telemetry-a1",
+    "telemetry-b1"
+  ],
+  "control_revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124",
+  "treatment_revision": "68900d7f31f7772440ccb57be87b5fabf07e3166",
+  "harness_revision": "096aea7ff4d0ef2eb69732645fcc865e8320ebf8",
+  "target_tps": 58000,
+  "cwnd": 24576,
+  "batch_size": 64,
+  "coalesce_ms": 20,
+  "duration_s": 60,
+  "all_images_prebuilt_before_pair": true,
+  "no_builds_or_microbenchmarks_during_pair": true,
+  "source_switch_before_setup_and_warmup_only": true,
+  "strict_within_arm_identity_required": true
+}

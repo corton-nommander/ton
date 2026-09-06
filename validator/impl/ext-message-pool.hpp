@@ -31,6 +31,7 @@
 #include "td/utils/PersistentTreap.h"
 
 #include "external-message.hpp"
+#include "native-admission-telemetry.h"
 
 namespace ton::validator {
 
@@ -300,6 +301,7 @@ class ExtMessagePool : public td::actor::Actor {
     void before_query();
   } checked_ext_msg_counter_;
   td::uint64 total_check_ext_messages_ok_{0}, total_check_ext_messages_error_{0};
+  NativeAdmissionBatchTelemetry native_batch_telemetry_;
   td::uint64 native_batch_count_{0}, native_batch_messages_{0}, native_batch_unique_messages_{0};
   td::uint64 native_batch_account_lookups_{0};
   // Counts ExtMessagePool cache misses handed to ValidatorManager. The
@@ -853,6 +855,8 @@ class ExtMessagePool : public td::actor::Actor {
   td::uint64 erase_processed_native_messages(NativeMessageProcessResult processed);
   td::uint64 prune_expired_native_suffix(const NativeAddress &address, td::uint64 from_nonce,
                                          td::Slice reason);
+  void record_native_batch_abort(double residence_seconds);
+  std::string native_batch_telemetry_string(char separator) const;
   void log_native_batch_stats();
   td::Result<td::uint32> check_message_to_wallet(td::Ref<ExtMessage> message, const WalletMessageProcessor *wallet,
                                                  block::Account acc, UnixTime utime, LogicalTime lt,

@@ -1,0 +1,81 @@
+{
+  "control": "coalesce-a1-55k-180s",
+  "treatment": "coalesce-b1-55k-180s",
+  "configuration_mismatches": [],
+  "configuration_complete": true,
+  "comparison_eligible": false,
+  "capacity_comparison_eligible": false,
+  "descriptive_changes_pct": {
+    "canonical_tps_change_pct": 3.0339600451957267,
+    "offered_tps_change_pct": 3.679697788037217,
+    "proof_cohort_tps_change_pct": 3.5228058839847876,
+    "native_execute_us_per_accepted_change_pct": -5.183642997753267,
+    "nonce_rate_change_pct": null,
+    "scans_per_selected_change_pct": 0.7730856471731471,
+    "excluded_per_selected_change_pct": null
+  },
+  "semantics": "Descriptive changes remain visible for rejected runs but cannot support claims. Zero control denominator yields null.",
+  "launch_setting_differences": {
+    "NATIVE_LOAD_NATIVE_RUN_BATCHING": [
+      "0",
+      "1"
+    ]
+  },
+  "only_intended_mode_changed": true,
+  "same_validator_process_between_arms": true,
+  "same_generator_image_between_arms": true,
+  "enabled_batches_exercised": true,
+  "mode_telemetry_matches": true,
+  "integration_accounting_valid": true,
+  "control_offered_margin_fraction": -0.007340422278859449,
+  "treatment_offered_margin_fraction": -0.001119194298818127,
+  "stronger_five_percent_offered_margin": false,
+  "rates": {
+    "control": {
+      "offered_tps": 51907.64444444444,
+      "canonical_chain_tps": 52291.486033519555,
+      "proof_cohort_observed_tps": 50626.311111111114,
+      "observer_discovery_tps": 101056.35656040456,
+      "offered_over_canonical": 0.9926595777211406,
+      "offered_above_canonical": false,
+      "measure_seconds": 180,
+      "canonical_gen_utime_bucket_seconds": 179,
+      "canonical_chain_transfers": 9360176,
+      "semantics": "Canonical chain TPS is proof-checked production by gen_utime; proof-cohort TPS is a measured-offer cohort/checkpoint rate; observer discovery TPS is catch-up, never capacity."
+    },
+    "treatment": {
+      "offered_tps": 53817.688888888886,
+      "canonical_chain_tps": 53877.98882681564,
+      "proof_cohort_observed_tps": 52409.77777777778,
+      "observer_discovery_tps": 937359.2146416651,
+      "offered_over_canonical": 0.9988808057011819,
+      "offered_above_canonical": false,
+      "measure_seconds": 180,
+      "canonical_gen_utime_bucket_seconds": 179,
+      "canonical_chain_transfers": 9644160,
+      "semantics": "Canonical chain TPS is proof-checked production by gen_utime; proof-cohort TPS is a measured-offer cohort/checkpoint rate; observer discovery TPS is catch-up, never capacity."
+    }
+  },
+  "transport": {
+    "control": {
+      "native_parent_attempts_equal_physical": true,
+      "query_identity": true,
+      "distinct_batch_source_groups": true,
+      "logical_outputs_per_physical_attempt": 16.0,
+      "batched_physical_fraction": 0.0,
+      "final_inflight": 0,
+      "final_admission_queries_inflight": 0,
+      "max_per_client_admission_queries": 64
+    },
+    "treatment": {
+      "native_parent_attempts_equal_physical": true,
+      "query_identity": true,
+      "distinct_batch_source_groups": true,
+      "logical_outputs_per_physical_attempt": 16.0,
+      "batched_physical_fraction": 0.9984440986885975,
+      "final_inflight": 0,
+      "final_admission_queries_inflight": 0,
+      "max_per_client_admission_queries": 16
+    }
+  }
+}

@@ -281,3 +281,14 @@ The predeclared [180-second off/on/on/off protocol](benchmarks/results/cycles-20
 now proceeds at the same55k target/window/query limits. No images are rebuilt
 or validator restarted between arms. Every arm is preserved; capacity gain and
 repeatability require both eligible comparisons, not a selected best run.
+
+
+The first180-second pair is saved. Control offers51,907.64 TPS and produces
+52,291.49 canonical TPS; treatment offers53,817.69 and produces53,877.99.
+The descriptive canonical difference is+3.03%, with native execution cost
+1.38769 to1.31576 microseconds/accepted (-5.18%). Control fails target attainment
+and both arms offer below their canonical window rates, so the pair cannot
+support a capacity improvement. Proof, run completion, quantum, transport-credit
+accounting, lane, cleanup and strict identity checks pass.
+[First long pair](benchmarks/results/cycles-20260906-coalescer-long-pair1.json)
+is retained before the reversed-order repetition; no best-run selection occurs.

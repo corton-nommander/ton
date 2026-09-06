@@ -1,0 +1,49 @@
+{
+  "schema": "native-performance-followup-plan-v1",
+  "started_utc": "2026-09-06T11:29:06.925022+00:00",
+  "source_start_revision": "3e40ddc0b121d142047a08c5e247c02c8a4dfcbc",
+  "harness_start_revision": "0cc494e3f14b27c06fb155635375a248d4cc775f",
+  "incumbent_code_revision": "4caa92df",
+  "incumbent_image_tag": "cycle-coalesce-4caa92df",
+  "incumbent_batching_default": 0,
+  "selection_rule": "Retain highest repeatably validated canonical TPS under matched offered-load settings and all unchanged gates. Single rejected/highest observed rates do not promote a version. Preserve current incumbent if no candidate qualifies. Keep full losing/failed results and commit each cycle.",
+  "phase": "prebuilt_batch_size_calibration",
+  "settings": {
+    "target_tps": 55000,
+    "ramp_seconds": 30,
+    "warmup_seconds": 60,
+    "measure_seconds": 60,
+    "drain_timeout_seconds": 180,
+    "cwnd": 12288,
+    "initial_rtt_seconds": 0.2,
+    "max_queries_per_client": 64,
+    "backlog": 2097120,
+    "source_backlog": 128,
+    "normal_quantum": 16,
+    "coalesce_ms": 20,
+    "batching": 1
+  },
+  "first_pair": {
+    "control_batch_parents": 64,
+    "candidate_batch_parents": 16,
+    "order": [
+      "batch64-a1",
+      "batch16-b1"
+    ],
+    "image_rebuild_between_arms": false,
+    "validator_restart_between_arms": false
+  },
+  "required_gates": [
+    "correctness",
+    "run completion",
+    "normal quantum",
+    "ingress attainment >=95%",
+    "canonical backpressure <=1%",
+    "actual offered > canonical for capacity",
+    "lane balance",
+    "cleanup",
+    "strict prebuilt identity"
+  ],
+  "parallel_work": "Source-only telemetry preparation; no build/test/microbenchmark overlaps live measurements.",
+  "running_bundle": "batch64-a1"
+}

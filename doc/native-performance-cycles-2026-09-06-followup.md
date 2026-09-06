@@ -168,3 +168,13 @@ whether it recurs; no samples are discarded and all original gates remain.
 Only image switches before setup/warmup may restart the validator. No builds,
 unit tests or microbenchmarks may overlap this series. Retention stays off,
 parallel threshold stays512, and no live winner is selected from component data.
+
+Before A1, the control is explicitly finalized as the prebuilt incumbent
+`cycle-coalesce-4caa92df`, and the candidate as `cycle-proof-6a96c953`. This
+direct comparison selects between incumbent and combined diagnostics/proof code;
+it does not attribute live TPS solely to the proof fast path. Both arms use
+batching on, so batching defaults are not selected here. The frozen
+[series plan](benchmarks/results/cycles-20260906b-proof-live-plan.json) requires
+all four capacity gates, matching immutable A/A and B/B image IDs, exact B1/B2
+validator continuity and a positive canonical gain in both matched pairs. A
+repeatable >=2% claim requires >=2% in each pair. Both images are already built.

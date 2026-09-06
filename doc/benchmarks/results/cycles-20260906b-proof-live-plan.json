@@ -1,0 +1,81 @@
+{
+  "schema": "native-proof-live-abba-plan-v1",
+  "declared_utc": "2026-09-06T13:00:39.945655+00:00",
+  "control_revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124",
+  "control_tag": "cycle-coalesce-4caa92df",
+  "treatment_revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9",
+  "treatment_tag": "cycle-proof-6a96c953",
+  "harness_revision": "096aea7ff4d0ef2eb69732645fcc865e8320ebf8",
+  "sequence": [
+    "proof-a1",
+    "proof-b1",
+    "proof-b2",
+    "proof-a2"
+  ],
+  "settings": {
+    "target_tps": 60000,
+    "adaptive_max_cwnd": 65536,
+    "initial_rtt_seconds": 0.5,
+    "batching": 1,
+    "physical_batch_size": 64,
+    "coalesce_ms": 20,
+    "queries_per_client": 64,
+    "logical_outputs_per_parent": 16,
+    "lane_depth": 2,
+    "ramp_seconds": 30,
+    "warmup_seconds": 60,
+    "measurement_seconds": 300,
+    "drain_timeout_seconds": 180,
+    "canonical_backlog_limit": 2097120,
+    "per_source_backlog_limit": 128,
+    "checkpoint_retention": false,
+    "parallel_threshold": 512
+  },
+  "scope": "Direct incumbent versus bundled additive diagnostics and refined proof optimization. A live difference cannot be attributed solely to proof traversal. Batching is fixed on for both arms; this series does not select a batching default.",
+  "series_gates": [
+    "All four arms pass existing correctness, completion, normal quantum, ingress >=95%, canonical backpressure <=1%, lane, cleanup and strict reuse gates.",
+    "All four arms offer more logical TPS than canonical TPS for capacity comparison.",
+    "Both matched pairs pass fixed environment, resource limits, harness and exact declared source-image checks.",
+    "A1/A2 and B1/B2 preserve identical immutable service image IDs.",
+    "B1/B2 preserve exact validator container ID and StartedAt.",
+    "Both paired canonical TPS gains must be positive for a measured higher-TPS candidate; both must be >=2% to claim repeatable >=2%.",
+    "All raw runs are retained; any failed gate prevents promotion. Auxiliary source-provenance gap remains disclosed."
+  ],
+  "preparation": "All images prebuilt before A1. Image switches and validator restart occur only before setup/warmup. No compiler, tests or microbenchmarks overlap any live measurement. Persistent volumes are preserved.",
+  "images": {
+    "A": [
+      {
+        "tag": "ghcr.io/corton-nommander/ton:cycle-coalesce-4caa92df",
+        "id": "sha256:536fbe9ad5643bda183062f40be36bca19562bccc325010e7b6396b8bfce3500",
+        "revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124"
+      },
+      {
+        "tag": "ghcr.io/neodix42/mylocalton-docker:cycle-coalesce-4caa92df",
+        "id": "sha256:dd84211cccf6397d895fb0e6489c2ed712d1bbc19af3047f2a6f935bd8286b4a",
+        "revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124"
+      },
+      {
+        "tag": "mylocalton-native-load-generator:cycle-coalesce-4caa92df",
+        "id": "sha256:b152a246e082cd38bce4d1ec362a85db68e0535e435d9a801d0f2687784f4503",
+        "revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124"
+      }
+    ],
+    "B": [
+      {
+        "tag": "ghcr.io/corton-nommander/ton:cycle-proof-6a96c953",
+        "id": "sha256:854da925d3499a4368cde064fba66c3da717bb19c5b08ed3991d55ab6ac20afd",
+        "revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9"
+      },
+      {
+        "tag": "ghcr.io/neodix42/mylocalton-docker:cycle-proof-6a96c953",
+        "id": "sha256:020eafda13aa003b420bcb7bd6910bc506ed3cb4442d78d6eab582b67eb8cca6",
+        "revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9"
+      },
+      {
+        "tag": "mylocalton-native-load-generator:cycle-proof-6a96c953",
+        "id": "sha256:452253f924566664a91a557a5b4d8dcccd55f678b3837aad66be2ff1eedff9a9",
+        "revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9"
+      }
+    ]
+  }
+}

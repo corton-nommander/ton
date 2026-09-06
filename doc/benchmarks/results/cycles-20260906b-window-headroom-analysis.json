@@ -1,0 +1,1570 @@
+{
+  "schema": "native-window-headroom-analysis-v1",
+  "analysis_scope": "Completed artifacts only; no source edits, profiling, builds, workloads, or gate changes. Only this analysis document is written.",
+  "runs": [
+    {
+      "label": "telemetry-b1",
+      "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-telemetry-b1",
+      "source_hashes": {
+        "benchmark-summary.json": "a17eba8b5f1419da244edbeba944783b1c22401c6108c4b97feba6e21f3d8f10",
+        "generator-summary.json": "128c9952066ebcfdb8586d5965e82df906944b7bf5ea5db94b81f65ba61f6845",
+        "native-load-generator.log": "3019638c93fd05916e2ae2fc066b7ac88398ec3a9d77fccde4309d3a631c471e",
+        "strict-image-reuse.json": "c3e98f9bccd2dcb39f1dcb2f063cf5ea6387562af8e71d783d40aa90ea7791be",
+        "host-resources.jsonl": "f928689207e0b488ccd679e0e2e223b1dd919a1aba1ab9687408cc775fdf070c",
+        "device-resources.jsonl": "7637a275524068d0af80692624419a95600f3a2e9c8524f10dac5c664615acae",
+        "container-resources.jsonl": "1afa8e0291e27dca2a95521ac4437c4b8c416a36cc8dd9c9c6bfb94d00a52fed",
+        "thread-resources.jsonl": "43c291135ba63f674eea084ea58865d59bb8d8bcb771c2ab71f4e52e0d5ad90b",
+        "validator-actor-stats.jsonl": "65c3da12364b059b6591b84b1f31e0941df9c524d10190332bea7417eca279fb"
+      },
+      "launch_settings": {
+        "TON_SIMPLEX_MAX_TPS": "1",
+        "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0",
+        "BENCHMARK_IMAGES_PREBUILT": "1",
+        "BENCHMARK_STRICT_IMAGE_REUSE": "1",
+        "NATIVE_LOAD_TARGET_TPS": "58000",
+        "NATIVE_LOAD_RAMP_SECONDS": "30",
+        "NATIVE_LOAD_WARMUP_SECONDS": "60",
+        "NATIVE_LOAD_DURATION_SECONDS": "60",
+        "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+        "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+        "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+        "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "24576",
+        "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+        "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+        "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.2",
+        "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+        "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20"
+      },
+      "acceptance": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": false,
+        "ingress_capacity_invalid_reasons": [
+          "offer_target_not_attained"
+        ],
+        "chain_capacity_valid": false,
+        "chain_capacity_invalid_reasons": [
+          "insufficient_load_over_canonical_throughput",
+          "offered_load_not_above_canonical_throughput"
+        ],
+        "capacity_load": {
+          "measured_offered_avg_tps": 55020,
+          "measured_canonical_chain_avg_tps": 55041.898305084746,
+          "offered_above_canonical": false,
+          "invalid_reasons": [
+            "offered_load_not_above_canonical_throughput"
+          ]
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_valid": true,
+        "native_run_batching_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      },
+      "load_level_acceptance": {
+        "valid": false,
+        "classification": "rejected",
+        "capacity_claim_allowed": false,
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+      },
+      "strict_image_reuse": {
+        "required": true,
+        "valid": true,
+        "validator_before": {
+          "container_id": "b5d21fd9296fdfb357490c957198424572d1577d3fb9ba0070b246e22fdc23ac",
+          "image_id": "sha256:e7e98fd666dd3f963a6ad4739a3625035a3a59f4920a2f7abcb37eb0a16ef587",
+          "started_at": "2026-09-06T12:09:48.439085883Z",
+          "restart_count": 0,
+          "running": true,
+          "validator_process": {
+            "pid": 31,
+            "start_ticks": 10418885
+          }
+        },
+        "validator_after": {
+          "container_id": "b5d21fd9296fdfb357490c957198424572d1577d3fb9ba0070b246e22fdc23ac",
+          "image_id": "sha256:e7e98fd666dd3f963a6ad4739a3625035a3a59f4920a2f7abcb37eb0a16ef587",
+          "started_at": "2026-09-06T12:09:48.439085883Z",
+          "restart_count": 0,
+          "running": true,
+          "validator_process": {
+            "pid": 31,
+            "start_ticks": 10418885
+          }
+        },
+        "generator_image_before": "sha256:d7dab511a50bd9448357d48911285b1dbabf6d0c41a194f36d2c4f6acb7f7392",
+        "generator_image_after": "sha256:d7dab511a50bd9448357d48911285b1dbabf6d0c41a194f36d2c4f6acb7f7392",
+        "generator_container_before": "5a058b210c2052609512ed1cccddeb9be5c89c30dc22b4e0bc2433b84a4e9a2d",
+        "generator_container_after": "5a058b210c2052609512ed1cccddeb9be5c89c30dc22b4e0bc2433b84a4e9a2d",
+        "semantics": "prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"
+      },
+      "rates": {
+        "offered_tps": 55020,
+        "canonical_chain_tps": 55041.898305084746,
+        "proof_cohort_observed_tps": 51087.46666666667,
+        "observer_discovery_tps": 41050.20649497636,
+        "offered_over_canonical": 0.9996021520739825,
+        "offered_above_canonical": false,
+        "measure_seconds": 60,
+        "canonical_gen_utime_bucket_seconds": 59,
+        "canonical_chain_transfers": 3247472,
+        "semantics": "Canonical chain TPS is proof-checked production by gen_utime; proof-cohort TPS is a measured-offer cohort/checkpoint rate; observer discovery TPS is catch-up, never capacity."
+      },
+      "pacing_conservation": {
+        "nominal_logical_offers": 3480000,
+        "actual_logical_offers": 3301200,
+        "deficit": 178800,
+        "measure_clipped_tokens": 178522.12851396817,
+        "measure_boundary_refilled_balance_change": 277.8714860316355,
+        "residual": 1.9315393728902563e-10,
+        "clipped_share_of_deficit": 0.9984459089148108,
+        "start_samples": 6,
+        "end_samples": 6
+      },
+      "pacing_telemetry": {
+        "clipped_tokens": 713173.0923551667,
+        "measure_clipped_tokens": 178522.12851396817,
+        "clipped_updates": 14875,
+        "measure_clipped_updates": 7192,
+        "token_update_gap_max_s": 0.05293615200207569,
+        "measure_token_update_gap_max_s": 0.05293615200207569,
+        "pump_gap_max_s": 0.05296656100836117,
+        "measure_pump_gap_max_s": 0.05296656100836117,
+        "pump_duration_max_s": 0.008010738005395979,
+        "measure_pump_duration_max_s": 0.007602368001244031,
+        "alarm_lateness_max_s": 0.043360031995689496,
+        "measure_alarm_lateness_max_s": 0.043360031995689496,
+        "measure_start_samples": 6,
+        "measure_start_refilled_tokens": 115.60267534371687,
+        "measure_start_max_service_lag_s": 0.00394556499668397,
+        "measure_end_samples": 6,
+        "measure_end_refilled_tokens": 393.47416137535237,
+        "measure_end_max_service_lag_s": 0.013767456999630667,
+        "native_client_issue_wait_worker_s": 95.05369527279981,
+        "measure_native_client_issue_wait_worker_s": 58.41362564187148,
+        "native_client_issue_wait_events": 4588,
+        "measure_native_client_issue_wait_events": 2721
+      },
+      "per_worker": [
+        {
+          "worker_id": 0,
+          "offered_tps": 9209.6,
+          "measure_deficit": 27424.0,
+          "measure_clipped_tokens": 27404.65633356364,
+          "boundary_balance_change": 19.34366643630523,
+          "measure_client_wait_worker_s": 8.762010452934192,
+          "client_wait_fraction": 0.14603350754890318
+        },
+        {
+          "worker_id": 1,
+          "offered_tps": 9096.533333333333,
+          "measure_deficit": 34208.0,
+          "measure_clipped_tokens": 34138.80288433395,
+          "boundary_balance_change": 69.19711566599702,
+          "measure_client_wait_worker_s": 11.14049004802655,
+          "client_wait_fraction": 0.18567483413377583
+        },
+        {
+          "worker_id": 2,
+          "offered_tps": 9211.2,
+          "measure_deficit": 27328.0,
+          "measure_clipped_tokens": 27265.825850219364,
+          "boundary_balance_change": 62.17414978061087,
+          "measure_client_wait_worker_s": 9.193417033995502,
+          "client_wait_fraction": 0.15322361723325836
+        },
+        {
+          "worker_id": 3,
+          "offered_tps": 9179.2,
+          "measure_deficit": 29248.0,
+          "measure_clipped_tokens": 29245.375602739954,
+          "boundary_balance_change": 2.624397260019272,
+          "measure_client_wait_worker_s": 8.691741865943186,
+          "client_wait_fraction": 0.14486236443238643
+        },
+        {
+          "worker_id": 4,
+          "offered_tps": 9208.8,
+          "measure_deficit": 27472.0,
+          "measure_clipped_tokens": 27419.040187676765,
+          "boundary_balance_change": 52.95981232321242,
+          "measure_client_wait_worker_s": 9.351726446082466,
+          "client_wait_fraction": 0.15586210743470777
+        },
+        {
+          "worker_id": 5,
+          "offered_tps": 9114.666666666666,
+          "measure_deficit": 33120.0,
+          "measure_clipped_tokens": 33048.4276554345,
+          "boundary_balance_change": 71.57234456549065,
+          "measure_client_wait_worker_s": 11.274239794889581,
+          "client_wait_fraction": 0.187903996581493
+        }
+      ],
+      "window_usage": {
+        "configured_cap": 24576,
+        "initial_window": 11600,
+        "final_window": 16340.197719743075,
+        "all_run_sampled_peak": 16599.06933850893,
+        "cap_limited_acks": 0,
+        "measured_periodic_gauges": {
+          "congestion_window": {
+            "samples": 57,
+            "min": 15130.534766209914,
+            "mean": 15868.276989235761,
+            "median": 15860.999283986852,
+            "max": 16599.06933850893
+          },
+          "inflight": {
+            "samples": 57,
+            "min": 736,
+            "mean": 9181.473684210527,
+            "median": 8816,
+            "max": 16512
+          },
+          "ready": {
+            "samples": 57,
+            "min": 0,
+            "mean": 716.9122807017544,
+            "median": 352,
+            "max": 6560
+          },
+          "signing": {
+            "samples": 57,
+            "min": 0,
+            "mean": 39.56140350877193,
+            "median": 37,
+            "max": 102
+          },
+          "active_tasks": {
+            "samples": 57,
+            "min": 1488,
+            "mean": 10776.421052631578,
+            "median": 9920,
+            "max": 23072
+          },
+          "admission_queries_inflight": {
+            "samples": 57,
+            "min": 4,
+            "mean": 48.35087719298246,
+            "median": 42,
+            "max": 135
+          },
+          "clients_at_query_cap": {
+            "samples": 57,
+            "min": 0,
+            "mean": 0,
+            "median": 0,
+            "max": 0
+          },
+          "clients_at_cwnd_cap": {
+            "samples": 57,
+            "min": 0,
+            "mean": 0,
+            "median": 0,
+            "max": 0
+          },
+          "pacing_tokens": {
+            "samples": 57,
+            "min": 23.499436887164904,
+            "mean": 764.6249542165451,
+            "median": 57.93740407624692,
+            "max": 5800
+          },
+          "canonical_backlog": {
+            "samples": 57,
+            "min": 182000,
+            "mean": 267232,
+            "median": 237600,
+            "max": 427152
+          }
+        },
+        "periodic_semantics": "Latest asynchronous worker snapshots; distributions are descriptive samples, not synchronous maxima or a continuous utilization integral."
+      },
+      "exposure_normalized_segments": [
+        {
+          "report_elapsed_s": 99.300477968005,
+          "mean_worker_measure_begin_s": 0.0,
+          "mean_worker_measure_end_s": 9.108279193167013,
+          "offered_tps_exposure_normalized": 57101.45560647433,
+          "measure_clipped_tokens_delta": 8256.050737036214,
+          "measure_client_wait_worker_s_delta": 2.0934180000040215
+        },
+        {
+          "report_elapsed_s": 109.57618812100554,
+          "mean_worker_measure_begin_s": 9.108279193167013,
+          "mean_worker_measure_end_s": 19.510254343166405,
+          "offered_tps_exposure_normalized": 56672.31381532712,
+          "measure_clipped_tokens_delta": 13688.491914426246,
+          "measure_client_wait_worker_s_delta": 4.691168353965622
+        },
+        {
+          "report_elapsed_s": 118.96395416899759,
+          "mean_worker_measure_begin_s": 19.510254343166405,
+          "mean_worker_measure_end_s": 28.955095526500372,
+          "offered_tps_exposure_normalized": 52088.54129470269,
+          "measure_clipped_tokens_delta": 52546.6094510165,
+          "measure_client_wait_worker_s_delta": 20.52823062997777
+        },
+        {
+          "report_elapsed_s": 129.42288944500615,
+          "mean_worker_measure_begin_s": 28.955095526500372,
+          "mean_worker_measure_end_s": 38.79852651883751,
+          "offered_tps_exposure_normalized": 49399.0358014942,
+          "measure_clipped_tokens_delta": 88069.22482528043,
+          "measure_client_wait_worker_s_delta": 24.462435630950495
+        },
+        {
+          "report_elapsed_s": 139.7595071090036,
+          "mean_worker_measure_begin_s": 38.79852651883751,
+          "mean_worker_measure_end_s": 49.03635588700369,
+          "offered_tps_exposure_normalized": 56154.090806357795,
+          "measure_clipped_tokens_delta": 13658.179615363362,
+          "measure_client_wait_worker_s_delta": 5.5081590420304565
+        },
+        {
+          "report_elapsed_s": 148.9979188080033,
+          "mean_worker_measure_begin_s": 49.03635588700369,
+          "mean_worker_measure_end_s": 58.807948988835655,
+          "offered_tps_exposure_normalized": 58299.603152038435,
+          "measure_clipped_tokens_delta": 2303.571970845427,
+          "measure_client_wait_worker_s_delta": 1.0475817869446473
+        },
+        {
+          "report_elapsed_s": 157.88541037800314,
+          "mean_worker_measure_begin_s": 58.807948988835655,
+          "mean_worker_measure_end_s": 60,
+          "offered_tps_exposure_normalized": 57715.650887120224,
+          "measure_clipped_tokens_delta": 0.0,
+          "measure_client_wait_worker_s_delta": 0.08263219799846411
+        }
+      ],
+      "timeout_and_window_events": [
+        {
+          "previous_report_elapsed_s": 122.23529682299704,
+          "report_elapsed_s": 123.24399592400005,
+          "new_timeout_task_errors": 2,
+          "cwnd_before": 16599.06933850893,
+          "cwnd_after": 15130.534766209914,
+          "new_not_ready_task_errors": 1192
+        }
+      ],
+      "retries_full_run": {
+        "physical_parent_attempts": 514952,
+        "not_ready_schedules": 41945,
+        "not_ready_schedule_fraction": 0.08145419378893566,
+        "timeout_task_errors": 2,
+        "timeout_retry_schedules": 0,
+        "resigned": 2,
+        "other_retry_schedules": 0,
+        "rtt_ms": {
+          "p50": 100,
+          "p95": 500,
+          "p99": 500,
+          "max": 3588.483815998188,
+          "samples": 8239232,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false
+        },
+        "server_code651_causes": {
+          "finished_batches": 43154,
+          "aborted_batches": 0,
+          "not_ready_total": 41945,
+          "not_ready_snapshot_changed": 41945,
+          "not_ready_account_changed_verification": 0,
+          "not_ready_account_changed_insertion": 0,
+          "not_ready_account_changed_commit": 0,
+          "not_ready_canonical_watermark_lag": 0,
+          "not_ready_masterchain_unavailable": 0,
+          "not_ready_shard_unavailable": 0,
+          "not_ready_mempool_full": 0,
+          "not_ready_per_address_limit": 0,
+          "not_ready_other": 0
+        },
+        "server_timing_deltas": {
+          "residence": {
+            "samples_delta": 43154,
+            "sum_s_delta": 2797.658803,
+            "mean_s": 0.0648296520137183,
+            "cumulative_max_s_before": 0.0,
+            "cumulative_max_s_after": 0.685939
+          },
+          "aborted_residence": {
+            "samples_delta": 0,
+            "sum_s_delta": 0,
+            "mean_s": null,
+            "cumulative_max_s_before": 0.0,
+            "cumulative_max_s_after": 0.0
+          },
+          "shard_wait": {
+            "samples_delta": 11430,
+            "sum_s_delta": 314.337272,
+            "mean_s": 0.027501073665791773,
+            "cumulative_max_s_before": 0.0,
+            "cumulative_max_s_after": 0.224193
+          },
+          "verification": {
+            "samples_delta": 43154,
+            "sum_s_delta": 2417.451551,
+            "mean_s": 0.056019176692774716,
+            "cumulative_max_s_before": 0.0,
+            "cumulative_max_s_after": 0.425255
+          },
+          "snapshot_age": {
+            "samples_delta": 43154,
+            "sum_s_delta": 2759.703455,
+            "mean_s": 0.06395011945590212,
+            "cumulative_max_s_before": 0.0,
+            "cumulative_max_s_after": 0.684931
+          },
+          "changed_snapshot_age": {
+            "samples_delta": 3548,
+            "sum_s_delta": 339.647662,
+            "mean_s": 0.09572932976324691,
+            "cumulative_max_s_before": 0.0,
+            "cumulative_max_s_after": 0.472227
+          }
+        },
+        "server_peak_active_batches": {
+          "before": 0,
+          "after": 139
+        }
+      },
+      "measured_container_cpu": {
+        "genesis": {
+          "samples": 29,
+          "mean_cores": 9.446758620689655,
+          "max_cores": 11.2544
+        },
+        "native-load-generator": {
+          "samples": 29,
+          "mean_cores": 0.7761758620689655,
+          "max_cores": 1.0107
+        },
+        "session-stats": {
+          "samples": 29,
+          "mean_cores": 0.8825551724137931,
+          "max_cores": 1.0458
+        }
+      },
+      "resource_episode_windows": [
+        {
+          "elapsed_window_s": [
+            90,
+            110
+          ],
+          "host_cpu_percent": {
+            "samples": 18,
+            "min": 64.997,
+            "mean": 70.85783333333333,
+            "median": 69.9495,
+            "max": 84.683
+          },
+          "host_iowait_percent": {
+            "samples": 18,
+            "min": 0.414,
+            "mean": 1.6252222222222221,
+            "median": 1.786,
+            "max": 2.085
+          },
+          "container_cpu_cores": {
+            "genesis": {
+              "samples": 10,
+              "min": 7.999099999999999,
+              "mean": 9.54652,
+              "median": 9.4541,
+              "max": 11.2544
+            },
+            "native-load-generator": {
+              "samples": 10,
+              "min": 0.5832,
+              "mean": 0.71045,
+              "median": 0.7113499999999999,
+              "max": 0.8053
+            },
+            "session-stats": {
+              "samples": 10,
+              "min": 0.0002,
+              "mean": 0.61472,
+              "median": 1.01795,
+              "max": 1.0304
+            }
+          },
+          "active_device_intervals": [
+            {
+              "device": "nvme1n1",
+              "first_elapsed_s": 91.59358310699463,
+              "last_elapsed_s": 107.59358310699463,
+              "interval_s": 16,
+              "write_MB_per_s": 119.38688,
+              "read_MB_per_s": 0.126976,
+              "busy_percent": 42.825,
+              "weighted_io_queue_average": 1.1768125,
+              "max_sampled_in_flight": 4
+            },
+            {
+              "device": "nvme3n1",
+              "first_elapsed_s": 91.59358310699463,
+              "last_elapsed_s": 107.59358310699463,
+              "interval_s": 16,
+              "write_MB_per_s": 119.38304,
+              "read_MB_per_s": 0.013312,
+              "busy_percent": 74.3375,
+              "weighted_io_queue_average": 2.37175,
+              "max_sampled_in_flight": 1
+            }
+          ]
+        },
+        {
+          "elapsed_window_s": [
+            110,
+            130
+          ],
+          "host_cpu_percent": {
+            "samples": 19,
+            "min": 69.928,
+            "mean": 74.73873684210527,
+            "median": 74.241,
+            "max": 80.912
+          },
+          "host_iowait_percent": {
+            "samples": 19,
+            "min": 1.313,
+            "mean": 1.689684210526316,
+            "median": 1.693,
+            "max": 2.111
+          },
+          "container_cpu_cores": {
+            "genesis": {
+              "samples": 10,
+              "min": 8.226,
+              "mean": 9.43409,
+              "median": 9.524799999999999,
+              "max": 10.8696
+            },
+            "native-load-generator": {
+              "samples": 10,
+              "min": 0.6347999999999999,
+              "mean": 0.8469,
+              "median": 0.8515499999999999,
+              "max": 1.0107
+            },
+            "session-stats": {
+              "samples": 10,
+              "min": 1.0168000000000001,
+              "mean": 1.0223200000000001,
+              "median": 1.0190000000000001,
+              "max": 1.0376
+            }
+          },
+          "active_device_intervals": [
+            {
+              "device": "nvme1n1",
+              "first_elapsed_s": 112.59358310699463,
+              "last_elapsed_s": 128.59358310699463,
+              "interval_s": 16,
+              "write_MB_per_s": 49.611008,
+              "read_MB_per_s": 0.24576,
+              "busy_percent": 66.88125,
+              "weighted_io_queue_average": 1.4398125,
+              "max_sampled_in_flight": 1
+            },
+            {
+              "device": "nvme3n1",
+              "first_elapsed_s": 112.59358310699463,
+              "last_elapsed_s": 128.59358310699463,
+              "interval_s": 16,
+              "write_MB_per_s": 49.608448,
+              "read_MB_per_s": 0.061696,
+              "busy_percent": 70.525,
+              "weighted_io_queue_average": 1.481,
+              "max_sampled_in_flight": 1
+            }
+          ]
+        },
+        {
+          "elapsed_window_s": [
+            130,
+            150
+          ],
+          "host_cpu_percent": {
+            "samples": 18,
+            "min": 69.833,
+            "mean": 73.30133333333333,
+            "median": 72.187,
+            "max": 84.709
+          },
+          "host_iowait_percent": {
+            "samples": 18,
+            "min": 0.79,
+            "mean": 1.6972777777777777,
+            "median": 1.746,
+            "max": 1.922
+          },
+          "container_cpu_cores": {
+            "genesis": {
+              "samples": 9,
+              "min": 8.6165,
+              "mean": 9.34998888888889,
+              "median": 9.3207,
+              "max": 10.4112
+            },
+            "native-load-generator": {
+              "samples": 9,
+              "min": 0.48829999999999996,
+              "mean": 0.7706222222222222,
+              "median": 0.7965000000000001,
+              "max": 0.9772
+            },
+            "session-stats": {
+              "samples": 9,
+              "min": 1.0134,
+              "mean": 1.0248555555555556,
+              "median": 1.0218,
+              "max": 1.0458
+            }
+          },
+          "active_device_intervals": [
+            {
+              "device": "nvme1n1",
+              "first_elapsed_s": 133.59358310699463,
+              "last_elapsed_s": 149.59358310699463,
+              "interval_s": 16,
+              "write_MB_per_s": 23.674624,
+              "read_MB_per_s": 0.017152,
+              "busy_percent": 71.4375,
+              "weighted_io_queue_average": 1.4591875,
+              "max_sampled_in_flight": 1
+            },
+            {
+              "device": "nvme3n1",
+              "first_elapsed_s": 133.59358310699463,
+              "last_elapsed_s": 149.59358310699463,
+              "interval_s": 16,
+              "write_MB_per_s": 23.648768,
+              "read_MB_per_s": 0.021248,
+              "busy_percent": 72.1375,
+              "weighted_io_queue_average": 1.4575625,
+              "max_sampled_in_flight": 0
+            }
+          ]
+        }
+      ],
+      "actor_samples_near_episode": [
+        {
+          "elapsed_s": 113.00458312034607,
+          "query_duration_s": 0.262,
+          "parsed": true,
+          "timed_out": false,
+          "actor_last10s": {
+            "overlay_impl": {
+              "load_per_second": 1.43706,
+              "max_execute_seconds": 0.117475,
+              "max_message_seconds": 0.072688,
+              "max_delay_seconds": 0.030169
+            },
+            "decryptor_async": {
+              "load_per_second": 0.786348,
+              "max_execute_seconds": 0.080755,
+              "max_message_seconds": 0.073045,
+              "max_delay_seconds": 0.012449
+            }
+          }
+        },
+        {
+          "elapsed_s": 143.34358310699463,
+          "query_duration_s": 0.156,
+          "parsed": true,
+          "timed_out": false,
+          "actor_last10s": {
+            "overlay_impl": {
+              "load_per_second": 1.554692,
+              "max_execute_seconds": 0.0134,
+              "max_message_seconds": 0.003408,
+              "max_delay_seconds": 0.007855
+            },
+            "decryptor_async": {
+              "load_per_second": 0.879235,
+              "max_execute_seconds": 0.099384,
+              "max_message_seconds": 0.098648,
+              "max_delay_seconds": 0.011285
+            }
+          }
+        }
+      ],
+      "unavailable_episode_evidence": {
+        "thread_samples_measured": 36,
+        "max_captured_threads_measured": 0,
+        "validator_scheduling_log_bytes": 0,
+        "pipeline_raw_bytes": 40835962,
+        "pipeline_timing_alignment": "Not extracted: kept analysis lightweight during proof ABBA timing. Whole-window pipeline summaries cannot identify this particular interval."
+      },
+      "canonical_backlog_sampled_peak": 434544
+    },
+    {
+      "label": "window64k-calibration",
+      "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-window64k-calibration",
+      "source_hashes": {
+        "benchmark-summary.json": "df6b8d1d002d7776a3448cc50ff23fa8429f3602cf7d156376de9da9b85af17e",
+        "generator-summary.json": "68ad446d53ca7005525e5d7935edcf2d8818652fbe07a5e7daf90beac276459c",
+        "native-load-generator.log": "66a36f61765ac191332080803db5cfe51eeb141294eb14b071dff319f1a75bfa",
+        "strict-image-reuse.json": "37874aa67f37b6cf1c89862426cac7cc23f69cec4e2ad236a5332dbb08113584",
+        "host-resources.jsonl": "e71b321623e75ad5389a365a856ca42f49222d5400f4314359a13bde35d549fc",
+        "device-resources.jsonl": "b2806bc5db6842d8bb2b13973e8805bed9d1065c54a6636ef1230b4c211bd9a6",
+        "container-resources.jsonl": "58326811025c73d051dda7a23a6630b2f6e72cafad6e8485b39ce5c61c4ab33d",
+        "thread-resources.jsonl": "b7aeab6c77fa90d57c7a2c3a3cedbd792cb2e2cc5ac024f5057588a58e6359da",
+        "validator-actor-stats.jsonl": "822a1e32f204a69201c8dc5bd4bc3ab09b4de194886fea5e998b8724a7fbc946"
+      },
+      "launch_settings": {
+        "TON_SIMPLEX_MAX_TPS": "1",
+        "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0",
+        "BENCHMARK_IMAGES_PREBUILT": "1",
+        "BENCHMARK_STRICT_IMAGE_REUSE": "1",
+        "NATIVE_LOAD_TARGET_TPS": "60000",
+        "NATIVE_LOAD_RAMP_SECONDS": "30",
+        "NATIVE_LOAD_WARMUP_SECONDS": "60",
+        "NATIVE_LOAD_DURATION_SECONDS": "60",
+        "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+        "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+        "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+        "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+        "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+        "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+        "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+        "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+        "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20"
+      },
+      "acceptance": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": false,
+        "ingress_capacity_invalid_reasons": [
+          "offer_target_not_attained"
+        ],
+        "chain_capacity_valid": false,
+        "chain_capacity_invalid_reasons": [
+          "insufficient_load_over_canonical_throughput"
+        ],
+        "capacity_load": {
+          "measured_offered_avg_tps": 56242.4,
+          "measured_canonical_chain_avg_tps": 55752.13559322034,
+          "offered_above_canonical": true,
+          "invalid_reasons": []
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_valid": true,
+        "native_run_batching_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      },
+      "load_level_acceptance": {
+        "valid": false,
+        "classification": "rejected",
+        "capacity_claim_allowed": false,
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+      },
+      "strict_image_reuse": {
+        "required": true,
+        "valid": true,
+        "validator_before": {
+          "container_id": "b5d21fd9296fdfb357490c957198424572d1577d3fb9ba0070b246e22fdc23ac",
+          "image_id": "sha256:e7e98fd666dd3f963a6ad4739a3625035a3a59f4920a2f7abcb37eb0a16ef587",
+          "started_at": "2026-09-06T12:09:48.439085883Z",
+          "restart_count": 0,
+          "running": true,
+          "validator_process": {
+            "pid": 31,
+            "start_ticks": 10418885
+          }
+        },
+        "validator_after": {
+          "container_id": "b5d21fd9296fdfb357490c957198424572d1577d3fb9ba0070b246e22fdc23ac",
+          "image_id": "sha256:e7e98fd666dd3f963a6ad4739a3625035a3a59f4920a2f7abcb37eb0a16ef587",
+          "started_at": "2026-09-06T12:09:48.439085883Z",
+          "restart_count": 0,
+          "running": true,
+          "validator_process": {
+            "pid": 31,
+            "start_ticks": 10418885
+          }
+        },
+        "generator_image_before": "sha256:d7dab511a50bd9448357d48911285b1dbabf6d0c41a194f36d2c4f6acb7f7392",
+        "generator_image_after": "sha256:d7dab511a50bd9448357d48911285b1dbabf6d0c41a194f36d2c4f6acb7f7392",
+        "generator_container_before": "739ac1198bf7c458c2298232312f7da9401f2267b9f091346a9468e9bbfceedc",
+        "generator_container_after": "739ac1198bf7c458c2298232312f7da9401f2267b9f091346a9468e9bbfceedc",
+        "semantics": "prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"
+      },
+      "rates": {
+        "offered_tps": 56242.4,
+        "canonical_chain_tps": 55752.13559322034,
+        "proof_cohort_observed_tps": 51816.53333333333,
+        "observer_discovery_tps": 23106.078109554684,
+        "offered_over_canonical": 1.0087936435360385,
+        "offered_above_canonical": true,
+        "measure_seconds": 60,
+        "canonical_gen_utime_bucket_seconds": 59,
+        "canonical_chain_transfers": 3289376,
+        "semantics": "Canonical chain TPS is proof-checked production by gen_utime; proof-cohort TPS is a measured-offer cohort/checkpoint rate; observer discovery TPS is catch-up, never capacity."
+      },
+      "pacing_conservation": {
+        "nominal_logical_offers": 3600000,
+        "actual_logical_offers": 3374544,
+        "deficit": 225456,
+        "measure_clipped_tokens": 224805.69530021003,
+        "measure_boundary_refilled_balance_change": 650.3046997899655,
+        "residual": 0.0,
+        "clipped_share_of_deficit": 0.9971156026018826,
+        "start_samples": 6,
+        "end_samples": 6
+      },
+      "pacing_telemetry": {
+        "clipped_tokens": 750320.0694102015,
+        "measure_clipped_tokens": 224805.69530021003,
+        "clipped_updates": 18950,
+        "measure_clipped_updates": 9333,
+        "token_update_gap_max_s": 0.05068146300618537,
+        "measure_token_update_gap_max_s": 0.04798885399941355,
+        "pump_gap_max_s": 0.0506897330051288,
+        "measure_pump_gap_max_s": 0.04799293400719762,
+        "pump_duration_max_s": 0.01589671999681741,
+        "measure_pump_duration_max_s": 0.007984348994796164,
+        "alarm_lateness_max_s": 0.04294949199538678,
+        "measure_alarm_lateness_max_s": 0.04149912799766753,
+        "measure_start_samples": 6,
+        "measure_start_refilled_tokens": 153.7138202043716,
+        "measure_start_max_service_lag_s": 0.008996421005576849,
+        "measure_end_samples": 6,
+        "measure_end_refilled_tokens": 804.0185199943371,
+        "measure_end_max_service_lag_s": 0.006866452997201122,
+        "native_client_issue_wait_worker_s": 104.40210260760796,
+        "measure_native_client_issue_wait_worker_s": 68.40862500625371,
+        "native_client_issue_wait_events": 4608,
+        "measure_native_client_issue_wait_events": 3468
+      },
+      "per_worker": [
+        {
+          "worker_id": 0,
+          "offered_tps": 9511.2,
+          "measure_deficit": 29328.0,
+          "measure_clipped_tokens": 29329.440350049874,
+          "boundary_balance_change": -1.440350049873814,
+          "measure_client_wait_worker_s": 8.22515482288145,
+          "client_wait_fraction": 0.13708591371469084
+        },
+        {
+          "worker_id": 1,
+          "offered_tps": 9494.4,
+          "measure_deficit": 30336.0,
+          "measure_clipped_tokens": 30357.270180023042,
+          "boundary_balance_change": -21.270180023042485,
+          "measure_client_wait_worker_s": 7.503545166051481,
+          "client_wait_fraction": 0.125059086100858
+        },
+        {
+          "worker_id": 2,
+          "offered_tps": 8831.466666666667,
+          "measure_deficit": 70112.0,
+          "measure_clipped_tokens": 69447.26273010066,
+          "boundary_balance_change": 664.7372698993422,
+          "measure_client_wait_worker_s": 23.489228696969803,
+          "client_wait_fraction": 0.3914871449494967
+        },
+        {
+          "worker_id": 3,
+          "offered_tps": 9507.2,
+          "measure_deficit": 29568.0,
+          "measure_clipped_tokens": 29572.844350002706,
+          "boundary_balance_change": -4.844350002706051,
+          "measure_client_wait_worker_s": 8.329289611108834,
+          "client_wait_fraction": 0.13882149351848055
+        },
+        {
+          "worker_id": 4,
+          "offered_tps": 9362.133333333333,
+          "measure_deficit": 38272.0,
+          "measure_clipped_tokens": 38260.10591007327,
+          "boundary_balance_change": 11.894089926732704,
+          "measure_client_wait_worker_s": 13.685299185133772,
+          "client_wait_fraction": 0.22808831975222954
+        },
+        {
+          "worker_id": 5,
+          "offered_tps": 9536.0,
+          "measure_deficit": 27840.0,
+          "measure_clipped_tokens": 27838.771779960487,
+          "boundary_balance_change": 1.228220039512962,
+          "measure_client_wait_worker_s": 7.1761075241083745,
+          "client_wait_fraction": 0.1196017920684729
+        }
+      ],
+      "window_usage": {
+        "configured_cap": 65536,
+        "initial_window": 30000,
+        "final_window": 16817.506395429205,
+        "all_run_sampled_peak": 32300.983593633384,
+        "cap_limited_acks": 0,
+        "measured_periodic_gauges": {
+          "congestion_window": {
+            "samples": 58,
+            "min": 15463.444905570912,
+            "mean": 25060.236637820923,
+            "median": 31704.172722463903,
+            "max": 32300.983593633384
+          },
+          "inflight": {
+            "samples": 58,
+            "min": 864,
+            "mean": 14031.724137931034,
+            "median": 11064.0,
+            "max": 32160
+          },
+          "ready": {
+            "samples": 58,
+            "min": 0,
+            "mean": 990.8965517241379,
+            "median": 448.0,
+            "max": 10288
+          },
+          "signing": {
+            "samples": 58,
+            "min": 0,
+            "mean": 36.58620689655172,
+            "median": 35.0,
+            "max": 103
+          },
+          "active_tasks": {
+            "samples": 58,
+            "min": 1824,
+            "mean": 16573.51724137931,
+            "median": 12760.0,
+            "max": 50208
+          },
+          "admission_queries_inflight": {
+            "samples": 58,
+            "min": 4,
+            "mean": 67.06896551724138,
+            "median": 52.5,
+            "max": 212
+          },
+          "clients_at_query_cap": {
+            "samples": 58,
+            "min": 0,
+            "mean": 0,
+            "median": 0.0,
+            "max": 0
+          },
+          "clients_at_cwnd_cap": {
+            "samples": 58,
+            "min": 0,
+            "mean": 0,
+            "median": 0.0,
+            "max": 0
+          },
+          "pacing_tokens": {
+            "samples": 58,
+            "min": 28.906959984451532,
+            "mean": 1030.290800192582,
+            "median": 293.75425492355134,
+            "max": 6000
+          },
+          "canonical_backlog": {
+            "samples": 58,
+            "min": 206016,
+            "mean": 322058.2068965517,
+            "median": 284720.0,
+            "max": 553376
+          }
+        },
+        "periodic_semantics": "Latest asynchronous worker snapshots; distributions are descriptive samples, not synchronous maxima or a continuous utilization integral."
+      },
+      "exposure_normalized_segments": [
+        {
+          "report_elapsed_s": 99.45569234499999,
+          "mean_worker_measure_begin_s": 0.0,
+          "mean_worker_measure_end_s": 9.150960406831777,
+          "offered_tps_exposure_normalized": 58008.337529654265,
+          "measure_clipped_tokens_delta": 16716.99892999162,
+          "measure_client_wait_worker_s_delta": 3.2547985520068323
+        },
+        {
+          "report_elapsed_s": 109.70301656000083,
+          "mean_worker_measure_begin_s": 9.150960406831777,
+          "mean_worker_measure_end_s": 19.57532081516547,
+          "offered_tps_exposure_normalized": 59179.841816176406,
+          "measure_clipped_tokens_delta": 10179.869410244515,
+          "measure_client_wait_worker_s_delta": 3.6856497150292853
+        },
+        {
+          "report_elapsed_s": 119.0288951590046,
+          "mean_worker_measure_begin_s": 19.57532081516547,
+          "mean_worker_measure_end_s": 28.937074988833047,
+          "offered_tps_exposure_normalized": 51405.75057542506,
+          "measure_clipped_tokens_delta": 74749.5369598302,
+          "measure_client_wait_worker_s_delta": 16.426626436121296
+        },
+        {
+          "report_elapsed_s": 129.42080550199898,
+          "mean_worker_measure_begin_s": 28.937074988833047,
+          "mean_worker_measure_end_s": 39.123352860330975,
+          "offered_tps_exposure_normalized": 52098.32351863384,
+          "measure_clipped_tokens_delta": 84391.75871003512,
+          "measure_client_wait_worker_s_delta": 24.519049259863095
+        },
+        {
+          "report_elapsed_s": 139.76679918399896,
+          "mean_worker_measure_begin_s": 39.123352860330975,
+          "mean_worker_measure_end_s": 49.60401829083033,
+          "offered_tps_exposure_normalized": 57669.62069422745,
+          "measure_clipped_tokens_delta": 26216.41476996732,
+          "measure_client_wait_worker_s_delta": 11.265343610109994
+        },
+        {
+          "report_elapsed_s": 149.08415861500544,
+          "mean_worker_measure_begin_s": 49.60401829083033,
+          "mean_worker_measure_end_s": 58.786654575000284,
+          "offered_tps_exposure_normalized": 58797.92940626147,
+          "measure_clipped_tokens_delta": 10889.171640090412,
+          "measure_client_wait_worker_s_delta": 8.000727778082364
+        },
+        {
+          "report_elapsed_s": 155.63603251500172,
+          "mean_worker_measure_begin_s": 58.786654575000284,
+          "mean_worker_measure_end_s": 60,
+          "offered_tps_exposure_normalized": 58126.893254669434,
+          "measure_clipped_tokens_delta": 1661.9448800508399,
+          "measure_client_wait_worker_s_delta": 1.2564296550408471
+        }
+      ],
+      "timeout_and_window_events": [
+        {
+          "previous_report_elapsed_s": 121.24753731700184,
+          "report_elapsed_s": 122.24972150599933,
+          "new_timeout_task_errors": 2,
+          "cwnd_before": 32300.983593633384,
+          "cwnd_after": 29671.909181333835,
+          "new_not_ready_task_errors": 2549
+        },
+        {
+          "previous_report_elapsed_s": 122.24972150599933,
+          "report_elapsed_s": 123.2779123460059,
+          "new_timeout_task_errors": 1,
+          "cwnd_before": 29671.909181333835,
+          "cwnd_after": 28315.682849960867,
+          "new_not_ready_task_errors": 1840
+        },
+        {
+          "previous_report_elapsed_s": 123.2779123460059,
+          "report_elapsed_s": 124.29045258100086,
+          "new_timeout_task_errors": 13,
+          "cwnd_before": 28315.682849960867,
+          "cwnd_after": 16367.388054065046,
+          "new_not_ready_task_errors": 2352
+        },
+        {
+          "previous_report_elapsed_s": 124.29045258100086,
+          "report_elapsed_s": 125.29968632999226,
+          "new_timeout_task_errors": 2,
+          "cwnd_before": 16367.388054065046,
+          "cwnd_after": 15463.444905570912,
+          "new_not_ready_task_errors": 545
+        }
+      ],
+      "retries_full_run": {
+        "physical_parent_attempts": 561464,
+        "not_ready_schedules": 81345,
+        "not_ready_schedule_fraction": 0.14488017041163814,
+        "timeout_task_errors": 18,
+        "timeout_retry_schedules": 0,
+        "resigned": 18,
+        "other_retry_schedules": 0,
+        "rtt_ms": {
+          "p50": 200,
+          "p95": 500,
+          "p99": 1000,
+          "max": 3739.976917000604,
+          "samples": 8983424,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50_in_overflow": false,
+          "p95_in_overflow": false,
+          "p99_in_overflow": false
+        },
+        "server_code651_causes": {
+          "finished_batches": 43593,
+          "aborted_batches": 0,
+          "not_ready_total": 81345,
+          "not_ready_snapshot_changed": 81345,
+          "not_ready_account_changed_verification": 0,
+          "not_ready_account_changed_insertion": 0,
+          "not_ready_account_changed_commit": 0,
+          "not_ready_canonical_watermark_lag": 0,
+          "not_ready_masterchain_unavailable": 0,
+          "not_ready_shard_unavailable": 0,
+          "not_ready_mempool_full": 0,
+          "not_ready_per_address_limit": 0,
+          "not_ready_other": 0
+        },
+        "server_timing_deltas": {
+          "residence": {
+            "samples_delta": 43593,
+            "sum_s_delta": 4564.384496000001,
+            "mean_s": 0.10470452815819055,
+            "cumulative_max_s_before": 0.685939,
+            "cumulative_max_s_after": 0.853859
+          },
+          "aborted_residence": {
+            "samples_delta": 0,
+            "sum_s_delta": 0,
+            "mean_s": null,
+            "cumulative_max_s_before": 0.0,
+            "cumulative_max_s_after": 0.0
+          },
+          "shard_wait": {
+            "samples_delta": 17835,
+            "sum_s_delta": 893.6381920000001,
+            "mean_s": 0.050105870030838245,
+            "cumulative_max_s_before": 0.224193,
+            "cumulative_max_s_after": 0.310598
+          },
+          "verification": {
+            "samples_delta": 43589,
+            "sum_s_delta": 3602.277542,
+            "mean_s": 0.08264189456055426,
+            "cumulative_max_s_before": 0.425255,
+            "cumulative_max_s_after": 0.685135
+          },
+          "snapshot_age": {
+            "samples_delta": 43589,
+            "sum_s_delta": 4524.803673,
+            "mean_s": 0.10380609036683568,
+            "cumulative_max_s_before": 0.684931,
+            "cumulative_max_s_after": 0.853469
+          },
+          "changed_snapshot_age": {
+            "samples_delta": 6184,
+            "sum_s_delta": 960.4845289999998,
+            "mean_s": 0.15531767933376453,
+            "cumulative_max_s_before": 0.472227,
+            "cumulative_max_s_after": 0.853469
+          }
+        },
+        "server_peak_active_batches": {
+          "before": 139,
+          "after": 182
+        }
+      },
+      "measured_container_cpu": {
+        "genesis": {
+          "samples": 29,
+          "mean_cores": 9.438327586206897,
+          "max_cores": 11.992
+        },
+        "native-load-generator": {
+          "samples": 29,
+          "mean_cores": 0.7780137931034483,
+          "max_cores": 1.0854000000000001
+        },
+        "session-stats": {
+          "samples": 29,
+          "mean_cores": 1.027006896551724,
+          "max_cores": 1.0745
+        }
+      },
+      "resource_episode_windows": [
+        {
+          "elapsed_window_s": [
+            90,
+            110
+          ],
+          "host_cpu_percent": {
+            "samples": 18,
+            "min": 65.922,
+            "mean": 74.62327777777777,
+            "median": 74.1095,
+            "max": 88.666
+          },
+          "host_iowait_percent": {
+            "samples": 18,
+            "min": 0.661,
+            "mean": 1.5254444444444444,
+            "median": 1.624,
+            "max": 1.889
+          },
+          "container_cpu_cores": {
+            "genesis": {
+              "samples": 9,
+              "min": 7.064,
+              "mean": 9.554233333333332,
+              "median": 10.041599999999999,
+              "max": 10.5255
+            },
+            "native-load-generator": {
+              "samples": 9,
+              "min": 0.6728000000000001,
+              "mean": 0.7713111111111112,
+              "median": 0.7356999999999999,
+              "max": 0.9356
+            },
+            "session-stats": {
+              "samples": 9,
+              "min": 1.012,
+              "mean": 1.021288888888889,
+              "median": 1.022,
+              "max": 1.0290000000000001
+            }
+          },
+          "active_device_intervals": [
+            {
+              "device": "nvme1n1",
+              "first_elapsed_s": 93.96936559677124,
+              "last_elapsed_s": 108.96936559677124,
+              "interval_s": 15,
+              "write_MB_per_s": 111.6618752,
+              "read_MB_per_s": 0.131072,
+              "busy_percent": 75.72,
+              "weighted_io_queue_average": 2.9012,
+              "max_sampled_in_flight": 7
+            },
+            {
+              "device": "nvme3n1",
+              "first_elapsed_s": 93.96936559677124,
+              "last_elapsed_s": 108.96936559677124,
+              "interval_s": 15,
+              "write_MB_per_s": 111.6626944,
+              "read_MB_per_s": 0.023756799999999998,
+              "busy_percent": 69.67999999999999,
+              "weighted_io_queue_average": 1.7633333333333332,
+              "max_sampled_in_flight": 1
+            }
+          ]
+        },
+        {
+          "elapsed_window_s": [
+            110,
+            130
+          ],
+          "host_cpu_percent": {
+            "samples": 19,
+            "min": 66.472,
+            "mean": 75.05784210526316,
+            "median": 75.13,
+            "max": 82.461
+          },
+          "host_iowait_percent": {
+            "samples": 19,
+            "min": 1.222,
+            "mean": 1.6223684210526315,
+            "median": 1.558,
+            "max": 2.033
+          },
+          "container_cpu_cores": {
+            "genesis": {
+              "samples": 10,
+              "min": 8.0958,
+              "mean": 9.389,
+              "median": 9.161750000000001,
+              "max": 11.992
+            },
+            "native-load-generator": {
+              "samples": 10,
+              "min": 0.5751,
+              "mean": 0.8182,
+              "median": 0.81635,
+              "max": 1.0854000000000001
+            },
+            "session-stats": {
+              "samples": 10,
+              "min": 1.018,
+              "mean": 1.03002,
+              "median": 1.0241500000000001,
+              "max": 1.0604
+            }
+          },
+          "active_device_intervals": [
+            {
+              "device": "nvme1n1",
+              "first_elapsed_s": 113.96936559677124,
+              "last_elapsed_s": 129.96936559677124,
+              "interval_s": 16,
+              "write_MB_per_s": 34.033152,
+              "read_MB_per_s": 0.155904,
+              "busy_percent": 69.46875,
+              "weighted_io_queue_average": 3.141125,
+              "max_sampled_in_flight": 0
+            },
+            {
+              "device": "nvme3n1",
+              "first_elapsed_s": 113.96936559677124,
+              "last_elapsed_s": 129.96936559677124,
+              "interval_s": 16,
+              "write_MB_per_s": 34.031616,
+              "read_MB_per_s": 0.033536,
+              "busy_percent": 69.0,
+              "weighted_io_queue_average": 3.131,
+              "max_sampled_in_flight": 1
+            }
+          ]
+        },
+        {
+          "elapsed_window_s": [
+            130,
+            150
+          ],
+          "host_cpu_percent": {
+            "samples": 19,
+            "min": 70.314,
+            "mean": 73.40005263157894,
+            "median": 73.616,
+            "max": 77.731
+          },
+          "host_iowait_percent": {
+            "samples": 19,
+            "min": 1.512,
+            "mean": 1.7344736842105264,
+            "median": 1.757,
+            "max": 1.93
+          },
+          "container_cpu_cores": {
+            "genesis": {
+              "samples": 10,
+              "min": 6.8537,
+              "mean": 9.38334,
+              "median": 9.36505,
+              "max": 10.6733
+            },
+            "native-load-generator": {
+              "samples": 10,
+              "min": 0.23199999999999998,
+              "mean": 0.74386,
+              "median": 0.7979499999999999,
+              "max": 0.8828
+            },
+            "session-stats": {
+              "samples": 10,
+              "min": 1.0171,
+              "mean": 1.02914,
+              "median": 1.02355,
+              "max": 1.0745
+            }
+          },
+          "active_device_intervals": [
+            {
+              "device": "nvme1n1",
+              "first_elapsed_s": 134.96936559677124,
+              "last_elapsed_s": 145.96936559677124,
+              "interval_s": 11,
+              "write_MB_per_s": 23.607109818181815,
+              "read_MB_per_s": 0.009681454545454545,
+              "busy_percent": 71.44545454545455,
+              "weighted_io_queue_average": 1.431090909090909,
+              "max_sampled_in_flight": 1
+            },
+            {
+              "device": "nvme3n1",
+              "first_elapsed_s": 134.96936559677124,
+              "last_elapsed_s": 145.96936559677124,
+              "interval_s": 11,
+              "write_MB_per_s": 23.60413090909091,
+              "read_MB_per_s": 0.0003723636363636364,
+              "busy_percent": 69.57272727272728,
+              "weighted_io_queue_average": 1.4717272727272728,
+              "max_sampled_in_flight": 0
+            }
+          ]
+        }
+      ],
+      "actor_samples_near_episode": [
+        {
+          "elapsed_s": 114.29036569595337,
+          "query_duration_s": 0.17,
+          "parsed": true,
+          "timed_out": false,
+          "actor_last10s": {
+            "overlay_impl": {
+              "load_per_second": 1.475913,
+              "max_execute_seconds": 0.008103,
+              "max_message_seconds": 0.006207,
+              "max_delay_seconds": 0.002849
+            },
+            "decryptor_async": {
+              "load_per_second": 0.823369,
+              "max_execute_seconds": 0.01035,
+              "max_message_seconds": 0.010348,
+              "max_delay_seconds": 0.002414
+            }
+          }
+        },
+        {
+          "elapsed_s": 144.62736558914185,
+          "query_duration_s": 0.167,
+          "parsed": true,
+          "timed_out": false,
+          "actor_last10s": {
+            "overlay_impl": {
+              "load_per_second": 1.559862,
+              "max_execute_seconds": 0.042637,
+              "max_message_seconds": 0.041985,
+              "max_delay_seconds": 0.012177
+            },
+            "decryptor_async": {
+              "load_per_second": 0.874841,
+              "max_execute_seconds": 0.017325,
+              "max_message_seconds": 0.01236,
+              "max_delay_seconds": 0.024278
+            }
+          }
+        }
+      ],
+      "unavailable_episode_evidence": {
+        "thread_samples_measured": 33,
+        "max_captured_threads_measured": 0,
+        "validator_scheduling_log_bytes": 0,
+        "pipeline_raw_bytes": 35922407,
+        "pipeline_timing_alignment": "Not extracted: kept analysis lightweight during proof ABBA timing. Whole-window pipeline summaries cannot identify this particular interval."
+      },
+      "canonical_backlog_sampled_peak": 620528
+    }
+  ],
+  "comparison": {
+    "declared_setting_differences": {
+      "NATIVE_LOAD_TARGET_TPS": [
+        "58000",
+        "60000"
+      ],
+      "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": [
+        "0.2",
+        "0.5"
+      ],
+      "NATIVE_LOAD_ADAPTIVE_MAX_CWND": [
+        "24576",
+        "65536"
+      ]
+    },
+    "same_harness_source": true,
+    "same_validator_process_between_runs": true,
+    "same_generator_image": true,
+    "capacity_comparison_eligible": false,
+    "cause_isolation": "Target, initial adaptive window estimate, and ceiling changed together; changes are descriptive, not a controlled performance effect.",
+    "offered_change_tps": 1222.4000000000015,
+    "canonical_change_tps": 710.2372881355914,
+    "measure_clipping_change_tokens": 46283.56678624186,
+    "measure_client_wait_change_worker_s": 9.994999364382238
+  },
+  "findings": [
+    "Both offered deficits reconcile to clipped pacing credit plus inferred boundary balance change with complete six-worker boundary samples; this is not quantum rounding or the 59-second canonical denominator.",
+    "Raising the configured adaptive ceiling did not bind either run: zero cap-limited ACKs; actual window peaked at16599/32301 and ended16340/16818 respectively.",
+    "The larger-window run has 224805.695 clipped measured tokens and68.409 measured client-hold worker-seconds, versus178522.129 and58.414. Client waits cover19.0024% versus16.2260% of six-worker measured exposure.",
+    "All observed code651 outcomes in both full runs are snapshot_changed. The not_ready parent-attempt rate rises8.1454%\u219214.4879%; mean batch residence64.830\u2192104.705ms and mean changed-snapshot age95.729\u2192155.318ms also rise. These are full-run wall timings, not measured verifier CPU.",
+    "A shared pressure episode is visible near elapsed110\u2013130s, before timeout-driven AIMD decrease. In window64k, timeouts18 occur around122\u2013125s while the sampled window falls32301\u219215463; post-episode issuance returns to approximately57.7\u201358.8k despite the smaller window. Therefore preventing window decrease alone is not established as a solution.",
+    "Generator CPU remains below one core on average; genesis mean CPU stays near9.4cores across the episode. Host CPU is already near75% and mean I/O wait around1.6\u20131.7%, without a matching sharp increase. No generator CPU saturation or single long >100ms token-update gap was observed.",
+    "The active NVMe devices show longer weighted I/O queues during the window64k episode (~3.13\u20133.14) than after it (~1.43\u20131.47), but write throughput is lower than before. This is compatible with I/O contention and does not identify compaction, flushing, or any specific periodic task.",
+    "Actor samples near113/114 and143/145 miss the122\u2013125s timeout cluster. Thread capture is empty and the scheduling log has zero bytes. No actor-specific or periodic-work cause can be assigned from these captures."
+  ],
+  "recommended_next_calibration": {
+    "decision": "Use one predeclared180-second same-config calibration before changing window policy.",
+    "settings": {
+      "TON_SIMPLEX_MAX_TPS": "1",
+      "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0",
+      "BENCHMARK_IMAGES_PREBUILT": "1",
+      "BENCHMARK_STRICT_IMAGE_REUSE": "1",
+      "NATIVE_LOAD_TARGET_TPS": "60000",
+      "NATIVE_LOAD_RAMP_SECONDS": "30",
+      "NATIVE_LOAD_WARMUP_SECONDS": "60",
+      "NATIVE_LOAD_DURATION_SECONDS": "180",
+      "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+      "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+      "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+      "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+      "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+      "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+      "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+      "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+      "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20"
+    },
+    "only_change_from_window64k": "NATIVE_LOAD_DURATION_SECONDS:60\u2192180; retain target60000, initial RTT0.5, adaptive max65536, batching64/coalesce20ms and all other existing settings.",
+    "rationale": "The ceiling never bound, and the bottleneck precedes the AIMD collapse. A longer complete measurement retains the original pressure episode and tests whether it recurs; it avoids attributing a mixed change to a new fixed window. The already observed recovery segments sustain rates above the unchanged57000 ingress threshold.",
+    "quantitative_screen": {
+      "unchanged_minimum_95_percent_target_tps": 57000,
+      "already_observed_first_60s_offers": 3374544,
+      "remaining_120s_required_avg_tps": 57378.8,
+      "observed_late_segment_rate_low": 57669.62069422745,
+      "observed_late_segment_rate_high": 58797.92940626147,
+      "conditional_180s_avg_tps_if_late_rate_repeats_low": 57193.880462818306,
+      "conditional_180s_avg_tps_if_late_rate_repeats_high": 57946.086270840984,
+      "qualification": "Conditional arithmetic, not a prediction or capacity claim. Recurrent pressure or changing canonical rate can still reject the calibration."
+    },
+    "acceptance": "Require offered_avg>=57000 and actual offered_avg>canonical_avg, plus unchanged proof/completion/quantum/lane/cleanup/strict-reuse/observer gates. Save the entire180s window and all rejected results; do not choose favorable subsections. Repeat matched measurements before promotion.",
+    "headroom_estimate": {
+      "prior_peak_backlog": 620528,
+      "configured_canonical_backlog_cap": 2097120,
+      "additional_backlog_at_full60000_minus_observed_canonical_over120s": 509743.7288135596,
+      "conditional_peak_plus_extra": 1130271.7288135595,
+      "scope": "Arithmetic screen assuming the observed canonical rate persists; per-source limits and actual drain remain authoritative."
+    },
+    "fixed_window_status": "Deferred: disabling adaptive mode ties client capacity to the hard active-task limit in existing code. It would change the active-work queue as well as loss response and could raise snapshot/timeout pressure; the observed episode does not yet justify calling it an improvement.",
+    "executed": false
+  },
+  "source_evidence": [
+    {
+      "path": "lite-client/native-load-generator.cpp",
+      "lines": "3119\u20133139",
+      "claim": "Initial adaptive window uses target*initial_RTT, clipped by cap; nonadaptive uses the hard client limit."
+    },
+    {
+      "path": "lite-client/native-load-generator.cpp",
+      "lines": "4723\u20134743",
+      "claim": "Eligible timeout/loss signals halve a client window at most once per100ms; snapshot/revision races are exempt through the policy helper."
+    },
+    {
+      "path": "lite-client/native-load-generator-policy.hpp",
+      "lines": "349\u2013357",
+      "claim": "Timeouts remain congestion signals while narrowly recognized snapshot/revision races do not decrease AIMD."
+    }
+  ],
+  "limitations": [
+    "Both runs fail unchanged acceptance gates; no capacity improvement or winning configuration is established.",
+    "Only two sequential mixed-configuration observations exist. CPU/host/I/O summaries are sampled; device deltas use the first and last available samples inside each interval and cannot attribute writes to a process or operation.",
+    "Worker report snapshots are asynchronous. Segment rates normalize summed worker offer counts by mean worker measured exposure and are descriptive, not synchronized instantaneous TPS.",
+    "Server diagnostic deltas include ramp/warmup/drain; maxima are validator-lifetime before/after observations. Pacing/window telemetry alone cannot assign each clipped token to a particular retry or server wait.",
+    "The proposed longer run is a falsifiable calibration, not a relaxation of target/gates or a guarantee that the late recovery continues."
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "trial_commits": [
+    "301152c7",
+    "13ac90e8"
+  ],
+  "current_candidate": "13ac90e8",
+  "builds_passed": [
+    "proof-candidate-build.log",
+    "proof-v2-build.log",
+    "proof-driver-candidate-build.log",
+    "proof-v2-driver-build.log"
+  ],
+  "regression_counts_per_version": {
+    "NativeProofStorageStat": 2,
+    "NativeStateEngine": 18,
+    "AugmentedDictionary": 7
+  },
+  "regression_total_per_version": 27,
+  "all_build_and_test_exit_codes": 0,
+  "timed_component_comparisons": {
+    "v1_screen": 40824,
+    "v1_fallback_repeat": 74088,
+    "v2_screen": 40824,
+    "v2_production_tracked": 37800
+  },
+  "timing_overlap_with_live_or_build_work": false,
+  "logs": {
+    "proof-candidate-build.log": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-candidate-build.log",
+      "sha256": "4cfa41725d9eabd7c69285a5cefecb3b462eab0ced3886fae120ba0167952a86"
+    },
+    "proof-driver-candidate-build.log": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-driver-candidate-build.log",
+      "sha256": "e0f9d3acbc5ab6530da6ad19cc58b04cf9c56684b34791916ccc343e458c197e"
+    },
+    "proof-test-AugmentedDictionary.log": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-test-AugmentedDictionary.log",
+      "sha256": "b6465b7bc7772662fb4e3c1642009e31f51123f8cdfddb896cb8a3a0449c5216"
+    },
+    "proof-test-NativeProofStorageStat.log": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-test-NativeProofStorageStat.log",
+      "sha256": "73e98fca125c5a27ebf5972504878d368051a651996bd88cc6afd432041ca0d4"
+    },
+    "proof-test-NativeStateEngine.log": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-test-NativeStateEngine.log",
+      "sha256": "722aaa8793e88ea00c9145cbdbdc6e4120b117e7adb5cfac1abbc213a51de2b9"
+    },
+    "proof-v2-build.log": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-v2-build.log",
+      "sha256": "bfb5bdd707dc90a43a5cd7c48ffb5ac0d976730cbceda34fa42a32646ad527b4"
+    },
+    "proof-v2-driver-build.log": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-v2-driver-build.log",
+      "sha256": "69f0f1fdad365a51d30e51fc41ee03dc66cd856f3ba11a154176bde76e86455b"
+    },
+    "proof-v2-test-AugmentedDictionary.log": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-v2-test-AugmentedDictionary.log",
+      "sha256": "95ecb69f92f41be5c7f284eff6079d0400402b4943aac8ea8e289ad0c3f37142"
+    },
+    "proof-v2-test-NativeProofStorageStat.log": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-v2-test-NativeProofStorageStat.log",
+      "sha256": "c5017b6e8738b8f0aa836b721680d1c2a356f8be307c2d7b1cbd76903c0266d9"
+    },
+    "proof-v2-test-NativeStateEngine.log": {
+      "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/cycles-20260906b/proof-v2-test-NativeStateEngine.log",
+      "sha256": "54f2261711a2a322505cdd2d0f5fe7ae6f6c904152c92ae252e4729b5af94cfa"
+    }
+  }
+}

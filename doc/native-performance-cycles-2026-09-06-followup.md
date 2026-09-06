@@ -133,3 +133,38 @@ That is 40,824 timed checkpoint comparisons, plus warmups. The reference binary
 is preserved from before applying the candidate; driver/oracle hashes must
 match both binaries. No builds or live load may overlap timed runs. These are
 component measurements and cannot establish a TPS gain.
+
+The initial proof trial (`301152c7`) passed 27 regressions and all 40,824 screen
+checks. Unweighted median proof-cost changes were -38.04% plain and -29.06%
+tracked. A 7x7 foreign-usage repeat added 74,088 exact checks; its median was
++0.26%, with two cases above +2% in both pairs. The original anomalous case did
+not repeat. All raw cases remain saved in the
+[first screen](benchmarks/results/cycles-20260906b-proof-screen-summary.json) and
+[fallback repeat](benchmarks/results/cycles-20260906b-proof-fallback-v1-summary.json).
+
+Refinement `13ac90e8` reuses the existing usage-node check to skip RTTI when a
+concrete DataCell is already ruled out. It adds no virtual call. The same 27
+regressions passed. Its 40,824-check screen improved all 108 plain/tracked cases
+in both pairs, with median proof changes -37.72% and -29.64%. Foreign median was
+-0.65%, with no case above +2% in both pairs.
+[V2 screen](benchmarks/results/cycles-20260906b-proof-v2-screen-summary.json).
+
+The 12,288-base-account tracked follow-up (5 rounds x 5 iterations, A/B/B/A)
+passed all 37,800 checks and improved all 54 cases in both pairs. Median proof
+wall/CPU cost fell 28.18%/27.95%, and combined copy-plus-proof wall cost fell
+28.03%. These are unweighted component-case medians, with construction,
+validation and destruction excluded; they are not TPS gains.
+[Production-scale component evidence](benchmarks/results/cycles-20260906b-proof-production-summary.json).
+
+## Live proof candidate selection
+
+Prebuild the reference and refined candidate images before the series. Run
+A/B/B/A with target 60,000, initial RTT 0.50 s, adaptive cap 65,536, 64 physical
+parents/RPC, 20 ms coalescing, 16 logical outputs/parent, 64 queries/client,
+finite backlog 2,097,120/source128, four lanes and fixed resource limits.
+Use 30 s ramp, 60 s warmup and **300 s measurement** per arm. The longer interval
+includes the previously observed pressure episode and gives more time to see
+whether it recurs; no samples are discarded and all original gates remain.
+Only image switches before setup/warmup may restart the validator. No builds,
+unit tests or microbenchmarks may overlap this series. Retention stays off,
+parallel threshold stays512, and no live winner is selected from component data.

@@ -72,6 +72,35 @@ inline bool valid_adaptive_max_cwnd(std::uint32_t configured_limit, std::uint32_
   return configured_limit == 0 || (configured_limit >= connections && configured_limit <= max_inflight);
 }
 
+// An explicit initial window is a global logical-message budget. Validate the
+// same two-level partition used by the coordinator and workers; checking only
+// total >= connections * quantum is insufficient for uneven worker fanout.
+inline bool valid_adaptive_initial_cwnd(std::uint32_t initial, std::uint32_t connections,
+                                       std::uint32_t workers, std::uint32_t max_inflight,
+                                       std::uint32_t configured_limit, std::uint32_t minimum_dispatch) {
+  if (initial == 0) {
+    return true;  // Preserve the historical rate/RTT or 256-per-client heuristic.
+  }
+  if (workers == 0 || workers > connections || minimum_dispatch == 0 ||
+      initial > max_inflight || (configured_limit != 0 && initial > configured_limit)) {
+    return false;
+  }
+  for (std::uint32_t worker = 0; worker < workers; ++worker) {
+    auto clients = distributed_share(connections, worker, workers);
+    auto initial_share = distributed_share(initial, worker, workers);
+    auto hard_share = distributed_share(max_inflight, worker, workers);
+    auto limit_share = configured_limit ? distributed_share(configured_limit, worker, workers) : hard_share;
+    for (std::uint32_t client = 0; client < clients; ++client) {
+      auto value = distributed_share(initial_share, client, clients);
+      if (value < minimum_dispatch || value > distributed_share(hard_share, client, clients) ||
+          value > distributed_share(limit_share, client, clients)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 // A submission query can carry many messages, so admission-query credit is
 // deliberately independent from the message-count AIMD and hard-inflight
 // ceilings. Zero keeps the historical unlimited-per-client query behavior.

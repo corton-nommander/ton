@@ -1070,3 +1070,33 @@ TEST(NativeLoadGeneratorPolicy, NativeRunCoalescingScansOnlyLiveReadySourceToken
   ASSERT_EQ(queue.pop().source_idx, second.source_idx);
   ASSERT_TRUE(!queue.any_ready_source([](std::size_t) { return true; }));
 }
+
+TEST(NativeLoadGeneratorPolicy, ExplicitInitialCwndConservesBudgetAcrossConnectionSweep) {
+  for (auto connections : {10u, 50u, 100u}) {
+    ASSERT_TRUE(native_load::valid_adaptive_initial_cwnd(32768, connections, 6, 262144, 65536, 16));
+    std::uint32_t total = 0;
+    for (std::uint32_t worker = 0; worker < 6; ++worker) {
+      auto clients = native_load::distributed_share(connections, worker, 6);
+      auto budget = native_load::distributed_share(32768, worker, 6);
+      for (std::uint32_t client = 0; client < clients; ++client) {
+        auto share = native_load::distributed_share(budget, client, clients);
+        ASSERT_TRUE(share >= 16);
+        total += share;
+      }
+    }
+    ASSERT_EQ(total, 32768u);
+  }
+}
+
+TEST(NativeLoadGeneratorPolicy, ExplicitInitialCwndRejectsUnusableAndOversizedPartitions) {
+  ASSERT_TRUE(native_load::valid_adaptive_initial_cwnd(0, 100, 6, 262144, 65536, 16));
+  ASSERT_TRUE(native_load::valid_adaptive_initial_cwnd(32768, 10, 6, 262144, 0, 16));
+  // 160 == 10 * 16, but six equal worker shares leave two-client workers
+  // with only 13/14 credits per connection, which cannot issue a signed run.
+  ASSERT_TRUE(!native_load::valid_adaptive_initial_cwnd(160, 10, 6, 262144, 65536, 16));
+  ASSERT_TRUE(!native_load::valid_adaptive_initial_cwnd(65537, 100, 6, 262144, 65536, 16));
+  ASSERT_TRUE(!native_load::valid_adaptive_initial_cwnd(262145, 100, 6, 262144, 0, 16));
+  ASSERT_TRUE(!native_load::valid_adaptive_initial_cwnd(32768, 10, 0, 262144, 65536, 16));
+  ASSERT_TRUE(!native_load::valid_adaptive_initial_cwnd(32768, 10, 11, 262144, 65536, 16));
+  ASSERT_TRUE(!native_load::valid_adaptive_initial_cwnd(32768, 10, 6, 262144, 65536, 0));
+}

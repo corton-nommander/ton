@@ -183,6 +183,7 @@ struct Options {
   td::uint32 workers{1};
   td::uint32 max_inflight{8192};
   td::uint32 adaptive_max_cwnd{0};
+  td::uint32 adaptive_initial_cwnd{0};
   td::uint32 submit_batch_size{1};
   td::uint32 submit_source_run_size{1};
   td::uint32 native_payment_lane_depth{0};
@@ -1271,6 +1272,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       worker_options.max_inflight = distribute(options_.max_inflight);
       worker_options.adaptive_max_cwnd =
           options_.adaptive_max_cwnd ? distribute(options_.adaptive_max_cwnd) : 0;
+      worker_options.adaptive_initial_cwnd =
+          options_.adaptive_initial_cwnd ? distribute(options_.adaptive_initial_cwnd) : 0;
       // submit_max_queries_per_client is a per-connection limit, unlike the
       // global message window, so Options copies it unchanged for every
       // worker-local persistent client.
@@ -1765,7 +1768,16 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"canonical_gen_utime_bucket_start_unix_s\":" << canonical_bucket_begin
         << ",\"canonical_gen_utime_bucket_end_unix_s\":" << canonical_bucket_end
         << ",\"canonical_gen_utime_bucket_duration_s\":" << canonical_bucket_seconds
-        << ",\"target_tps\":" << options_.target_tps << ",\"offered\":" << total.offered
+        << ",\"target_tps\":" << options_.target_tps
+        << ",\"load_mode\":\"" << (options_.target_tps > 0.0 ? "paced" : "bounded_unpaced") << "\""
+        << ",\"rate_limit_enabled\":" << (options_.target_tps > 0.0 ? "true" : "false")
+        << ",\"target_tps_applicable\":" << (options_.target_tps > 0.0 ? "true" : "false")
+        << ",\"configured_connections\":" << options_.connections
+        << ",\"configured_workers\":" << options_.workers
+        << ",\"configured_signers\":" << options_.signers
+        << ",\"configured_sources\":" << options_.sources
+        << ",\"adaptive_initial_cwnd\":" << options_.adaptive_initial_cwnd
+        << ",\"offered\":" << total.offered
         << ",\"steady_offered\":" << total.steady_offered
         << ",\"offered_tps\":" << rate(total.offered, previous_.offered) << ",\"submitted\":" << total.submitted
         << ",\"steady_submitted\":" << total.steady_submitted << ",\"repair_submitted\":" << total.repair_submitted
@@ -3072,7 +3084,11 @@ td::Status NativeLoadWorker::initialize() {
                                 : slot.hard_limit;
     slot.cwnd_limit = std::min<double>(slot.hard_limit, configured_limit);
     CHECK(slot.hard_limit > 0 && slot.cwnd_limit >= 1.0);
-    slot.cwnd = options_.adaptive_inflight ? std::min<double>(slot.cwnd_limit, guessed_window)
+    auto initial_window = options_.adaptive_initial_cwnd
+                              ? static_cast<double>(native_load::distributed_share(
+                                    options_.adaptive_initial_cwnd, i, options_.connections))
+                              : guessed_window;
+    slot.cwnd = options_.adaptive_inflight ? std::min<double>(slot.cwnd_limit, initial_window)
                                            : static_cast<double>(slot.hard_limit);
     stats_.initial_congestion_window += slot.cwnd;
     clients_.push_back(std::move(slot));
@@ -5865,6 +5881,13 @@ int main(int argc, char* argv[]) {
                                          : td::Status::Error(
                                                "adaptive initial RTT must be in (0,60] seconds");
                             });
+  parser.add_checked_option(0, "adaptive-initial-cwnd",
+                            "global initial logical-message window; zero preserves the rate/RTT heuristic",
+                            [&](td::Slice value) {
+                              TRY_RESULT(initial, td::to_integer_safe<td::uint32>(value));
+                              options.adaptive_initial_cwnd = initial;
+                              return td::Status::OK();
+                            });
   parser.add_option(0, "adaptive-max-cwnd",
                     "global adaptive message-window ceiling; zero uses the inflight hard limit",
                     [&](td::Slice value) {
@@ -5993,6 +6016,15 @@ int main(int argc, char* argv[]) {
                                              options.connections,
                                              options.max_inflight)) {
     LOG(FATAL) << "adaptive-max-cwnd must be zero or between connections and inflight";
+  }
+  if (options.adaptive_initial_cwnd != 0 && !options.adaptive_inflight) {
+    LOG(FATAL) << "adaptive-initial-cwnd requires --adaptive-inflight";
+  }
+  if (!native_load::valid_adaptive_initial_cwnd(
+          options.adaptive_initial_cwnd, options.connections, options.workers, options.max_inflight,
+          options.adaptive_max_cwnd,
+          options.native_signed_runs.requested ? options.native_signed_runs.entries_per_run : 1u)) {
+    LOG(FATAL) << "adaptive-initial-cwnd must fit each distributed client ceiling and a complete dispatch quantum";
   }
   if (options.max_canonical_backlog && options.max_canonical_backlog < options.workers) {
     LOG(FATAL) << "max-canonical-backlog must be zero or at least the worker count";

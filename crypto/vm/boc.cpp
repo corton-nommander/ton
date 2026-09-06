@@ -1233,6 +1233,22 @@ void NewCellStorageStat::dfs(Ref<Cell> cell, bool need_stat, bool need_proof_sta
   if (!need_proof_stat && !need_stat) {
     return;
   }
+  // DataCell is final: this constant-time guard excludes lazy/usage wrappers.
+  // Ordinary, non-virtualized level-zero cells have no slice transformation;
+  // preserve fetch_ref's child virtualize(0), including wrapper side effects.
+  const auto* data_cell = dynamic_cast<const DataCell*>(cell.get());
+  if (data_cell && !data_cell->is_special() && !data_cell->is_virtualized() && data_cell->get_level() == 0) {
+    if (need_stat) {
+      stat_.bits += data_cell->get_bits();
+    }
+    if (need_proof_stat) {
+      proof_stat_.bits += data_cell->get_bits();
+    }
+    for (unsigned ref_id = 0; ref_id < data_cell->get_refs_cnt(); ++ref_id) {
+      dfs(data_cell->get_ref(ref_id)->virtualize(0), need_stat, need_proof_stat);
+    }
+    return;
+  }
   vm::CellSlice cs{vm::NoVm{}, std::move(cell)};
   if (need_stat) {
     stat_.bits += cs.size();

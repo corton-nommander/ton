@@ -1,0 +1,152 @@
+{
+  "scope": "Read-only audit of candidate6a96c953 source; relevant current files match that revision. No production edits or tests executed.",
+  "classification": "Concrete generator recovery-path bug; no demonstrated canonical correctness or proof-accounting failure.",
+  "server_paths": [
+    {
+      "file": "validator/impl/ext-message-pool.cpp",
+      "line": 785,
+      "effect": "Per-input ErrorCode::timeout with external message admission deadline expired; other deadline guards emit the same status."
+    },
+    {
+      "file": "validator/impl/liteserver.cpp",
+      "line": 157,
+      "effect": "Native singleton response alarm produces ErrorCode::timeout with native sendMessage admission deadline expired."
+    },
+    {
+      "file": "validator/impl/liteserver.cpp",
+      "line": 167,
+      "effect": "Batch response alarm produces ErrorCode::timeout with sendMessageBatch admission deadline expired."
+    },
+    {
+      "file": "validator/interfaces/external-message.h",
+      "line": 94,
+      "effect": "ExternalMessageAdmissionResult::failure preserves code and message."
+    },
+    {
+      "file": "validator/impl/liteserver.cpp",
+      "line": 730,
+      "effect": "Ordered batch results serialize status error code/message without flattening."
+    }
+  ],
+  "client_paths": [
+    {
+      "file": "lite-client/native-load-generator.cpp",
+      "line": 263,
+      "effect": "unwrap_lite_result preserves liteServer_error code and message."
+    },
+    {
+      "file": "lite-client/native-load-generator.cpp",
+      "line": 4595,
+      "effect": "Query-level errors fan out to active batch tasks, preserving status code/message."
+    },
+    {
+      "file": "lite-client/native-load-generator.cpp",
+      "line": 4647,
+      "effect": "Per-input error reconstructs td::Status from code/message and calls handle_task_error."
+    },
+    {
+      "file": "lite-client/native-load-generator.cpp",
+      "line": 4681,
+      "effect": "Timeout predicate and broad expired predicate can both be true."
+    },
+    {
+      "file": "lite-client/native-load-generator.cpp",
+      "line": 4700,
+      "effect": "Task reason timeout has precedence; timeout counters and normal congestion response apply."
+    },
+    {
+      "file": "lite-client/native-load-generator.cpp",
+      "line": 4780,
+      "effect": "Independent expired branch increments rejected_expired and immediately calls sign_task(task,true), bypassing the timeout retry scheduling branch."
+    },
+    {
+      "file": "lite-client/native-load-generator.cpp",
+      "line": 3886,
+      "effect": "sign_task clears BOC/signature; resign refreshes valid_until, resets attempts, sets resigned_after_expiry, increments resigned and performs a real signature."
+    }
+  ],
+  "measured_evidence": {
+    "b1": {
+      "timeout_task_errors": 43,
+      "expired_submission_errors": 42,
+      "resigned": 42,
+      "timeout_retry_schedules": 1,
+      "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b1",
+      "benchmark_summary_sha256": "39ced17a391c836cd6d5c9fd7c65cce8749304a2cd606b3ab657f326e2592ee3",
+      "validator_session_stats_sha256": "e7d18e5d809216aaf4d30fd619c4251d8814b166f98176bbd4f3d5e687c547f8",
+      "counter_paths": {
+        "timeout_task_errors": "generator.final.task_errors_by_reason.timeout",
+        "expired_submission_errors": "generator.final.submission_errors_by_reason.expired",
+        "resigned": "generator.final.resigned",
+        "timeout_retry_schedules": "generator.final.retries_by_reason.timeout"
+      },
+      "unit": "Physical-parent task outcomes; a query-level error may fan out across multiple active parents. These counts are not independent RPC failures."
+    },
+    "b2": {
+      "timeout_task_errors": 61,
+      "expired_submission_errors": 61,
+      "resigned": 61,
+      "timeout_retry_schedules": 0,
+      "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b2",
+      "benchmark_summary_sha256": "430cd18cda969e2d09d7928817adb089cb3dace2b885a29d136019050300ceed",
+      "validator_session_stats_sha256": "eedeb7b9be65c613e16b689fc941fce6bdd8b079ebf30f6c6908ca7fe74ed1e7",
+      "counter_paths": {
+        "timeout_task_errors": "generator.final.task_errors_by_reason.timeout",
+        "expired_submission_errors": "generator.final.submission_errors_by_reason.expired",
+        "resigned": "generator.final.resigned",
+        "timeout_retry_schedules": "generator.final.retries_by_reason.timeout"
+      },
+      "unit": "Physical-parent task outcomes; a query-level error may fan out across multiple active parents. These counts are not independent RPC failures."
+    },
+    "a1": {
+      "timeout_task_errors": 48,
+      "expired_submission_errors": 48,
+      "resigned": 48,
+      "timeout_retry_schedules": 0,
+      "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a1",
+      "benchmark_summary_sha256": "e84a0fb36b0e5bd93611fe2b57f0d39788def5a880fac99cbe16e8f02ae78fc3",
+      "validator_session_stats_sha256": "4922daee0efdd9f3968a6ca80d1c61a324a6cc2ad0140f21afc357c814c6d2dc",
+      "counter_paths": {
+        "timeout_task_errors": "generator.final.task_errors_by_reason.timeout",
+        "expired_submission_errors": "generator.final.submission_errors_by_reason.expired",
+        "resigned": "generator.final.resigned",
+        "timeout_retry_schedules": "generator.final.retries_by_reason.timeout"
+      },
+      "unit": "Physical-parent task outcomes; a query-level error may fan out across multiple active parents. These counts are not independent RPC failures."
+    },
+    "a2": {
+      "timeout_task_errors": 579,
+      "expired_submission_errors": 324,
+      "resigned": 324,
+      "timeout_retry_schedules": 255,
+      "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a2",
+      "benchmark_summary_sha256": "457c5cb3741b633af1646698f9a87b72d489fd0e4bb0f3608edc3283a595fc53",
+      "validator_session_stats_sha256": "1dfdabff8b9460ccdb03a5e6c266fe37525ee5e0b656b55db8b74cfed74f05f2",
+      "counter_paths": {
+        "timeout_task_errors": "generator.final.task_errors_by_reason.timeout",
+        "expired_submission_errors": "generator.final.submission_errors_by_reason.expired",
+        "resigned": "generator.final.resigned",
+        "timeout_retry_schedules": "generator.final.retries_by_reason.timeout"
+      },
+      "unit": "Physical-parent task outcomes; a query-level error may fan out across multiple active parents. These counts are not independent RPC failures."
+    }
+  },
+  "safety_limits": [
+    "Saved aggregate equality supports execution of the re-sign branch, but individual diagnostic strings and timeout origins are not logged.",
+    "Both old and new expected external hashes remain registered by remember_expected_hash; inactive tasks are skipped in callbacks and canonical proof attribution is retained.",
+    "No claim that this small number of signatures explains the TPS deficit; congestion-window cuts remain driven by legitimate timeout classification.",
+    "Retry path can check actual valid_until before resend; avoiding timeout-triggered re-signing does not require extending signed validity or weakening server deadlines.",
+    "The all-four series remains frozen; proposed diagnosis/fix is for subsequent work. Re-signing and AIMD timeout-loss attribution are distinct, and42/61 affected parent outcomes do not establish a TPS remedy."
+  ],
+  "smallest_recommended_next_step": "Make timeout status take precedence over the broad expiry predicate for recovery action, e.g. signed_expiry = !timeout && existing_expiry_markers. Keep timeout error counting, AIMD reduction and bounded retry path unchanged. Add additive timeout-origin and recovery-action counters if attributing runtime prevalence.",
+  "required_focused_cases": [
+    "ErrorCode::timeout plus external message admission deadline expired: timeout backoff, unchanged signed BOC/hash/valid_until/attempt reset state.",
+    "The native singleton and batch admission deadline diagnostics follow the same timeout recovery action.",
+    "True native transfer valid_until is in the past and native message expired before mempool commit still re-sign.",
+    "A timeout arriving after actual signed validity expired can re-sign when the retry path observes valid_until, not merely from the response wording.",
+    "Batch query error applies correct recovery only to still-active tasks; mixed ordered success/deadline/true-expiry results release credits once and retain old expected hashes."
+  ],
+  "source_revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9",
+  "source_evidence_scope": "Relevant current source files have an empty git diff against6a96c953. Legacy incumbent4caa92df also has the same broad expired predicate and re-sign branch; this finding is not established as a candidate-introduced regression.",
+  "post_series_context": "All four frozen arms completed. Root retains incumbent source/runtime because no eligible capacity pair exists. The same recovery-path issue exists in the incumbent; no implementation change was made during this audit."
+}

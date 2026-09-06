@@ -1,5 +1,10 @@
 # Native admission diagnostics
 
+This document describes the preserved, unpromoted diagnostic trial in local
+branch `perf/proof-trial-20260906` (live image source `6a96c953`). Production
+code on master retains incumbent `4caa92df` after the full live series failed
+capacity gates. See [the selection report](native-performance-cycles-2026-09-06-followup.md).
+
 `total.ext_msg_batch_diagnostics` is a cumulative ExtMessagePool statistics key.
 The same fields appear as `name=value` in the existing, rate-limited native
 batch admission log. Statistics use `name:value`. The instrumentation does

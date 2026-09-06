@@ -1,5 +1,10 @@
 # Native load pacing diagnostics
 
+This document describes the preserved, unpromoted diagnostic trial in local
+branch `perf/proof-trial-20260906` (live image source `6a96c953`). Production
+code on master retains incumbent `4caa92df` after the full live series failed
+capacity gates. See [the selection report](native-performance-cycles-2026-09-06-followup.md).
+
 The generator emits `pacing_telemetry` in every JSON report and repeats the
 object in `worker_pacing_snapshots[]`. These are diagnostic observations. They
 do not change the target, token bucket, timers, issue gates, or benchmark

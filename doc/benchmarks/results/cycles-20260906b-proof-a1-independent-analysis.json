@@ -1,0 +1,1281 @@
+{
+  "schema": "native-proof-arm-analysis-v1",
+  "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-a1",
+  "comparison_scope": "Incumbent 4caa92df versus combined diagnostics/proof candidate 6a96c953; no pure-proof live TPS attribution.",
+  "run": {
+    "run_id": "20260906T130226Z",
+    "started_at": "2026-09-06T13:02:33Z",
+    "finished_at": "2026-09-06T13:10:58Z",
+    "elapsed_seconds": 505,
+    "benchmark_exit_code": 0,
+    "generator_container_exit_code": 0,
+    "env_sha256": "4d63139638c35101a9d0ced0f95ff4d568d61643ea0eb2d99f13ad893d90be04"
+  },
+  "provenance": {
+    "benchmark_summary_sha256": "e84a0fb36b0e5bd93611fe2b57f0d39788def5a880fac99cbe16e8f02ae78fc3",
+    "validator_session_stats_sha256": "4922daee0efdd9f3968a6ca80d1c61a324a6cc2ad0140f21afc357c814c6d2dc",
+    "analysis_script_sha256": "b157976037deb2f383cd0759044193f5770f22b6f50a43079b52f4833f35b6e7"
+  },
+  "measurement_window": {
+    "start_unix_s": 1788699941.417,
+    "end_unix_s": 1788700241.417,
+    "duration_s": 300.0,
+    "selection": "Non-null block_stats; basechain workchain/workchain_id=0; start <= collated_at < end. Pipeline prefers rounded generator *_unix_ms / 1000.",
+    "scope": "Full accumulated cost of candidate records finishing inside the phase; not cost clipped at boundaries, unique canonical transfers, or the offered cohort."
+  },
+  "candidate_records": 1817,
+  "candidate_records_by_shard": {
+    "-2305843009213693952": 449,
+    "-6917529027641081856": 455,
+    "6917529027641081856": 459,
+    "2305843009213693952": 454
+  },
+  "accepted_candidate_transfers": 16395472,
+  "block_stats_transactions": 16395472,
+  "consistency": {
+    "raw_candidate_count_matches_pipeline": true,
+    "raw_accepted_matches_pipeline": true,
+    "raw_rebuild_count_matches_pipeline": true,
+    "raw_groups_match_pipeline": true,
+    "raw_transactions_match_pipeline": true,
+    "unexpected_selected_record_types": {},
+    "invalid_jsonl_lines_skipped_like_harness": 0,
+    "real_stage_matches_pipeline:native_stat_checkpoint_rebuild": true,
+    "real_stage_matches_pipeline:native_proof_preflight": true,
+    "real_stage_matches_pipeline:native_commit": true,
+    "real_stage_matches_pipeline:native_staged_dict_set": true,
+    "real_stage_matches_pipeline:native_execute": true,
+    "real_stage_matches_pipeline:native_account_cell_build": true,
+    "real_stage_matches_pipeline:native_state_install": true,
+    "real_stage_matches_pipeline:native_batch_serialize": true,
+    "real_stage_matches_pipeline:create_state_merkle_update": true,
+    "real_stage_matches_pipeline:total": true
+  },
+  "stages": {
+    "native_stat_checkpoint_rebuild": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 21.553152000000008,
+        "us_per_accepted_candidate_transfer": 1.3145795375698857,
+        "us_per_checkpoint_rebuild": 1822.8308525033835
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 21.55082599999997,
+        "us_per_accepted_candidate_transfer": 1.314437669132061,
+        "us_per_checkpoint_rebuild": 1822.6341339648147
+      }
+    },
+    "native_proof_preflight": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 0.010558000000000007,
+        "us_per_accepted_candidate_transfer": 0.0006439582831162169,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 0.010305000000000003,
+        "us_per_accepted_candidate_transfer": 0.0006285271933616796,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_commit": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 66.743527,
+        "us_per_accepted_candidate_transfer": 4.070851208187236,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 66.6801619999999,
+        "us_per_accepted_candidate_transfer": 4.066986421616889,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_staged_dict_set": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 31.926200999999928,
+        "us_per_accepted_candidate_transfer": 1.9472572061359337,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 31.910614,
+        "us_per_accepted_candidate_transfer": 1.9463065168236693,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_execute": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 21.89136599999999,
+        "us_per_accepted_candidate_transfer": 1.3352080379265685,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 21.905439999999967,
+        "us_per_accepted_candidate_transfer": 1.3360664456625564,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_account_cell_build": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 1.1729959999999988,
+        "us_per_accepted_candidate_transfer": 0.07154389943760076,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 1.1747000000000007,
+        "us_per_accepted_candidate_transfer": 0.0716478305717579,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_state_install": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 2.3995240000000004,
+        "us_per_accepted_candidate_transfer": 0.1463528466884028,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 2.395886000000003,
+        "us_per_accepted_candidate_transfer": 0.14613095615667565,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_batch_serialize": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 13.005770999999989,
+        "us_per_accepted_candidate_transfer": 0.7932538325215638,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 12.995635000000002,
+        "us_per_accepted_candidate_transfer": 0.7926356130521891,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "create_state_merkle_update": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 32.43460400000001,
+        "us_per_accepted_candidate_transfer": 1.978265950501456,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 32.41284899999995,
+        "us_per_accepted_candidate_transfer": 1.9769390597599112,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "total": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 90.23843299999979,
+        "us_per_accepted_candidate_transfer": 5.503863078781738,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1817,
+        "sum_s": 90.28428699999996,
+        "us_per_accepted_candidate_transfer": 5.5066598265667475,
+        "us_per_checkpoint_rebuild": null
+      }
+    }
+  },
+  "stage_semantics": "Checkpoint timing includes base/trial ProofStorageStat copying and add_proof traversal. CPU uses the executing thread clock; checkpoint scope is synchronous. Native commit encloses component stages: do not add parent/child timings. Values are printed to microsecond precision per candidate.",
+  "packing": {
+    "counters": {
+      "native_microbatch_accepted": 16395472,
+      "native_microbatch_input": 16423216,
+      "native_microbatch_delayed": 27744,
+      "native_microbatch_permanent": 0,
+      "native_microbatches": 33800,
+      "native_microbatch_unique_accounts": 2049430,
+      "native_account_cells_built": 2049428,
+      "native_staged_dict_sets": 2049428,
+      "native_state_accounts_installed": 2048738,
+      "native_stat_checkpoint_base_snapshots": 1817,
+      "native_stat_checkpoint_rebuilds": 11824,
+      "native_checkpoint_groups": 11824,
+      "native_checkpoint_group_entries": 16395472,
+      "native_checkpoint_group_fragments": 33800,
+      "native_checkpoint_rollbacks": 0,
+      "native_checkpoint_rollback_entries": 0,
+      "native_checkpoint_ingress_retentions": 0,
+      "native_checkpoint_flush_capacity": 6512,
+      "native_checkpoint_flush_ingress": 5268,
+      "native_checkpoint_flush_deadline": 0,
+      "native_checkpoint_flush_fanout": 0,
+      "native_checkpoint_flush_headroom": 0,
+      "native_checkpoint_flush_latency": 44,
+      "native_deferral_state_nonce_mismatch_entries": 27744,
+      "native_hard_preflight_failures": 0,
+      "native_size_guard_deferrals": 0
+    },
+    "maxima_across_candidates": {
+      "native_checkpoint_group_max_entries": 2048,
+      "native_checkpoint_group_max_fragments": 4,
+      "native_microbatch_max_input": 512,
+      "native_microbatch_max_unique_accounts": 64
+    },
+    "counter_missing_or_invalid_rows": {},
+    "checkpoint_rebuilds_per_million_accepted": 721.1747243385247,
+    "group_entries_per_group": 1386.6265223274695,
+    "group_fragments_per_group": 2.858592692828146,
+    "staged_sets_per_accepted": 0.12499963404530226,
+    "histograms": {
+      "microbatch_accounts": {
+        "capture_complete": true,
+        "counts": {
+          "native_microbatch_accounts_le64": 33800,
+          "native_microbatch_accounts_65_80": 0,
+          "native_microbatch_accounts_81_128": 0,
+          "native_microbatch_accounts_129_256": 0,
+          "native_microbatch_accounts_257_511": 0,
+          "native_microbatch_accounts_512": 0,
+          "native_microbatch_accounts_gt512": 0
+        },
+        "missing_or_invalid_rows_by_field": {}
+      },
+      "staged_updates": {
+        "capture_complete": true,
+        "counts": {
+          "native_staged_updates_le64": 3719,
+          "native_staged_updates_65_80": 165,
+          "native_staged_updates_81_128": 581,
+          "native_staged_updates_129_256": 7359,
+          "native_staged_updates_257_511": 0,
+          "native_staged_updates_512": 0,
+          "native_staged_updates_gt512": 0
+        },
+        "missing_or_invalid_rows_by_field": {}
+      },
+      "staged_workers": {
+        "capture_complete": true,
+        "counts": {
+          "native_staged_workers_1": 11824,
+          "native_staged_workers_2": 0,
+          "native_staged_workers_4": 0,
+          "native_staged_workers_8": 0,
+          "native_staged_workers_other": 0
+        },
+        "missing_or_invalid_rows_by_field": {}
+      },
+      "microbatch_accounts_small": {
+        "capture_complete": false,
+        "counts": null,
+        "missing_or_invalid_rows_by_field": {
+          "native_microbatch_accounts_le8": 1817,
+          "native_microbatch_accounts_9_16": 1817,
+          "native_microbatch_accounts_17_32": 1817,
+          "native_microbatch_accounts_33_64": 1817
+        }
+      },
+      "staged_updates_small": {
+        "capture_complete": false,
+        "counts": null,
+        "missing_or_invalid_rows_by_field": {
+          "native_staged_updates_le8": 1817,
+          "native_staged_updates_9_16": 1817,
+          "native_staged_updates_17_32": 1817,
+          "native_staged_updates_33_64": 1817
+        }
+      }
+    },
+    "semantics": "Histogram populations include attempts/rollback; bins are not per-checkpoint timing strata. Missing fine telemetry in the incumbent is unavailable, never zero."
+  },
+  "admission_full_run": {
+    "capture_complete": false,
+    "unavailable_reason": "missing_or_incomplete_additive_telemetry_old_image_or_capture",
+    "counter_deltas_valid": false,
+    "counters_delta": null,
+    "timings": {
+      "residence": {
+        "samples_delta": null,
+        "sum_s_delta": null,
+        "mean_s": null,
+        "cumulative_max_s_before": null,
+        "cumulative_max_s_after": null
+      },
+      "aborted_residence": {
+        "samples_delta": null,
+        "sum_s_delta": null,
+        "mean_s": null,
+        "cumulative_max_s_before": null,
+        "cumulative_max_s_after": null
+      },
+      "shard_wait": {
+        "samples_delta": null,
+        "sum_s_delta": null,
+        "mean_s": null,
+        "cumulative_max_s_before": null,
+        "cumulative_max_s_after": null
+      },
+      "verification": {
+        "samples_delta": null,
+        "sum_s_delta": null,
+        "mean_s": null,
+        "cumulative_max_s_before": null,
+        "cumulative_max_s_after": null
+      },
+      "snapshot_age": {
+        "samples_delta": null,
+        "sum_s_delta": null,
+        "mean_s": null,
+        "cumulative_max_s_before": null,
+        "cumulative_max_s_after": null
+      },
+      "changed_snapshot_age": {
+        "samples_delta": null,
+        "sum_s_delta": null,
+        "mean_s": null,
+        "cumulative_max_s_before": null,
+        "cumulative_max_s_after": null
+      }
+    },
+    "native_parent_attempts": 1449440,
+    "not_ready_retry_schedules": 165950,
+    "not_ready_schedules_per_parent_attempt": 0.11449249365272104,
+    "semantics": "Admission causes and timing means cover before/after full-run pool captures; retry counts cover generator attempts including retries/repairs. They cannot be divided by measured candidate accepted transfers."
+  },
+  "generator_measurement": {
+    "target_tps": 60000,
+    "steady_offered": 15982368,
+    "steady_offered_avg_tps": 53274.56,
+    "measure_elapsed_s": 300,
+    "canonical_gen_utime_bucket_duration_s": 299,
+    "canonical_chain_measure_transfers": 15892512,
+    "canonical_chain_measure_avg_tps": 53152.214046822744,
+    "measure_canonical_backpressure_fraction": 0,
+    "canonical_backlog_at_measure_end": 355152
+  },
+  "pacing_measured": {
+    "available": false,
+    "values": null,
+    "semantics": "Measured clipped credits, exact boundary balances, worker-second issue holds and phase-intersected maxima. Worker seconds are not wall-time union; no values are synthesized for old images."
+  },
+  "external_wait_measured": {
+    "semantics": "wall-clock-only external queue waits; the ten categories are mutually exclusive and each record should reconcile to wait_externals_time within max(100us, 0.1%); aggregate signed errors cannot hide a failing record",
+    "telemetry_available": true,
+    "capture_complete": true,
+    "records_total": 1817,
+    "records_with_telemetry": 1817,
+    "wait_externals_total_s": 196.96125800000019,
+    "reported_accounted_total_s": 196.96125800000019,
+    "category_total_s": 196.9612760000004,
+    "accounting_error_s": 1.8000000210349754e-05,
+    "reported_accounting_error_s": 0,
+    "category_vs_reported_accounted_error_s": 1.8000000210349754e-05,
+    "absolute_accounting_error_s": 1.8000000210349754e-05,
+    "accounting_tolerance_envelope_s": 0.23385524399999608,
+    "max_per_record_absolute_accounting_error_s": 2.0000000000297558e-06,
+    "accounting_within_tolerance": true,
+    "external_wait_calls": 18362,
+    "category_calls": 18362,
+    "call_accounting_error": 0,
+    "categories": {
+      "round_live": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "round_native_coalescing": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "generic_try_pop": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "generic_sync_snapshot": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "native_probe": {
+        "seconds": 0.9007940000000004,
+        "calls": 5356,
+        "fraction_of_accounted": 0.004573457791379458
+      },
+      "native_first_work": {
+        "seconds": 130.53246600000034,
+        "calls": 1578,
+        "fraction_of_accounted": 0.6627316829993044
+      },
+      "native_fragment_refill": {
+        "seconds": 41.248037000000025,
+        "calls": 8264,
+        "fraction_of_accounted": 0.20942208340281815
+      },
+      "native_post_commit_idle": {
+        "seconds": 24.279979000000036,
+        "calls": 3164,
+        "fraction_of_accounted": 0.12327286719502986
+      },
+      "native_producer_drain": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "native_sync_snapshot": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      }
+    }
+  },
+  "acceptance": {
+    "chain_correctness_valid": true,
+    "correctness_invalid_reasons": [],
+    "run_complete": true,
+    "run_incomplete_reasons": [],
+    "ingress_capacity_valid": false,
+    "ingress_capacity_invalid_reasons": [
+      "offer_target_not_attained"
+    ],
+    "chain_capacity_valid": false,
+    "chain_capacity_invalid_reasons": [
+      "insufficient_load_over_canonical_throughput"
+    ],
+    "capacity_load": {
+      "measured_offered_avg_tps": 53274.56,
+      "measured_canonical_chain_avg_tps": 53152.214046822744,
+      "offered_above_canonical": true,
+      "invalid_reasons": []
+    },
+    "native_signed_run_quantum_required": true,
+    "native_signed_run_quantum_valid": true,
+    "native_signed_run_quantum_telemetry_contract_valid": true,
+    "native_signed_run_quantum_benchmark_profile_valid": true,
+    "native_signed_run_quantum_invalid_reasons": [],
+    "canonical_lane_balance_required": true,
+    "canonical_lane_balance_valid": true,
+    "canonical_lane_balance_invalid_reasons": [],
+    "native_run_batching_required": true,
+    "native_run_batching_enforced": true,
+    "native_run_batching_valid": true,
+    "native_run_batching_invalid_reasons": [],
+    "strict_image_reuse_required": true,
+    "strict_image_reuse_valid": true,
+    "validator_cleanup_valid": true,
+    "validator_cleanup_invalid_reasons": [],
+    "reproducible": false,
+    "reproducibility_reasons": [
+      "one_or_more_images_lack_source_revision_label"
+    ],
+    "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+  },
+  "load_level_acceptance": {
+    "valid": false,
+    "classification": "rejected",
+    "capacity_claim_allowed": false,
+    "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+  },
+  "strict_image_reuse": {
+    "required": true,
+    "valid": true,
+    "validator_before": {
+      "container_id": "9444eca458f154d95a8e2443e255b940705375461bbab9d460313d9d3bfaf664",
+      "image_id": "sha256:dd84211cccf6397d895fb0e6489c2ed712d1bbc19af3047f2a6f935bd8286b4a",
+      "started_at": "2026-09-06T13:01:07.419995377Z",
+      "restart_count": 0,
+      "running": true,
+      "validator_process": {
+        "pid": 31,
+        "start_ticks": 10726774
+      }
+    },
+    "validator_after": {
+      "container_id": "9444eca458f154d95a8e2443e255b940705375461bbab9d460313d9d3bfaf664",
+      "image_id": "sha256:dd84211cccf6397d895fb0e6489c2ed712d1bbc19af3047f2a6f935bd8286b4a",
+      "started_at": "2026-09-06T13:01:07.419995377Z",
+      "restart_count": 0,
+      "running": true,
+      "validator_process": {
+        "pid": 31,
+        "start_ticks": 10726774
+      }
+    },
+    "generator_image_before": "sha256:b152a246e082cd38bce4d1ec362a85db68e0535e435d9a801d0f2687784f4503",
+    "generator_image_after": "sha256:b152a246e082cd38bce4d1ec362a85db68e0535e435d9a801d0f2687784f4503",
+    "generator_container_before": "4147695ca28973113489c8340ac5a6d35cf23b5d628a87c73b3a197e853ab9e5",
+    "generator_container_after": "4147695ca28973113489c8340ac5a6d35cf23b5d628a87c73b3a197e853ab9e5",
+    "semantics": "prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"
+  },
+  "dip_diagnostics": {
+    "scope": "Diagnostic report-aligned approximately ten-second windows within the measured phase; generator counters use asynchronous worker snapshots. Saved resource samples and whole candidate records use the same report endpoints. These are not canonical TPS or proof-stage causality estimates; no samples are removed from the full-arm metrics.",
+    "window_selection_rule": "Report at/after each elapsed 90+10*k boundary through last report before390; measured phase begins at90. Highlight offered delta below45000 (75% of fixed60000 target).",
+    "highlighted_window_threshold_offered_tps": 45000,
+    "windows": [
+      {
+        "report_start_elapsed_s": 90.9079275969998,
+        "report_end_elapsed_s": 100.2676409699925,
+        "report_start_measure_elapsed_s": 0.907927596999798,
+        "report_end_measure_elapsed_s": 10.267640969992499,
+        "offered_tps_from_report_counter_delta": 51256.270452073186,
+        "admission_tps_from_report_counter_delta": 52775.97510895329,
+        "not_ready_delta": 11953,
+        "native_parent_attempt_delta": 41778,
+        "not_ready_per_attempt": 0.2861075207046771,
+        "client_capacity_hold_delta": 7437,
+        "cwnd_min": 16794.51304138257,
+        "cwnd_max": 31816.100633714195,
+        "candidate_accepted": 534224.0,
+        "candidate_checkpoint_us_per_accepted": 0.9716523405912126,
+        "candidate_checkpoint_us_per_rebuild": 1540.2967359050444,
+        "sampled_cpu_mean_cores": {
+          "genesis": 10.061475,
+          "native-load-generator": 0.792325,
+          "session-stats": 0.0002
+        },
+        "saved_host_iowait_mean_percent": 1.734125
+      },
+      {
+        "report_start_elapsed_s": 100.2676409699925,
+        "report_end_elapsed_s": 110.54428171100153,
+        "report_start_measure_elapsed_s": 10.267640969992499,
+        "report_end_measure_elapsed_s": 20.54428171100153,
+        "offered_tps_from_report_counter_delta": 55826.803180011615,
+        "admission_tps_from_report_counter_delta": 56144.416696165295,
+        "not_ready_delta": 3720,
+        "native_parent_attempt_delta": 39624,
+        "not_ready_per_attempt": 0.09388249545729861,
+        "client_capacity_hold_delta": 3170,
+        "cwnd_min": 16794.51304138257,
+        "cwnd_max": 17279.041760090662,
+        "candidate_accepted": 571616.0,
+        "candidate_checkpoint_us_per_accepted": 1.0988198370934334,
+        "candidate_checkpoint_us_per_rebuild": 1484.8770685579195,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.24516,
+          "native-load-generator": 0.7703800000000001,
+          "session-stats": 0.6152200000000001
+        },
+        "saved_host_iowait_mean_percent": 1.7799
+      },
+      {
+        "report_start_elapsed_s": 110.54428171100153,
+        "report_end_elapsed_s": 120.89370730500377,
+        "report_start_measure_elapsed_s": 20.54428171100153,
+        "report_end_measure_elapsed_s": 30.893707305003772,
+        "offered_tps_from_report_counter_delta": 57767.07070066506,
+        "admission_tps_from_report_counter_delta": 57253.80550041294,
+        "not_ready_delta": 3527,
+        "native_parent_attempt_delta": 40720,
+        "not_ready_per_attempt": 0.08661591355599214,
+        "client_capacity_hold_delta": 3773,
+        "cwnd_min": 17279.041760090662,
+        "cwnd_max": 17755.02934395968,
+        "candidate_accepted": 592048.0,
+        "candidate_checkpoint_us_per_accepted": 1.380930262411156,
+        "candidate_checkpoint_us_per_rebuild": 1717.5987394957983,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.445879999999999,
+          "native-load-generator": 0.80236,
+          "session-stats": 1.02368
+        },
+        "saved_host_iowait_mean_percent": 1.7010999999999998
+      },
+      {
+        "report_start_elapsed_s": 120.89370730500377,
+        "report_end_elapsed_s": 130.19865991799452,
+        "report_start_measure_elapsed_s": 30.893707305003772,
+        "report_end_measure_elapsed_s": 40.19865991799452,
+        "offered_tps_from_report_counter_delta": 57125.70736339854,
+        "admission_tps_from_report_counter_delta": 58045.64756686065,
+        "not_ready_delta": 3955,
+        "native_parent_attempt_delta": 37535,
+        "not_ready_per_attempt": 0.10536832289862795,
+        "client_capacity_hold_delta": 2798,
+        "cwnd_min": 17755.02934395968,
+        "cwnd_max": 18180.829064482154,
+        "candidate_accepted": 531088.0,
+        "candidate_checkpoint_us_per_accepted": 1.2619358750338927,
+        "candidate_checkpoint_us_per_rebuild": 1714.063938618926,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.28826,
+          "native-load-generator": 0.7537999999999999,
+          "session-stats": 1.02826
+        },
+        "saved_host_iowait_mean_percent": 1.617125
+      },
+      {
+        "report_start_elapsed_s": 130.19865991799452,
+        "report_end_elapsed_s": 140.42176991100132,
+        "report_start_measure_elapsed_s": 40.19865991799452,
+        "report_end_measure_elapsed_s": 50.42176991100132,
+        "offered_tps_from_report_counter_delta": 53954.618543409524,
+        "admission_tps_from_report_counter_delta": 52912.274285420586,
+        "not_ready_delta": 1744,
+        "native_parent_attempt_delta": 36082,
+        "not_ready_per_attempt": 0.048334349537165346,
+        "client_capacity_hold_delta": 5668,
+        "cwnd_min": 18180.829064482154,
+        "cwnd_max": 18549.862008998694,
+        "candidate_accepted": 497376.0,
+        "candidate_checkpoint_us_per_accepted": 1.2365313163481952,
+        "candidate_checkpoint_us_per_rebuild": 2135.4895833333335,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.64704,
+          "native-load-generator": 0.60192,
+          "session-stats": 1.04034
+        },
+        "saved_host_iowait_mean_percent": 1.885777777777778
+      },
+      {
+        "report_start_elapsed_s": 140.42176991100132,
+        "report_end_elapsed_s": 150.84763692499837,
+        "report_start_measure_elapsed_s": 50.42176991100132,
+        "report_end_measure_elapsed_s": 60.84763692499837,
+        "offered_tps_from_report_counter_delta": 43732.76576306511,
+        "admission_tps_from_report_counter_delta": 44587.56277783955,
+        "not_ready_delta": 7294,
+        "native_parent_attempt_delta": 35729,
+        "not_ready_per_attempt": 0.20414789106887962,
+        "client_capacity_hold_delta": 9777,
+        "cwnd_min": 11642.359638218515,
+        "cwnd_max": 18620.80699373313,
+        "candidate_accepted": 690160.0,
+        "candidate_checkpoint_us_per_accepted": 1.1490422510722151,
+        "candidate_checkpoint_us_per_rebuild": 1705.425806451613,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.70844,
+          "native-load-generator": 0.71738,
+          "session-stats": 1.0294
+        },
+        "saved_host_iowait_mean_percent": 1.6068000000000002
+      },
+      {
+        "report_start_elapsed_s": 150.84763692499837,
+        "report_end_elapsed_s": 160.07721818299615,
+        "report_start_measure_elapsed_s": 60.84763692499837,
+        "report_end_measure_elapsed_s": 70.07721818299615,
+        "offered_tps_from_report_counter_delta": 56945.59539681843,
+        "admission_tps_from_report_counter_delta": 57054.809452345224,
+        "not_ready_delta": 2776,
+        "native_parent_attempt_delta": 35733,
+        "not_ready_per_attempt": 0.07768729185906585,
+        "client_capacity_hold_delta": 5437,
+        "cwnd_min": 12029.746924692123,
+        "cwnd_max": 12765.647733544416,
+        "candidate_accepted": 540272.0,
+        "candidate_checkpoint_us_per_accepted": 1.8788480617170609,
+        "candidate_checkpoint_us_per_rebuild": 2063.1890243902435,
+        "sampled_cpu_mean_cores": {
+          "genesis": 8.883140000000001,
+          "native-load-generator": 0.8245000000000001,
+          "session-stats": 1.02204
+        },
+        "saved_host_iowait_mean_percent": 1.6595555555555555
+      },
+      {
+        "report_start_elapsed_s": 160.07721818299615,
+        "report_end_elapsed_s": 170.33165604699752,
+        "report_start_measure_elapsed_s": 70.07721818299615,
+        "report_end_measure_elapsed_s": 80.33165604699752,
+        "offered_tps_from_report_counter_delta": 53855.31682226262,
+        "admission_tps_from_report_counter_delta": 54541.84884804184,
+        "not_ready_delta": 4914,
+        "native_parent_attempt_delta": 39457,
+        "not_ready_per_attempt": 0.12454063917682541,
+        "client_capacity_hold_delta": 7123,
+        "cwnd_min": 12765.647733544416,
+        "cwnd_max": 13428.653626905463,
+        "candidate_accepted": 580800.0,
+        "candidate_checkpoint_us_per_accepted": 1.3540633608815427,
+        "candidate_checkpoint_us_per_rebuild": 1684.0256959314775,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.884739999999999,
+          "native-load-generator": 0.81828,
+          "session-stats": 1.02304
+        },
+        "saved_host_iowait_mean_percent": 1.6986666666666668
+      },
+      {
+        "report_start_elapsed_s": 170.33165604699752,
+        "report_end_elapsed_s": 180.5146424479899,
+        "report_start_measure_elapsed_s": 80.33165604699752,
+        "report_end_measure_elapsed_s": 90.5146424479899,
+        "offered_tps_from_report_counter_delta": 59179.49570680676,
+        "admission_tps_from_report_counter_delta": 58572.9938657164,
+        "not_ready_delta": 3516,
+        "native_parent_attempt_delta": 41241,
+        "not_ready_per_attempt": 0.08525496471957518,
+        "client_capacity_hold_delta": 4216,
+        "cwnd_min": 13428.653626905463,
+        "cwnd_max": 14078.215993633596,
+        "candidate_accepted": 583104.0,
+        "candidate_checkpoint_us_per_accepted": 1.5958902700032926,
+        "candidate_checkpoint_us_per_rebuild": 1895.254582484725,
+        "sampled_cpu_mean_cores": {
+          "genesis": 8.12508,
+          "native-load-generator": 0.63844,
+          "session-stats": 1.02034
+        },
+        "saved_host_iowait_mean_percent": 1.7097777777777778
+      },
+      {
+        "report_start_elapsed_s": 180.5146424479899,
+        "report_end_elapsed_s": 190.70975631500187,
+        "report_start_measure_elapsed_s": 90.5146424479899,
+        "report_end_measure_elapsed_s": 100.70975631500187,
+        "offered_tps_from_report_counter_delta": 46913.45346789921,
+        "admission_tps_from_report_counter_delta": 46723.558580480225,
+        "not_ready_delta": 1323,
+        "native_parent_attempt_delta": 31151,
+        "not_ready_per_attempt": 0.042470546691920005,
+        "client_capacity_hold_delta": 5944,
+        "cwnd_min": 14078.215993633596,
+        "cwnd_max": 14552.825896151611,
+        "candidate_accepted": 649136.0,
+        "candidate_checkpoint_us_per_accepted": 1.3953963422148825,
+        "candidate_checkpoint_us_per_rebuild": 2258.857855361596,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.565339999999999,
+          "native-load-generator": 0.66448,
+          "session-stats": 1.0149599999999999
+        },
+        "saved_host_iowait_mean_percent": 2.1484
+      },
+      {
+        "report_start_elapsed_s": 190.70975631500187,
+        "report_end_elapsed_s": 200.04113067899016,
+        "report_start_measure_elapsed_s": 100.70975631500187,
+        "report_end_measure_elapsed_s": 110.04113067899016,
+        "offered_tps_from_report_counter_delta": 39711.192107999435,
+        "admission_tps_from_report_counter_delta": 39743.77037440928,
+        "not_ready_delta": 6805,
+        "native_parent_attempt_delta": 30022,
+        "not_ready_per_attempt": 0.226667110785424,
+        "client_capacity_hold_delta": 9731,
+        "cwnd_min": 14552.825896151611,
+        "cwnd_max": 14890.372000289151,
+        "candidate_accepted": 483936.0,
+        "candidate_checkpoint_us_per_accepted": 1.1446575580242015,
+        "candidate_checkpoint_us_per_rebuild": 1668.4969879518073,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.3809,
+          "native-load-generator": 0.86602,
+          "session-stats": 1.02006
+        },
+        "saved_host_iowait_mean_percent": 1.7096666666666667
+      },
+      {
+        "report_start_elapsed_s": 200.04113067899016,
+        "report_end_elapsed_s": 210.20070205999946,
+        "report_start_measure_elapsed_s": 110.04113067899016,
+        "report_end_measure_elapsed_s": 120.20070205999946,
+        "offered_tps_from_report_counter_delta": 58804.0555644631,
+        "admission_tps_from_report_counter_delta": 58907.99695730315,
+        "not_ready_delta": 2759,
+        "native_parent_attempt_delta": 40113,
+        "not_ready_per_attempt": 0.06878069453793034,
+        "client_capacity_hold_delta": 2237,
+        "cwnd_min": 14890.372000289151,
+        "cwnd_max": 15440.435571365955,
+        "candidate_accepted": 587424.0,
+        "candidate_checkpoint_us_per_accepted": 1.273926499428011,
+        "candidate_checkpoint_us_per_rebuild": 1685.4391891891892,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.465019999999999,
+          "native-load-generator": 0.74424,
+          "session-stats": 1.03232
+        },
+        "saved_host_iowait_mean_percent": 3.216333333333333
+      },
+      {
+        "report_start_elapsed_s": 210.20070205999946,
+        "report_end_elapsed_s": 220.60771734100126,
+        "report_start_measure_elapsed_s": 120.20070205999946,
+        "report_end_measure_elapsed_s": 130.60771734100126,
+        "offered_tps_from_report_counter_delta": 40863.20510899289,
+        "admission_tps_from_report_counter_delta": 40199.03773598845,
+        "not_ready_delta": 7477,
+        "native_parent_attempt_delta": 33668,
+        "not_ready_per_attempt": 0.22208031365094452,
+        "client_capacity_hold_delta": 10360,
+        "cwnd_min": 14398.001374991292,
+        "cwnd_max": 15757.897569073826,
+        "candidate_accepted": 431344.0,
+        "candidate_checkpoint_us_per_accepted": 1.2376618198004377,
+        "candidate_checkpoint_us_per_rebuild": 1860.1324041811847,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.14492,
+          "native-load-generator": 0.7788,
+          "session-stats": 1.0260799999999999
+        },
+        "saved_host_iowait_mean_percent": 2.3752
+      },
+      {
+        "report_start_elapsed_s": 220.60771734100126,
+        "report_end_elapsed_s": 231.00297610799316,
+        "report_start_measure_elapsed_s": 130.60771734100126,
+        "report_end_measure_elapsed_s": 141.00297610799316,
+        "offered_tps_from_report_counter_delta": 48616.00959898392,
+        "admission_tps_from_report_counter_delta": 49661.10142820288,
+        "not_ready_delta": 4332,
+        "native_parent_attempt_delta": 36284,
+        "not_ready_per_attempt": 0.11939146731341638,
+        "client_capacity_hold_delta": 10909,
+        "cwnd_min": 10540.132139941334,
+        "cwnd_max": 14492.452157398166,
+        "candidate_accepted": 510944.0,
+        "candidate_checkpoint_us_per_accepted": 1.7746661082232105,
+        "candidate_checkpoint_us_per_rebuild": 2042.240990990991,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.465219999999999,
+          "native-load-generator": 0.74352,
+          "session-stats": 1.04016
+        },
+        "saved_host_iowait_mean_percent": 3.5447777777777776
+      },
+      {
+        "report_start_elapsed_s": 231.00297610799316,
+        "report_end_elapsed_s": 240.5357315250003,
+        "report_start_measure_elapsed_s": 141.00297610799316,
+        "report_end_measure_elapsed_s": 150.5357315250003,
+        "offered_tps_from_report_counter_delta": 57489.359164955655,
+        "admission_tps_from_report_counter_delta": 57564.88821909623,
+        "not_ready_delta": 1445,
+        "native_parent_attempt_delta": 35674,
+        "not_ready_per_attempt": 0.0405056904187924,
+        "client_capacity_hold_delta": 8225,
+        "cwnd_min": 11173.724726404509,
+        "cwnd_max": 12114.02612737839,
+        "candidate_accepted": 514080.0,
+        "candidate_checkpoint_us_per_accepted": 1.5431605975723623,
+        "candidate_checkpoint_us_per_rebuild": 2044.6082474226805,
+        "sampled_cpu_mean_cores": {
+          "genesis": 10.329725,
+          "native-load-generator": 0.711975,
+          "session-stats": 1.041575
+        },
+        "saved_host_iowait_mean_percent": 4.317111111111111
+      },
+      {
+        "report_start_elapsed_s": 240.5357315250003,
+        "report_end_elapsed_s": 250.75876617999165,
+        "report_start_measure_elapsed_s": 150.5357315250003,
+        "report_end_measure_elapsed_s": 160.75876617999165,
+        "offered_tps_from_report_counter_delta": 43357.771440556164,
+        "admission_tps_from_report_counter_delta": 43814.77859720499,
+        "not_ready_delta": 927,
+        "native_parent_attempt_delta": 28686,
+        "not_ready_per_attempt": 0.03231541518510772,
+        "client_capacity_hold_delta": 7965,
+        "cwnd_min": 12114.02612737839,
+        "cwnd_max": 12723.272376887371,
+        "candidate_accepted": 339232.0,
+        "candidate_checkpoint_us_per_accepted": 1.2862524761814924,
+        "candidate_checkpoint_us_per_rebuild": 2118.145631067961,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.98345,
+          "native-load-generator": 0.6685666666666666,
+          "session-stats": 1.0382
+        },
+        "saved_host_iowait_mean_percent": 3.723
+      },
+      {
+        "report_start_elapsed_s": 250.75876617999165,
+        "report_end_elapsed_s": 260.30101359199034,
+        "report_start_measure_elapsed_s": 160.75876617999165,
+        "report_end_measure_elapsed_s": 170.30101359199034,
+        "offered_tps_from_report_counter_delta": 47405.184593222766,
+        "admission_tps_from_report_counter_delta": 46394.10202708973,
+        "not_ready_delta": 2799,
+        "native_parent_attempt_delta": 30977,
+        "not_ready_per_attempt": 0.0903573619136779,
+        "client_capacity_hold_delta": 9897,
+        "cwnd_min": 12723.272376887371,
+        "cwnd_max": 13253.72825235575,
+        "candidate_accepted": 586576.0,
+        "candidate_checkpoint_us_per_accepted": 1.2607863260685743,
+        "candidate_checkpoint_us_per_rebuild": 1920.9012987012986,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.811425,
+          "native-load-generator": 0.7367250000000001,
+          "session-stats": 1.0191249999999998
+        },
+        "saved_host_iowait_mean_percent": 1.625
+      },
+      {
+        "report_start_elapsed_s": 260.30101359199034,
+        "report_end_elapsed_s": 270.6846757809981,
+        "report_start_measure_elapsed_s": 170.30101359199034,
+        "report_end_measure_elapsed_s": 180.68467578099808,
+        "offered_tps_from_report_counter_delta": 56545.753252794166,
+        "admission_tps_from_report_counter_delta": 56653.615005190695,
+        "not_ready_delta": 2977,
+        "native_parent_attempt_delta": 39517,
+        "not_ready_per_attempt": 0.07533466609307386,
+        "client_capacity_hold_delta": 7155,
+        "cwnd_min": 13253.72825235575,
+        "cwnd_max": 13938.217371876382,
+        "candidate_accepted": 577200.0,
+        "candidate_checkpoint_us_per_accepted": 1.316470893970894,
+        "candidate_checkpoint_us_per_rebuild": 1734.8561643835617,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.036533333333333,
+          "native-load-generator": 0.74645,
+          "session-stats": 1.0271166666666667
+        },
+        "saved_host_iowait_mean_percent": 1.6936
+      },
+      {
+        "report_start_elapsed_s": 270.6846757809981,
+        "report_end_elapsed_s": 280.9681909369974,
+        "report_start_measure_elapsed_s": 180.68467578099808,
+        "report_end_measure_elapsed_s": 190.96819093699742,
+        "offered_tps_from_report_counter_delta": 55931.069413015895,
+        "admission_tps_from_report_counter_delta": 56035.31392316033,
+        "not_ready_delta": 4406,
+        "native_parent_attempt_delta": 40613,
+        "not_ready_per_attempt": 0.10848743013320858,
+        "client_capacity_hold_delta": 7603,
+        "cwnd_min": 13938.217371876382,
+        "cwnd_max": 14557.951955558798,
+        "candidate_accepted": 576448.0,
+        "candidate_checkpoint_us_per_accepted": 1.2350654352170534,
+        "candidate_checkpoint_us_per_rebuild": 1687.0876777251185,
+        "sampled_cpu_mean_cores": {
+          "genesis": 8.54564,
+          "native-load-generator": 0.7614,
+          "session-stats": 0.9486800000000001
+        },
+        "saved_host_iowait_mean_percent": 2.061
+      },
+      {
+        "report_start_elapsed_s": 280.9681909369974,
+        "report_end_elapsed_s": 290.2706265960005,
+        "report_start_measure_elapsed_s": 190.96819093699742,
+        "report_end_measure_elapsed_s": 200.2706265960005,
+        "offered_tps_from_report_counter_delta": 57123.964032549644,
+        "admission_tps_from_report_counter_delta": 57344.12142735171,
+        "not_ready_delta": 1978,
+        "native_parent_attempt_delta": 35155,
+        "not_ready_per_attempt": 0.05626511164841417,
+        "client_capacity_hold_delta": 3868,
+        "cwnd_min": 14557.951955558798,
+        "cwnd_max": 15089.916857922448,
+        "candidate_accepted": 505232.0,
+        "candidate_checkpoint_us_per_accepted": 1.354460920923457,
+        "candidate_checkpoint_us_per_rebuild": 1810.3624338624338,
+        "sampled_cpu_mean_cores": {
+          "genesis": 8.876025,
+          "native-load-generator": 0.7066,
+          "session-stats": 1.008175
+        },
+        "saved_host_iowait_mean_percent": 1.83875
+      },
+      {
+        "report_start_elapsed_s": 290.2706265960005,
+        "report_end_elapsed_s": 300.46264720299223,
+        "report_start_measure_elapsed_s": 200.2706265960005,
+        "report_end_measure_elapsed_s": 210.46264720299223,
+        "offered_tps_from_report_counter_delta": 55616.84202356721,
+        "admission_tps_from_report_counter_delta": 56078.379551932594,
+        "not_ready_delta": 380,
+        "native_parent_attempt_delta": 35825,
+        "not_ready_per_attempt": 0.010607117934403349,
+        "client_capacity_hold_delta": 4790,
+        "cwnd_min": 15089.916857922448,
+        "cwnd_max": 15612.594058910816,
+        "candidate_accepted": 415280.0,
+        "candidate_checkpoint_us_per_accepted": 1.1409001155846659,
+        "candidate_checkpoint_us_per_rebuild": 2087.193832599119,
+        "sampled_cpu_mean_cores": {
+          "genesis": 10.37712,
+          "native-load-generator": 0.6861,
+          "session-stats": 1.0565
+        },
+        "saved_host_iowait_mean_percent": 2.857666666666667
+      },
+      {
+        "report_start_elapsed_s": 300.46264720299223,
+        "report_end_elapsed_s": 310.08165808799095,
+        "report_start_measure_elapsed_s": 210.46264720299223,
+        "report_end_measure_elapsed_s": 220.08165808799095,
+        "offered_tps_from_report_counter_delta": 42921.66886346705,
+        "admission_tps_from_report_counter_delta": 42176.47789885562,
+        "not_ready_delta": 6582,
+        "native_parent_attempt_delta": 32394,
+        "not_ready_per_attempt": 0.2031857751435451,
+        "client_capacity_hold_delta": 9861,
+        "cwnd_min": 15612.594058910816,
+        "cwnd_max": 15956.914384814025,
+        "candidate_accepted": 594432.0,
+        "candidate_checkpoint_us_per_accepted": 1.083526795327304,
+        "candidate_checkpoint_us_per_rebuild": 1754.9945504087193,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.93296,
+          "native-load-generator": 0.79446,
+          "session-stats": 0.81828
+        },
+        "saved_host_iowait_mean_percent": 2.1291
+      },
+      {
+        "report_start_elapsed_s": 310.08165808799095,
+        "report_end_elapsed_s": 320.3726832340035,
+        "report_start_measure_elapsed_s": 220.08165808799095,
+        "report_end_measure_elapsed_s": 230.3726832340035,
+        "offered_tps_from_report_counter_delta": 57236.66900456741,
+        "admission_tps_from_report_counter_delta": 57261.54504911767,
+        "not_ready_delta": 3128,
+        "native_parent_attempt_delta": 39957,
+        "not_ready_per_attempt": 0.07828415546712716,
+        "client_capacity_hold_delta": 1472,
+        "cwnd_min": 15956.914384814025,
+        "cwnd_max": 16465.20137134082,
+        "candidate_accepted": 600256.0,
+        "candidate_checkpoint_us_per_accepted": 1.2987708577673527,
+        "candidate_checkpoint_us_per_rebuild": 1540.701581027668,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.35552,
+          "native-load-generator": 0.81258,
+          "session-stats": 0.018080000000000002
+        },
+        "saved_host_iowait_mean_percent": 1.8932222222222224
+      },
+      {
+        "report_start_elapsed_s": 320.3726832340035,
+        "report_end_elapsed_s": 330.64611278800294,
+        "report_start_measure_elapsed_s": 230.3726832340035,
+        "report_end_measure_elapsed_s": 240.64611278800294,
+        "offered_tps_from_report_counter_delta": 61365.291569510264,
+        "admission_tps_from_report_counter_delta": 60944.78934313171,
+        "not_ready_delta": 3092,
+        "native_parent_attempt_delta": 42486,
+        "not_ready_per_attempt": 0.07277691474838771,
+        "client_capacity_hold_delta": 1808,
+        "cwnd_min": 16465.20137134082,
+        "cwnd_max": 16984.99188190228,
+        "candidate_accepted": 634512.0,
+        "candidate_checkpoint_us_per_accepted": 1.324814975918501,
+        "candidate_checkpoint_us_per_rebuild": 1744.0062240663901,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.101149999999999,
+          "native-load-generator": 0.7940333333333333,
+          "session-stats": 0.7772166666666666
+        },
+        "saved_host_iowait_mean_percent": 1.7364000000000002
+      },
+      {
+        "report_start_elapsed_s": 330.64611278800294,
+        "report_end_elapsed_s": 341.0149112139916,
+        "report_start_measure_elapsed_s": 240.64611278800294,
+        "report_end_measure_elapsed_s": 251.01491121399158,
+        "offered_tps_from_report_counter_delta": 60311.7134992788,
+        "admission_tps_from_report_counter_delta": 60547.80642918515,
+        "not_ready_delta": 5509,
+        "native_parent_attempt_delta": 44543,
+        "not_ready_per_attempt": 0.12367824349504973,
+        "client_capacity_hold_delta": 4863,
+        "cwnd_min": 16984.99188190228,
+        "cwnd_max": 17480.71278312907,
+        "candidate_accepted": 598640.0,
+        "candidate_checkpoint_us_per_accepted": 1.4339469464118668,
+        "candidate_checkpoint_us_per_rebuild": 1924.7040358744396,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.4435,
+          "native-load-generator": 0.78034,
+          "session-stats": 1.0074200000000002
+        },
+        "saved_host_iowait_mean_percent": 1.7371000000000003
+      },
+      {
+        "report_start_elapsed_s": 341.0149112139916,
+        "report_end_elapsed_s": 350.3067398429994,
+        "report_start_measure_elapsed_s": 251.01491121399158,
+        "report_end_measure_elapsed_s": 260.3067398429994,
+        "offered_tps_from_report_counter_delta": 56944.65762618146,
+        "admission_tps_from_report_counter_delta": 56836.1752121975,
+        "not_ready_delta": 2982,
+        "native_parent_attempt_delta": 36129,
+        "not_ready_per_attempt": 0.08253757369426222,
+        "client_capacity_hold_delta": 3280,
+        "cwnd_min": 17480.71278312907,
+        "cwnd_max": 17881.205984844233,
+        "candidate_accepted": 522880.0,
+        "candidate_checkpoint_us_per_accepted": 1.2875745869033048,
+        "candidate_checkpoint_us_per_rebuild": 2071.5292307692307,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.8132,
+          "native-load-generator": 0.70155,
+          "session-stats": 1.0179
+        },
+        "saved_host_iowait_mean_percent": 1.6515
+      },
+      {
+        "report_start_elapsed_s": 350.3067398429994,
+        "report_end_elapsed_s": 360.8516425429989,
+        "report_start_measure_elapsed_s": 260.3067398429994,
+        "report_end_measure_elapsed_s": 270.8516425429989,
+        "offered_tps_from_report_counter_delta": 49325.063947723684,
+        "admission_tps_from_report_counter_delta": 48534.5398208391,
+        "not_ready_delta": 5242,
+        "native_parent_attempt_delta": 37585,
+        "not_ready_per_attempt": 0.13947053345749635,
+        "client_capacity_hold_delta": 9952,
+        "cwnd_min": 17881.205984844233,
+        "cwnd_max": 18249.78378843812,
+        "candidate_accepted": 539360.0,
+        "candidate_checkpoint_us_per_accepted": 1.1070101601898545,
+        "candidate_checkpoint_us_per_rebuild": 1787.6556886227545,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.534180000000001,
+          "native-load-generator": 0.67972,
+          "session-stats": 1.02734
+        },
+        "saved_host_iowait_mean_percent": 1.9787
+      },
+      {
+        "report_start_elapsed_s": 360.8516425429989,
+        "report_end_elapsed_s": 370.2050623289979,
+        "report_start_measure_elapsed_s": 270.8516425429989,
+        "report_end_measure_elapsed_s": 280.2050623289979,
+        "offered_tps_from_report_counter_delta": 56976.807648228576,
+        "admission_tps_from_report_counter_delta": 57596.04640074025,
+        "not_ready_delta": 4231,
+        "native_parent_attempt_delta": 37682,
+        "not_ready_per_attempt": 0.11228172602303486,
+        "client_capacity_hold_delta": 3543,
+        "cwnd_min": 18249.78378843812,
+        "cwnd_max": 18634.905799702996,
+        "candidate_accepted": 545936.0,
+        "candidate_checkpoint_us_per_accepted": 1.2467743471762258,
+        "candidate_checkpoint_us_per_rebuild": 1731.9567430025445,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.11294,
+          "native-load-generator": 0.72728,
+          "session-stats": 1.0224199999999999
+        },
+        "saved_host_iowait_mean_percent": 1.77775
+      },
+      {
+        "report_start_elapsed_s": 370.2050623289979,
+        "report_end_elapsed_s": 380.56570863899833,
+        "report_start_measure_elapsed_s": 280.2050623289979,
+        "report_end_measure_elapsed_s": 290.56570863899833,
+        "offered_tps_from_report_counter_delta": 58184.78712260702,
+        "admission_tps_from_report_counter_delta": 58007.19202429506,
+        "not_ready_delta": 7102,
+        "native_parent_attempt_delta": 44750,
+        "not_ready_per_attempt": 0.15870391061452513,
+        "client_capacity_hold_delta": 3404,
+        "cwnd_min": 18634.905799702996,
+        "cwnd_max": 19049.34810718174,
+        "candidate_accepted": 580768.0,
+        "candidate_checkpoint_us_per_accepted": 1.3483060361452421,
+        "candidate_checkpoint_us_per_rebuild": 1791.883295194508,
+        "sampled_cpu_mean_cores": {
+          "genesis": 9.45588,
+          "native-load-generator": 0.76112,
+          "session-stats": 1.02216
+        },
+        "saved_host_iowait_mean_percent": 1.7437
+      },
+      {
+        "report_start_elapsed_s": 380.56570863899833,
+        "report_end_elapsed_s": 389.7943266989896,
+        "report_start_measure_elapsed_s": 290.56570863899833,
+        "report_end_measure_elapsed_s": 299.7943266989896,
+        "offered_tps_from_report_counter_delta": 54926.533605019424,
+        "admission_tps_from_report_counter_delta": 56471.293601297075,
+        "not_ready_delta": 5219,
+        "native_parent_attempt_delta": 36919,
+        "not_ready_per_attempt": 0.1413635255559468,
+        "client_capacity_hold_delta": 3725,
+        "cwnd_min": 19049.34810718174,
+        "cwnd_max": 19403.436978057707,
+        "candidate_accepted": 471376.0,
+        "candidate_checkpoint_us_per_accepted": 1.4116989409728116,
+        "candidate_checkpoint_us_per_rebuild": 1928.8144927536232,
+        "sampled_cpu_mean_cores": {
+          "genesis": 7.9188600000000005,
+          "native-load-generator": 0.5889800000000001,
+          "session-stats": 1.02888
+        },
+        "saved_host_iowait_mean_percent": 1.7026666666666666
+      }
+    ],
+    "final_not_ready_schedules_per_parent_attempt": 0.11449249365272104,
+    "sharp_zero_report_elapsed_s": 183.54867556299723,
+    "limitations": [
+      "Incumbent lacks additive clipping/hold-duration/admission-cause telemetry. Cumulative RTT maxima are not interval RTT measurements.",
+      "Different candidate completion windows can consume already-admitted backlog during a generator offer dip; no causal link to proof traversal is established."
+    ]
+  },
+  "independent_final_audit": {
+    "recorded_summary_hash_matches": true,
+    "validator_identity_equal": true,
+    "generator_image_equal": true,
+    "generator_container_equal": true,
+    "offered_measured_proof_resolved": true,
+    "offered_all_proof_resolved": true,
+    "target_attainment": 0.8879093333333333,
+    "not_ready_attempt_rate": 0.11449249365272104,
+    "validator_identity_equal_within_arm": true,
+    "generator_image_equal_within_arm": true,
+    "generator_container_equal_within_arm": true,
+    "zero_final_credits_and_backlog": true,
+    "zero_canonical_hash_conflicts": true,
+    "wrapper_exit_zero": true,
+    "generator_exit_zero": true,
+    "not_interrupted": true
+  },
+  "full_run_pressure_summary": {
+    "native_parent_attempts": 1449440,
+    "not_ready_task_outcomes": 165950,
+    "not_ready_retry_schedules": 165950,
+    "not_ready_retry_schedule_rate_per_parent_attempt": 0.11449249365272104,
+    "timeout_task_outcomes": 48,
+    "expired_submission_outcomes": 48,
+    "resigned": 48,
+    "timeout_retry_schedules": 0,
+    "issue_hold_observation_counts": {
+      "active_capacity": 0,
+      "source_capacity": 0,
+      "canonical_capacity": 0,
+      "pacing_credit": 1347293,
+      "client_capacity": 188850,
+      "query_credit": 0
+    },
+    "initial_congestion_window": 30000,
+    "peak_sampled_congestion_window": 31816.100633714195,
+    "final_congestion_window": 19547.845463743004,
+    "scope": "Full generator run, including ramp/warmup/drain. Counts are parent task outcomes, not RPC events; a query-level failure can fan out. Hold observations are neither durations nor mutually independent causes."
+  }
+}

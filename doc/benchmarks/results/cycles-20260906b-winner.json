@@ -4,7 +4,7 @@
   "incumbent_image_tag": "cycle-coalesce-4caa92df",
   "default_native_run_batching": false,
   "promoted_candidate": null,
-  "selection": "No candidate has passed repeated matched capacity comparisons. Preserve incumbent defaults.",
+  "selection": "Retain incumbent production source and defaults; no candidate passed repeated matched capacity comparisons. Preserve proof/diagnostic trial code in perf/proof-trial-20260906 and immutable candidate images.",
   "rejected_candidates": [
     {
       "candidate": "physical_batch_size_16_at_20ms",
@@ -26,13 +26,37 @@
       "candidate": "window65536_initial_rtt_0.5_target60000",
       "evidence": "cycles-20260906b-window64k-calibration.json",
       "reason": "Achieved93.737% target below95%; no promotion."
+    },
+    {
+      "candidate": "combined_diagnostics_and_refined_proof_fast_path",
+      "source_revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9",
+      "image_tag": "cycle-proof-6a96c953",
+      "evidence": "cycles-20260906b-proof-series-audit.json",
+      "canonical_tps_paired_descriptive_change_pct": [
+        0.3058547320901823,
+        11.553092422342104
+      ],
+      "reason": "All four full300s arms fail unchanged ingress target; B2 additionally offered below canonical. All strict image/process/hash/resource/accounting checks pass; no eligible capacity pair.",
+      "component_evidence": "cycles-20260906b-proof-production-summary.json",
+      "component_median_proof_wall_cost_change_pct": -28.18,
+      "component_change_precision": "Rounded to two decimal places; exact per-case results in component evidence."
     }
   ],
-  "active_experiments": [
-    "proof_accounting_fast_path_offline"
-  ],
+  "active_experiments": [],
   "policy": {
     "native_staged_parallel_threshold": 512,
     "native_checkpoint_retain_ingress": false
-  }
+  },
+  "updated_utc": "2026-09-06T13:49:58.192675+00:00",
+  "validated_tps_improvement_pct": null,
+  "best_observed_unqualified_run": {
+    "label": "proof-b2",
+    "canonical_tps": 54781.80602006689,
+    "selected": false,
+    "reason": "91.0289% of target and actual offered below canonical; raw maximum cannot establish capacity.",
+    "scope": "completed_proof_abba_series_only"
+  },
+  "retained_production_revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124",
+  "retained_trial_branch": "perf/proof-trial-20260906",
+  "next_evidence_based_step": "Separate admission deadline expiry from signed-message validity expiry, preserve timeout congestion response and retry horizon, add attribution for timeout-origin/AIMD decreases, then run a fixed prebuilt matched TPS series. Raising the current cwnd cap has no supporting evidence."
 }

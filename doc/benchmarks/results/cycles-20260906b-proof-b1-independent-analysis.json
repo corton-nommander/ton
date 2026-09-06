@@ -1,0 +1,1535 @@
+{
+  "schema": "native-proof-arm-analysis-v1",
+  "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b1",
+  "comparison_scope": "Incumbent 4caa92df versus combined diagnostics/proof candidate 6a96c953; no pure-proof live TPS attribution.",
+  "run": {
+    "run_id": "20260906T131439Z",
+    "started_at": "2026-09-06T13:14:47Z",
+    "finished_at": "2026-09-06T13:23:00Z",
+    "elapsed_seconds": 493,
+    "benchmark_exit_code": 0,
+    "generator_container_exit_code": 0,
+    "env_sha256": "4d63139638c35101a9d0ced0f95ff4d568d61643ea0eb2d99f13ad893d90be04"
+  },
+  "provenance": {
+    "benchmark_summary_sha256": "39ced17a391c836cd6d5c9fd7c65cce8749304a2cd606b3ab657f326e2592ee3",
+    "validator_session_stats_sha256": "e7d18e5d809216aaf4d30fd619c4251d8814b166f98176bbd4f3d5e687c547f8",
+    "analysis_script_sha256": "b157976037deb2f383cd0759044193f5770f22b6f50a43079b52f4833f35b6e7"
+  },
+  "measurement_window": {
+    "start_unix_s": 1788700675.973,
+    "end_unix_s": 1788700975.973,
+    "duration_s": 300.0,
+    "selection": "Non-null block_stats; basechain workchain/workchain_id=0; start <= collated_at < end. Pipeline prefers rounded generator *_unix_ms / 1000.",
+    "scope": "Full accumulated cost of candidate records finishing inside the phase; not cost clipped at boundaries, unique canonical transfers, or the offered cohort."
+  },
+  "candidate_records": 1727,
+  "candidate_records_by_shard": {
+    "6917529027641081856": 431,
+    "-6917529027641081856": 430,
+    "-2305843009213693952": 430,
+    "2305843009213693952": 436
+  },
+  "accepted_candidate_transfers": 16641696,
+  "block_stats_transactions": 16641696,
+  "consistency": {
+    "raw_candidate_count_matches_pipeline": true,
+    "raw_accepted_matches_pipeline": true,
+    "raw_rebuild_count_matches_pipeline": true,
+    "raw_groups_match_pipeline": true,
+    "raw_transactions_match_pipeline": true,
+    "unexpected_selected_record_types": {},
+    "invalid_jsonl_lines_skipped_like_harness": 0,
+    "real_stage_matches_pipeline:native_stat_checkpoint_rebuild": true,
+    "real_stage_matches_pipeline:native_proof_preflight": true,
+    "real_stage_matches_pipeline:native_commit": true,
+    "real_stage_matches_pipeline:native_staged_dict_set": true,
+    "real_stage_matches_pipeline:native_execute": true,
+    "real_stage_matches_pipeline:native_account_cell_build": true,
+    "real_stage_matches_pipeline:native_state_install": true,
+    "real_stage_matches_pipeline:native_batch_serialize": true,
+    "real_stage_matches_pipeline:create_state_merkle_update": true,
+    "real_stage_matches_pipeline:total": true
+  },
+  "stages": {
+    "native_stat_checkpoint_rebuild": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 18.934371999999975,
+        "us_per_accepted_candidate_transfer": 1.1377669679821079,
+        "us_per_checkpoint_rebuild": 1652.2139616055824
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 18.940646000000015,
+        "us_per_accepted_candidate_transfer": 1.1381439728258476,
+        "us_per_checkpoint_rebuild": 1652.7614310645738
+      }
+    },
+    "native_proof_preflight": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 0.009949000000000006,
+        "us_per_accepted_candidate_transfer": 0.0005978357013612078,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 0.009697000000000008,
+        "us_per_accepted_candidate_transfer": 0.0005826930139812678,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_commit": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 64.48065700000006,
+        "us_per_accepted_candidate_transfer": 3.8746445674767807,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 64.45085199999993,
+        "us_per_accepted_candidate_transfer": 3.8728535841539182,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_staged_dict_set": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 32.165741000000054,
+        "us_per_accepted_candidate_transfer": 1.9328403186790608,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 32.151421999999975,
+        "us_per_accepted_candidate_transfer": 1.9319798895497173,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_execute": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 22.08265199999999,
+        "us_per_accepted_candidate_transfer": 1.3269472053809894,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 22.094990999999954,
+        "us_per_accepted_candidate_transfer": 1.327688656252341,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_account_cell_build": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 1.1997649999999977,
+        "us_per_accepted_candidate_transfer": 0.07209391398568978,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 1.200826,
+        "us_per_accepted_candidate_transfer": 0.0721576695067618,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_state_install": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 2.459994000000002,
+        "us_per_accepted_candidate_transfer": 0.147821111502097,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 2.458846999999999,
+        "us_per_accepted_candidate_transfer": 0.14775218823850642,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_batch_serialize": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 12.820794000000017,
+        "us_per_accepted_candidate_transfer": 0.7704018869230647,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 12.782674000000021,
+        "us_per_accepted_candidate_transfer": 0.7681112550067025,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "create_state_merkle_update": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 32.258727,
+        "us_per_accepted_candidate_transfer": 1.938427850142197,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 32.26054599999995,
+        "us_per_accepted_candidate_transfer": 1.938537153905464,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "total": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 89.7516800000001,
+        "us_per_accepted_candidate_transfer": 5.393181079620737,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1727,
+        "sum_s": 89.81453300000005,
+        "us_per_accepted_candidate_transfer": 5.396957918231415,
+        "us_per_checkpoint_rebuild": null
+      }
+    }
+  },
+  "stage_semantics": "Checkpoint timing includes base/trial ProofStorageStat copying and add_proof traversal. CPU uses the executing thread clock; checkpoint scope is synchronous. Native commit encloses component stages: do not add parent/child timings. Values are printed to microsecond precision per candidate.",
+  "packing": {
+    "counters": {
+      "native_microbatch_accepted": 16641696,
+      "native_microbatch_input": 16697216,
+      "native_microbatch_delayed": 55520,
+      "native_microbatch_permanent": 0,
+      "native_microbatches": 34023,
+      "native_microbatch_unique_accounts": 2080206,
+      "native_account_cells_built": 2080134,
+      "native_staged_dict_sets": 2080134,
+      "native_state_accounts_installed": 2078286,
+      "native_stat_checkpoint_base_snapshots": 1726,
+      "native_stat_checkpoint_rebuilds": 11460,
+      "native_checkpoint_groups": 11460,
+      "native_checkpoint_group_entries": 16641696,
+      "native_checkpoint_group_fragments": 34023,
+      "native_checkpoint_rollbacks": 0,
+      "native_checkpoint_rollback_entries": 0,
+      "native_checkpoint_ingress_retentions": 0,
+      "native_checkpoint_flush_capacity": 6746,
+      "native_checkpoint_flush_ingress": 4673,
+      "native_checkpoint_flush_deadline": 0,
+      "native_checkpoint_flush_fanout": 0,
+      "native_checkpoint_flush_headroom": 0,
+      "native_checkpoint_flush_latency": 41,
+      "native_deferral_state_nonce_mismatch_entries": 55520,
+      "native_hard_preflight_failures": 0,
+      "native_size_guard_deferrals": 0
+    },
+    "maxima_across_candidates": {
+      "native_checkpoint_group_max_entries": 2048,
+      "native_checkpoint_group_max_fragments": 4,
+      "native_microbatch_max_input": 512,
+      "native_microbatch_max_unique_accounts": 64
+    },
+    "counter_missing_or_invalid_rows": {},
+    "checkpoint_rebuilds_per_million_accepted": 688.6317356115627,
+    "group_entries_per_group": 1452.1549738219894,
+    "group_fragments_per_group": 2.968848167539267,
+    "staged_sets_per_accepted": 0.12499531297771574,
+    "histograms": {
+      "microbatch_accounts": {
+        "capture_complete": true,
+        "counts": {
+          "native_microbatch_accounts_le64": 34023,
+          "native_microbatch_accounts_65_80": 0,
+          "native_microbatch_accounts_81_128": 0,
+          "native_microbatch_accounts_129_256": 0,
+          "native_microbatch_accounts_257_511": 0,
+          "native_microbatch_accounts_512": 0,
+          "native_microbatch_accounts_gt512": 0
+        },
+        "missing_or_invalid_rows_by_field": {}
+      },
+      "staged_updates": {
+        "capture_complete": true,
+        "counts": {
+          "native_staged_updates_le64": 3246,
+          "native_staged_updates_65_80": 160,
+          "native_staged_updates_81_128": 452,
+          "native_staged_updates_129_256": 7602,
+          "native_staged_updates_257_511": 0,
+          "native_staged_updates_512": 0,
+          "native_staged_updates_gt512": 0
+        },
+        "missing_or_invalid_rows_by_field": {}
+      },
+      "staged_workers": {
+        "capture_complete": true,
+        "counts": {
+          "native_staged_workers_1": 11460,
+          "native_staged_workers_2": 0,
+          "native_staged_workers_4": 0,
+          "native_staged_workers_8": 0,
+          "native_staged_workers_other": 0
+        },
+        "missing_or_invalid_rows_by_field": {}
+      },
+      "microbatch_accounts_small": {
+        "capture_complete": true,
+        "counts": {
+          "native_microbatch_accounts_le8": 291,
+          "native_microbatch_accounts_9_16": 304,
+          "native_microbatch_accounts_17_32": 797,
+          "native_microbatch_accounts_33_64": 32631
+        },
+        "missing_or_invalid_rows_by_field": {}
+      },
+      "staged_updates_small": {
+        "capture_complete": true,
+        "counts": {
+          "native_staged_updates_le8": 149,
+          "native_staged_updates_9_16": 139,
+          "native_staged_updates_17_32": 444,
+          "native_staged_updates_33_64": 2514
+        },
+        "missing_or_invalid_rows_by_field": {}
+      }
+    },
+    "semantics": "Histogram populations include attempts/rollback; bins are not per-checkpoint timing strata. Missing fine telemetry in the incumbent is unavailable, never zero."
+  },
+  "admission_full_run": {
+    "capture_complete": true,
+    "unavailable_reason": null,
+    "counter_deltas_valid": true,
+    "counters_delta": {
+      "finished_batches": 118591,
+      "aborted_batches": 0,
+      "not_ready_total": 188899,
+      "not_ready_snapshot_changed": 188899,
+      "not_ready_account_changed_verification": 0,
+      "not_ready_account_changed_insertion": 0,
+      "not_ready_account_changed_commit": 0,
+      "not_ready_canonical_watermark_lag": 0,
+      "not_ready_masterchain_unavailable": 0,
+      "not_ready_shard_unavailable": 0,
+      "not_ready_mempool_full": 0,
+      "not_ready_per_address_limit": 0,
+      "not_ready_other": 0
+    },
+    "timings": {
+      "residence": {
+        "samples_delta": 118591,
+        "sum_s_delta": 13039.876067,
+        "mean_s": 0.10995670891551634,
+        "cumulative_max_s_before": 0.0,
+        "cumulative_max_s_after": 1.05853
+      },
+      "aborted_residence": {
+        "samples_delta": 0,
+        "sum_s_delta": 0,
+        "mean_s": null,
+        "cumulative_max_s_before": 0.0,
+        "cumulative_max_s_after": 0.0
+      },
+      "shard_wait": {
+        "samples_delta": 39106,
+        "sum_s_delta": 2067.52219,
+        "mean_s": 0.05286969237457168,
+        "cumulative_max_s_before": 0.0,
+        "cumulative_max_s_after": 0.377203
+      },
+      "verification": {
+        "samples_delta": 118577,
+        "sum_s_delta": 10783.11644,
+        "mean_s": 0.09093767290452617,
+        "cumulative_max_s_before": 0.0,
+        "cumulative_max_s_after": 0.773364
+      },
+      "snapshot_age": {
+        "samples_delta": 118577,
+        "sum_s_delta": 12929.995629,
+        "mean_s": 0.10904303219848706,
+        "cumulative_max_s_before": 0.0,
+        "cumulative_max_s_after": 1.05752
+      },
+      "changed_snapshot_age": {
+        "samples_delta": 15659,
+        "sum_s_delta": 2265.826341,
+        "mean_s": 0.14469802292611278,
+        "cumulative_max_s_before": 0.0,
+        "cumulative_max_s_after": 0.821343
+      }
+    },
+    "native_parent_attempts": 1459522,
+    "not_ready_retry_schedules": 188899,
+    "not_ready_schedules_per_parent_attempt": 0.12942525018464948,
+    "semantics": "Admission causes and timing means cover before/after full-run pool captures; retry counts cover generator attempts including retries/repairs. They cannot be divided by measured candidate accepted transfers.",
+    "independent_accounting": {
+      "server_completed_physical_outcomes": 1459511,
+      "server_accepted": 1270580,
+      "server_rejected": 188931,
+      "server_non_code651_rejections": 32,
+      "generator_attempts_minus_server_completed_outcomes": 11,
+      "generator_timeout_task_errors": 43,
+      "generator_expired_submission_errors": 42,
+      "generator_attempts_minus_server_accepted_notready_and_generator_timeout": 0,
+      "snapshot_changed_share_of_code651": 1.0,
+      "verification_wall_sum_fraction_of_completed_residence_wall_sum": 0.8269339665956505,
+      "final_active_batches": 0,
+      "final_aborted_batches": 0,
+      "lifetime_peak_active_batches_before": 0,
+      "lifetime_peak_active_batches_after": 178,
+      "limits": [
+        "Generator attempts and pool completed physical outcomes are different scopes. An exact aggregate equality does not prove a per-attempt mapping or identify which 11 outcomes never completed in the pool scope.",
+        "Full-run admission includes ramp/warmup/drain; it is not clipped to the 300s measurement.",
+        "Verification and residence are overlapping batch wall durations, not CPU use.",
+        "Lifetime maxima are cumulative gauges, not differences or interval percentiles.",
+        "Snapshot identity changes alone do not establish safely reusable source/config evidence."
+      ]
+    }
+  },
+  "generator_measurement": {
+    "target_tps": 60000,
+    "steady_offered": 16021952,
+    "steady_offered_avg_tps": 53406.50666666667,
+    "measure_elapsed_s": 300,
+    "canonical_gen_utime_bucket_duration_s": 299,
+    "canonical_chain_measure_transfers": 15941120,
+    "canonical_chain_measure_avg_tps": 53314.782608695656,
+    "measure_canonical_backpressure_fraction": 0,
+    "canonical_backlog_at_measure_end": 237584
+  },
+  "pacing_measured": {
+    "available": true,
+    "values": {
+      "measure_clipped_tokens": 1977910.5894900267,
+      "measure_clipped_updates": 76243,
+      "measure_token_update_gap_max_s": 0.06406096000864636,
+      "measure_pump_gap_max_s": 0.06406303000403568,
+      "measure_pump_duration_max_s": 0.02417474301182665,
+      "measure_alarm_lateness_max_s": 0.05923247299506329,
+      "measure_start_samples": 6,
+      "measure_start_refilled_tokens": 140.6910498882644,
+      "measure_start_max_service_lag_s": 0.026470915006939322,
+      "measure_end_samples": 6,
+      "measure_end_refilled_tokens": 278.10155986156315,
+      "measure_end_max_service_lag_s": 0.010695261997170746,
+      "measure_native_client_issue_wait_worker_s": 537.7020994586201,
+      "measure_native_client_issue_wait_events": 27005
+    },
+    "semantics": "Measured clipped credits, exact boundary balances, worker-second issue holds and phase-intersected maxima. Worker seconds are not wall-time union; no values are synthesized for old images."
+  },
+  "external_wait_measured": {
+    "semantics": "wall-clock-only external queue waits; the ten categories are mutually exclusive and each record should reconcile to wait_externals_time within max(100us, 0.1%); aggregate signed errors cannot hide a failing record",
+    "telemetry_available": true,
+    "capture_complete": true,
+    "records_total": 1727,
+    "records_with_telemetry": 1727,
+    "wait_externals_total_s": 201.82397000000032,
+    "reported_accounted_total_s": 201.82397000000032,
+    "category_total_s": 201.82397400000005,
+    "accounting_error_s": 3.999999734105586e-06,
+    "reported_accounting_error_s": 0,
+    "category_vs_reported_accounted_error_s": 3.999999734105586e-06,
+    "absolute_accounting_error_s": 3.999999734105586e-06,
+    "accounting_tolerance_envelope_s": 0.23239576499999615,
+    "max_per_record_absolute_accounting_error_s": 2.000000000002e-06,
+    "accounting_within_tolerance": true,
+    "external_wait_calls": 15315,
+    "category_calls": 15315,
+    "call_accounting_error": 0,
+    "categories": {
+      "round_live": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "round_native_coalescing": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "generic_try_pop": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "generic_sync_snapshot": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "native_probe": {
+        "seconds": 0.6810710000000006,
+        "calls": 4508,
+        "fraction_of_accounted": 0.0033745793425825465
+      },
+      "native_first_work": {
+        "seconds": 144.93786600000004,
+        "calls": 1569,
+        "fraction_of_accounted": 0.7181400009126756
+      },
+      "native_fragment_refill": {
+        "seconds": 33.624103999999996,
+        "calls": 6413,
+        "fraction_of_accounted": 0.1666011425699333
+      },
+      "native_post_commit_idle": {
+        "seconds": 22.580933000000016,
+        "calls": 2825,
+        "fraction_of_accounted": 0.11188429699405864
+      },
+      "native_producer_drain": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "native_sync_snapshot": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      }
+    }
+  },
+  "acceptance": {
+    "chain_correctness_valid": true,
+    "correctness_invalid_reasons": [],
+    "run_complete": true,
+    "run_incomplete_reasons": [],
+    "ingress_capacity_valid": false,
+    "ingress_capacity_invalid_reasons": [
+      "offer_target_not_attained"
+    ],
+    "chain_capacity_valid": false,
+    "chain_capacity_invalid_reasons": [
+      "insufficient_load_over_canonical_throughput"
+    ],
+    "capacity_load": {
+      "measured_offered_avg_tps": 53406.50666666667,
+      "measured_canonical_chain_avg_tps": 53314.782608695656,
+      "offered_above_canonical": true,
+      "invalid_reasons": []
+    },
+    "native_signed_run_quantum_required": true,
+    "native_signed_run_quantum_valid": true,
+    "native_signed_run_quantum_telemetry_contract_valid": true,
+    "native_signed_run_quantum_benchmark_profile_valid": true,
+    "native_signed_run_quantum_invalid_reasons": [],
+    "canonical_lane_balance_required": true,
+    "canonical_lane_balance_valid": true,
+    "canonical_lane_balance_invalid_reasons": [],
+    "native_run_batching_required": true,
+    "native_run_batching_enforced": true,
+    "native_run_batching_valid": true,
+    "native_run_batching_invalid_reasons": [],
+    "strict_image_reuse_required": true,
+    "strict_image_reuse_valid": true,
+    "validator_cleanup_valid": true,
+    "validator_cleanup_invalid_reasons": [],
+    "reproducible": false,
+    "reproducibility_reasons": [
+      "one_or_more_images_lack_source_revision_label"
+    ],
+    "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+  },
+  "load_level_acceptance": {
+    "valid": false,
+    "classification": "rejected",
+    "capacity_claim_allowed": false,
+    "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+  },
+  "strict_image_reuse": {
+    "required": true,
+    "valid": true,
+    "validator_before": {
+      "container_id": "b50c994fcbedc4e9d5becf79af5e7d25aebe3a45956d1732de162b42fc618a2f",
+      "image_id": "sha256:020eafda13aa003b420bcb7bd6910bc506ed3cb4442d78d6eab582b67eb8cca6",
+      "started_at": "2026-09-06T13:13:11.693904691Z",
+      "restart_count": 0,
+      "running": true,
+      "validator_process": {
+        "pid": 30,
+        "start_ticks": 10799271
+      }
+    },
+    "validator_after": {
+      "container_id": "b50c994fcbedc4e9d5becf79af5e7d25aebe3a45956d1732de162b42fc618a2f",
+      "image_id": "sha256:020eafda13aa003b420bcb7bd6910bc506ed3cb4442d78d6eab582b67eb8cca6",
+      "started_at": "2026-09-06T13:13:11.693904691Z",
+      "restart_count": 0,
+      "running": true,
+      "validator_process": {
+        "pid": 30,
+        "start_ticks": 10799271
+      }
+    },
+    "generator_image_before": "sha256:452253f924566664a91a557a5b4d8dcccd55f678b3837aad66be2ff1eedff9a9",
+    "generator_image_after": "sha256:452253f924566664a91a557a5b4d8dcccd55f678b3837aad66be2ff1eedff9a9",
+    "generator_container_before": "be2925d6e0810a330ac261f86754836a565d7c36efcf07374524b51b646580cb",
+    "generator_container_after": "be2925d6e0810a330ac261f86754836a565d7c36efcf07374524b51b646580cb",
+    "semantics": "prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"
+  },
+  "pair1_comparison": {
+    "scope": "Incumbent 4caa92df versus combined diagnostics/proof candidate 6a96c953; no pure-proof live TPS attribution.",
+    "capacity_claim_allowed": false,
+    "canonical_tps": {
+      "a1": 53152.214046822744,
+      "b1": 53314.782608695656,
+      "change_percent": 0.30585473209019387
+    },
+    "stage_change_percent": {
+      "native_stat_checkpoint_rebuild": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -13.45012336907595,
+          "us_per_checkpoint_rebuild": -9.35999578147827
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -13.412100128157633,
+          "us_per_checkpoint_rebuild": -9.3201756586613
+        }
+      },
+      "native_proof_preflight": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -7.162355538283405
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -7.292314455842009
+        }
+      },
+      "native_commit": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -4.819793961416396
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -4.77338297544132
+        }
+      },
+      "native_staged_dict_set": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -0.740368935929181
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -0.7360930639708663
+        }
+      },
+      "native_execute": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -0.6186925416062694
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -0.6270488595393919
+        }
+      },
+      "native_account_cell_build": {
+        "real": {
+          "us_per_accepted_candidate_transfer": 0.7687791026385504
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": 0.7115901918248291
+        }
+      },
+      "native_state_install": {
+        "real": {
+          "us_per_accepted_candidate_transfer": 1.0032362519194926
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": 1.1094378114467007
+        }
+      },
+      "native_batch_serialize": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -2.880786031106619
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -3.0940267686246137
+        }
+      },
+      "create_state_merkle_update": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -2.013788911908465
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -1.9424931519695376
+        }
+      },
+      "total": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -2.0109875114389775
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -1.9921678801744447
+        }
+      }
+    },
+    "packing_change_percent": {
+      "checkpoint_rebuilds_per_million_accepted": -4.512497128460935,
+      "group_entries_per_group": 4.725746294289079,
+      "group_fragments_per_group": 3.856984417113285,
+      "staged_sets_per_accepted": -0.0034568641896659535
+    },
+    "not_ready_retry_schedule_rate": {
+      "a1": 0.11449249365272104,
+      "b1": 0.12942525018464948
+    },
+    "limits": [
+      "Both arms fail the unchanged offered target attainment gate; this is component and load diagnostic evidence, not validated capacity.",
+      "Selected candidate accepted transfers differ from unique canonical transfers and offered cohorts.",
+      "Packing changes affect cost per accepted transfer; report cost per rebuild separately.",
+      "A1 lacks additive pacing/admission cause telemetry; missing does not mean zero."
+    ]
+  },
+  "pacing_accounting_analysis": {
+    "expected_measured_offers": 18000000,
+    "measured_offers": 16021952,
+    "offer_deficit": 1978048,
+    "clipped_tokens": 1977910.5894900267,
+    "boundary_token_balance_change": 137.41050997329876,
+    "conservation_residual": 0.0,
+    "client_issue_wait_worker_s": 537.7020994586201,
+    "worker_measurement_s": 1800,
+    "fraction_of_worker_measurement_time_waiting_for_client_issue_credit": 0.29872338858812225,
+    "workers": [
+      {
+        "worker_id": 0,
+        "steady_offered": 2613632,
+        "offered_tps": 8712.106666666667,
+        "clipped_tokens": 386380.23149997974,
+        "boundary_token_balance_change": -12.231499979738146,
+        "conservation_residual": 0.0,
+        "client_issue_wait_s": 104.369218916705,
+        "client_issue_wait_events": 5343
+      },
+      {
+        "worker_id": 1,
+        "steady_offered": 2882160,
+        "offered_tps": 9607.2,
+        "clipped_tokens": 117863.57462992473,
+        "boundary_token_balance_change": -23.57462992472574,
+        "conservation_residual": 0.0,
+        "client_issue_wait_s": 26.18872926698532,
+        "client_issue_wait_events": 944
+      },
+      {
+        "worker_id": 2,
+        "steady_offered": 2757744,
+        "offered_tps": 9192.48,
+        "clipped_tokens": 242192.5546300488,
+        "boundary_token_balance_change": 63.44536995119415,
+        "conservation_residual": 0.0,
+        "client_issue_wait_s": 69.3326120437996,
+        "client_issue_wait_events": 3248
+      },
+      {
+        "worker_id": 3,
+        "steady_offered": 2614736,
+        "offered_tps": 8715.786666666667,
+        "clipped_tokens": 385160.1396699867,
+        "boundary_token_balance_change": 103.86033001332544,
+        "conservation_residual": 0.0,
+        "client_issue_wait_s": 107.78881636627193,
+        "client_issue_wait_events": 5755
+      },
+      {
+        "worker_id": 4,
+        "steady_offered": 2539472,
+        "offered_tps": 8464.906666666666,
+        "clipped_tokens": 460522.09158005076,
+        "boundary_token_balance_change": 5.908419949235395,
+        "conservation_residual": 0.0,
+        "client_issue_wait_s": 121.4299419617455,
+        "client_issue_wait_events": 6224
+      },
+      {
+        "worker_id": 5,
+        "steady_offered": 2614208,
+        "offered_tps": 8714.026666666667,
+        "clipped_tokens": 385791.997480036,
+        "boundary_token_balance_change": 0.0025199640076607466,
+        "conservation_residual": 0.0,
+        "client_issue_wait_s": 108.59278090311273,
+        "client_issue_wait_events": 5491
+      }
+    ],
+    "limits": [
+      "Client issue waits are ordered eligibility intervals summed across workers, not a wall-time union and not proof that all overflow occurs during those intervals.",
+      "Report windows use asynchronous worker snapshots and approximate elapsed endpoints; exact final phase totals take precedence.",
+      "Snapshot retries do not halve the window in candidate6a96c953; timeout/full/rate pressure and unclassified not-ready still do.",
+      "No saved per-timeout diagnostic strings identify every timeout origin. The expired substring also matches admission deadline expired; it is not proof of signed valid_until expiry."
+    ]
+  },
+  "pressure_timeline": {
+    "scope": "Approximately ten-second report-aligned windows wholly inside measurement; asynchronous worker counter snapshots and full candidate costs ending between endpoints. Not a canonical TPS or causal estimator.",
+    "highlight_threshold_offered_tps": 45000,
+    "windows": [
+      {
+        "report_start_measure_elapsed_s": 0.5686334049969446,
+        "report_end_measure_elapsed_s": 10.864718426993932,
+        "offered_tps_from_report_counter_delta": 58395.78817729929,
+        "admission_tps_from_report_counter_delta": 59531.75393273082,
+        "clipped_tokens": 1929.391000085976,
+        "client_issue_wait_worker_s": 1.0524119239998981,
+        "client_issue_wait_worker_fraction": 0.017035794378016517,
+        "not_ready_delta": 4373,
+        "native_parent_attempt_delta": 41958,
+        "not_ready_per_attempt": 0.10422327088993756,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 29155.726427615842,
+        "cwnd_max": 29414.138513451893,
+        "candidate_accepted": 592400,
+        "candidate_checkpoint_us_per_accepted": 1.005227886563133,
+        "candidate_checkpoint_us_per_rebuild": 1459.5514705882354
+      },
+      {
+        "report_start_measure_elapsed_s": 10.864718426993932,
+        "report_end_measure_elapsed_s": 20.16899113499676,
+        "offered_tps_from_report_counter_delta": 54999.24777138685,
+        "admission_tps_from_report_counter_delta": 51900.456398343704,
+        "clipped_tokens": 29131.96183995437,
+        "client_issue_wait_worker_s": 7.339500776884961,
+        "client_issue_wait_worker_fraction": 0.13147186973880076,
+        "not_ready_delta": 5325,
+        "native_parent_attempt_delta": 37302,
+        "not_ready_per_attempt": 0.14275373974585814,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 29414.138513451893,
+        "cwnd_max": 29615.384700870985,
+        "candidate_accepted": 499472,
+        "candidate_checkpoint_us_per_accepted": 1.0602316045744307,
+        "candidate_checkpoint_us_per_rebuild": 1702.7524115755627
+      },
+      {
+        "report_start_measure_elapsed_s": 20.16899113499676,
+        "report_end_measure_elapsed_s": 30.57271942999796,
+        "offered_tps_from_report_counter_delta": 54574.281824796,
+        "admission_tps_from_report_counter_delta": 53153.25278782054,
+        "clipped_tokens": 68331.28391995281,
+        "client_issue_wait_worker_s": 15.695908389083343,
+        "client_issue_wait_worker_fraction": 0.2514468522568801,
+        "not_ready_delta": 9740,
+        "native_parent_attempt_delta": 44221,
+        "not_ready_per_attempt": 0.22025734379593406,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 29615.384700870985,
+        "cwnd_max": 29842.168005072734,
+        "candidate_accepted": 569200,
+        "candidate_checkpoint_us_per_accepted": 0.9276774420238931,
+        "candidate_checkpoint_us_per_rebuild": 1458.657458563536
+      },
+      {
+        "report_start_measure_elapsed_s": 30.57271942999796,
+        "report_end_measure_elapsed_s": 40.87276246200781,
+        "offered_tps_from_report_counter_delta": 60520.13550455657,
+        "admission_tps_from_report_counter_delta": 62935.6593934063,
+        "clipped_tokens": 10020.08302006917,
+        "client_issue_wait_worker_s": 3.943529242897057,
+        "client_issue_wait_worker_fraction": 0.06381088620441673,
+        "not_ready_delta": 7787,
+        "native_parent_attempt_delta": 47760,
+        "not_ready_per_attempt": 0.16304438860971524,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 29842.168005072734,
+        "cwnd_max": 30106.69045086908,
+        "candidate_accepted": 625136,
+        "candidate_checkpoint_us_per_accepted": 0.9766706764608021,
+        "candidate_checkpoint_us_per_rebuild": 1443.385342789598
+      },
+      {
+        "report_start_measure_elapsed_s": 40.87276246200781,
+        "report_end_measure_elapsed_s": 50.20401904900791,
+        "offered_tps_from_report_counter_delta": 58494.1583066549,
+        "admission_tps_from_report_counter_delta": 58701.633042983245,
+        "clipped_tokens": 13133.711449967232,
+        "client_issue_wait_worker_s": 4.355926207063021,
+        "client_issue_wait_worker_fraction": 0.07780170809884113,
+        "not_ready_delta": 8306,
+        "native_parent_attempt_delta": 42393,
+        "not_ready_per_attempt": 0.19592857311348572,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 30106.69045086908,
+        "cwnd_max": 30328.20734144633,
+        "candidate_accepted": 553248,
+        "candidate_checkpoint_us_per_accepted": 1.065824006593788,
+        "candidate_checkpoint_us_per_rebuild": 1496.6116751269035
+      },
+      {
+        "report_start_measure_elapsed_s": 50.20401904900791,
+        "report_end_measure_elapsed_s": 60.58501415900537,
+        "offered_tps_from_report_counter_delta": 60251.64190643311,
+        "admission_tps_from_report_counter_delta": 60012.743807192935,
+        "clipped_tokens": 3365.803669893183,
+        "client_issue_wait_worker_s": 1.9075572469591862,
+        "client_issue_wait_worker_fraction": 0.0306257930437084,
+        "not_ready_delta": 6937,
+        "native_parent_attempt_delta": 46030,
+        "not_ready_per_attempt": 0.1507060612643928,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 30328.20734144633,
+        "cwnd_max": 30578.876710289936,
+        "candidate_accepted": 615008,
+        "candidate_checkpoint_us_per_accepted": 1.094483323794162,
+        "candidate_checkpoint_us_per_rebuild": 1561.754060324826
+      },
+      {
+        "report_start_measure_elapsed_s": 60.58501415900537,
+        "report_end_measure_elapsed_s": 70.86619713700202,
+        "offered_tps_from_report_counter_delta": 55201.42975906726,
+        "admission_tps_from_report_counter_delta": 54711.21379746182,
+        "clipped_tokens": 52132.20289008017,
+        "client_issue_wait_worker_s": 10.613664457021514,
+        "client_issue_wait_worker_fraction": 0.17205647248532305,
+        "not_ready_delta": 4110,
+        "native_parent_attempt_delta": 39609,
+        "not_ready_per_attempt": 0.10376429599333485,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 30578.876710289936,
+        "cwnd_max": 30803.003660705486,
+        "candidate_accepted": 541152,
+        "candidate_checkpoint_us_per_accepted": 1.1538181509076932,
+        "candidate_checkpoint_us_per_rebuild": 2033.8469055374592
+      },
+      {
+        "report_start_measure_elapsed_s": 70.86619713700202,
+        "report_end_measure_elapsed_s": 80.19847510100226,
+        "offered_tps_from_report_counter_delta": 53171.155200707566,
+        "admission_tps_from_report_counter_delta": 51892.1534343603,
+        "clipped_tokens": 47972.39405006473,
+        "client_issue_wait_worker_s": 12.873025960929226,
+        "client_issue_wait_worker_fraction": 0.2299014597612646,
+        "not_ready_delta": 7000,
+        "native_parent_attempt_delta": 37524,
+        "not_ready_per_attempt": 0.18654727640976443,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 30803.003660705486,
+        "cwnd_max": 30993.738881250487,
+        "candidate_accepted": 791168,
+        "candidate_checkpoint_us_per_accepted": 0.9920851197217279,
+        "candidate_checkpoint_us_per_rebuild": 1725.0681318681318
+      },
+      {
+        "report_start_measure_elapsed_s": 80.19847510100226,
+        "report_end_measure_elapsed_s": 90.60204265000357,
+        "offered_tps_from_report_counter_delta": 48152.7127728497,
+        "admission_tps_from_report_counter_delta": 50325.81348022871,
+        "clipped_tokens": 118349.13920976804,
+        "client_issue_wait_worker_s": 22.925647771102376,
+        "client_issue_wait_worker_fraction": 0.36727221476545524,
+        "not_ready_delta": 13614,
+        "native_parent_attempt_delta": 45390,
+        "not_ready_per_attempt": 0.2999339061467284,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 30993.738881250487,
+        "cwnd_max": 31198.439623193804,
+        "candidate_accepted": 638000,
+        "candidate_checkpoint_us_per_accepted": 0.8838620689655172,
+        "candidate_checkpoint_us_per_rebuild": 1302.3187066974597
+      },
+      {
+        "report_start_measure_elapsed_s": 90.60204265000357,
+        "report_end_measure_elapsed_s": 100.9457937630068,
+        "offered_tps_from_report_counter_delta": 61319.34083396981,
+        "admission_tps_from_report_counter_delta": 60952.74268610515,
+        "clipped_tokens": 3735.9845399875194,
+        "client_issue_wait_worker_s": 1.4456770610122476,
+        "client_issue_wait_worker_fraction": 0.023293887701191753,
+        "not_ready_delta": 5668,
+        "native_parent_attempt_delta": 45315,
+        "not_ready_per_attempt": 0.12507999558645042,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 31198.439623193804,
+        "cwnd_max": 31444.095311303943,
+        "candidate_accepted": 627824,
+        "candidate_checkpoint_us_per_accepted": 1.2673647391625678,
+        "candidate_checkpoint_us_per_rebuild": 1647.374741200828
+      },
+      {
+        "report_start_measure_elapsed_s": 100.9457937630068,
+        "report_end_measure_elapsed_s": 110.18768030300271,
+        "offered_tps_from_report_counter_delta": 59925.427303530334,
+        "admission_tps_from_report_counter_delta": 59655.35257482661,
+        "clipped_tokens": 0.0,
+        "client_issue_wait_worker_s": 0.0,
+        "client_issue_wait_worker_fraction": 0.0,
+        "not_ready_delta": 1998,
+        "native_parent_attempt_delta": 36630,
+        "not_ready_per_attempt": 0.05454545454545454,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 31444.095311303943,
+        "cwnd_max": 31658.246952227575,
+        "candidate_accepted": 514528,
+        "candidate_checkpoint_us_per_accepted": 1.384927545245351,
+        "candidate_checkpoint_us_per_rebuild": 1785.9248120300751
+      },
+      {
+        "report_start_measure_elapsed_s": 110.18768030300271,
+        "report_end_measure_elapsed_s": 120.6686225500016,
+        "offered_tps_from_report_counter_delta": 53743.25959684486,
+        "admission_tps_from_report_counter_delta": 52749.45581904211,
+        "clipped_tokens": 36866.079919992015,
+        "client_issue_wait_worker_s": 10.107593543769326,
+        "client_issue_wait_worker_fraction": 0.16072972107483194,
+        "not_ready_delta": 3460,
+        "native_parent_attempt_delta": 38702,
+        "not_ready_per_attempt": 0.08940106454446799,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 31658.246952227575,
+        "cwnd_max": 31869.936593182094,
+        "candidate_accepted": 510896,
+        "candidate_checkpoint_us_per_accepted": 1.0151185368450721,
+        "candidate_checkpoint_us_per_rebuild": 1839.078014184397
+      },
+      {
+        "report_start_measure_elapsed_s": 120.6686225500016,
+        "report_end_measure_elapsed_s": 130.50169966999965,
+        "offered_tps_from_report_counter_delta": 43238.55033490109,
+        "admission_tps_from_report_counter_delta": 44908.01756267396,
+        "clipped_tokens": 184786.59286021208,
+        "client_issue_wait_worker_s": 36.08851433258678,
+        "client_issue_wait_worker_fraction": 0.6116856722838003,
+        "not_ready_delta": 7806,
+        "native_parent_attempt_delta": 34285,
+        "not_ready_per_attempt": 0.227679743327986,
+        "timeout_task_error_delta": 19,
+        "cwnd_min": 14527.443662501486,
+        "cwnd_max": 31903.450887722818,
+        "candidate_accepted": 455600,
+        "candidate_checkpoint_us_per_accepted": 0.9668261633011414,
+        "candidate_checkpoint_us_per_rebuild": 1687.6858237547892
+      },
+      {
+        "report_start_measure_elapsed_s": 130.50169966999965,
+        "report_end_measure_elapsed_s": 140.83299288499984,
+        "offered_tps_from_report_counter_delta": 42268.4741311925,
+        "admission_tps_from_report_counter_delta": 42991.71369515641,
+        "clipped_tokens": 181419.39888971136,
+        "client_issue_wait_worker_s": 36.37086552896653,
+        "client_issue_wait_worker_fraction": 0.5867427044557376,
+        "not_ready_delta": 3170,
+        "native_parent_attempt_delta": 30435,
+        "not_ready_per_attempt": 0.10415639888286513,
+        "timeout_task_error_delta": 22,
+        "cwnd_min": 7582.0424713799475,
+        "cwnd_max": 14736.55023844953,
+        "candidate_accepted": 496528,
+        "candidate_checkpoint_us_per_accepted": 1.507242290464989,
+        "candidate_checkpoint_us_per_rebuild": 1678.0
+      },
+      {
+        "report_start_measure_elapsed_s": 140.83299288499984,
+        "report_end_measure_elapsed_s": 150.09818278699822,
+        "offered_tps_from_report_counter_delta": 53639.05168234152,
+        "admission_tps_from_report_counter_delta": 53597.606228544915,
+        "clipped_tokens": 28303.72385028191,
+        "client_issue_wait_worker_s": 18.88632565244916,
+        "client_issue_wait_worker_fraction": 0.3397362574722766,
+        "not_ready_delta": 2133,
+        "native_parent_attempt_delta": 33273,
+        "not_ready_per_attempt": 0.06410603191777117,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 8447.01366409157,
+        "cwnd_max": 9473.117432633562,
+        "candidate_accepted": 526096,
+        "candidate_checkpoint_us_per_accepted": 1.3114982816824305,
+        "candidate_checkpoint_us_per_rebuild": 1553.9954954954956
+      },
+      {
+        "report_start_measure_elapsed_s": 150.09818278699822,
+        "report_end_measure_elapsed_s": 160.4147005459963,
+        "offered_tps_from_report_counter_delta": 57656.66418605253,
+        "admission_tps_from_report_counter_delta": 57700.08969168007,
+        "clipped_tokens": 67257.12647992163,
+        "client_issue_wait_worker_s": 26.89899690086895,
+        "client_issue_wait_worker_fraction": 0.43456195732659875,
+        "not_ready_delta": 2656,
+        "native_parent_attempt_delta": 39811,
+        "not_ready_per_attempt": 0.0667152294591947,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 9473.117432633562,
+        "cwnd_max": 10438.402544134005,
+        "candidate_accepted": 543104,
+        "candidate_checkpoint_us_per_accepted": 1.4469622761018148,
+        "candidate_checkpoint_us_per_rebuild": 1790.0933940774487
+      },
+      {
+        "report_start_measure_elapsed_s": 160.4147005459963,
+        "report_end_measure_elapsed_s": 170.59366512800625,
+        "offered_tps_from_report_counter_delta": 53074.160504969965,
+        "admission_tps_from_report_counter_delta": 53679.33011238632,
+        "clipped_tokens": 64178.645489856135,
+        "client_issue_wait_worker_s": 23.58059884303657,
+        "client_issue_wait_worker_fraction": 0.3861001554243274,
+        "not_ready_delta": 876,
+        "native_parent_attempt_delta": 34703,
+        "not_ready_per_attempt": 0.02524277439990779,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 10438.402544134005,
+        "cwnd_max": 11202.362003051021,
+        "candidate_accepted": 537840,
+        "candidate_checkpoint_us_per_accepted": 1.2250669344042837,
+        "candidate_checkpoint_us_per_rebuild": 1972.7245508982037
+      },
+      {
+        "report_start_measure_elapsed_s": 170.59366512800625,
+        "report_end_measure_elapsed_s": 180.92140654299874,
+        "offered_tps_from_report_counter_delta": 42980.16208612857,
+        "admission_tps_from_report_counter_delta": 42236.533862744596,
+        "clipped_tokens": 154847.39589008805,
+        "client_issue_wait_worker_s": 36.18815737335535,
+        "client_issue_wait_worker_fraction": 0.5839959890427097,
+        "not_ready_delta": 2273,
+        "native_parent_attempt_delta": 29973,
+        "not_ready_per_attempt": 0.07583491809295032,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 11202.362003051021,
+        "cwnd_max": 11738.76915048058,
+        "candidate_accepted": 397184,
+        "candidate_checkpoint_us_per_accepted": 1.3407085884627779,
+        "candidate_checkpoint_us_per_rebuild": 2080.109375
+      },
+      {
+        "report_start_measure_elapsed_s": 180.92140654299874,
+        "report_end_measure_elapsed_s": 190.25164513400523,
+        "offered_tps_from_report_counter_delta": 35181.95132934855,
+        "admission_tps_from_report_counter_delta": 34137.60504549336,
+        "clipped_tokens": 228513.99410010548,
+        "client_issue_wait_worker_s": 40.135806457154104,
+        "client_issue_wait_worker_fraction": 0.7169485550605569,
+        "not_ready_delta": 4015,
+        "native_parent_attempt_delta": 24177,
+        "not_ready_per_attempt": 0.16606692310873972,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 11738.76915048058,
+        "cwnd_max": 12105.273851171652,
+        "candidate_accepted": 404352,
+        "candidate_checkpoint_us_per_accepted": 1.078204138968028,
+        "candidate_checkpoint_us_per_rebuild": 1632.8614232209738
+      },
+      {
+        "report_start_measure_elapsed_s": 190.25164513400523,
+        "report_end_measure_elapsed_s": 200.60463401699963,
+        "offered_tps_from_report_counter_delta": 60326.54019612532,
+        "admission_tps_from_report_counter_delta": 61088.44577616092,
+        "clipped_tokens": 29617.911070110742,
+        "client_issue_wait_worker_s": 17.75458315295691,
+        "client_issue_wait_worker_fraction": 0.28582057081313367,
+        "not_ready_delta": 4579,
+        "native_parent_attempt_delta": 43959,
+        "not_ready_per_attempt": 0.10416524488728134,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 12105.273851171652,
+        "cwnd_max": 12824.312946091359,
+        "candidate_accepted": 602976,
+        "candidate_checkpoint_us_per_accepted": 1.307740274903147,
+        "candidate_checkpoint_us_per_rebuild": 1656.5882352941176
+      },
+      {
+        "report_start_measure_elapsed_s": 200.60463401699963,
+        "report_end_measure_elapsed_s": 210.95399593299953,
+        "offered_tps_from_report_counter_delta": 53123.2750832718,
+        "admission_tps_from_report_counter_delta": 52838.81310156754,
+        "clipped_tokens": 50211.29979989841,
+        "client_issue_wait_worker_s": 22.869757808104623,
+        "client_issue_wait_worker_fraction": 0.36829577826030724,
+        "not_ready_delta": 4824,
+        "native_parent_attempt_delta": 39112,
+        "not_ready_per_attempt": 0.12333810595213746,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 12824.312946091359,
+        "cwnd_max": 13398.576575751009,
+        "candidate_accepted": 574992,
+        "candidate_checkpoint_us_per_accepted": 1.1734232824108857,
+        "candidate_checkpoint_us_per_rebuild": 1576.4228971962616
+      },
+      {
+        "report_start_measure_elapsed_s": 210.95399593299953,
+        "report_end_measure_elapsed_s": 220.2060111930041,
+        "offered_tps_from_report_counter_delta": 59654.03044522522,
+        "admission_tps_from_report_counter_delta": 60401.11092507265,
+        "clipped_tokens": 20946.56545985234,
+        "client_issue_wait_worker_s": 18.29831869773625,
+        "client_issue_wait_worker_fraction": 0.32962762136154755,
+        "not_ready_delta": 3806,
+        "native_parent_attempt_delta": 38419,
+        "not_ready_per_attempt": 0.09906556651656732,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 13398.576575751009,
+        "cwnd_max": 13956.647363928294,
+        "candidate_accepted": 447984,
+        "candidate_checkpoint_us_per_accepted": 1.225014732669024,
+        "candidate_checkpoint_us_per_rebuild": 1586.0895953757226
+      },
+      {
+        "report_start_measure_elapsed_s": 220.2060111930041,
+        "report_end_measure_elapsed_s": 230.3284107960062,
+        "offered_tps_from_report_counter_delta": 53255.35655005369,
+        "admission_tps_from_report_counter_delta": 52384.41681780035,
+        "clipped_tokens": 35259.243159914855,
+        "client_issue_wait_worker_s": 11.349770525994245,
+        "client_issue_wait_worker_fraction": 0.1868754934786429,
+        "not_ready_delta": 868,
+        "native_parent_attempt_delta": 34481,
+        "not_ready_per_attempt": 0.02517328383747571,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 13956.647363928294,
+        "cwnd_max": 14447.559308159214,
+        "candidate_accepted": 454656,
+        "candidate_checkpoint_us_per_accepted": 0.878514745213964,
+        "candidate_checkpoint_us_per_rebuild": 1617.093117408907
+      },
+      {
+        "report_start_measure_elapsed_s": 230.3284107960062,
+        "report_end_measure_elapsed_s": 240.65869794299942,
+        "offered_tps_from_report_counter_delta": 48323.92293618863,
+        "admission_tps_from_report_counter_delta": 48577.93330034039,
+        "clipped_tokens": 118528.1943803376,
+        "client_issue_wait_worker_s": 31.02418692027277,
+        "client_issue_wait_worker_fraction": 0.5005376662303594,
+        "not_ready_delta": 3430,
+        "native_parent_attempt_delta": 34703,
+        "not_ready_per_attempt": 0.0988387171137942,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 14447.559308159214,
+        "cwnd_max": 14892.636500355018,
+        "candidate_accepted": 643264,
+        "candidate_checkpoint_us_per_accepted": 1.0104187394289126,
+        "candidate_checkpoint_us_per_rebuild": 1830.8901408450704
+      },
+      {
+        "report_start_measure_elapsed_s": 240.65869794299942,
+        "report_end_measure_elapsed_s": 250.16065856699424,
+        "offered_tps_from_report_counter_delta": 46227.091163774065,
+        "admission_tps_from_report_counter_delta": 46568.91535443615,
+        "clipped_tokens": 151945.82474990282,
+        "client_issue_wait_worker_s": 37.76856496121036,
+        "client_issue_wait_worker_fraction": 0.6624696813595031,
+        "not_ready_delta": 7873,
+        "native_parent_attempt_delta": 35233,
+        "not_ready_per_attempt": 0.22345528339908607,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 14892.636500355018,
+        "cwnd_max": 15271.220667152269,
+        "candidate_accepted": 465264,
+        "candidate_checkpoint_us_per_accepted": 1.0853407957632657,
+        "candidate_checkpoint_us_per_rebuild": 1587.9559748427675
+      },
+      {
+        "report_start_measure_elapsed_s": 250.16065856699424,
+        "report_end_measure_elapsed_s": 260.51903773800586,
+        "offered_tps_from_report_counter_delta": 53191.333403002915,
+        "admission_tps_from_report_counter_delta": 52034.395642553114,
+        "clipped_tokens": 51826.871309805196,
+        "client_issue_wait_worker_s": 13.642660976198385,
+        "client_issue_wait_worker_fraction": 0.21951087055488971,
+        "not_ready_delta": 4442,
+        "native_parent_attempt_delta": 38421,
+        "not_ready_per_attempt": 0.11561385700528357,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 15271.220667152269,
+        "cwnd_max": 15729.842938053474,
+        "candidate_accepted": 801040,
+        "candidate_checkpoint_us_per_accepted": 1.2218815539798262,
+        "candidate_checkpoint_us_per_rebuild": 1744.698752228164
+      },
+      {
+        "report_start_measure_elapsed_s": 260.51903773800586,
+        "report_end_measure_elapsed_s": 270.8142841689987,
+        "offered_tps_from_report_counter_delta": 52844.58256018,
+        "admission_tps_from_report_counter_delta": 54078.55010871345,
+        "clipped_tokens": 82159.01739018597,
+        "client_issue_wait_worker_s": 20.33336629929545,
+        "client_issue_wait_worker_fraction": 0.32917078827894475,
+        "not_ready_delta": 5738,
+        "native_parent_attempt_delta": 40286,
+        "not_ready_per_attempt": 0.14243161396018467,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 15729.842938053474,
+        "cwnd_max": 16181.549628036524,
+        "candidate_accepted": 552416,
+        "candidate_checkpoint_us_per_accepted": 1.3605199704570468,
+        "candidate_checkpoint_us_per_rebuild": 1536.959100204499
+      },
+      {
+        "report_start_measure_elapsed_s": 270.8142841689987,
+        "report_end_measure_elapsed_s": 280.02172910800437,
+        "offered_tps_from_report_counter_delta": 61671.83227938185,
+        "admission_tps_from_report_counter_delta": 61162.67908530299,
+        "clipped_tokens": 1350.8987899532076,
+        "client_issue_wait_worker_s": 8.742838365069474,
+        "client_issue_wait_worker_fraction": 0.15825668653620434,
+        "not_ready_delta": 3032,
+        "native_parent_attempt_delta": 38546,
+        "not_ready_per_attempt": 0.0786592642556945,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 16181.549628036524,
+        "cwnd_max": 16628.5456035691,
+        "candidate_accepted": 501456,
+        "candidate_checkpoint_us_per_accepted": 1.055949076289844,
+        "candidate_checkpoint_us_per_rebuild": 1691.7316293929712
+      },
+      {
+        "report_start_measure_elapsed_s": 280.02172910800437,
+        "report_end_measure_elapsed_s": 290.34379568099394,
+        "offered_tps_from_report_counter_delta": 54536.365951470485,
+        "admission_tps_from_report_counter_delta": 55733.025546005774,
+        "clipped_tokens": 53012.65169999981,
+        "client_issue_wait_worker_s": 21.682880765918526,
+        "client_issue_wait_worker_fraction": 0.350105614552315,
+        "not_ready_delta": 4492,
+        "native_parent_attempt_delta": 39673,
+        "not_ready_per_attempt": 0.11322561943891311,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 16628.5456035691,
+        "cwnd_max": 17064.546078793785,
+        "candidate_accepted": 583840,
+        "candidate_checkpoint_us_per_accepted": 1.2650503562619897,
+        "candidate_checkpoint_us_per_rebuild": 1801.4317073170732
+      },
+      {
+        "report_start_measure_elapsed_s": 290.34379568099394,
+        "report_end_measure_elapsed_s": 299.7155219230044,
+        "offered_tps_from_report_counter_delta": 50403.520952471255,
+        "admission_tps_from_report_counter_delta": 49408.18671424036,
+        "clipped_tokens": 88777.19861007389,
+        "client_issue_wait_worker_s": 23.320681553756003,
+        "client_issue_wait_worker_fraction": 0.4147347200066652,
+        "not_ready_delta": 6181,
+        "native_parent_attempt_delta": 35679,
+        "not_ready_per_attempt": 0.17323916029036687,
+        "timeout_task_error_delta": 0,
+        "cwnd_min": 17064.546078793785,
+        "cwnd_max": 17406.830888703495,
+        "candidate_accepted": 502656,
+        "candidate_checkpoint_us_per_accepted": 0.9680258467023173,
+        "candidate_checkpoint_us_per_rebuild": 1497.1815384615384
+      }
+    ],
+    "highlighted_low_offered_windows": [
+      12,
+      13,
+      17,
+      18
+    ],
+    "measured_report_window_decreases_over_five_percent": [
+      {
+        "measure_elapsed_s": 125.3103720289946,
+        "cwnd_before": 30464.483058576483,
+        "cwnd_after": 22271.369575045523,
+        "timeout_task_error_delta": 9,
+        "not_ready_task_error_delta": 1358
+      },
+      {
+        "measure_elapsed_s": 126.32070078399556,
+        "cwnd_before": 22271.369575045523,
+        "cwnd_after": 14527.443662501486,
+        "timeout_task_error_delta": 9,
+        "not_ready_task_error_delta": 615
+      },
+      {
+        "measure_elapsed_s": 132.53471414999512,
+        "cwnd_before": 14736.55023844953,
+        "cwnd_after": 13130.836433954282,
+        "timeout_task_error_delta": 2,
+        "not_ready_task_error_delta": 472
+      },
+      {
+        "measure_elapsed_s": 133.5686458900018,
+        "cwnd_before": 13130.836433954282,
+        "cwnd_after": 9898.214002624041,
+        "timeout_task_error_delta": 8,
+        "not_ready_task_error_delta": 614
+      },
+      {
+        "measure_elapsed_s": 134.7630007599946,
+        "cwnd_before": 9898.214002624041,
+        "cwnd_after": 7582.0424713799475,
+        "timeout_task_error_delta": 10,
+        "not_ready_task_error_delta": 211
+      }
+    ]
+  },
+  "independent_final_audit": {
+    "recorded_summary_hash_matches": true,
+    "validator_identity_equal": true,
+    "generator_image_equal": true,
+    "generator_container_equal": true,
+    "offered_measured_proof_resolved": true,
+    "offered_all_proof_resolved": true,
+    "zero_final_credits_and_backlog": true,
+    "zero_canonical_hash_conflicts": true,
+    "target_attainment": 0.8901084444444445,
+    "wrapper_exit_zero": true,
+    "generator_exit_zero": true,
+    "not_interrupted": true,
+    "validator_identity_equal_within_arm": true,
+    "generator_image_equal_within_arm": true,
+    "generator_container_equal_within_arm": true
+  },
+  "bounded_next_action": [
+    "Keep the frozen B2/A2 settings and retain all arms; pair1 cannot validate capacity because target attainment fails.",
+    "After the series, add bounded timeout-origin and AIMD-decrease diagnostics at error handling to distinguish server admission deadline, RPC timeout, and true signed validity expiry. Preserve pressure response; avoid classifying admission deadline expired as a signed-validity expiry merely from the word expired.",
+    "Use shadow-only exact-snapshot-equivalence classification before considering any admission guard relaxation. Require unchanged exact source shard view, config/domain/lane constraints and valid masterchain ancestry; preserve revision, freshness, reservation and deadline checks.",
+    "Raising only the65536 cap is unsupported: sampled window never exceeded31903 and fell to7582 with timeout outcomes. Diagnose timely credit return and timeout origin before another fixed-setting calibration."
+  ],
+  "full_run_pressure_summary": {
+    "native_parent_attempts": 1459522,
+    "not_ready_task_outcomes": 188899,
+    "not_ready_retry_schedules": 188899,
+    "not_ready_retry_schedule_rate_per_parent_attempt": 0.12942525018464948,
+    "timeout_task_outcomes": 43,
+    "expired_submission_outcomes": 42,
+    "resigned": 42,
+    "timeout_retry_schedules": 1,
+    "issue_hold_observation_counts": {
+      "active_capacity": 0,
+      "source_capacity": 0,
+      "canonical_capacity": 0,
+      "pacing_credit": 1350098,
+      "client_capacity": 180961,
+      "query_credit": 0
+    },
+    "initial_congestion_window": 30000,
+    "peak_sampled_congestion_window": 31903.450887722818,
+    "final_congestion_window": 17440.747529029773,
+    "scope": "Full generator run, including ramp/warmup/drain. Counts are parent task outcomes, not RPC events; a query-level failure can fan out. Hold observations are neither durations nor mutually independent causes."
+  },
+  "completed_pair_comparison": {
+    "control": "a1",
+    "treatment": "b1",
+    "canonical_tps_change_percent": 0.30585473209019387,
+    "stage_change_percent": {
+      "native_stat_checkpoint_rebuild": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -13.45012336907595,
+          "us_per_checkpoint_rebuild": -9.35999578147827
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -13.412100128157633,
+          "us_per_checkpoint_rebuild": -9.3201756586613
+        }
+      },
+      "native_proof_preflight": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -7.162355538283405
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -7.292314455842009
+        }
+      },
+      "native_commit": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -4.819793961416396
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -4.77338297544132
+        }
+      },
+      "native_staged_dict_set": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -0.740368935929181
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -0.7360930639708663
+        }
+      },
+      "native_execute": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -0.6186925416062694
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -0.6270488595393919
+        }
+      },
+      "native_account_cell_build": {
+        "real": {
+          "us_per_accepted_candidate_transfer": 0.7687791026385504
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": 0.7115901918248291
+        }
+      },
+      "native_state_install": {
+        "real": {
+          "us_per_accepted_candidate_transfer": 1.0032362519194926
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": 1.1094378114467007
+        }
+      },
+      "native_batch_serialize": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -2.880786031106619
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -3.0940267686246137
+        }
+      },
+      "create_state_merkle_update": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -2.013788911908465
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -1.9424931519695376
+        }
+      },
+      "total": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -2.0109875114389775
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -1.9921678801744447
+        }
+      }
+    },
+    "packing": {
+      "checkpoint_rebuilds_per_million_accepted": {
+        "control": 721.1747243385247,
+        "treatment": 688.6317356115627,
+        "change_percent": -4.512497128460935
+      },
+      "group_entries_per_group": {
+        "control": 1386.6265223274695,
+        "treatment": 1452.1549738219894,
+        "change_percent": 4.725746294289079
+      },
+      "group_fragments_per_group": {
+        "control": 2.858592692828146,
+        "treatment": 2.968848167539267,
+        "change_percent": 3.856984417113285
+      },
+      "staged_sets_per_accepted": {
+        "control": 0.12499963404530226,
+        "treatment": 0.12499531297771574,
+        "change_percent": -0.0034568641896659535
+      }
+    },
+    "checkpoint_normalization_identity": {
+      "real": {
+        "cost_per_accepted_ratio": 0.8654987663092405,
+        "cost_per_rebuild_ratio_times_rebuilds_per_accepted_ratio": 0.8654987663092406
+      },
+      "cpu": {
+        "cost_per_accepted_ratio": 0.8658789987184237,
+        "cost_per_rebuild_ratio_times_rebuilds_per_accepted_ratio": 0.8658789987184238
+      }
+    },
+    "capacity_comparison_eligible": false,
+    "scope": "Observed costs from measured candidate finish records, normalized by candidate accepted logical transfers. These are not unique canonical-cohort costs. Per-rebuild cost still mixes account cardinality and proof structure. No pure-proof TPS attribution or valid capacity pair."
+  }
+}

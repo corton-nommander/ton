@@ -1,0 +1,80 @@
+{
+  "schema": "native-proof-reproducibility-source-archive-v1",
+  "created_utc": "2026-09-06T13:52:03.483296+00:00",
+  "semantics": "Exact bytes copied from the ignored experiment locations. Manifest paths are relative to this archive and repository root respectively. No binaries, logs, raw workloads or production build changes are included.",
+  "files": [
+    {
+      "archive_relative_path": "proof-fastpath/bench-native-proof.cpp",
+      "original_relative_path": "build/benchmarks/cycles-20260906b/proof-fastpath/bench-native-proof.cpp",
+      "bytes": 12080,
+      "sha256": "ac43a5a8597c441666b5511c385b0a050e494a8746ebbc18fe93d190fe39d804",
+      "file_mode": "0664"
+    },
+    {
+      "archive_relative_path": "proof-fastpath/reference-cell-storage-stat.h",
+      "original_relative_path": "build/benchmarks/cycles-20260906b/proof-fastpath/reference-cell-storage-stat.h",
+      "bytes": 2904,
+      "sha256": "f6ddad6c9834766dc1b4066988b2420d0ffd75c3cc716c02f8c1a0f76ce94ce5",
+      "file_mode": "0664"
+    },
+    {
+      "archive_relative_path": "proof-fastpath/build-driver.py",
+      "original_relative_path": "build/benchmarks/cycles-20260906b/proof-fastpath/build-driver.py",
+      "bytes": 3909,
+      "sha256": "6fc4c6d090d113f510464f1218e294721978a8ec0a6a5b4f1c55def85af55247",
+      "file_mode": "0664"
+    },
+    {
+      "archive_relative_path": "proof-fastpath/run-abba.py",
+      "original_relative_path": "build/benchmarks/cycles-20260906b/proof-fastpath/run-abba.py",
+      "bytes": 4204,
+      "sha256": "688b165670dc90bade52eb6a60adb16518b275d658671bc42fc8d8a502a44201",
+      "file_mode": "0664"
+    },
+    {
+      "archive_relative_path": "proof-fastpath/analyze-abba.py",
+      "original_relative_path": "build/benchmarks/cycles-20260906b/proof-fastpath/analyze-abba.py",
+      "bytes": 17322,
+      "sha256": "81adc1d9910e035efebab6fd5571e0be497510c05e696af7662c5bac91820798",
+      "file_mode": "0664"
+    },
+    {
+      "archive_relative_path": "audit-proof-series.py",
+      "original_relative_path": "build/benchmarks/cycles-20260906b/audit-proof-series.py",
+      "bytes": 34324,
+      "sha256": "36ea9f4fa3fe8836cd78b9e430799167944b38d1a6c906664869ec5db8490966",
+      "file_mode": "0664"
+    },
+    {
+      "archive_relative_path": "analyze-proof-arm.py",
+      "original_relative_path": "build/benchmarks/cycles-20260906b/analyze-proof-arm.py",
+      "bytes": 14842,
+      "sha256": "b157976037deb2f383cd0759044193f5770f22b6f50a43079b52f4833f35b6e7",
+      "file_mode": "0664"
+    }
+  ],
+  "reproduction_revisions": {
+    "offline_baseline": "68900d7f31f7772440ccb57be87b5fabf07e3166",
+    "offline_candidate_committed_source": "13ac90e8486eeca6466dd629b4d9e66c5a3cbd83",
+    "candidate_component_build_recorded_head": "d68388d979c5932288dc7ee1c9cbf46ea8bf55e5",
+    "live_candidate_image_revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9",
+    "live_incumbent_image_revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124",
+    "live_plan_commit": "50b175f5232789cb65b0926e25b66f1930b49554"
+  },
+  "production_boc_sha256": {
+    "offline_baseline": "42a5389fb08fcc0a7c5ea8f58b00897a5df6296a2655cdefdffa5fa932aeb852",
+    "offline_candidate": "b77e309028dbb9aa8171bddaf7ee34e9e763a88089dd97c3d4fe57b4c7ce374f"
+  },
+  "verification": {
+    "all_seven_copies_byte_identical": true,
+    "driver_oracle_match_both_executed_component_build_sidecars": true,
+    "component_analyzer_matches_executed_analysis_hash": true,
+    "live_audit_helper_matches_executed_audit_hash": true,
+    "builds_tests_or_workloads_executed_for_archive": false
+  },
+  "provenance_notes": [
+    "The baseline build sidecar predates source_revision/production_boc_sha256 fields; its original record is preserved in the committed component provenance.",
+    "The v2 candidate was compiled while HEAD still named d68388d9. Its captured boc.cpp bytes match committed13ac90e8 and live6a96c953, not the boc.cpp committed at d68388d9.",
+    "These are source/tool artifacts. Compiler, linked-library and original binary hashes remain in the existing component provenance; this archive does not assert byte-identical binary rebuilds."
+  ]
+}

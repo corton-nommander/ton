@@ -1,0 +1,762 @@
+{
+  "schema": "native-proof-arm-analysis-v1",
+  "bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/cycles-20260906b-proof-b2",
+  "comparison_scope": "Incumbent 4caa92df versus combined diagnostics/proof candidate 6a96c953; no pure-proof live TPS attribution.",
+  "run": {
+    "run_id": "20260906T132440Z",
+    "started_at": "2026-09-06T13:24:48Z",
+    "finished_at": "2026-09-06T13:33:03Z",
+    "elapsed_seconds": 495,
+    "benchmark_exit_code": 0,
+    "generator_container_exit_code": 0,
+    "env_sha256": "4d63139638c35101a9d0ced0f95ff4d568d61643ea0eb2d99f13ad893d90be04"
+  },
+  "provenance": {
+    "benchmark_summary_sha256": "430cd18cda969e2d09d7928817adb089cb3dace2b885a29d136019050300ceed",
+    "validator_session_stats_sha256": "eedeb7b9be65c613e16b689fc941fce6bdd8b079ebf30f6c6908ca7fe74ed1e7",
+    "analysis_script_sha256": "b157976037deb2f383cd0759044193f5770f22b6f50a43079b52f4833f35b6e7"
+  },
+  "measurement_window": {
+    "start_unix_s": 1788701275.55,
+    "end_unix_s": 1788701575.55,
+    "duration_s": 300.0,
+    "selection": "Non-null block_stats; basechain workchain/workchain_id=0; start <= collated_at < end. Pipeline prefers rounded generator *_unix_ms / 1000.",
+    "scope": "Full accumulated cost of candidate records finishing inside the phase; not cost clipped at boundaries, unique canonical transfers, or the offered cohort."
+  },
+  "candidate_records": 1733,
+  "candidate_records_by_shard": {
+    "-6917529027641081856": 433,
+    "2305843009213693952": 434,
+    "-2305843009213693952": 434,
+    "6917529027641081856": 432
+  },
+  "accepted_candidate_transfers": 16595392,
+  "block_stats_transactions": 16595392,
+  "consistency": {
+    "raw_candidate_count_matches_pipeline": true,
+    "raw_accepted_matches_pipeline": true,
+    "raw_rebuild_count_matches_pipeline": true,
+    "raw_groups_match_pipeline": true,
+    "raw_transactions_match_pipeline": true,
+    "unexpected_selected_record_types": {},
+    "invalid_jsonl_lines_skipped_like_harness": 0,
+    "real_stage_matches_pipeline:native_stat_checkpoint_rebuild": true,
+    "real_stage_matches_pipeline:native_proof_preflight": true,
+    "real_stage_matches_pipeline:native_commit": true,
+    "real_stage_matches_pipeline:native_staged_dict_set": true,
+    "real_stage_matches_pipeline:native_execute": true,
+    "real_stage_matches_pipeline:native_account_cell_build": true,
+    "real_stage_matches_pipeline:native_state_install": true,
+    "real_stage_matches_pipeline:native_batch_serialize": true,
+    "real_stage_matches_pipeline:create_state_merkle_update": true,
+    "real_stage_matches_pipeline:total": true
+  },
+  "stages": {
+    "native_stat_checkpoint_rebuild": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 18.46344199999999,
+        "us_per_accepted_candidate_transfer": 1.1125643793168603,
+        "us_per_checkpoint_rebuild": 1636.1047408063791
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 18.46948199999996,
+        "us_per_accepted_candidate_transfer": 1.1129283357693485,
+        "us_per_checkpoint_rebuild": 1636.639964554715
+      }
+    },
+    "native_proof_preflight": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 0.009750000000000016,
+        "us_per_accepted_candidate_transfer": 0.0005875124853935368,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 0.009439000000000029,
+        "us_per_accepted_candidate_transfer": 0.0005687723435517539,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_commit": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 64.54587499999998,
+        "us_per_accepted_candidate_transfer": 3.8893853787846635,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 64.46210099999998,
+        "us_per_accepted_candidate_transfer": 3.8843373509947807,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_staged_dict_set": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 31.54594100000003,
+        "us_per_accepted_candidate_transfer": 1.9008855590756777,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 31.52041999999994,
+        "us_per_accepted_candidate_transfer": 1.8993477225485207,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_execute": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 21.460592000000027,
+        "us_per_accepted_candidate_transfer": 1.2931657173268354,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 21.464077000000035,
+        "us_per_accepted_candidate_transfer": 1.2933757153793073,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_account_cell_build": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 1.1678890000000015,
+        "us_per_accepted_candidate_transfer": 0.07037429426192532,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 1.1692190000000013,
+        "us_per_accepted_candidate_transfer": 0.07045443699070209,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_state_install": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 2.4707060000000025,
+        "us_per_accepted_candidate_transfer": 0.14887903822940743,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 2.46901,
+        "us_per_accepted_candidate_transfer": 0.14877684118579423,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "native_batch_serialize": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 14.037011999999987,
+        "us_per_accepted_candidate_transfer": 0.8458379289865516,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 14.03756199999999,
+        "us_per_accepted_candidate_transfer": 0.8458710707164971,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "create_state_merkle_update": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 32.468636000000004,
+        "us_per_accepted_candidate_transfer": 1.956485029097234,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 32.41571100000001,
+        "us_per_accepted_candidate_transfer": 1.9532958908111364,
+        "us_per_checkpoint_rebuild": null
+      }
+    },
+    "total": {
+      "real": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 91.75848499999998,
+        "us_per_accepted_candidate_transfer": 5.529154418286714,
+        "us_per_checkpoint_rebuild": null
+      },
+      "cpu": {
+        "capture_complete": true,
+        "records_with_value": 1733,
+        "sum_s": 91.74699399999999,
+        "us_per_accepted_candidate_transfer": 5.528461997161621,
+        "us_per_checkpoint_rebuild": null
+      }
+    }
+  },
+  "stage_semantics": "Checkpoint timing includes base/trial ProofStorageStat copying and add_proof traversal. CPU uses the executing thread clock; checkpoint scope is synchronous. Native commit encloses component stages: do not add parent/child timings. Values are printed to microsecond precision per candidate.",
+  "packing": {
+    "counters": {
+      "native_microbatch_accepted": 16595392,
+      "native_microbatch_input": 16603856,
+      "native_microbatch_delayed": 8464,
+      "native_microbatch_permanent": 0,
+      "native_microbatches": 33806,
+      "native_microbatch_unique_accounts": 2074422,
+      "native_account_cells_built": 2074404,
+      "native_staged_dict_sets": 2074404,
+      "native_state_accounts_installed": 2073910,
+      "native_stat_checkpoint_base_snapshots": 1733,
+      "native_stat_checkpoint_rebuilds": 11285,
+      "native_checkpoint_groups": 11285,
+      "native_checkpoint_group_entries": 16595392,
+      "native_checkpoint_group_fragments": 33806,
+      "native_checkpoint_rollbacks": 0,
+      "native_checkpoint_rollback_entries": 0,
+      "native_checkpoint_ingress_retentions": 0,
+      "native_checkpoint_flush_capacity": 6735,
+      "native_checkpoint_flush_ingress": 4519,
+      "native_checkpoint_flush_deadline": 0,
+      "native_checkpoint_flush_fanout": 0,
+      "native_checkpoint_flush_headroom": 0,
+      "native_checkpoint_flush_latency": 31,
+      "native_deferral_state_nonce_mismatch_entries": 8464,
+      "native_hard_preflight_failures": 0,
+      "native_size_guard_deferrals": 0
+    },
+    "maxima_across_candidates": {
+      "native_checkpoint_group_max_entries": 2048,
+      "native_checkpoint_group_max_fragments": 4,
+      "native_microbatch_max_input": 512,
+      "native_microbatch_max_unique_accounts": 64
+    },
+    "counter_missing_or_invalid_rows": {},
+    "checkpoint_rebuilds_per_million_accepted": 680.0080407862616,
+    "group_entries_per_group": 1470.5708462560922,
+    "group_fragments_per_group": 2.995657953035002,
+    "staged_sets_per_accepted": 0.12499879484618381,
+    "histograms": {
+      "microbatch_accounts": {
+        "capture_complete": true,
+        "counts": {
+          "native_microbatch_accounts_le64": 33806,
+          "native_microbatch_accounts_65_80": 0,
+          "native_microbatch_accounts_81_128": 0,
+          "native_microbatch_accounts_129_256": 0,
+          "native_microbatch_accounts_257_511": 0,
+          "native_microbatch_accounts_512": 0,
+          "native_microbatch_accounts_gt512": 0
+        },
+        "missing_or_invalid_rows_by_field": {}
+      },
+      "staged_updates": {
+        "capture_complete": true,
+        "counts": {
+          "native_staged_updates_le64": 3073,
+          "native_staged_updates_65_80": 153,
+          "native_staged_updates_81_128": 485,
+          "native_staged_updates_129_256": 7574,
+          "native_staged_updates_257_511": 0,
+          "native_staged_updates_512": 0,
+          "native_staged_updates_gt512": 0
+        },
+        "missing_or_invalid_rows_by_field": {}
+      },
+      "staged_workers": {
+        "capture_complete": true,
+        "counts": {
+          "native_staged_workers_1": 11285,
+          "native_staged_workers_2": 0,
+          "native_staged_workers_4": 0,
+          "native_staged_workers_8": 0,
+          "native_staged_workers_other": 0
+        },
+        "missing_or_invalid_rows_by_field": {}
+      },
+      "microbatch_accounts_small": {
+        "capture_complete": true,
+        "counts": {
+          "native_microbatch_accounts_le8": 315,
+          "native_microbatch_accounts_9_16": 305,
+          "native_microbatch_accounts_17_32": 730,
+          "native_microbatch_accounts_33_64": 32456
+        },
+        "missing_or_invalid_rows_by_field": {}
+      },
+      "staged_updates_small": {
+        "capture_complete": true,
+        "counts": {
+          "native_staged_updates_le8": 146,
+          "native_staged_updates_9_16": 128,
+          "native_staged_updates_17_32": 343,
+          "native_staged_updates_33_64": 2456
+        },
+        "missing_or_invalid_rows_by_field": {}
+      }
+    },
+    "semantics": "Histogram populations include attempts/rollback; bins are not per-checkpoint timing strata. Missing fine telemetry in the incumbent is unavailable, never zero."
+  },
+  "admission_full_run": {
+    "capture_complete": true,
+    "unavailable_reason": null,
+    "counter_deltas_valid": true,
+    "counters_delta": {
+      "finished_batches": 122996,
+      "aborted_batches": 0,
+      "not_ready_total": 186496,
+      "not_ready_snapshot_changed": 186496,
+      "not_ready_account_changed_verification": 0,
+      "not_ready_account_changed_insertion": 0,
+      "not_ready_account_changed_commit": 0,
+      "not_ready_canonical_watermark_lag": 0,
+      "not_ready_masterchain_unavailable": 0,
+      "not_ready_shard_unavailable": 0,
+      "not_ready_mempool_full": 0,
+      "not_ready_per_address_limit": 0,
+      "not_ready_other": 0
+    },
+    "timings": {
+      "residence": {
+        "samples_delta": 122996,
+        "sum_s_delta": 12797.419083000003,
+        "mean_s": 0.10404744124199163,
+        "cumulative_max_s_before": 1.05853,
+        "cumulative_max_s_after": 1.05853
+      },
+      "aborted_residence": {
+        "samples_delta": 0,
+        "sum_s_delta": 0,
+        "mean_s": null,
+        "cumulative_max_s_before": 0.0,
+        "cumulative_max_s_after": 0.0
+      },
+      "shard_wait": {
+        "samples_delta": 38993,
+        "sum_s_delta": 1735.365159,
+        "mean_s": 0.04450453053112097,
+        "cumulative_max_s_before": 0.377203,
+        "cumulative_max_s_after": 0.377203
+      },
+      "verification": {
+        "samples_delta": 122988,
+        "sum_s_delta": 10870.697906,
+        "mean_s": 0.08838828101928643,
+        "cumulative_max_s_before": 0.773364,
+        "cumulative_max_s_after": 0.773364
+      },
+      "snapshot_age": {
+        "samples_delta": 122988,
+        "sum_s_delta": 12685.845940000001,
+        "mean_s": 0.10314702198588481,
+        "cumulative_max_s_before": 1.05752,
+        "cumulative_max_s_after": 1.05752
+      },
+      "changed_snapshot_age": {
+        "samples_delta": 16120,
+        "sum_s_delta": 2111.6305439999996,
+        "mean_s": 0.13099445062034737,
+        "cumulative_max_s_before": 0.821343,
+        "cumulative_max_s_after": 0.889606
+      }
+    },
+    "native_parent_attempts": 1476496,
+    "not_ready_retry_schedules": 186496,
+    "not_ready_schedules_per_parent_attempt": 0.12630985793391922,
+    "semantics": "Admission causes and timing means cover before/after full-run pool captures; retry counts cover generator attempts including retries/repairs. They cannot be divided by measured candidate accepted transfers.",
+    "independent_accounting": {
+      "server_completed_physical_outcomes": 1476475,
+      "server_accepted": 1289939,
+      "server_rejected": 186536,
+      "server_non_code651_rejections": 40,
+      "generator_attempts_minus_server_completed_outcomes": 21,
+      "generator_timeout_task_errors": 61,
+      "generator_expired_submission_errors": 61,
+      "generator_resigned": 61,
+      "generator_timeout_retry_schedules": 0,
+      "snapshot_changed_share_of_code651": 1.0,
+      "final_active_batches": 0,
+      "final_aborted_batches": 0,
+      "lifetime_peak_active_batches_before": 178,
+      "lifetime_peak_active_batches_after": 178,
+      "scope": "Full-run counters include ramp, warmup and drain; generator parent attempts and completed pool outcomes are different denominators. Timing maxima are lifetime gauges, not interval deltas."
+    }
+  },
+  "generator_measurement": {
+    "target_tps": 60000,
+    "steady_offered": 16385200,
+    "steady_offered_avg_tps": 54617.333333333336,
+    "measure_elapsed_s": 300,
+    "canonical_gen_utime_bucket_duration_s": 299,
+    "canonical_chain_measure_transfers": 16379760,
+    "canonical_chain_measure_avg_tps": 54781.80602006689,
+    "measure_canonical_backpressure_fraction": 0,
+    "canonical_backlog_at_measure_end": 312112
+  },
+  "pacing_measured": {
+    "available": true,
+    "values": {
+      "measure_clipped_tokens": 1613649.7584299762,
+      "measure_clipped_updates": 66030,
+      "measure_token_update_gap_max_s": 0.05491818700102158,
+      "measure_pump_gap_max_s": 0.05492098699323833,
+      "measure_pump_duration_max_s": 0.006799855997087434,
+      "measure_alarm_lateness_max_s": 0.047344923004857264,
+      "measure_start_samples": 6,
+      "measure_start_refilled_tokens": 176.18749956204556,
+      "measure_start_max_service_lag_s": 0.010254363005515188,
+      "measure_end_samples": 6,
+      "measure_end_refilled_tokens": 1326.4290695858654,
+      "measure_end_max_service_lag_s": 0.003787769004702568,
+      "measure_native_client_issue_wait_worker_s": 585.7936038725456,
+      "measure_native_client_issue_wait_events": 32081
+    },
+    "semantics": "Measured clipped credits, exact boundary balances, worker-second issue holds and phase-intersected maxima. Worker seconds are not wall-time union; no values are synthesized for old images."
+  },
+  "external_wait_measured": {
+    "semantics": "wall-clock-only external queue waits; the ten categories are mutually exclusive and each record should reconcile to wait_externals_time within max(100us, 0.1%); aggregate signed errors cannot hide a failing record",
+    "telemetry_available": true,
+    "capture_complete": true,
+    "records_total": 1733,
+    "records_with_telemetry": 1733,
+    "wait_externals_total_s": 195.40985999999972,
+    "reported_accounted_total_s": 195.40985999999972,
+    "category_total_s": 195.40986400000017,
+    "accounting_error_s": 4.000000444648322e-06,
+    "reported_accounting_error_s": 0,
+    "category_vs_reported_accounted_error_s": 4.000000444648322e-06,
+    "absolute_accounting_error_s": 4.000000444648322e-06,
+    "accounting_tolerance_envelope_s": 0.22536540799999683,
+    "max_per_record_absolute_accounting_error_s": 2.0000000000297558e-06,
+    "accounting_within_tolerance": true,
+    "external_wait_calls": 14005,
+    "category_calls": 14005,
+    "call_accounting_error": 0,
+    "categories": {
+      "round_live": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "round_native_coalescing": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "generic_try_pop": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "generic_sync_snapshot": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "native_probe": {
+        "seconds": 0.8931440000000017,
+        "calls": 4028,
+        "fraction_of_accounted": 0.004570618903263136
+      },
+      "native_first_work": {
+        "seconds": 139.71448400000008,
+        "calls": 1584,
+        "fraction_of_accounted": 0.7149817516884781
+      },
+      "native_fragment_refill": {
+        "seconds": 32.25393400000005,
+        "calls": 5587,
+        "fraction_of_accounted": 0.16505786350801385
+      },
+      "native_post_commit_idle": {
+        "seconds": 22.548302000000035,
+        "calls": 2806,
+        "fraction_of_accounted": 0.11538978637004328
+      },
+      "native_producer_drain": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      },
+      "native_sync_snapshot": {
+        "seconds": 0,
+        "calls": 0,
+        "fraction_of_accounted": 0
+      }
+    }
+  },
+  "acceptance": {
+    "chain_correctness_valid": true,
+    "correctness_invalid_reasons": [],
+    "run_complete": true,
+    "run_incomplete_reasons": [],
+    "ingress_capacity_valid": false,
+    "ingress_capacity_invalid_reasons": [
+      "offer_target_not_attained"
+    ],
+    "chain_capacity_valid": false,
+    "chain_capacity_invalid_reasons": [
+      "insufficient_load_over_canonical_throughput",
+      "offered_load_not_above_canonical_throughput"
+    ],
+    "capacity_load": {
+      "measured_offered_avg_tps": 54617.333333333336,
+      "measured_canonical_chain_avg_tps": 54781.80602006689,
+      "offered_above_canonical": false,
+      "invalid_reasons": [
+        "offered_load_not_above_canonical_throughput"
+      ]
+    },
+    "native_signed_run_quantum_required": true,
+    "native_signed_run_quantum_valid": true,
+    "native_signed_run_quantum_telemetry_contract_valid": true,
+    "native_signed_run_quantum_benchmark_profile_valid": true,
+    "native_signed_run_quantum_invalid_reasons": [],
+    "canonical_lane_balance_required": true,
+    "canonical_lane_balance_valid": true,
+    "canonical_lane_balance_invalid_reasons": [],
+    "native_run_batching_required": true,
+    "native_run_batching_enforced": true,
+    "native_run_batching_valid": true,
+    "native_run_batching_invalid_reasons": [],
+    "strict_image_reuse_required": true,
+    "strict_image_reuse_valid": true,
+    "validator_cleanup_valid": true,
+    "validator_cleanup_invalid_reasons": [],
+    "reproducible": false,
+    "reproducibility_reasons": [
+      "one_or_more_images_lack_source_revision_label"
+    ],
+    "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+  },
+  "load_level_acceptance": {
+    "valid": false,
+    "classification": "rejected",
+    "capacity_claim_allowed": false,
+    "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+  },
+  "strict_image_reuse": {
+    "required": true,
+    "valid": true,
+    "validator_before": {
+      "container_id": "b50c994fcbedc4e9d5becf79af5e7d25aebe3a45956d1732de162b42fc618a2f",
+      "image_id": "sha256:020eafda13aa003b420bcb7bd6910bc506ed3cb4442d78d6eab582b67eb8cca6",
+      "started_at": "2026-09-06T13:13:11.693904691Z",
+      "restart_count": 0,
+      "running": true,
+      "validator_process": {
+        "pid": 30,
+        "start_ticks": 10799271
+      }
+    },
+    "validator_after": {
+      "container_id": "b50c994fcbedc4e9d5becf79af5e7d25aebe3a45956d1732de162b42fc618a2f",
+      "image_id": "sha256:020eafda13aa003b420bcb7bd6910bc506ed3cb4442d78d6eab582b67eb8cca6",
+      "started_at": "2026-09-06T13:13:11.693904691Z",
+      "restart_count": 0,
+      "running": true,
+      "validator_process": {
+        "pid": 30,
+        "start_ticks": 10799271
+      }
+    },
+    "generator_image_before": "sha256:452253f924566664a91a557a5b4d8dcccd55f678b3837aad66be2ff1eedff9a9",
+    "generator_image_after": "sha256:452253f924566664a91a557a5b4d8dcccd55f678b3837aad66be2ff1eedff9a9",
+    "generator_container_before": "29b8d4c9e27fb64fe72b74c0326f2893895bddfbdf31b4f1d286752e613bea42",
+    "generator_container_after": "29b8d4c9e27fb64fe72b74c0326f2893895bddfbdf31b4f1d286752e613bea42",
+    "semantics": "prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"
+  },
+  "independent_final_audit": {
+    "recorded_summary_hash_matches": true,
+    "validator_identity_equal_within_arm": true,
+    "generator_image_equal_within_arm": true,
+    "generator_container_equal_within_arm": true,
+    "validator_process_continuity_b1_after_to_b2_before": true,
+    "generator_image_identity_b1_to_b2": true,
+    "environment_digest_same_as_b1": true,
+    "offered_measured_proof_resolved": true,
+    "offered_all_proof_resolved": true,
+    "zero_final_credits_and_backlog": true,
+    "zero_canonical_hash_conflicts": true,
+    "target_attainment": 0.9102888888888889,
+    "wrapper_exit_zero": true,
+    "generator_exit_zero": true,
+    "not_interrupted": true
+  },
+  "pacing_accounting_analysis": {
+    "expected_measured_offers": 18000000,
+    "measured_offers": 16385200,
+    "offer_deficit": 1614800,
+    "clipped_tokens": 1613649.7584299762,
+    "boundary_token_balance_change": 1150.2415700238198,
+    "conservation_residual": 0.0,
+    "client_issue_wait_worker_s": 585.7936038725456,
+    "worker_measurement_s": 1800,
+    "fraction_of_worker_measurement_time_waiting_for_client_issue_credit": 0.32544089104030316,
+    "scope": "Exact phase totals; summed worker hold time is not a wall-time union and does not prove all overflow overlaps client holds."
+  },
+  "paired_conclusion": "Completed A2\u2192B2 comparison is recorded below. Pair2 fails unchanged ingress/capacity gates; retain component findings without a capacity or pure-proof TPS claim.",
+  "full_run_pressure_summary": {
+    "native_parent_attempts": 1476496,
+    "not_ready_task_outcomes": 186496,
+    "not_ready_retry_schedules": 186496,
+    "not_ready_retry_schedule_rate_per_parent_attempt": 0.12630985793391922,
+    "timeout_task_outcomes": 61,
+    "expired_submission_outcomes": 61,
+    "resigned": 61,
+    "timeout_retry_schedules": 0,
+    "issue_hold_observation_counts": {
+      "active_capacity": 0,
+      "source_capacity": 0,
+      "canonical_capacity": 0,
+      "pacing_credit": 1349874,
+      "client_capacity": 207830,
+      "query_credit": 0
+    },
+    "initial_congestion_window": 30000,
+    "peak_sampled_congestion_window": 32455.222571000515,
+    "final_congestion_window": 13645.16198727696,
+    "scope": "Full generator run, including ramp/warmup/drain. Counts are parent task outcomes, not RPC events; a query-level failure can fan out. Hold observations are neither durations nor mutually independent causes."
+  },
+  "completed_pair_comparison": {
+    "control": "a2",
+    "treatment": "b2",
+    "canonical_tps_change_percent": 11.553092422342104,
+    "stage_change_percent": {
+      "native_stat_checkpoint_rebuild": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -25.891357732174335,
+          "us_per_checkpoint_rebuild": -20.290370939878844
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -25.85987473960779,
+          "us_per_checkpoint_rebuild": -20.256508524074313
+        }
+      },
+      "native_proof_preflight": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -17.058405685136723
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -17.982372631236665
+        }
+      },
+      "native_commit": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -14.145541834103936
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -13.942298903057859
+        }
+      },
+      "native_staged_dict_set": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -6.5755013494189
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -6.316945606665891
+        }
+      },
+      "native_execute": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -8.929160621338617
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -8.72465340190941
+        }
+      },
+      "native_account_cell_build": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -17.880738372706297
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -11.349668602776896
+        }
+      },
+      "native_state_install": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -1.4555240909315037
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -1.4211046518461168
+        }
+      },
+      "native_batch_serialize": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -4.940862468244989
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -3.8155713812283665
+        }
+      },
+      "create_state_merkle_update": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -3.3920009072674784
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -3.536711298069062
+        }
+      },
+      "total": {
+        "real": {
+          "us_per_accepted_candidate_transfer": -4.634747658654758
+        },
+        "cpu": {
+          "us_per_accepted_candidate_transfer": -4.513619016031201
+        }
+      }
+    },
+    "packing": {
+      "checkpoint_rebuilds_per_million_accepted": {
+        "control": 731.4017236084895,
+        "treatment": 680.0080407862616,
+        "change_percent": -7.026737996824616
+      },
+      "group_entries_per_group": {
+        "control": 1367.23768583199,
+        "treatment": 1470.5708462560922,
+        "change_percent": 7.557805164010101
+      },
+      "group_fragments_per_group": {
+        "control": 2.826437399247716,
+        "treatment": 2.995657953035002,
+        "change_percent": 5.987061798443705
+      },
+      "staged_sets_per_accepted": {
+        "control": 0.12499698688166881,
+        "treatment": 0.12499879484618381,
+        "change_percent": 0.0014464064775454588
+      }
+    },
+    "checkpoint_normalization_identity": {
+      "real": {
+        "cost_per_accepted_ratio": 0.7410864226782566,
+        "cost_per_rebuild_ratio_times_rebuilds_per_accepted_ratio": 0.7410864226782566
+      },
+      "cpu": {
+        "cost_per_accepted_ratio": 0.7414012526039221,
+        "cost_per_rebuild_ratio_times_rebuilds_per_accepted_ratio": 0.7414012526039222
+      }
+    },
+    "capacity_comparison_eligible": false,
+    "scope": "Observed costs from measured candidate finish records, normalized by candidate accepted logical transfers. These are not unique canonical-cohort costs. Per-rebuild cost still mixes account cardinality and proof structure. No pure-proof TPS attribution or valid capacity pair."
+  }
+}

@@ -167,7 +167,7 @@ includes the previously observed pressure episode and gives more time to see
 whether it recurs; no samples are discarded and all original gates remain.
 Only image switches before setup/warmup may restart the validator. No builds,
 unit tests or microbenchmarks may overlap this series. Retention stays off,
-parallel threshold stays512, and no live winner is selected from component data.
+parallel threshold stays 512, and no live winner is selected from component data.
 
 Before A1, the control is explicitly finalized as the prebuilt incumbent
 `cycle-coalesce-4caa92df`, and the candidate as `cycle-proof-6a96c953`. This
@@ -178,3 +178,75 @@ batching on, so batching defaults are not selected here. The frozen
 all four capacity gates, matching immutable A/A and B/B image IDs, exact B1/B2
 validator continuity and a positive canonical gain in both matched pairs. A
 repeatable >=2% claim requires >=2% in each pair. Both images are already built.
+
+## Completed live proof series and retained version
+
+All four 300-second measurements completed, resolved their proof cohorts, and
+drained to zero backlog/credits. The fixed image/source/settings/resource/mount
+checks passed; B1/B2 kept the same validator process. The raw results are:
+
+| Arm | Version | Offered TPS | Canonical TPS | Target attained | Capacity eligible |
+| --- | --- | ---: | ---: | ---: | --- |
+| proof-a1 | incumbent | 53,274.56 | 53,152.21 | 88.79% | No |
+| proof-b1 | proof + diagnostics | 53,406.51 | 53,314.78 | 89.01% | No |
+| proof-b2 | proof + diagnostics | 54,617.33 | 54,781.81 | 91.03% | No |
+| proof-a2 | incumbent | 49,136.64 | 49,108.28 | 81.89% | No |
+
+Matched canonical differences are **+0.306%** (A1→B1) and **+11.553%**
+(A2→B2), both descriptive and ineligible. Every arm misses the unchanged 95%
+ingress gate; B2 additionally offered less than canonical throughput. The
+incumbent itself drifted -7.608% from A1 to A2. No repeatable validated TPS gain
+was established, and the raw maximum is not promoted. The auxiliary stats
+image's missing source revision still leaves reproducibility.valid=false;
+immutable runtime continuity nevertheless passed.
+
+The independent [series audit](benchmarks/results/cycles-20260906b-proof-series-audit.json)
+verified all hashes, arithmetic, declared settings, resources/mounts and
+process identities. Its 72 failed checks are repeated consequences of the
+capacity failures: 68 ingress/capacity checks, 3 B2 under-offer checks and 1 series
+gate. These are not 72 unrelated faults.
+[Pair1](benchmarks/results/cycles-20260906b-proof-live-pair1.json) and
+[pair2](benchmarks/results/cycles-20260906b-proof-live-pair2.json) preserve all
+metrics and rejected gates.
+
+Measured checkpoint wall cost per accepted candidate transfer fell 13.45% and
+25.89% in the two pairs; per-rebuild cost fell 9.36% and 20.29%. Entries per rebuild
+increased 4.73%/7.56%, so the per-transfer figures include packing changes. These
+are candidate-collation component costs, not unique canonical-transfer costs.
+The earlier production-sized offline result remains 28.18% lower proof wall
+time across 54 cases, all improved in both repeats, with 37,800 exact checks.
+
+B1's 1,978,048-transfer measured offer deficit reconciles exactly to clipped
+pacing credit plus endpoint balance change. Client-credit holds occupy 29.87%
+of measured worker time. Its admission window fell from about 31,903 to 7,582
+around 41 timeout parent outcomes; the 65,536 cap never bound. A2 has 579 timeout
+parent outcomes versus A1's 48, with 324 re-signs and 255 timeout retries. These
+pressure differences prevent attributing the larger pair 2 TPS difference to
+proof traversal. Full-run retry/admission counts are explicitly separate from
+measured-phase pacing and collation costs.
+
+The trial is preserved in local branch `perf/proof-trial-20260906` and immutable
+image `cycle-proof-6a96c953`. Production code on master is restored to the
+incumbent `4caa92df` implementation, while the results and trial commits remain
+in history. The incumbent validator is retained, batching defaults off,
+checkpoint retention stays off and the worker threshold stays 512.
+[Selection ledger](benchmarks/results/cycles-20260906b-winner.json).
+
+The next bounded change should distinguish admission-deadline expiry from
+signed-message validity expiry. Source review confirms the existing broad
+`expired` match can take an admission timeout into real re-signing, clearing
+serialized state/resetting attempts instead of scheduling the timeout retry.
+The behavior also exists in the incumbent. Preserve timeout congestion
+handling, retry horizon, hashes and actual signed-expiry recovery; add precise
+timeout-origin/window-decrease attribution before changing policy. Saved counts
+do not identify each timeout's origin or prove this fix will increase TPS.
+[Diagnosis and proposed coverage](benchmarks/results/cycles-20260906b-admission-deadline-expiry-source-review.json).
+
+The four independent measured-window audits retain exact row/count/stage
+reconciliation and packing/timeout context:
+[A1](benchmarks/results/cycles-20260906b-proof-a1-independent-analysis.json),
+[B1](benchmarks/results/cycles-20260906b-proof-b1-independent-analysis.json),
+[B2](benchmarks/results/cycles-20260906b-proof-b2-independent-analysis.json), and
+[A2 plus paired analysis](benchmarks/results/cycles-20260906b-proof-a2-independent-analysis.json).
+Frozen benchmark sources and audit tools are archived in
+[the reproduction bundle](benchmarks/tools/proof-accounting-20260906/README.md).

@@ -1,0 +1,30 @@
+{
+  "schema": "native-performance-retained-state-v1",
+  "verified_utc": "2026-09-06T13:56:17.103903+00:00",
+  "restoration_commit": "e1c37e8cf2a7c679fe26bbf375a2f20ce28309a4",
+  "incumbent_production_revision": "4caa92dfc90f38f21c3f66c92dd408b6d9c52124",
+  "non_document_source_delta_from_incumbent_empty": true,
+  "trial_branch": "perf/proof-trial-20260906",
+  "trial_branch_revision": "0a2981958bcf2c2df174d66b55b85f5642f282f2",
+  "trial_non_document_source_delta_from_measured_candidate_empty": true,
+  "measured_candidate_revision": "6a96c953508844b97447b3f7fc6b0e25ad62fcd9",
+  "source_and_harness_worktrees_clean_at_verification": true,
+  "harness_revision": "096aea7ff4d0ef2eb69732645fcc865e8320ebf8",
+  "harness_defaults": {
+    "NATIVE_LOAD_NATIVE_RUN_BATCHING": "0",
+    "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0"
+  },
+  "native_staged_parallel_threshold": 512,
+  "retained_validator": {
+    "container_id": "ae7c8d8698dd2b3b947dbf511b0ce36fe46b68baf6c732d702c76b756ed8cdbf",
+    "image_tag": "ghcr.io/neodix42/mylocalton-docker:cycle-coalesce-4caa92df",
+    "image_id": "sha256:dd84211cccf6397d895fb0e6489c2ed712d1bbc19af3047f2a6f935bd8286b4a",
+    "started_at": "2026-09-06T13:35:07.221949025Z",
+    "running": true,
+    "health": "healthy"
+  },
+  "load_generator_running": false,
+  "selection_evidence": "cycles-20260906b-proof-series-audit.json",
+  "validated_tps_improvement_pct": null,
+  "verification_semantics": "Restored source exactly equals the incumbent implementation used by completed A1/A2. Candidate and instrumented diagnostics remain in the preserved branch/image. No image rebuild or additional timing was used for restoration."
+}

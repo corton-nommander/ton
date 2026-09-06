@@ -250,3 +250,11 @@ reconciliation and packing/timeout context:
 [A2 plus paired analysis](benchmarks/results/cycles-20260906b-proof-a2-independent-analysis.json).
 Frozen benchmark sources and audit tools are archived in
 [the reproduction bundle](benchmarks/tools/proof-accounting-20260906/README.md).
+
+Final verification: source restoration commit `e1c37e8c` has an empty
+non-document delta against `4caa92df`; preserved trial branch
+`perf/proof-trial-20260906` points to `0a298195` and has an empty non-document
+delta against measured candidate `6a96c953`. Both repositories were clean.
+The incumbent image is healthy, the load generator is stopped, and harness
+batching/retention defaults remain 0 with staged-worker threshold 512.
+[Verified retained state](benchmarks/results/cycles-20260906b-retained-state.json).

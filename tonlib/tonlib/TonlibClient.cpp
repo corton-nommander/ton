@@ -33,6 +33,7 @@
 #include "smc-envelope/WalletV4.h"
 #include "td/actor/MultiPromise.h"
 #include "td/utils/Random.h"
+#include "td/utils/Time.h"
 #include "td/utils/as.h"
 #include "td/utils/optional.h"
 #include "td/utils/overloaded.h"
@@ -49,6 +50,9 @@
 #include "tonlib/keys/Mnemonic.h"
 #include "tonlib/keys/SimpleEncryption.h"
 #include "tonlib/utils.h"
+#include "tonlib/native-client.h"
+
+#include <limits>
 #include "vm/boc.h"
 #include "vm/cellops.h"
 #include "vm/cells/MerkleProof.h"
@@ -202,6 +206,7 @@ static block::AccountState create_account_state(ton::tl_object_ptr<ton::lite_api
 }
 struct RawAccountState {
   td::int64 balance = -1;
+  td::optional<native_client::Account> native;
   td::Ref<vm::Cell> extra_currencies;
 
   ton::UnixTime storage_last_paid{0};
@@ -406,6 +411,7 @@ class AccountState {
   }
 
   td::Result<tonlib_api::object_ptr<tonlib_api::raw_fullAccountState>> to_raw_fullAccountState() const {
+    TRY_STATUS(check_legacy_balance_range());
     auto state = get_smc_state();
     std::string code;
     if (state.code.not_null()) {
@@ -519,7 +525,30 @@ class AccountState {
     return tonlib_api::make_object<tonlib_api::dns_accountState>(static_cast<td::uint32>(wallet_id));
   }
 
+  td::Status check_legacy_balance_range() const {
+    if (raw_.native && raw_.native.value().balance > static_cast<td::uint64>(std::numeric_limits<td::int64>::max())) {
+      return td::Status::Error("Native balance exceeds legacy int64; use native.getAccountState for lossless values");
+    }
+    return td::Status::OK();
+  }
+
+  td::Result<tonlib_api::object_ptr<tonlib_api::native_fullAccountState>> to_native_fullAccountState() const {
+    if (!raw_.native) {
+      return td::Status::Error("Account is not a native balance-only account");
+    }
+    const auto& native = raw_.native.value();
+    return tonlib_api::make_object<tonlib_api::native_fullAccountState>(
+        tonlib_api::make_object<tonlib_api::accountAddress>(get_address().rserialize(true)),
+        td::to_string(native.balance), td::to_string(native.nonce), native.flags,
+        to_tonlib_api(raw_.block_id), get_sync_time());
+  }
+
   td::Result<tonlib_api::object_ptr<tonlib_api::AccountState>> to_accountState() const {
+    if (raw_.native) {
+      const auto& native = raw_.native.value();
+      return tonlib_api::make_object<tonlib_api::native_accountState>(
+          td::to_string(native.balance), td::to_string(native.nonce), native.flags);
+    }
     auto f = [](auto&& r_x) -> td::Result<tonlib_api::object_ptr<tonlib_api::AccountState>> {
       TRY_RESULT(x, std::move(r_x));
       return std::move(x);
@@ -549,6 +578,7 @@ class AccountState {
   }
 
   td::Result<tonlib_api::object_ptr<tonlib_api::fullAccountState>> to_fullAccountState() const {
+    TRY_STATUS(check_legacy_balance_range());
     TRY_RESULT(account_state, to_accountState());
     TRY_RESULT(extra_currencies, parse_extra_currencies(get_extra_currencies()));
     return tonlib_api::make_object<tonlib_api::fullAccountState>(
@@ -836,6 +866,12 @@ class AccountState {
   bool has_new_state_{false};
 
   WalletType guess_type() {
+    if (raw_.native) {
+      // Native account IDs are public keys, not undeployed TVM wallet addresses.
+      // Keep ordinary wallet-init guessing and deployment paths unavailable.
+      wallet_type_ = WalletType::Unknown;
+      return wallet_type_;
+    }
     if (raw_.code.is_null()) {
       wallet_type_ = WalletType::Empty;
       return wallet_type_;
@@ -1416,6 +1452,19 @@ class GetRawAccountState : public td::actor::Actor {
     //block::gen::t_Account.print_ref(outp, cell);
     //LOG(INFO) << outp.str();
     if (cell.is_null()) {
+      return res;
+    }
+    TRY_RESULT(native, native_client::decode_account(cell));
+    if (native) {
+      if (address_.workchain != ton::basechainId) {
+        return td::Status::Error("Native accounts are only valid in the basechain");
+      }
+      res.native = std::move(native);
+      auto balance = res.native.value().balance;
+      // No signed cast occurs for out-of-range values. Legacy conversion APIs
+      // reject them explicitly; native.getAccountState reads the exact uint64.
+      res.balance = balance <= static_cast<td::uint64>(std::numeric_limits<td::int64>::max())
+                        ? static_cast<td::int64>(balance) : -1;
       return res;
     }
     block::gen::Account::Record_account account;
@@ -2550,6 +2599,7 @@ bool TonlibClient::is_static_request(td::int32 id) {
   switch (id) {
     case tonlib_api::runTests::ID:
     case tonlib_api::getAccountAddress::ID:
+    case tonlib_api::native_getAccountAddress::ID:
     case tonlib_api::packAccountAddress::ID:
     case tonlib_api::unpackAccountAddress::ID:
     case tonlib_api::getBip39Hints::ID:
@@ -2900,6 +2950,18 @@ tonlib_api::object_ptr<tonlib_api::Object> TonlibClient::do_static_request(
 tonlib_api::object_ptr<tonlib_api::Object> TonlibClient::do_static_request(tonlib_api::getBip39Hints& request) {
   return tonlib_api::make_object<tonlib_api::bip39Hints>(
       td::transform(Mnemonic::word_hints(td::trim(td::to_lower_inplace(request.prefix_))), [](auto& x) { return x; }));
+}
+
+tonlib_api::object_ptr<tonlib_api::Object> TonlibClient::do_static_request(
+    const tonlib_api::native_getAccountAddress& request) {
+  auto public_key = get_public_key(request.public_key_);
+  if (public_key.is_error()) {
+    return status_to_tonlib_api(public_key.move_as_error());
+  }
+  ton::StdSmcAddress source;
+  source.as_slice().copy_from(public_key.ok().key);
+  return tonlib_api::make_object<tonlib_api::accountAddress>(
+      block::StdAddress(ton::basechainId, source).rserialize(true));
 }
 
 td::Status TonlibClient::do_request(const tonlib_api::init& request,
@@ -3523,42 +3585,11 @@ td::Status TonlibClient::do_request(const tonlib_api::raw_sendMessage& request,
   return td::Status::OK();
 }
 
-td::Result<td::Bits256> get_ext_in_msg_hash_norm(td::Ref<vm::Cell> ext_in_msg_cell) {
-  block::gen::Message::Record message;
-  if (!tlb::type_unpack_cell(ext_in_msg_cell, block::gen::t_Message_Any, message)) {
-    return td::Status::Error("Failed to unpack Message");
-  }
-  auto tag = block::gen::CommonMsgInfo().get_tag(*message.info);
-  if (tag != block::gen::CommonMsgInfo::ext_in_msg_info) {
-    return td::Status::Error("CommonMsgInfo tag is not ext_in_msg_info");
-  }
-  block::gen::CommonMsgInfo::Record_ext_in_msg_info msg_info;
-  if (!tlb::csr_unpack(message.info, msg_info)) {
-    return td::Status::Error("Failed to unpack CommonMsgInfo::ext_in_msg_info");
-  }
-
-  td::Ref<vm::Cell> body;
-  auto body_cs = message.body.write();
-  if (body_cs.fetch_ulong(1) == 1) {
-    body = body_cs.fetch_ref();
-  } else {
-    body = vm::CellBuilder().append_cellslice(body_cs).finalize();
-  }
-
-  auto cb = vm::CellBuilder();
-  bool status = cb.store_long_bool(2, 2) &&  // message$_ -> info:CommonMsgInfo -> ext_in_msg_info$10
-                cb.store_long_bool(0, 2) &&  // message$_ -> info:CommonMsgInfo -> src:MsgAddressExt -> addr_none$00
-                cb.append_cellslice_bool(msg_info.dest) &&  // message$_ -> info:CommonMsgInfo -> dest:MsgAddressInt
-                cb.store_long_bool(0, 4) &&                 // message$_ -> info:CommonMsgInfo -> import_fee:Grams -> 0
-                cb.store_long_bool(0, 1) &&  // message$_ -> init:(Maybe (Either StateInit ^StateInit)) -> nothing$0
-                cb.store_long_bool(1, 1) &&  // message$_ -> body:(Either X ^X) -> right$1
-                cb.store_ref_bool(body);
-
-  if (!status) {
-    return td::Status::Error("Failed to build normalized message");
-  }
-  return cb.finalize()->get_hash().bits();
+td::Result<td::Bits256> get_ext_in_msg_hash_norm(td::Ref<vm::Cell> root) {
+  TRY_RESULT(hashes, native_client::message_hashes(std::move(root)));
+  return hashes.hash_norm;
 }
+
 
 td::Status TonlibClient::do_request(const tonlib_api::raw_sendMessageReturnHash& request,
                                     td::Promise<object_ptr<tonlib_api::raw_extMessageInfo>>&& promise) {
@@ -3638,6 +3669,141 @@ td::Result<KeyStorage::InputKey> from_tonlib(tonlib_api::InputKey& input_key) {
   return downcast_call2<td::Result<KeyStorage::InputKey>>(
       input_key, td::overloaded([&](tonlib_api::inputKeyRegular& input_key) { return from_tonlib(input_key); },
                                 [&](tonlib_api::inputKeyFake&) { return KeyStorage::fake_input_key(); }));
+}
+
+td::Status TonlibClient::do_request(const tonlib_api::raw_sendMessageBatch& request,
+    td::Promise<object_ptr<tonlib_api::raw_sendMessageBatchResult>>&& promise) {
+  TRY_RESULT(batch, native_client::prepare_batch(request.bodies_));
+  client_.send_query(ton::lite_api::liteServer_sendMessageBatch(std::move(batch.bodies)),
+      promise.wrap([hashes = std::move(batch.hashes)](auto response)
+          -> td::Result<object_ptr<tonlib_api::raw_sendMessageBatchResult>> {
+        TRY_RESULT(results, native_client::batch_results(hashes, *response));
+        std::vector<object_ptr<tonlib_api::raw_sendMessageResult>> statuses;
+        statuses.reserve(results.size());
+        for (auto& result : results) {
+          statuses.push_back(tonlib_api::make_object<tonlib_api::raw_sendMessageResult>(
+              result.accepted ? 1 : 0, result.code, std::move(result.message),
+              result.hashes.hash.as_slice().str(), result.hashes.hash_norm.as_slice().str()));
+        }
+        return tonlib_api::make_object<tonlib_api::raw_sendMessageBatchResult>(std::move(statuses));
+      }));
+  return td::Status::OK();
+}
+
+td::Status TonlibClient::do_request(tonlib_api::native_getAccountState& request,
+    td::Promise<object_ptr<tonlib_api::native_fullAccountState>>&& promise) {
+  if (!request.account_address_) {
+    return TonlibError::EmptyField("account_address");
+  }
+  TRY_RESULT(address, get_account_address(request.account_address_->account_address_));
+  if (address.workchain != ton::basechainId) {
+    return td::Status::Error("Native accounts are only valid in the basechain");
+  }
+  make_request(int_api::GetAccountState{std::move(address), query_context_.block_id.copy(), {}},
+      promise.wrap([](auto state) { return state->to_native_fullAccountState(); }));
+  return td::Status::OK();
+}
+
+namespace {
+struct NativeCreateParameters {
+  td::uint64 nonce{0};
+  td::uint32 valid_until{0};
+  ton::Bits256 domain;
+  td::uint32 lane_depth{0};
+};
+
+td::Result<NativeCreateParameters> native_create_parameters(td::Slice nonce, td::int64 valid_until,
+    td::Slice domain, td::int32 lane_depth, const Config& config) {
+  NativeCreateParameters result;
+  TRY_RESULT_ASSIGN(result.nonce, native_client::parse_uint64(nonce, "nonce"));
+  if (valid_until <= 0 || valid_until > std::numeric_limits<td::uint32>::max() ||
+      static_cast<double>(valid_until) <= td::Clocks::system()) {
+    return td::Status::Error("valid_until must be a future Unix timestamp fitting uint32");
+  }
+  if (domain.size() != 32) {
+    return td::Status::Error("chain_domain must be the 32-byte zerostate root hash");
+  }
+  result.domain.as_slice().copy_from(domain);
+  if (config.zero_state_id.is_valid() && result.domain != config.zero_state_id.root_hash) {
+    return td::Status::Error("chain_domain differs from the configured zerostate root hash");
+  }
+  if (lane_depth < 0 || lane_depth > ton::max_shard_pfx_len) {
+    return td::Status::Error("payment_lane_depth must be 0 or a valid fixed shard depth");
+  }
+  result.valid_until = static_cast<td::uint32>(valid_until);
+  result.lane_depth = static_cast<td::uint32>(lane_depth);
+  return result;
+}
+
+td::Result<block::NativeTransferRunOutput> native_output(const tonlib_api::accountAddress* destination,
+    td::Slice amount, td::Slice fee) {
+  if (!destination) {
+    return TonlibError::EmptyField("destination");
+  }
+  TRY_RESULT(address, get_account_address(destination->account_address_));
+  if (address.workchain != ton::basechainId) {
+    return td::Status::Error("Native destinations must be basechain addresses");
+  }
+  block::NativeTransferRunOutput output;
+  output.dst = address.addr;
+  TRY_RESULT_ASSIGN(output.amount, native_client::parse_uint64(amount, "amount"));
+  TRY_RESULT_ASSIGN(output.fee, native_client::parse_uint64(fee, "fee"));
+  return output;
+}
+
+td::Result<tonlib_api::object_ptr<tonlib_api::native_message>> build_native_message(KeyStorage::PrivateKey key,
+    std::vector<block::NativeTransferRunOutput> outputs, const NativeCreateParameters& params, bool signed_run) {
+  auto count = static_cast<td::int32>(outputs.size());
+  td::Ed25519::PrivateKey private_key(std::move(key.private_key));
+  TRY_RESULT(message, native_client::create_message(private_key, std::move(outputs), params.nonce,
+      params.valid_until, params.domain, signed_run, params.lane_depth));
+  TRY_RESULT(boc, vm::std_boc_serialize(message.root));
+  return tonlib_api::make_object<tonlib_api::native_message>(boc.as_slice().str(), message.hash.as_slice().str(),
+      tonlib_api::make_object<tonlib_api::accountAddress>(
+          block::StdAddress(ton::basechainId, message.source).rserialize(true)),
+      td::to_string(params.nonce), count, params.valid_until);
+}
+}  // namespace
+
+td::Status TonlibClient::do_request(tonlib_api::native_createTransfer& request,
+    td::Promise<object_ptr<tonlib_api::native_message>>&& promise) {
+  if (!request.input_key_ || request.input_key_->get_id() != tonlib_api::inputKeyRegular::ID) {
+    return td::Status::Error("Native signing requires inputKeyRegular");
+  }
+  TRY_RESULT(params, native_create_parameters(request.nonce_, request.valid_until_, request.chain_domain_,
+      request.payment_lane_depth_, config_));
+  TRY_RESULT(output, native_output(request.destination_.get(), request.amount_, request.fee_));
+  TRY_RESULT(input_key, from_tonlib(*request.input_key_));
+  TRY_RESULT(key, key_storage_.load_private_key(std::move(input_key)));
+  TRY_RESULT(message, build_native_message(std::move(key), {std::move(output)}, params, false));
+  promise.set_value(std::move(message));
+  return td::Status::OK();
+}
+
+td::Status TonlibClient::do_request(tonlib_api::native_createTransferRun& request,
+    td::Promise<object_ptr<tonlib_api::native_message>>&& promise) {
+  if (!request.input_key_ || request.input_key_->get_id() != tonlib_api::inputKeyRegular::ID) {
+    return td::Status::Error("Native signing requires inputKeyRegular");
+  }
+  if (request.outputs_.empty() || request.outputs_.size() > block::NativeTransferRun::max_entries) {
+    return td::Status::Error("Native transfer run requires 1..16 outputs");
+  }
+  TRY_RESULT(params, native_create_parameters(request.first_nonce_, request.valid_until_, request.chain_domain_,
+      request.payment_lane_depth_, config_));
+  std::vector<block::NativeTransferRunOutput> outputs;
+  outputs.reserve(request.outputs_.size());
+  for (const auto& item : request.outputs_) {
+    if (!item) {
+      return TonlibError::EmptyField("outputs item");
+    }
+    TRY_RESULT(output, native_output(item->destination_.get(), item->amount_, item->fee_));
+    outputs.push_back(std::move(output));
+  }
+  TRY_RESULT(input_key, from_tonlib(*request.input_key_));
+  TRY_RESULT(key, key_storage_.load_private_key(std::move(input_key)));
+  TRY_RESULT(message, build_native_message(std::move(key), std::move(outputs), params, true));
+  promise.set_value(std::move(message));
+  return td::Status::OK();
 }
 
 td::Status TonlibClient::do_request(tonlib_api::raw_getTransactions& request,
@@ -6589,6 +6755,12 @@ td::Status TonlibClient::do_request(const tonlib_api::runTests& request, P&&) {
   UNREACHABLE();
   return TonlibError::Internal();
 }
+template <class P>
+td::Status TonlibClient::do_request(const tonlib_api::native_getAccountAddress& request, P&&) {
+  UNREACHABLE();
+  return td::Status::OK();
+}
+
 template <class P>
 td::Status TonlibClient::do_request(const tonlib_api::getAccountAddress& request, P&&) {
   UNREACHABLE();

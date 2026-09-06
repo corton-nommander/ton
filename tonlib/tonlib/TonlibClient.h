@@ -159,6 +159,7 @@ class TonlibClient : public td::actor::Actor {
   }
   static object_ptr<tonlib_api::Object> do_static_request(const tonlib_api::runTests& request);
   static object_ptr<tonlib_api::Object> do_static_request(const tonlib_api::getAccountAddress& request);
+  static object_ptr<tonlib_api::Object> do_static_request(const tonlib_api::native_getAccountAddress& request);
   static object_ptr<tonlib_api::Object> do_static_request(const tonlib_api::packAccountAddress& request);
   static object_ptr<tonlib_api::Object> do_static_request(const tonlib_api::unpackAccountAddress& request);
   static object_ptr<tonlib_api::Object> do_static_request(tonlib_api::getBip39Hints& request);
@@ -182,6 +183,8 @@ class TonlibClient : public td::actor::Actor {
   td::Status do_request(const tonlib_api::runTests& request, P&&);
   template <class P>
   td::Status do_request(const tonlib_api::getAccountAddress& request, P&&);
+  template <class P>
+  td::Status do_request(const tonlib_api::native_getAccountAddress& request, P&&);
   template <class P>
   td::Status do_request(const tonlib_api::packAccountAddress& request, P&&);
   template <class P>
@@ -230,6 +233,14 @@ class TonlibClient : public td::actor::Actor {
   td::Status do_request(const tonlib_api::raw_sendMessage& request, td::Promise<object_ptr<tonlib_api::ok>>&& promise);
   td::Status do_request(const tonlib_api::raw_sendMessageReturnHash& request,
                         td::Promise<object_ptr<tonlib_api::raw_extMessageInfo>>&& promise);
+  td::Status do_request(const tonlib_api::raw_sendMessageBatch& request,
+                        td::Promise<object_ptr<tonlib_api::raw_sendMessageBatchResult>>&& promise);
+  td::Status do_request(tonlib_api::native_getAccountState& request,
+                        td::Promise<object_ptr<tonlib_api::native_fullAccountState>>&& promise);
+  td::Status do_request(tonlib_api::native_createTransfer& request,
+                        td::Promise<object_ptr<tonlib_api::native_message>>&& promise);
+  td::Status do_request(tonlib_api::native_createTransferRun& request,
+                        td::Promise<object_ptr<tonlib_api::native_message>>&& promise);
   td::Status do_request(const tonlib_api::raw_createAndSendMessage& request,
                         td::Promise<object_ptr<tonlib_api::ok>>&& promise);
   td::Status do_request(const tonlib_api::raw_createQuery& request,

@@ -15,6 +15,7 @@ set(TONLIB_SOURCE
   tonlib/TonlibClient.cpp
   tonlib/TonlibClientWrapper.cpp
   tonlib/utils.cpp
+  tonlib/native-client.cpp
 
   tonlib/Client.h
   tonlib/Config.h
@@ -31,6 +32,7 @@ set(TONLIB_SOURCE
   tonlib/TonlibClient.h
   tonlib/TonlibClientWrapper.h
   tonlib/utils.h
+  tonlib/native-client.h
 
   tonlib/keys/bip39.cpp
   tonlib/keys/DecryptedKey.cpp
@@ -44,7 +46,10 @@ set(TONLIB_SOURCE
   tonlib/keys/SimpleEncryption.h
 )
 
-set(TONLIB_OFFLINE_TEST_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/offline.cpp PARENT_SCOPE)
+set(TONLIB_OFFLINE_TEST_SOURCE
+  ${CMAKE_CURRENT_SOURCE_DIR}/test/offline.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/test/test-native-client.cpp
+  PARENT_SCOPE)
 set(TONLIB_ONLINE_TEST_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/online.cpp PARENT_SCOPE)
 
 set(USE_EMSCRIPTEN ${USE_EMSCRIPTEN} PARENT_SCOPE)

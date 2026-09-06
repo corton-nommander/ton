@@ -58,6 +58,14 @@ raw.transaction address:accountAddress utime:int53 data:bytes transaction_id:int
 raw.transactions transactions:vector<raw.transaction> previous_transaction_id:internal.transactionId = raw.Transactions;
 
 raw.extMessageInfo hash:bytes hash_norm:bytes = raw.ExtMessageInfo;
+raw.sendMessageResult status:int32 code:int32 message:string hash:bytes hash_norm:bytes = raw.SendMessageResult;
+raw.sendMessageBatchResult results:vector<raw.sendMessageResult> = raw.SendMessageBatchResult;
+
+// Native uint64 values are unsigned decimal strings, never signed int64 approximations.
+native.accountState balance:string nonce:string flags:int32 = AccountState;
+native.fullAccountState address:accountAddress balance:string nonce:string flags:int32 block_id:ton.blockIdExt sync_utime:int53 = native.FullAccountState;
+native.transferOutput destination:accountAddress amount:string fee:string = native.TransferOutput;
+native.message body:bytes hash:bytes source:accountAddress first_nonce:string logical_count:int32 valid_until:int53 = native.Message;
 
 pchan.config alice_public_key:string alice_address:accountAddress bob_public_key:string bob_address:accountAddress init_timeout:int32 close_timeout:int32 channel_id:int64 = pchan.Config;
 
@@ -278,6 +286,11 @@ raw.getTransactions private_key:InputKey account_address:accountAddress from_tra
 raw.getTransactionsV2 private_key:InputKey account_address:accountAddress from_transaction_id:internal.transactionId count:# try_decode_messages:Bool = raw.Transactions;
 raw.sendMessage body:bytes = Ok;
 raw.sendMessageReturnHash body:bytes = raw.ExtMessageInfo;
+raw.sendMessageBatch bodies:vector<bytes> = raw.SendMessageBatchResult;
+native.getAccountAddress public_key:string = AccountAddress;
+native.getAccountState account_address:accountAddress = native.FullAccountState;
+native.createTransfer input_key:InputKey destination:accountAddress amount:string fee:string nonce:string valid_until:int53 chain_domain:bytes payment_lane_depth:int32 = native.Message;
+native.createTransferRun input_key:InputKey outputs:vector<native.transferOutput> first_nonce:string valid_until:int53 chain_domain:bytes payment_lane_depth:int32 = native.Message;
 raw.createAndSendMessage destination:accountAddress initial_account_state:bytes data:bytes = Ok;
 raw.createQuery destination:accountAddress init_code:bytes init_data:bytes body:bytes = query.Info;
 

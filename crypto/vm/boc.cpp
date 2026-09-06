@@ -1214,9 +1214,11 @@ void NewCellStorageStat::dfs(Ref<Cell> cell, bool need_stat, bool need_proof_sta
     }
   }
 
+  bool has_usage_node = false;
   if (need_proof_stat) {
     auto tree_node = cell->get_tree_node();
-    if (!tree_node.empty() && tree_node.is_from_tree(usage_tree_)) {
+    has_usage_node = !tree_node.empty();
+    if (has_usage_node && tree_node.is_from_tree(usage_tree_)) {
       proof_stat_.external_refs++;
       need_proof_stat = false;
     } else {
@@ -1236,7 +1238,9 @@ void NewCellStorageStat::dfs(Ref<Cell> cell, bool need_stat, bool need_proof_sta
   // DataCell is final: this constant-time guard excludes lazy/usage wrappers.
   // Ordinary, non-virtualized level-zero cells have no slice transformation;
   // preserve fetch_ref's child virtualize(0), including wrapper side effects.
-  const auto* data_cell = dynamic_cast<const DataCell*>(cell.get());
+  // A known usage node already rules out a concrete DataCell. Reuse the
+  // proof-accounting check instead of paying RTTI cost on every fallback node.
+  const auto* data_cell = has_usage_node ? nullptr : dynamic_cast<const DataCell*>(cell.get());
   if (data_cell && !data_cell->is_special() && !data_cell->is_virtualized() && data_cell->get_level() == 0) {
     if (need_stat) {
       stat_.bits += data_cell->get_bits();

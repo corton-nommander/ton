@@ -4,7 +4,14 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - 'master'
       - 'testnet'
+
+# A newer revision cancels the previous publication for the same branch. The
+# promotion job also checks the branch head to reject reruns of old revisions.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
@@ -15,8 +22,86 @@ permissions:
   packages: write
 
 jobs:
+  registry-access:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify package write access before compiling
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          # Start and cancel an empty upload: no image or tag is published.
+          # Never print registry tokens, response bodies, or upload URLs.
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, response, code, message, headers, new_url):
+                  return None
+
+          opener = urllib.request.build_opener(NoRedirect)
+          repository = os.environ['GITHUB_REPOSITORY'].lower()
+          credentials = (os.environ['GITHUB_ACTOR'] + ':' + os.environ['GH_TOKEN']).encode()
+          token_url = 'https://ghcr.io/token?' + urllib.parse.urlencode({
+              'service': 'ghcr.io', 'scope': 'repository:' + repository + ':pull,push',
+          })
+          stage = 'registry token request'
+          try:
+              request = urllib.request.Request(token_url, headers={
+                  'Authorization': 'Basic ' + base64.b64encode(credentials).decode(),
+                  'Accept': 'application/json',
+              })
+              with opener.open(request, timeout=30) as response:
+                  token_data = json.load(response)
+              if not isinstance(token_data, dict):
+                  raise ValueError('Registry did not return a token object')
+              token = token_data.get('token') or token_data.get('access_token')
+              if not isinstance(token, str) or not token:
+                  raise ValueError('Registry did not return an access token')
+              headers = {'Authorization': 'Bearer ' + token}
+              upload_url = 'https://ghcr.io/v2/' + repository + '/blobs/uploads/'
+              stage = 'package upload permission check'
+              request = urllib.request.Request(upload_url, data=b'', headers=headers, method='POST')
+              with opener.open(request, timeout=30) as response:
+                  if response.status != 202:
+                      raise ValueError('Registry did not accept the empty upload')
+                  location = response.headers.get('Location')
+              if not location:
+                  raise ValueError('Registry did not return an upload cleanup location')
+              cleanup_url = urllib.parse.urljoin(upload_url, location)
+              parsed = urllib.parse.urlsplit(cleanup_url)
+              if (parsed.scheme != 'https' or parsed.hostname != 'ghcr.io'
+                      or parsed.port not in (None, 443) or parsed.username or parsed.password
+                      or not parsed.path.startswith('/v2/' + repository + '/blobs/uploads/')):
+                  raise ValueError('Registry returned an unexpected upload cleanup location')
+              stage = 'empty upload cleanup'
+              request = urllib.request.Request(cleanup_url, headers=headers, method='DELETE')
+              with opener.open(request, timeout=30) as response:
+                  if response.status != 204:
+                      raise ValueError('Registry did not confirm empty upload cleanup')
+          except urllib.error.HTTPError as error:
+              print('::error::GHCR ' + stage + ' failed with HTTP ' + str(error.code) + '.')
+              if error.code in (401, 403):
+                  print('::error::In the GHCR package Settings, open Manage Actions access, '
+                        'add ' + repository + ', and grant Write access. '
+                        'This workflow also requires GITHUB_TOKEN packages: write permission.')
+              sys.exit(1)
+          except (urllib.error.URLError, OSError, ValueError, TypeError) as error:
+              # Exception text can contain credential-bearing URLs or bodies.
+              print('::error::GHCR ' + stage + ' failed (' + type(error).__name__ + ').')
+              sys.exit(1)
+          print('GHCR package upload permission verified; empty upload canceled.')
+          PY
+
   build-arm64:
     runs-on: ubuntu-22.04-arm
+    needs: registry-access
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
@@ -24,11 +109,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: 'recursive'
-
-      - name: Get tag as branch name
-        id: tag
-        run: |
-          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
 
       - name: Record source timestamp
         id: source
@@ -46,27 +126,51 @@ jobs:
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push revision image
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           platforms: linux/arm64
           push: true
           context: ./
+          cache-from: type=gha,scope=ton-arm64
+          cache-to: type=gha,mode=max,scope=ton-arm64
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           build-args: |
+            NINJA_JOBS=2
+            PORTABLE=1
+            TON_ARCH=
             VCS_REF=${{ github.sha }}
             VCS_DATE=${{ steps.source.outputs.date }}
             BUILD_DATE=${{ steps.source.outputs.date }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}-arm64
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}-arm64
+
+      - name: Verify revision and native binaries on arm64
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          image="$REGISTRY/$IMAGE_NAME@$IMAGE_DIGEST"
+          docker pull "$image"
+          test "$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$GITHUB_SHA"
+          test "$(docker image inspect "$image" --format '{{ .Architecture }}')" = arm64
+          for binary in validator-engine lite-client; do
+            version=$(timeout 30 docker run --rm --network none --entrypoint "$binary" "$image" --version)
+            printf '%s\n' "$version"
+            [[ "$version" == *"Commit: $GITHUB_SHA,"* ]]
+          done
+          timeout 30 docker run --rm --network none --entrypoint native-load-generator "$image" --help > native-load-help.txt
+          grep -F -- '--connections' native-load-help.txt
+          grep -F -- '--native-signed-runs' native-load-help.txt
+          grep -F -- '--native-run-batching' native-load-help.txt
 
 
   build-amd64:
     runs-on: ubuntu-22.04
+    needs: registry-access
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
@@ -74,11 +178,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: 'recursive'
-
-      - name: Get tag as branch name
-        id: tag
-        run: |
-          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
 
       - name: Record source timestamp
         id: source
@@ -96,23 +195,46 @@ jobs:
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push revision image
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           platforms: linux/amd64
           push: true
           context: ./
+          cache-from: type=gha,scope=ton-amd64
+          cache-to: type=gha,mode=max,scope=ton-amd64
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           build-args: |
+            NINJA_JOBS=2
+            PORTABLE=1
+            TON_ARCH=
             VCS_REF=${{ github.sha }}
             VCS_DATE=${{ steps.source.outputs.date }}
             BUILD_DATE=${{ steps.source.outputs.date }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}-amd64
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}-amd64
+
+      - name: Verify revision and native binaries on amd64
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          image="$REGISTRY/$IMAGE_NAME@$IMAGE_DIGEST"
+          docker pull "$image"
+          test "$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$GITHUB_SHA"
+          test "$(docker image inspect "$image" --format '{{ .Architecture }}')" = amd64
+          for binary in validator-engine lite-client; do
+            version=$(timeout 30 docker run --rm --network none --entrypoint "$binary" "$image" --version)
+            printf '%s\n' "$version"
+            [[ "$version" == *"Commit: $GITHUB_SHA,"* ]]
+          done
+          timeout 30 docker run --rm --network none --entrypoint native-load-generator "$image" --help > native-load-help.txt
+          grep -F -- '--connections' native-load-help.txt
+          grep -F -- '--native-signed-runs' native-load-help.txt
+          grep -F -- '--native-run-batching' native-load-help.txt
 
 
   merge:
@@ -121,29 +243,63 @@ jobs:
       - build-amd64
       - build-arm64
     steps:
-      - name: Get tag as branch name
-        id: tag
-        run: |
-          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
-      - name: Create manifest list and push
+      - name: Publish verified multiarchitecture revision
+        env:
+          ARM64_DIGEST: ${{ needs.build-arm64.outputs.digest }}
+          AMD64_DIGEST: ${{ needs.build-amd64.outputs.digest }}
         run: |
+          image="$REGISTRY/$IMAGE_NAME"
           docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }} \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-arm64.outputs.digest }} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-amd64.outputs.digest }}
+            --tag "$image:sha-$GITHUB_SHA" \
+            "$image@$ARM64_DIGEST" \
+            "$image@$AMD64_DIGEST"
+          docker buildx imagetools inspect "$image:sha-$GITHUB_SHA"
 
-      - name: Inspect image
+      - name: Promote current branch after both architectures pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARM64_DIGEST: ${{ needs.build-arm64.outputs.digest }}
+          AMD64_DIGEST: ${{ needs.build-amd64.outputs.digest }}
         run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          image="$REGISTRY/$IMAGE_NAME"
+          # This also prevents an explicitly rerun old workflow from replacing
+          # a newer master image after the newer workflow has already finished.
+          head=$(gh api --method GET "repos/$GITHUB_REPOSITORY/commits" \
+            -f "sha=$GITHUB_REF_NAME" -f per_page=1 --jq '.[0].sha')
+          if [[ "$head" != "$GITHUB_SHA" ]]; then
+            echo "Branch moved to $head; keeping only revision tags for $GITHUB_SHA."
+            exit 0
+          fi
+          tag="${GITHUB_REF##*/}"
+          tags=(--tag "$image:$tag")
+          if [[ "$GITHUB_REF" == refs/heads/master ]]; then
+            tags+=(--tag "$image:latest")
+          fi
+          docker buildx imagetools create --tag "$image:$tag-arm64" "$image@$ARM64_DIGEST"
+          docker buildx imagetools create --tag "$image:$tag-amd64" "$image@$AMD64_DIGEST"
+          if [[ "$GITHUB_REF" == refs/heads/master ]]; then
+            docker buildx imagetools create --tag "$image:latest-arm64" "$image@$ARM64_DIGEST"
+            docker buildx imagetools create --tag "$image:latest-amd64" "$image@$AMD64_DIGEST"
+          fi
+          # Advance the default multiarchitecture images only after all checks
+          # and architecture-specific publications above have succeeded.
+          docker buildx imagetools create "${tags[@]}" \
+            "$image@$ARM64_DIGEST" "$image@$AMD64_DIGEST"
+          {
+            echo "Published source revision: $GITHUB_SHA"
+            echo "- Immutable revision: $image:sha-$GITHUB_SHA"
+            echo "- Branch image: $image:$tag"
+            if [[ "$GITHUB_REF" == refs/heads/master ]]; then
+              echo "- Latest successful master image: $image:latest"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

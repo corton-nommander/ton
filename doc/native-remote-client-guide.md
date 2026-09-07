@@ -32,12 +32,13 @@ For a **new checkout and fresh network**, `.env.physical` is the starting profil
 cp .env.physical .env
 ```
 
-Edit the existing entries in `.env` rather than appending duplicate names. Apply the binding values above, retain a consistent Compose project name, and select the prebuilt matching images. The local tested image tags are shown below; they were not pushed to a registry merely by being committed to Git.
+Edit the existing entries in `.env` rather than appending duplicate names. Apply the binding values above, retain a consistent Compose project name, and use the registry-backed image settings below. If A already has the older `cycle-clients-*` entries, replace those entries in its existing `.env`; do not overwrite the deployment file or database settings.
 
 ```dotenv
-TON_BRANCH=cycle-clients-ed666c9a
+TON_BRANCH=master
 SESSION_STATS_IMAGE=ghcr.io/neodix42/ton-session-stats:side
-NATIVE_LOAD_IMAGE=mylocalton-native-load-generator:cycle-clients-ed666c9a-h2
+NATIVE_LOAD_IMAGE=mylocalton-native-load-generator:master
+TON_BUILD_PULL=true
 
 NATIVE_TRANSFER_RUNS_ENABLED=1
 NATIVE_PAYMENT_LANES_ENABLED=1
@@ -68,51 +69,38 @@ The Git branch `native-payment-lanes-step6` selects MyLocalTonDocker's scripts. 
 | `NATIVE_LOAD_IMAGE` | Derived client image with the load-generator entrypoint and lane helper |
 | `SESSION_STATS_IMAGE` | Separate dashboard image |
 
-For **first-time setup**, make the matching TON base image available on A **before** building the derived images. A registry error such as `ghcr.io/corton-nommander/ton:cycle-clients-ed666c9a: not found` means the recorded base is unavailable to that build. `TON_BUILD_PULL=false` does not create a missing base, and neither MyLocalTonDocker Dockerfile compiles TON.
+The [TON image workflow](https://github.com/corton-nommander/ton/actions/workflows/docker-ubuntu-branch-image.yml) builds `master` on pushes and manual runs. It verifies package write access before compilation, builds portable `linux/amd64` and `linux/arm64` binaries, and checks their revision and native-client commands. Only after both architectures pass does it promote `ghcr.io/corton-nommander/ton:master` and `:latest`. Immutable `sha-<full Git SHA>` tags remain available for a specific revision. Check the workflow's **successful** run and image publication before first startup; a Git push or a running/failed job is not a published image.
 
-The exact recorded base was verified in the desktop's Docker image store on 2026-09-07. For this local tag, transfer it from that desktop first (replace `SERVER_A` with A's SSH hostname/IP):
+Server A obtains the base directly from GHCR. No desktop image export is needed. From the updated MyLocalTonDocker checkout, use the host launcher:
 
 ```sh
-# On the desktop/image-owning machine; use the Docker context holding the image.
-docker image save --output "$HOME/ton-cycle-clients-ed666c9a.tar" \
-  ghcr.io/corton-nommander/ton:cycle-clients-ed666c9a
-scp "$HOME/ton-cycle-clients-ed666c9a.tar" root@SERVER_A:~/
-
-# On server A.
-docker image load --input "$HOME/ton-cycle-clients-ed666c9a.tar"
-docker image inspect --format '{{.Id}} {{.Os}}/{{.Architecture}}' \
-  ghcr.io/corton-nommander/ton:cycle-clients-ed666c9a
+bash start-native-genesis.sh --env-file .env
 ```
 
-The recorded base ID is `sha256:f9e73cdb0c5463268b66046f76e2dc30eb7bb489c87189064c01ddc5b8a3ec0a`, platform `linux/amd64`, source revision `ed666c9a36674d15c08d2fd3564bc080aad677af`. The receiving servers must support its CPU architecture/instructions. Copying an image archive transfers binaries/layers and tags; it does not copy a running validator's database or container volumes. See [Docker image save](https://docs.docker.com/reference/cli/docker/image/save/).
+This always pulls the configured `TON_IMAGE:TON_BRANCH`, resolves its registry digest and full source revision, and locally builds **both** genesis and the native client from that same digest. The build wrappers do not compile TON. It records the base and derived image IDs in `.native-images.json`, then starts only genesis with the prepared local image. A pull/build/provenance failure stops the launcher; it does not silently fall back to an old image.
 
-Then build the two derived images locally and obtain Session Stats:
+Running this launcher again intentionally checks for an updated published TON image and may recreate genesis through normal Compose startup when its image changes. It preserves the configured database volumes and project name. Complete it before measuring TPS; do not run it during a connection sweep. `master` means the latest successfully published master revision, which may lag an in-progress or failed source build. The public portable image is not the historical desktop image, so the recorded 60k results must be measured again on A/B.
+
+To prepare images without starting or recreating containers:
 
 ```sh
-# From MyLocalTonDocker on A, after configuring .env.
-TON_BUILD_PULL=false docker compose --env-file .env \
-  --profile native-load-generator build genesis native-load-generator
-docker compose --env-file .env --profile session-stats pull session-stats
+bash prepare-native-images.sh --env-file .env
 ```
 
-These are image-preparation commands; they do not start or recreate containers. The builds copy the checkout's current scripts onto `TON_IMAGE:TON_BRANCH`. `TON_BUILD_PULL=false` avoids deliberately refreshing an existing base image, but Docker may still fetch a missing base. For another tag, load it, use an available matching registry image, or build the matching sidechain source first. Do not assume that cloning either repository makes an image available. Session Stats can likewise be loaded from an archive instead of pulled.
-
-If the same registry lookup fails after loading, first confirm `docker image inspect` succeeds in the context used for the build, then check `docker buildx ls`. For this local-base workflow, use the daemon's `docker` builder; for example, prefix the build command with `BUILDX_BUILDER=default` alongside `TON_BUILD_PULL=false`. Docker documents the [default builder's relationship to the active context](https://docs.docker.com/build/builders/).
-
-If the required derived images are already loaded on A, skip their builds. For an **already-running healthy genesis**, prepare only the client with `TON_BUILD_PULL=false docker compose --env-file .env --profile native-load-generator build native-load-generator`; the exporter can also build that service automatically when its configured image is missing. Complete image preparation before measurement.
-
-Once the images are present, start only these two services. `--no-build --pull never` deliberately requires local images; it is appropriate here after preparation, rather than as the first command on an empty Docker installation:
+Once genesis is healthy and blocks advance, start Session Stats:
 
 ```sh
-docker compose --env-file .env up -d --no-build --pull never genesis
-# Wait for genesis to be healthy and for last-block queries to advance.
-docker compose --env-file .env --profile session-stats \
-  up -d --no-deps --no-build --pull never session-stats
-
+# Run last twice, allowing time for new blocks; confirm the block ID advances.
 docker exec genesis lite-client -a 127.0.0.1:40004 \
   -p /var/ton-work/db/liteserver.pub -t 10 -c last
+
+docker compose --env-file .env --profile session-stats pull session-stats
+docker compose --env-file .env --profile session-stats \
+  up -d --no-deps --no-build --pull never session-stats
 curl --fail http://127.0.0.1:18000/api/chart-config
 ```
+
+`docker compose up --no-build --pull never genesis` alone deliberately reuses local images. Use `start-native-genesis.sh` when launching/updating from the current registry version. A plain `docker restart` cannot fetch a new image.
 
 A binding change on an existing container takes effect through Compose recreation, not plain `docker restart`; complete that work before timing. Keep the existing project name and mounts so the database is preserved. Open `http://SERVER_A_PUBLIC_IP:18000/` remotely. Public Session Stats does not require changing `UI_BIND_IP`.
 
@@ -127,9 +115,9 @@ Three executable Bash scripts now replace the inline export/import/run examples.
 | [run-remote-load.sh](../../MyLocalTonDocker/benchmark/remote/run-remote-load.sh) | Run the persistent ADNL connection sweep on B and save each arm's results |
 | [native-remote-load.env](../../MyLocalTonDocker/benchmark/remote/native-remote-load.env) | The measured client preset included automatically by the exporter |
 
-Server A needs Bash, Python 3, Docker with Compose, and a running prepared genesis. By default the exporter reads the checkout's `.env` through Compose and selects the resolved `native-load-generator` service image: `NATIVE_LOAD_IMAGE`, or `mylocalton-native-load-generator:${TON_BRANCH:-latest}` when that variable is unset. It prints the selection and does not ask you to retype an image or guess the newest local tag. This is the **client image**, separate from the running genesis image; both derived builds use the configured `TON_IMAGE:TON_BRANCH`. Keep those settings consistent with the chain you started.
+Server A needs Bash, Python 3, Docker with Compose, and a running prepared genesis. The exporter reads Compose's resolved `native-load-generator` image from the deployment `.env`. By default it invokes `prepare-native-images.sh` to pull the current configured TON base and build only the client from its immutable digest. No image-name prompt or desktop image transfer is needed.
 
-If the configured client image is missing, the exporter builds **only** `native-load-generator` locally, using the current checkout's Dockerfile and wrappers. It sets `TON_BUILD_PULL=false` for preparation; an unavailable TON base still needs to be loaded or fetched by Docker. The exporter never starts a generator on A or recreates genesis. An existing configured client image is reused, then frozen by immutable ID for export and B's connection sweep. These local tags are not automatically published by committing code.
+The pulled TON source revision must match the running genesis image. If master has advanced since A was launched, export stops before building a mismatched client and asks you to run `start-native-genesis.sh`, wait for healthy/advancing blocks, and export again. Export itself never recreates genesis or starts traffic. The resulting client image is frozen by ID in the bundle and across B's complete connection sweep.
 
 Run from the MyLocalTonDocker checkout on A:
 
@@ -155,7 +143,7 @@ bash benchmark/remote/export-native-client.sh \
   --include-image --output "$HOME/native-client-export"
 ```
 
-Use `--env-file /path/to/deployment.env` for another Compose environment file. `--build-image` forces a local client build before export, useful after updating the client wrappers; `--no-build-image` requires the configured image to exist already. An explicit `--image PREBUILT_IMAGE` bypasses automatic image selection and requires that image locally. Complete any build before the benchmark, then reuse the exported immutable image throughout all runs.
+Use `--env-file /path/to/deployment.env` for another Compose environment file. `--build-image` explicitly selects the default registry preparation. `--no-build-image` opts into strict reuse of the existing configured client, skipping all pulls/builds. An explicit `--image PREBUILT_IMAGE` also bypasses registry preparation and requires that image locally. These explicit reuse modes are for an already prepared benchmark; ordinary deployment/export follows the registry by default. Complete preparation before the benchmark, then reuse the exported immutable image throughout all runs.
 
 Use `--no-image` if B already has the exact generator image. Existing output directories are refused; choose a new name for another export. Source count/offset select a contiguous funded range from A's existing lane manifest. The exporter discovers depth 1 or 2 from that manifest and adjusts the client preset accordingly; it does not create new accounts or change the chain. The reference 60k workload uses depth 2 and 24,576 sources.
 

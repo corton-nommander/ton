@@ -59,7 +59,29 @@ Four-lane native activation and funded accounts are **genesis requirements**, no
 
 Adjust the copied `.env` CPU sets, quota and host database path to A's hardware before creating containers. For named database volumes, Session Stats' `TON_WORK_DOCKER_VOLUME` must identify A's actual genesis database volume; the sample project uses `mylocalton-desktop_ton-db-val0`. For a bind mount, use its absolute path as `TON_WORK_HOST_DIR` and clear `TON_WORK_DOCKER_VOLUME`. Retain the native Session Stats flags and `--session-logs` validator option in that profile.
 
-Once the images are present, start only these two services:
+The Git branch `native-payment-lanes-step6` selects MyLocalTonDocker's scripts. It does **not** select or download the TON binaries: `.env` `TON_BRANCH` is an image tag. The images have separate roles:
+
+| Setting | Role |
+| --- | --- |
+| `TON_IMAGE:TON_BRANCH` | TON base image containing the validator, lite-client and native-load-generator binaries |
+| `MLT_IMAGE:TON_BRANCH` | Derived genesis image with MyLocalTonDocker's initialization scripts |
+| `NATIVE_LOAD_IMAGE` | Derived client image with the load-generator entrypoint and lane helper |
+| `SESSION_STATS_IMAGE` | Separate dashboard image |
+
+For **first-time setup**, make the matching TON base image available on A, then build the two derived images locally and obtain Session Stats:
+
+```sh
+# From MyLocalTonDocker on A, after configuring .env.
+TON_BUILD_PULL=false docker compose --env-file .env \
+  --profile native-load-generator build genesis native-load-generator
+docker compose --env-file .env --profile session-stats pull session-stats
+```
+
+These are image-preparation commands; they do not start or recreate containers. The builds copy the checkout's current scripts onto `TON_IMAGE:TON_BRANCH`; they do not compile TON. `TON_BUILD_PULL=false` avoids deliberately refreshing an existing base image, but Docker may still fetch a missing base. The tag must therefore exist locally or in its registry. The recorded `cycle-clients-ed666c9a` base was a local build: if it has not been published, transfer it from the image-owning machine with `docker image save` / `docker image load`, or build the matching sidechain source before this step. Do not assume that cloning either repository makes that image available. Session Stats can likewise be loaded from an archive instead of pulled.
+
+If the required derived images are already loaded on A, skip their builds. For an **already-running healthy genesis**, prepare only the client with `TON_BUILD_PULL=false docker compose --env-file .env --profile native-load-generator build native-load-generator`; the exporter can also build that service automatically when its configured image is missing. Complete image preparation before measurement.
+
+Once the images are present, start only these two services. `--no-build --pull never` deliberately requires local images; it is appropriate here after preparation, rather than as the first command on an empty Docker installation:
 
 ```sh
 docker compose --env-file .env up -d --no-build --pull never genesis
@@ -85,7 +107,9 @@ Three executable Bash scripts now replace the inline export/import/run examples.
 | [run-remote-load.sh](../../MyLocalTonDocker/benchmark/remote/run-remote-load.sh) | Run the persistent ADNL connection sweep on B and save each arm's results |
 | [native-remote-load.env](../../MyLocalTonDocker/benchmark/remote/native-remote-load.env) | The measured client preset included automatically by the exporter |
 
-Server A needs Bash, Python 3 and Docker, a running prepared genesis, and the prebuilt generator image available locally. The image is resolved by immutable ID even when its archive is omitted; the exporter never builds or pulls one. The default image tag is `mylocalton-native-load-generator:cycle-clients-ed666c9a-h2`. These local image tags are not automatically published to a registry by committing code.
+Server A needs Bash, Python 3, Docker with Compose, and a running prepared genesis. By default the exporter reads the checkout's `.env` through Compose and selects the resolved `native-load-generator` service image: `NATIVE_LOAD_IMAGE`, or `mylocalton-native-load-generator:${TON_BRANCH:-latest}` when that variable is unset. It prints the selection and does not ask you to retype an image or guess the newest local tag. This is the **client image**, separate from the running genesis image; both derived builds use the configured `TON_IMAGE:TON_BRANCH`. Keep those settings consistent with the chain you started.
+
+If the configured client image is missing, the exporter builds **only** `native-load-generator` locally, using the current checkout's Dockerfile and wrappers. It sets `TON_BUILD_PULL=false` for preparation; an unavailable TON base still needs to be loaded or fetched by Docker. The exporter never starts a generator on A or recreates genesis. An existing configured client image is reused, then frozen by immutable ID for export and B's connection sweep. These local tags are not automatically published by committing code.
 
 Run from the MyLocalTonDocker checkout on A:
 
@@ -98,7 +122,7 @@ The script asks for:
 - A's IPv4 address reachable from B and liteserver TCP port (default 40004).
 - Source validator container (default `genesis`).
 - Source account count (default 24,576) and first index (default 0).
-- Existing generator image and a new export directory (default under your home directory).
+- A new export directory (default under your home directory).
 - Whether to include the generator image archive (default yes).
 
 For unattended operation, supply explicit options. Replace the documentation address below with A's actual public/LAN address:
@@ -108,9 +132,10 @@ bash benchmark/remote/export-native-client.sh \
   --non-interactive \
   --server-ip 203.0.113.10 --port 40004 \
   --container genesis --sources 24576 --source-offset 0 \
-  --image mylocalton-native-load-generator:cycle-clients-ed666c9a-h2 \
   --include-image --output "$HOME/native-client-export"
 ```
+
+Use `--env-file /path/to/deployment.env` for another Compose environment file. `--build-image` forces a local client build before export, useful after updating the client wrappers; `--no-build-image` requires the configured image to exist already. An explicit `--image PREBUILT_IMAGE` bypasses automatic image selection and requires that image locally. Complete any build before the benchmark, then reuse the exported immutable image throughout all runs.
 
 Use `--no-image` if B already has the exact generator image. Existing output directories are refused; choose a new name for another export. Source count/offset select a contiguous funded range from A's existing lane manifest. The exporter discovers depth 1 or 2 from that manifest and adjusts the client preset accordingly; it does not create new accounts or change the chain. The reference 60k workload uses depth 2 and 24,576 sources.
 
@@ -140,7 +165,7 @@ Copy the **whole directory**, including `run-remote-load.sh`, the importer and t
 scp -r "$HOME/native-client-export" user@SERVER_B:~/
 ```
 
-B needs Linux, Bash, Python 3, the local Docker daemon, and standard `flock`/`timeout` commands. It does not need a validator or a repository clone. Use a generator image compatible with B's CPU architecture/instruction support. Do not point B's Docker context or `DOCKER_HOST` at A; the importer and runner require a local Unix-socket Docker endpoint.
+B needs Linux, Bash, Python 3, the local Docker daemon, and standard `flock`/`timeout` commands (typically supplied by `util-linux` and `coreutils`). Docker alone is not the complete dependency list. B can start with **no Docker images**: leave image inclusion enabled during export, and the importer will load `generator-image.tar` without a registry pull, build, Compose installation or repository clone. Use a generator image compatible with B's CPU architecture/instruction support. Do not point B's Docker context or `DOCKER_HOST` at A; the importer and runner require a local Unix-socket Docker endpoint.
 
 On B, start the copied importer interactively:
 

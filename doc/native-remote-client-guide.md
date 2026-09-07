@@ -1,6 +1,6 @@
 # One public validator and a remote native TPS generator
 
-This guide describes the code inspected on 2026-09-07: sidechain result commit `4b2034a8` and MyLocalTonDocker `44ffe58`. No remote run or public exposure was performed while preparing it.
+The original measurements used sidechain result commit `4b2034a8` and MyLocalTonDocker `44ffe58`. The export/import and remote-run scripts below are now maintained in MyLocalTonDocker. Their offline integration checks use simulated Docker; they do not establish new remote throughput measurements.
 
 The existing `benchmark/run-native-connections-sweep.py --connections 10 50 100` is a **local Docker sweep**. It inspects a local `genesis`, shared volumes and process identity. Cloning it on server B does not enable remote mode; pointing `DOCKER_HOST` at A would run its generator on A. The underlying prebuilt generator already supports remote ADNL/TCP. Use the generator-only commands below on B. They retain proof-checked canonical counters but do not provide the local wrapper's full independent validator cleanup/resource acceptance report.
 
@@ -76,162 +76,142 @@ A binding change on an existing container takes effect through Compose recreatio
 
 ## Export client materials on A
 
-Set the public **IPv4 address**, without a URL prefix. The example address below is a documentation placeholder.
+Three executable Bash scripts now replace the inline export/import/run examples. They live in **MyLocalTonDocker**, alongside the client preset:
+
+| File | Purpose |
+| --- | --- |
+| [export-native-client.sh](../../MyLocalTonDocker/benchmark/remote/export-native-client.sh) | Ask for A's reachable address and export the selected client materials |
+| [import-native-client.sh](../../MyLocalTonDocker/benchmark/remote/import-native-client.sh) | Verify and install the copied bundle on B; load its image if necessary |
+| [run-remote-load.sh](../../MyLocalTonDocker/benchmark/remote/run-remote-load.sh) | Run the persistent ADNL connection sweep on B and save each arm's results |
+| [native-remote-load.env](../../MyLocalTonDocker/benchmark/remote/native-remote-load.env) | The measured client preset included automatically by the exporter |
+
+Server A needs Bash, Python 3 and Docker, a running prepared genesis, and the prebuilt generator image available locally. The image is resolved by immutable ID even when its archive is omitted; the exporter never builds or pulls one. The default image tag is `mylocalton-native-load-generator:cycle-clients-ed666c9a-h2`. These local image tags are not automatically published to a registry by committing code.
+
+Run from the MyLocalTonDocker checkout on A:
 
 ```sh
-export SERVER_A_IP=203.0.113.10
-umask 077
-mkdir -m 700 "$HOME/native-client-export"
-docker cp genesis:/usr/share/data/global.config.json \
-  "$HOME/native-client-export/internal.global.config.json"
-
-python3 - "$SERVER_A_IP" <<'PYCONFIG'
-import ipaddress, json, os, pathlib, sys
-root = pathlib.Path(os.environ['HOME']) / 'native-client-export'
-config = json.loads((root / 'internal.global.config.json').read_text())
-assert len(config['liteservers']) == 1, 'Expected exactly one liteserver'
-ip = int(ipaddress.IPv4Address(sys.argv[1]))
-config['liteservers'][0]['ip'] = ip if ip < 2**31 else ip - 2**32
-config['liteservers'][0]['port'] = 40004
-(root / 'external.global.config.json').write_text(json.dumps(config, indent=2) + '\n')
-PYCONFIG
+bash benchmark/remote/export-native-client.sh
 ```
 
-This retains the liteserver public key and every chain hash, including the zero-state signing domain. The `external.global.config.json` is public. Keep the wallet archive private: it contains funded benchmark **source** keys. The following selects only the source signing keys, public source/destination material and lane manifest, without copying the validator database or destination signing keys:
+The script asks for:
+
+- A's IPv4 address reachable from B and liteserver TCP port (default 40004).
+- Source validator container (default `genesis`).
+- Source account count (default 24,576) and first index (default 0).
+- Existing generator image and a new export directory (default under your home directory).
+- Whether to include the generator image archive (default yes).
+
+For unattended operation, supply explicit options. Replace the documentation address below with A's actual public/LAN address:
 
 ```sh
-docker exec -i genesis python3 - <<'PYWALLETS' > "$HOME/native-client-export/test-wallets.tar.gz"
-import pathlib, sys, tarfile
-root = pathlib.Path('/var/ton-work/db/native-spam/wallets')
-header = (root / 'native-payment-lanes.manifest').read_text().splitlines()[0].split()
-assert header[:3] == ['NATIVE_PAYMENT_LANES_MANIFEST_V1', '2', '4']
-assert int(header[3]) >= 24576
-names = ['native-payment-lanes.manifest']
-for i in range(24576):
-    names.extend([f'source-{i}.pk', f'source-{i}.pub', f'source-{i}.addr',
-                  f'dest-{i}.pub', f'dest-{i}.addr'])
-assert all((root / name).is_file() for name in names)
-with tarfile.open(fileobj=sys.stdout.buffer, mode='w|gz') as archive:
-    for name in names:
-        archive.add(root / name, arcname=name, recursive=False)
-PYWALLETS
+bash benchmark/remote/export-native-client.sh \
+  --non-interactive \
+  --server-ip 203.0.113.10 --port 40004 \
+  --container genesis --sources 24576 --source-offset 0 \
+  --image mylocalton-native-load-generator:cycle-clients-ed666c9a-h2 \
+  --include-image --output "$HOME/native-client-export"
 ```
 
-Stop any other generator using those sources before running B. Auto-nonce discovers canonical state; it does not coordinate competing writers. Keep unrelated native traffic off during the measurement because chain TPS includes all native transfers in observed blocks. Synchronize A and B clocks through NTP: B's measurement window is compared with A's block timestamps.
+Use `--no-image` if B already has the exact generator image. Existing output directories are refused; choose a new name for another export. Source count/offset select a contiguous funded range from A's existing lane manifest. The exporter discovers depth 1 or 2 from that manifest and adjusts the client preset accordingly; it does not create new accounts or change the chain. The reference 60k workload uses depth 2 and 24,576 sources.
 
-## Transfer the prebuilt generator
+The resulting **private directory** contains:
 
-Cloning MyLocalTonDocker on B is optional for `docker run`; B needs Docker, Bash, Python 3 and the image/config/test keys. Cloning source does not copy Docker images or funded accounts. If cloning, ensure the fork includes harness `44ffe58`; these local commits were not automatically pushed.
-
-On the machine that already has the tested generator image (the desktop, or A if previously transferred), export it:
-
-```sh
-docker image save -o native-generator-image.tar \
-  mylocalton-native-load-generator:cycle-clients-ed666c9a-h2
+```text
+native-client-export/
+  external.global.config.json
+  test-wallets.tar.gz
+  remote-load.env
+  import-native-client.sh
+  run-remote-load.sh
+  export-manifest.json
+  generator-image.tar           # when image inclusion is enabled
 ```
 
-Copy this archive to B using SCP and load it **before** measuring. Use compatible CPU architecture/instruction support on B; a CPU-specific image may need a separately prebuilt compatible generator image.
+Only the liteserver IP/port are rewritten in the exported public config. Its Ed25519 key and all chain hashes, including the zero-state signing domain, are preserved. The wallet archive includes the original public lane manifest and only `source-N.pk`, `source-N.pub`, `source-N.addr`, `dest-N.pub`, and `dest-N.addr` for the selected indices. It excludes destination private keys, validator/control keys and the validator database. SHA-256 checksums, sizes, image identity, endpoint and source-range metadata are recorded in `export-manifest.json`.
+
+The exporter reads A's container; it does not expose ports, restart the validator or submit messages. The bundle contains funded source signing keys, so transfer the entire directory privately using SCP. Do not publish it through the file server or add it to Git.
+
+## Copy and import on B
+
+Copy the **whole directory**, including `run-remote-load.sh`, the importer and the environment file. There is no separate manual script/preset download step:
 
 ```sh
-# On B; replace user, A and the image archive source as appropriate.
-umask 077
-mkdir -p client-data/wallets remote-results
-scp user@SERVER_A:~/native-client-export/external.global.config.json client-data/global.config.json
-scp user@SERVER_A:~/native-client-export/test-wallets.tar.gz ./test-wallets.tar.gz
-tar -xzf test-wallets.tar.gz -C client-data/wallets
-chmod -R go-rwx client-data
-# Copy native-generator-image.tar here from the image-owning machine first.
-docker image load -i native-generator-image.tar
+# On A; substitute B's SSH account and hostname.
+scp -r "$HOME/native-client-export" user@SERVER_B:~/
 ```
 
-Copy the adjacent [native-remote-load.env](benchmarks/native-remote-load.env) to B's working directory as `remote-load.env`. It is a complete public preset extracted from the successful 100-connection run, with paths changed for a read-only `/client` bind mount. It preserves the retry, expiry and canonical-follower settings as well as the visible windows/batching settings. Do not use the general Compose `.env` as a Docker `--env-file`: it contains different defaults and Compose-specific syntax.
+B needs Linux, Bash, Python 3, the local Docker daemon, and standard `flock`/`timeout` commands. It does not need a validator or a repository clone. Use a generator image compatible with B's CPU architecture/instruction support. Do not point B's Docker context or `DOCKER_HOST` at A; the importer and runner require a local Unix-socket Docker endpoint.
 
-For the exact saved image, use its immutable ID:
+On B, start the copied importer interactively:
 
 ```sh
-export REMOTE_LOAD_IMAGE=sha256:322c9b5cc6e74d884563d97008b53d76979a584eec05dfa875f0a6bdc2313871
-docker image inspect "$REMOTE_LOAD_IMAGE" --format '{{.Id}}'
+bash "$HOME/native-client-export/import-native-client.sh"
+```
+
+It asks for the bundle directory and a new client installation directory, defaulting to the script's directory and `~/native-remote-client`. If the exact image is missing and an archive is included, it offers to load it. For unattended import, use this alternative:
+
+```sh
+bash "$HOME/native-client-export/import-native-client.sh" \
+  --non-interactive \
+  --bundle "$HOME/native-client-export" \
+  --output "$HOME/native-remote-client" \
+  --load-image
+```
+
+`--no-load-image` requires the pinned image to be preloaded on B. The importer verifies every bundled file checksum before using it, rejects unsafe/unexpected archive entries, checks the selected wallet range against its lane manifest, and installs into a new private directory. Existing client directories are preserved. It does not contact A or start load.
+
+The installed layout is ready for the runner:
+
+```text
+native-remote-client/
+  client-data/global.config.json
+  client-data/wallets/...
+  remote-load.env
+  runtime-image-id.txt
+  export-manifest.json
+  import-native-client.sh
+  run-remote-load.sh
+```
+
+An optional liteserver connectivity check on B uses the installed config and image:
+
+```sh
+cd "$HOME/native-remote-client"
+image_id=$(cat runtime-image-id.txt)
 docker run --rm --pull never --network host \
   --mount type=bind,src="$PWD/client-data",dst=/client,readonly \
-  --entrypoint /usr/local/bin/lite-client "$REMOTE_LOAD_IMAGE" \
+  --entrypoint /usr/local/bin/lite-client "$image_id" \
   -C /client/global.config.json -t 10 -c last
 ```
 
-`--network host` here assumes Linux server B. B needs outbound TCP to A:40004, not an inbound published client port. The config supplies the liteserver key; no separate `.pub` argument is necessary. The generator uses persistent ADNL/TCP and the batch RPC, with one additional canonical-follower connection beyond the requested submission count.
+B needs outbound TCP to A:40004 (or the exported port), with no inbound client port. The config supplies the liteserver public key. The generator uses persistent ADNL/TCP and the batch RPC, with one additional canonical-follower connection beyond the requested submission count.
 
 ## Run 10, 50 and 100 connections on B
 
-The following is a **standalone shell example**, not a new remote mode in the repository's local Python sweep. Save it on B as `run-remote-load.sh`, next to `remote-load.env` and `client-data`:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ "${1:-}" != --connections || $# -lt 2 ]]; then
-  echo 'Usage: bash run-remote-load.sh --connections 10 50 100' >&2
-  exit 2
-fi
-shift
-for connections in "$@"; do
-  [[ "$connections" =~ ^[1-9][0-9]{0,2}$ ]] &&
-    (( connections >= 6 && connections <= 256 )) || {
-      echo 'This six-worker preset requires 6..256 connections' >&2
-      exit 2
-    }
-done
-image=${REMOTE_LOAD_IMAGE:?Set REMOTE_LOAD_IMAGE to the prebuilt immutable image ID}
-docker image inspect "$image" >/dev/null
-run_id=$(date -u +%Y%m%dT%H%M%SZ)
-output="$PWD/remote-results/$run_id"
-mkdir -p "$PWD/remote-results"
-mkdir "$output"
-cp remote-load.env "$output/remote-load.env"
-cp client-data/global.config.json "$output/global.config.json"
-printf '%s\n' "$image" > "$output/image-id.txt"
-active_container=
-trap 'if [[ -n "$active_container" ]]; then docker stop -t 30 "$active_container" >/dev/null || true; fi' EXIT
-for connections in "$@"; do
-  active_container="native-remote-${run_id}-${connections}"
-  echo "Running $connections connections; metrics: $output/$connections.jsonl"
-  status=0
-  docker run --pull never --name "$active_container" \
-    --network host --cpus 4 --memory 8g \
-    --mount type=bind,src="$PWD/client-data",dst=/client,readonly \
-    --env-file "$PWD/remote-load.env" \
-    -e NATIVE_LOAD_CONNECTIONS="$connections" \
-    "$image" > "$output/$connections.jsonl" 2> "$output/$connections.stderr.log" || status=$?
-  docker inspect "$active_container" > "$output/$connections.container.json"
-  (( status == 0 )) || exit "$status"
-  active_container=
-  python3 - "$output/$connections.jsonl" <<'PYRESULT'
-import json, pathlib, sys
-rows = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()
-        if line.startswith('{')]
-finals = [row for row in rows if row.get('final') is True]
-assert len(finals) == 1, 'Missing or ambiguous final record; stop the sequence'
-r = finals[0]
-keys = ['configured_connections', 'steady_offered_avg_tps', 'steady_mempool_accept_avg_tps',
-        'canonical_chain_measure_avg_tps', 'benchmark_result_valid', 'chain_capacity_valid',
-        'chain_capacity_invalid_reasons', 'canonical_backlog']
-print(json.dumps({key: r.get(key) for key in keys}, indent=2))
-assert r.get('benchmark_result_valid') is True and r.get('canonical_backlog') == 0, \
-    'Incomplete or incorrect run; inspect evidence before reusing these source keys'
-PYRESULT
-done
-```
-
-Run the requested sequence or one count:
+The installed `run-remote-load.sh` is a real repository script. It runs only the generator; the existing local Python sweep remains separate.
 
 ```sh
+cd "$HOME/native-remote-client"
 bash run-remote-load.sh --connections 10 50 100
-# For a later independent run:
-# bash run-remote-load.sh --connections 50
 ```
 
-Each arm uses unpaced bounded load, 60 seconds of warm-up, 180 seconds measured load, and up to 180 seconds of drain, plus initial account/lane readiness work. The environment fixes six workers/signers, 24,576 sources, 16 logical transfers per signed run, a 64-parent batch cap, 20 ms coalescing, and global initial/max admission windows of 32,768/65,536 logical transfers. Containers and raw output are retained. Choose CPU/memory limits appropriate to B before declaring an experiment; changing them changes the comparison. No generator starts on A.
+Omitting `--connections` uses the same 10/50/100 sequence. For a later independent single-count run or a different measurement duration:
 
-For current progress, read the JSONL file in another terminal. If interrupted or a drain fails, inspect/stop the named generator and reconcile pending work before starting a new arm with the same keys. A clean generator exit and a true final `benchmark_result_valid` are required, not merely a high dashboard peak.
+```sh
+bash run-remote-load.sh --connections 50 --duration 300
+```
 
-Use `canonical_chain_measure_avg_tps` for block-time canonical throughput; `steady_mempool_accept_avg_tps` measures admission. The shell stops on incomplete/incorrect runs but retains capacity-rejected observations, just as the local sweep distinguishes observations from capacity results. Inspect signed-run density and lane validity too. This shell does not independently collect A's validator process identity, resources, logs or mempool-cleanup evidence. Preserve A-side evidence separately; do not label its output as having passed the full local harness's strict capacity acceptance. Keep A unchanged during the entire sequence and ensure offered load exceeds canonical TPS before making a capacity claim.
+Run `bash run-remote-load.sh --help` for `--directory`, `--duration`, `--warmup`, `--drain`, `--cpus`, `--memory`, `--output` and `--image`. The default resource limits are 4 CPU equivalents and 8 GiB memory. Requested connection counts must fit the exported worker count (at least 6 for the reference preset) and must not exceed 256. Duplicate counts are rejected. For a different CPU-compatible prebuilt image, import/load it before running and explicitly select it with `--image`; the runner freezes its resolved ID across all arms.
+
+Each arm uses unpaced bounded load, 60 seconds of warm-up, 180 seconds measured load and up to 180 seconds of drain, plus initial account/lane readiness work. The reference environment fixes six workers/signers, 24,576 sources, 16 logical transfers per signed run, a 64-parent batch cap, 20 ms coalescing and global initial/max admission windows of 32,768/65,536 logical transfers. Exporting fewer sources reduces worker/signer counts only when necessary. That smaller workload is not the reference capacity test.
+
+Results are saved under a unique `remote-results/` subdirectory of the client installation, or the new directory provided with `--output`. The top-level `summary.json` contains every arm's status; each numbered connection directory retains `runtime-settings.json`, `runtime.env`, `generator.log`, `container.json`, `generator-final.json` and `summary.json`. Image identity, effective settings and public config are retained. Source keys are mounted read-only and are not copied into result reports. Exited workload containers remain available for inspection.
+
+The runner serializes access to the installed client-data directory. Do not run another generator elsewhere using the same source keys; auto-nonce discovers canonical state but does not coordinate independent writers. Keep unrelated native traffic off A, keep A's images/process/configuration unchanged during the sequence, and synchronize A/B clocks through NTP. Chain TPS counts all native transfers in observed blocks, not only requests from B.
+
+SIGINT/SIGTERM stops the runner-owned generator and preserves the partial result; a finite watchdog also bounds each arm. Inspect and reconcile an interrupted/incomplete run before reusing its source keys. The runner checks canonical proof/completion, zero final backlog, requested connection counts, signed-run density, batching and lane validity before starting another arm. Capacity-only rejections remain visible as `observation_only`; they do not discard valid throughput observations.
+
+Use `canonical_chain_measure_avg_tps` in `generator-final.json` for block-time canonical throughput and `steady_mempool_accept_avg_tps` for admission. The runner's summary distinguishes `generator_capacity_eligible` from `observation_only`. It does not collect A's independent validator process/resource/pool-cleanup evidence, so neither label certifies the full local harness's strict capacity acceptance. Preserve A-side evidence separately and ensure offered load exceeds canonical TPS before making a capacity claim.
 
 ## Verified dashboard chart
 

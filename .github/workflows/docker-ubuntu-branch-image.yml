@@ -45,6 +45,11 @@ jobs:
               def redirect_request(self, request, response, code, message, headers, new_url):
                   return None
 
+          class RegistryCheckError(Exception):
+              # Only our static descriptions and numeric HTTP statuses enter
+              # this exception; never include registry-provided text or URLs.
+              pass
+
           opener = urllib.request.build_opener(NoRedirect)
           repository = os.environ['GITHUB_REPOSITORY'].lower()
           credentials = (os.environ['GITHUB_ACTOR'] + ':' + os.environ['GH_TOKEN']).encode()
@@ -60,31 +65,42 @@ jobs:
               with opener.open(request, timeout=30) as response:
                   token_data = json.load(response)
               if not isinstance(token_data, dict):
-                  raise ValueError('Registry did not return a token object')
+                  raise RegistryCheckError('Registry did not return a token object.')
               token = token_data.get('token') or token_data.get('access_token')
               if not isinstance(token, str) or not token:
-                  raise ValueError('Registry did not return an access token')
+                  raise RegistryCheckError('Registry did not return an access token.')
               headers = {'Authorization': 'Bearer ' + token}
               upload_url = 'https://ghcr.io/v2/' + repository + '/blobs/uploads/'
               stage = 'package upload permission check'
               request = urllib.request.Request(upload_url, data=b'', headers=headers, method='POST')
               with opener.open(request, timeout=30) as response:
+                  print('GHCR empty upload returned HTTP ' + str(response.status) + '.')
                   if response.status != 202:
-                      raise ValueError('Registry did not accept the empty upload')
+                      raise RegistryCheckError('Expected HTTP 202 for the empty upload.')
                   location = response.headers.get('Location')
               if not location:
-                  raise ValueError('Registry did not return an upload cleanup location')
+                  raise RegistryCheckError('Registry did not return a Location header for upload cleanup.')
               cleanup_url = urllib.parse.urljoin(upload_url, location)
               parsed = urllib.parse.urlsplit(cleanup_url)
-              if (parsed.scheme != 'https' or parsed.hostname != 'ghcr.io'
-                      or parsed.port not in (None, 443) or parsed.username or parsed.password
-                      or not parsed.path.startswith('/v2/' + repository + '/blobs/uploads/')):
-                  raise ValueError('Registry returned an unexpected upload cleanup location')
+              if parsed.scheme != 'https':
+                  raise RegistryCheckError('Upload cleanup location does not use HTTPS.')
+              if parsed.hostname != 'ghcr.io':
+                  raise RegistryCheckError('Upload cleanup location does not use the ghcr.io host.')
+              if parsed.port not in (None, 443):
+                  raise RegistryCheckError('Upload cleanup location uses an unexpected port.')
+              if parsed.username or parsed.password:
+                  raise RegistryCheckError('Upload cleanup location contains user credentials.')
+              if not parsed.path.startswith('/v2/' + repository + '/blobs/uploads/'):
+                  raise RegistryCheckError('Upload cleanup location is outside this repository upload path.')
               stage = 'empty upload cleanup'
               request = urllib.request.Request(cleanup_url, headers=headers, method='DELETE')
               with opener.open(request, timeout=30) as response:
+                  print('GHCR empty upload cleanup returned HTTP ' + str(response.status) + '.')
                   if response.status != 204:
-                      raise ValueError('Registry did not confirm empty upload cleanup')
+                      raise RegistryCheckError('Expected HTTP 204 to confirm empty upload cleanup.')
+          except RegistryCheckError as error:
+              print('::error::GHCR ' + stage + ' failed: ' + str(error))
+              sys.exit(1)
           except urllib.error.HTTPError as error:
               print('::error::GHCR ' + stage + ' failed with HTTP ' + str(error.code) + '.')
               if error.code in (401, 403):

@@ -90,7 +90,15 @@ jobs:
                   raise RegistryCheckError('Upload cleanup location uses an unexpected port.')
               if parsed.username or parsed.password:
                   raise RegistryCheckError('Upload cleanup location contains user credentials.')
-              if not parsed.path.startswith('/v2/' + repository + '/blobs/uploads/'):
+              # GHCR may return either upload or uploads, including the
+              # collection path itself with the upload identity in its query.
+              repository_prefix = '/v2/' + repository + '/'
+              upload_paths = tuple(repository_prefix + 'blobs/' + name for name in ('upload', 'uploads'))
+              if not any(parsed.path == path or parsed.path.startswith(path + '/') for path in upload_paths):
+                  print('GHCR cleanup path shape: repository_prefix_match='
+                        + str(parsed.path.startswith(repository_prefix))
+                        + ', ends_with_uploads=' + str(parsed.path.rstrip('/').endswith('/uploads'))
+                        + ', segment_count=' + str(len([part for part in parsed.path.split('/') if part])) + '.')
                   raise RegistryCheckError('Upload cleanup location is outside this repository upload path.')
               stage = 'empty upload cleanup'
               request = urllib.request.Request(cleanup_url, headers=headers, method='DELETE')

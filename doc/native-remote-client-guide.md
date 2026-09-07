@@ -282,15 +282,15 @@ Omitting `--connections` uses the same 10/50/100 sequence. The updated runner de
 bash run-remote-load.sh --connections 10 --duration 600
 ```
 
-Run `bash run-remote-load.sh --help` for `--directory`, `--duration`, `--warmup`, `--drain`, `--cpus`, `--memory`, `--workers`, `--signers`, `--initial-cwnd`, `--max-cwnd`, `--output` and `--image`. The default resource limits are 4 CPU equivalents and 8 GiB memory. Requested connection counts must fit the effective worker count (at least 6 for the reference preset) and must not exceed 256. Duplicate counts are rejected. For a different CPU-compatible prebuilt image, import/load it before running and explicitly select it with `--image`; the runner freezes its resolved ID across all arms.
+Run `bash run-remote-load.sh --help` for `--directory`, `--duration`, `--warmup`, `--drain`, `--profile`, `--cpus`, `--memory`, `--workers`, `--signers`, `--initial-cwnd`, `--max-cwnd`, `--output` and `--image`. The default `server48` profile uses 32 CPU equivalents, 32 GiB memory, eight workers and 24 signers, including when an older imported environment still specifies six workers/signers. `--profile preset` retains the imported worker/signer values and uses the earlier 4-CPU/8-GiB resource defaults; explicit CLI overrides win. Requested connection counts must fit the effective worker count (eight for the full server48 preset) and must not exceed 256. Duplicate counts are rejected. For a different CPU-compatible prebuilt image, import/load it before running and explicitly select it with `--image`; the runner freezes its resolved ID across all arms.
 
-Each arm uses unpaced bounded load, 60 seconds of warm-up, **600 seconds measured load** and up to 180 seconds of drain, plus initial account/lane readiness work. A full three-count sweep therefore contains 30 measured minutes and takes longer than 33 minutes including warm-up, readiness and drain. It produces three separate load periods, with intentional gaps between counts. The reference environment fixes six workers/signers, 24,576 sources, 16 logical transfers per signed run, a 64-parent batch cap, 20 ms coalescing and global initial/max admission windows of 32,768/65,536 logical transfers. Exporting fewer sources reduces worker/signer counts only when necessary. That smaller workload is not the reference capacity test.
+Each arm uses unpaced bounded load, 60 seconds of warm-up, **600 seconds measured load** and up to 180 seconds of drain, plus initial account/lane readiness work. A full three-count sweep therefore contains 30 measured minutes and takes longer than 33 minutes including warm-up, readiness and drain. It produces three separate load periods, with intentional gaps between counts. The server48 environment uses eight workers, 24 signers, 24,576 sources, 16 logical transfers per signed run, a 64-parent batch cap, 20 ms coalescing and global initial/max admission windows of 32,768/65,536 logical transfers. Exporting fewer sources reduces worker/signer counts only when necessary. That smaller workload is not the reference capacity test.
 
 Duration extends the observation window; it does not guarantee a flat TPS line or fix a failed generator. Use one 10-connection arm first to observe an uninterrupted ten-minute measurement, then run the full sweep after resolving any previous failed arm. The native binary already supports this duration, so updating the host runner requires no new TON image, validator restart, wallet export, or image transfer.
 
 Results are saved under a unique `remote-results/` subdirectory of the client installation, or the new directory provided with `--output`. The top-level `summary.json` contains every attempted arm's status. The runner saves its own source and SHA-256 alongside the image identity, effective settings and public config. Each numbered connection directory retains `runtime-settings.json`, `runtime.env`, `generator.log`, `generator.stderr.log`, `container.json`, `execution.json` and `summary.json`, plus `generator-final.json` whenever a final record was emitted, including on a nonzero exit. Source keys are mounted read-only and are not copied into result reports. Exited workload containers remain available for inspection.
 
-Periodic console progress reports phase, elapsed/measurement time and available provisional TPS/backlog counters. Those live counters do not replace the final proof/completion checks. The watchdog grows with the selected duration, warm-up, ramp, drain and readiness budgets.
+Periodic console progress reports phase, elapsed/measurement time and provisional TPS/backlog counters. `canonical_chain_measure_planned_window_avg_tps` divides observed transfers by the entire planned canonical window (typically 599 seconds), including while measurement is still running. Its gradual rise is not a live throughput ramp. Raw native field names remain in `generator.log`; the final proof/completion checks remain authoritative. The watchdog grows with the selected duration, warm-up, ramp, drain and readiness budgets.
 
 The runner serializes access to the installed client-data directory. Do not run another generator elsewhere using the same source keys; auto-nonce discovers canonical state but does not coordinate independent writers. Keep unrelated native traffic off A, keep A's images/process/configuration unchanged during the sequence, and synchronize A/B clocks through NTP. Chain TPS counts all native transfers in observed blocks, not only requests from B.
 
@@ -322,7 +322,7 @@ runner_ref=native-payment-lanes-step6
 client_dir="$HOME/native-remote-client"
 runner_download=$(mktemp)
 trap 'rm -f "$runner_download"' EXIT
-curl --fail --location "https://raw.githubusercontent.com/neodix42/mylocalton-docker/$runner_ref/benchmark/remote/run-remote-load.sh" --output "$runner_download"
+curl --fail --location --retry 3 "https://raw.githubusercontent.com/neodix42/mylocalton-docker/$runner_ref/benchmark/remote/run-remote-load.sh" --output "$runner_download"
 bash -n "$runner_download"
 cp -p "$client_dir/run-remote-load.sh" "$client_dir/run-remote-load.sh.before-update-$(date -u +%Y%m%dT%H%M%SZ)"
 install -m 700 "$runner_download" "$client_dir/run-remote-load.sh"
@@ -333,61 +333,92 @@ The [remote run observations and duration change](native-remote-long-runs-2026-0
 
 ### Increase offered load on B
 
-A's `.env.physical` does not configure the standalone generator on B. B's reference preset already uses `NATIVE_LOAD_TARGET_TPS=0`, meaning bounded **unpaced** load; setting a larger positive TPS target would add a rate cap. Its default Docker quota is only **4 CPU equivalents**, with six workers and six signers. Check `nproc` and `free -h` on B before allocating more resources. Worker/signer counts configure parallelism; `--cpus` controls the container's CPU time budget.
+A's `.env.physical` does not configure the standalone generator on B. The user has confirmed that **B also has 48 CPUs and 256 GB RAM**, so the new default `server48` profile uses:
 
-Update the installed host script using the procedure above. These controls work with the existing pinned generator image; they do not require rebuilding TON or exporting another image. Once the earlier failed arm has been diagnosed and reconciled, compare treatments one at a time. Each command below measures at least ten minutes and must finish valid with zero backlog before the next command starts.
+| Setting | Previous default | New default |
+| --- | ---: | ---: |
+| Container CPU budget | 4 | 32 |
+| Container memory ceiling | 8 GiB | 32 GiB |
+| Worker actors | 6 | 8 |
+| Signing actors | 6 | 24 |
+| Scheduler threads (native binary) | 13 | 33 |
+| Initial / maximum logical admission window | 32,768 / 65,536 | 32,768 / 65,536 |
 
-For example, **if B has at least 16 available logical CPUs and enough free RAM for its 8 GiB container**, start with more CPU alone at a fixed connection count:
+Eight workers preserve support for the 10/50/100 sweep. The CPU allocation leaves room for the host, Docker, and monitoring. The memory value is a ceiling, not a reservation or instruction to fill RAM. The preset already uses `NATIVE_LOAD_TARGET_TPS=0`, meaning bounded **unpaced** load. The failed run's sample had a congestion window near 8,174, no acknowledgments clipped by the 65,536 ceiling, and no query-credit stalls; it does not justify automatically doubling admission or backlog limits.
+
+The profile applies even to an old imported environment when the host script is updated; it leaves that original file unchanged. Each arm records the effective profile/settings. Use `--profile preset` for the imported worker/signer settings and earlier 4-CPU/8-GiB budget; explicit CPU, memory, worker, signer, and window arguments override either profile. On smaller B hosts, select `preset` and size its resource/parallelism overrides explicitly.
+
+**The resource controls require only a host-script update; the admission-timeout fix below requires a new generator binary/image.** Complete that image upgrade before another capacity run. Then start with one valid ten-minute arm:
 
 ```sh
-cd "$HOME/native-remote-client"
-# Control, using the same A configuration as the following treatments.
-bash run-remote-load.sh --connections 100 --duration 600 \
+cd "$HOME/native-remote-client-fixed"
+bash run-remote-load.sh --connections 10 --duration 600
+```
+
+After that arm drains and passes the final checks:
+
+```sh
+bash run-remote-load.sh --connections 10 50 100 --duration 600
+```
+
+For an explicit old-resource control on the same fixed image and A configuration, including with a newly exported preset:
+
+```sh
+bash run-remote-load.sh --profile preset --connections 10 --duration 600 \
   --cpus 4 --memory 8g --workers 6 --signers 6 \
   --initial-cwnd 32768 --max-cwnd 65536
 ```
 
-After a valid control, increase only B's CPU time budget:
+After obtaining repeatable valid results, the larger connection sweep remains available:
 
 ```sh
-# Increase only B's CPU time budget.
-bash run-remote-load.sh --connections 100 --duration 600 \
-  --cpus 12 --memory 8g --workers 6 --signers 6 \
-  --initial-cwnd 32768 --max-cwnd 65536
+bash run-remote-load.sh --connections 50 100 256 --duration 600
 ```
 
-If that result is valid, compare higher worker/signing parallelism:
+Only if counters show the admission window now limits useful traffic, compare a larger window at a fixed connection count:
 
 ```sh
-# Then compare higher worker/signing parallelism.
 bash run-remote-load.sh --connections 100 --duration 600 \
-  --cpus 12 --memory 8g --workers 12 --signers 12 \
-  --initial-cwnd 32768 --max-cwnd 65536
-```
-
-If the admission window limits further load and the preceding run is valid,
-test twice the initial and maximum window:
-
-```sh
-# Finally test twice the initial and maximum admission window.
-bash run-remote-load.sh --connections 100 --duration 600 \
-  --cpus 12 --memory 8g --workers 12 --signers 12 \
   --initial-cwnd 65536 --max-cwnd 131072
 ```
 
-Choose each next treatment only if the preceding result and resource counters justify it; these examples are separate invocations, not a script to continue after a failure. Windows count **logical transfers across all workers/connections**, not bytes or per-connection messages. Explicit window overrides must be positive, the initial window must not exceed the maximum, and the maximum must fit the exported in-flight budget (262,144 in the reference preset). The runner also checks that worker/client partitions can dispatch complete signed runs. All effective overrides are frozen in each arm's runtime artifacts. The global canonical backlog limit remains unchanged. More outstanding work can increase memory use, drain time, or backpressure; retain failed-run diagnostics rather than automatically enlarging those limits.
-
-After selecting a valid resource/window combination, compare **50 / 100 / 256 connections**, for example:
-
-```sh
-bash run-remote-load.sh --connections 50 100 256 --duration 600 \
-  --cpus 12 --memory 8g --workers 12 --signers 12 \
-  --initial-cwnd 65536 --max-cwnd 131072
-```
+Windows count **logical transfers across all workers/connections**, not bytes or per-connection messages. Explicit values must be positive, the initial window must not exceed the maximum, and the maximum must fit the exported in-flight budget (262,144 in the reference preset). The runner validates that worker/client partitions can dispatch complete signed runs. The canonical backlog budget remains 2,097,120 logical transfers. Treat each command as a separate experiment and inspect its final result before reusing its sources. CPU and signing changes are new treatments, not measured TPS improvements.
 
 Both the current native binary and the runner accept at most **256 submission connections**. A 500-connection test would require a new binary and published/exported image. More connections divide the same global admission budget: at 65,536 logical transfers, 100 connections average about 40 sixteen-transfer parent messages of credit each, while 500 would average only eight. Increasing signing capacity or useful outstanding work can supply more load without adding that RPC overhead.
 
 The observed 50 Mbit/s on a 1 Gbit/s link does not establish unused validator capacity. At the reported 74.5k logical TPS, sixteen-transfer signed runs represent only about 4,660 fresh parent messages per second. Batch packing and retries affect wire traffic. Compare offered, admitted, and proven canonical TPS, signing rate, CPU usage/throttling on both hosts, admission-window limits, query stalls, follower lag, and final backlog. Retain the configuration with the highest **repeatable, valid ten-minute canonical TPS**, rerun its control, and save the image IDs, A's resource settings, and the runner's result directory. No TPS gain from the 44-CPU or larger-window treatments has been measured yet.
+
+### Upgrade the image for the admission-timeout drain fix
+
+The September 7 ten-minute run exited with code 2 after a complete measurement and a 180-second drain that remained at **32 unresolved logical transfers**. It was not OOM, a Docker restart, or a watchdog kill. The client incorrectly recognized `external message admission deadline expired` as transfer expiry and re-signed a still-valid parent. The sample's 39 timeouts, 39 expiry counts, and 39 re-signings match this bug. The fix is in TON commit **`a1e4c988`**; request timeouts now retry the exact signed bytes. The [failure report](native-remote-drain-fix-2026-09-07.md) separates this confirmed bug from the still-unconfirmed attribution of the final 32 transfers.
+
+Updating only `run-remote-load.sh` cannot fix that binary. After the TON image workflow successfully publishes a revision containing `a1e4c988`, update A from GHCR and export a new matching client image. Preserve the old failed run and stop all generators before this maintenance step:
+
+```sh
+# On A, from the existing MyLocalTonDocker checkout.
+git pull --ff-only
+bash start-native-genesis.sh --env-file .env
+```
+
+Use the existing `.env`, project name and database mounts. This intentionally upgrades/recreates genesis once between tests and retains the chain/accounts. It also removes the old process's in-memory ingress state, which can contain reservations from the failed run. Do not delete volumes, regenerate wallets, or treat the old incomplete run as valid. Wait for healthy genesis and advancing blocks, then export to a **new** directory:
+
+```sh
+bash benchmark/remote/export-native-client.sh
+```
+
+The exporter verifies that the new client matches running genesis's revision and includes the prebuilt client image. Transfer that new bundle from A to B as described above. On B, import it into a new client directory so the failed run's artifacts remain available:
+
+```sh
+# Replace the bundle directory with the newly copied export.
+bash "$HOME/native-client-export-NEW/import-native-client.sh" \
+  --output "$HOME/native-remote-client-fixed"
+cd "$HOME/native-remote-client-fixed"
+bash run-remote-load.sh --connections 10 --duration 600
+```
+
+The first announcement should show `profile=server48`, 32 CPUs/32g, eight workers and 24 signers. Its pinned image ID must differ from the old failing image `sha256:e016826b0bb5c4e11d01dd7b31cf5aae3843c9066720f2ad5affecfdcc59b731`. Check the exported receipt's source revision as well; a different image ID alone does not prove the fix is present. Keep the new image fixed across the next sweep. The original 180-second drain limit and failure gates remain in force.
+
+If a drain still fails, inspect `summary.json`'s compact `generator_diagnostics`, `generator-final.json`, and `generator.stderr.log`. The fixed binary logs at most eight unresolved source samples per worker after the final proof poll, with source indices, nonce positions, disabled state and pending-parent state. Private keys and message bodies are not printed.
 
 ## Verified dashboard chart
 

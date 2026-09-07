@@ -1,5 +1,7 @@
 # Remote native load: three-minute observations and ten-minute runner
 
+Later observation: the [600-second run and admission-timeout fix](native-remote-drain-fix-2026-09-07.md) records a reported 63,831.51 TPS observation with an invalid 32-transfer drain tail, plus the corrected retry handling and subsequent 48-CPU client defaults.
+
 The first user-run A/B sweep reported **74,512.27 canonical logical transfers/s** for 10 persistent submission connections, measured over 179 complete block-time seconds inside a 180-second offer window. The 50-connection container then exited abnormally, and the runner stopped before 100 connections. This is not yet a ten-minute sustained throughput result.
 
 ## Saved observations

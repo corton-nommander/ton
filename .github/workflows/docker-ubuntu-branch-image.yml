@@ -1,6 +1,7 @@
 name: Docker Ubuntu 22.04 branch image
 
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     branches:
@@ -10,7 +11,7 @@ on:
 # A newer revision cancels the previous publication for the same branch. The
 # promotion job also checks the branch head to reject reruns of old revisions.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ton-image-publish-${{ github.ref }}
   cancel-in-progress: true
 
 env:

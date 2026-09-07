@@ -10,6 +10,12 @@
 
 namespace native_load {
 
+constexpr std::uint32_t max_connections = 1024;
+
+constexpr bool valid_connection_count(std::uint32_t connections) {
+  return connections != 0 && connections <= max_connections;
+}
+
 struct AdaptiveCwndAckResult {
   double cwnd{1.0};
   bool limited{false};
@@ -226,6 +232,17 @@ inline double canonical_state_lag_retry_delay_seconds(std::uint32_t consecutive_
 
 inline bool retry_horizon_elapsed(double first_retry_at, double now, double retry_horizon_seconds) {
   return first_retry_at >= 0.0 && now >= first_retry_at && now - first_retry_at >= retry_horizon_seconds;
+}
+
+// A suffix waiting behind an unresolved lower nonce has not had a source-head
+// retry opportunity. Do not consume its horizon before it becomes the head,
+// and do not restart an existing head's clock for each failed admission.
+inline void note_source_head_retry(bool is_source_head, double now, double& source_head_retry_at) {
+  if (!is_source_head) {
+    source_head_retry_at = -1.0;
+  } else if (source_head_retry_at < 0.0) {
+    source_head_retry_at = now;
+  }
 }
 
 inline double clamp_retry_delay_to_horizon(double requested_delay_seconds, double first_retry_at, double now,

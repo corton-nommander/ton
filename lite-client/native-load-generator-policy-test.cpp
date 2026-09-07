@@ -5,6 +5,15 @@
 
 #include "native-load-generator-policy.hpp"
 
+TEST(NativeLoadGeneratorPolicy, ConnectionCountSupportsLargeSweepsWithinBoundedLimit) {
+  for (auto connections : {1u, 10u, 50u, 100u, 256u, 300u, 500u, 1024u}) {
+    ASSERT_TRUE(native_load::valid_connection_count(connections));
+  }
+  ASSERT_TRUE(!native_load::valid_connection_count(0));
+  ASSERT_TRUE(!native_load::valid_connection_count(native_load::max_connections + 1));
+  ASSERT_TRUE(!native_load::valid_connection_count(std::numeric_limits<std::uint32_t>::max()));
+}
+
 TEST(NativeLoadGeneratorPolicy, AdaptiveCwndAckHonorsIndependentCeiling) {
   auto below = native_load::adaptive_cwnd_after_ack(63.0, 4096.0, 64.0);
   ASSERT_TRUE(below.cwnd > 63.0);
@@ -270,6 +279,28 @@ TEST(NativeLoadGeneratorPolicy, RetryHorizonUsesElapsedTime) {
   ASSERT_TRUE(std::abs(native_load::clamp_retry_delay_to_horizon(25.6, 100.0, 125.5, 30.0) - 4.5) < 1e-9);
   ASSERT_TRUE(std::abs(native_load::clamp_retry_delay_to_horizon(2.0, 100.0, 110.0, 30.0) - 2.0) < 1e-9);
   ASSERT_TRUE(std::abs(native_load::clamp_retry_delay_to_horizon(2.0, 100.0, 130.0, 30.0)) < 1e-9);
+}
+
+TEST(NativeLoadGeneratorPolicy, RetryHorizonStartsWhenFailedSuffixBecomesSourceHead) {
+  double source_head_retry_at = -1.0;
+  native_load::note_source_head_retry(false, 100.0, source_head_retry_at);
+  native_load::note_source_head_retry(false, 285.0, source_head_retry_at);
+  ASSERT_TRUE(!native_load::retry_horizon_elapsed(source_head_retry_at, 285.0, 90.0));
+  native_load::note_source_head_retry(true, 285.0, source_head_retry_at);
+  ASSERT_EQ(source_head_retry_at, 285.0);
+  native_load::note_source_head_retry(true, 374.0, source_head_retry_at);
+  ASSERT_EQ(source_head_retry_at, 285.0);
+  ASSERT_TRUE(!native_load::retry_horizon_elapsed(source_head_retry_at, 374.999, 90.0));
+  ASSERT_TRUE(native_load::retry_horizon_elapsed(source_head_retry_at, 375.0, 90.0));
+}
+
+TEST(NativeLoadGeneratorPolicy, EarlierRepairStopsChargingLaterParentHeadWait) {
+  double source_head_retry_at = 100.0;
+  native_load::note_source_head_retry(false, 110.0, source_head_retry_at);
+  ASSERT_EQ(source_head_retry_at, -1.0);
+  native_load::note_source_head_retry(true, 285.0, source_head_retry_at);
+  ASSERT_EQ(source_head_retry_at, 285.0);
+  ASSERT_TRUE(!native_load::retry_horizon_elapsed(source_head_retry_at, 285.0, 90.0));
 }
 
 TEST(NativeLoadGeneratorPolicy, ReadySourceRunIsBoundedAndRequeuesItsRemainder) {
@@ -1111,19 +1142,36 @@ TEST(NativeLoadGeneratorPolicy, NativeRunCoalescingScansOnlyLiveReadySourceToken
 }
 
 TEST(NativeLoadGeneratorPolicy, ExplicitInitialCwndConservesBudgetAcrossConnectionSweep) {
-  for (auto connections : {10u, 50u, 100u}) {
-    ASSERT_TRUE(native_load::valid_adaptive_initial_cwnd(32768, connections, 6, 262144, 65536, 16));
-    std::uint32_t total = 0;
-    for (std::uint32_t worker = 0; worker < 6; ++worker) {
-      auto clients = native_load::distributed_share(connections, worker, 6);
-      auto budget = native_load::distributed_share(32768, worker, 6);
-      for (std::uint32_t client = 0; client < clients; ++client) {
-        auto share = native_load::distributed_share(budget, client, clients);
-        ASSERT_TRUE(share >= 16);
-        total += share;
+  for (auto workers : {6u, 8u, 10u}) {
+    for (auto connections : {10u, 50u, 100u, 256u, 300u, 500u, 1024u}) {
+      ASSERT_TRUE(native_load::valid_adaptive_initial_cwnd(32768, connections, workers, 262144, 65536, 16));
+      std::uint32_t total_clients = 0;
+      std::uint32_t total_initial = 0;
+      std::uint32_t total_maximum = 0;
+      std::uint32_t total_inflight = 0;
+      for (std::uint32_t worker = 0; worker < workers; ++worker) {
+        auto clients = native_load::distributed_share(connections, worker, workers);
+        auto initial = native_load::distributed_share(32768, worker, workers);
+        auto maximum = native_load::distributed_share(65536, worker, workers);
+        auto inflight = native_load::distributed_share(262144, worker, workers);
+        total_clients += clients;
+        for (std::uint32_t client = 0; client < clients; ++client) {
+          auto initial_share = native_load::distributed_share(initial, client, clients);
+          auto maximum_share = native_load::distributed_share(maximum, client, clients);
+          auto inflight_share = native_load::distributed_share(inflight, client, clients);
+          ASSERT_TRUE(initial_share >= 16);
+          ASSERT_TRUE(initial_share <= maximum_share);
+          ASSERT_TRUE(maximum_share <= inflight_share);
+          total_initial += initial_share;
+          total_maximum += maximum_share;
+          total_inflight += inflight_share;
+        }
       }
+      ASSERT_EQ(total_clients, connections);
+      ASSERT_EQ(total_initial, 32768u);
+      ASSERT_EQ(total_maximum, 65536u);
+      ASSERT_EQ(total_inflight, 262144u);
     }
-    ASSERT_EQ(total, 32768u);
   }
 }
 

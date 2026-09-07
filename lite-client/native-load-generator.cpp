@@ -485,6 +485,8 @@ struct WorkerStats {
   td::uint64 retry_horizon_exhausted{0};
   td::uint64 retry_exhausted_sources{0};
   td::uint64 canonical_state_lag_retry_exhausted{0};
+  td::uint64 snapshot_revision_not_ready_errors{0};
+  td::uint64 other_not_ready_errors{0};
   td::uint64 resigned{0};
   td::uint64 repair_offered{0};
   td::uint64 mempool_accepted{0};
@@ -741,8 +743,12 @@ class NativeLoadWorker final : public td::actor::Actor {
     TaskErrorReason retry_reason{TaskErrorReason::server_other};
     td::uint32 attempts{0};
     td::uint32 canonical_state_lag_attempts{0};
+    td::uint32 snapshot_revision_retry_attempts{0};
     double first_issued_at{0.0};
     double first_retry_at{-1.0};
+    double source_head_retry_at{-1.0};
+    int last_error_code{0};
+    std::string last_error_message;
     double sign_started_at{0.0};
     double last_sent_at{0.0};
     double retry_at{0.0};
@@ -853,6 +859,10 @@ class NativeLoadWorker final : public td::actor::Actor {
     td::uint64 end_snapshot_steady_matched{0};
     bool sampled{false};
     bool disabled{false};
+    // A retry horizon stops new offers from this source, but must not discard
+    // already offered authorizations. They continue exact-byte reconciliation
+    // within the existing measurement/drain deadline and keep capacity invalid.
+    bool retry_quarantined{false};
     bool available_queued{false};
     td::uint64 available_generation{0};
     td::uint64 last_repair_nonce{std::numeric_limits<td::uint64>::max()};
@@ -999,7 +1009,7 @@ class NativeLoadWorker final : public td::actor::Actor {
                          ErrorOrigin origin);
   void schedule_retry(std::shared_ptr<TransferTask> task, double delay_seconds,
                       TaskErrorReason reason);
-  void abandon_wallet_after_retry_horizon(std::shared_ptr<TransferTask> task, TaskErrorReason reason);
+  void quarantine_wallet_after_retry_horizon(std::shared_ptr<TransferTask> task, TaskErrorReason reason);
   void accept_task(std::shared_ptr<TransferTask> task, TaskResolution resolution);
   void reject_task(std::shared_ptr<TransferTask> task, td::Slice reason);
   void disable_wallet_for_conflict(std::size_t wallet_idx, td::Slice reason);
@@ -1396,6 +1406,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       ADD_FIELD(retry_horizon_exhausted);
       ADD_FIELD(retry_exhausted_sources);
       ADD_FIELD(canonical_state_lag_retry_exhausted);
+      ADD_FIELD(snapshot_revision_not_ready_errors);
+      ADD_FIELD(other_not_ready_errors);
       ADD_FIELD(resigned);
       ADD_FIELD(repair_offered);
       ADD_FIELD(mempool_accepted);
@@ -1924,6 +1936,8 @@ class NativeLoadCoordinator final : public td::actor::Actor {
         << ",\"invalid\":" << total.task_errors_by_reason.invalid
         << ",\"signing\":" << total.task_errors_by_reason.signing
         << ",\"server_other\":" << total.task_errors_by_reason.server_other << "}"
+        << ",\"not_ready_by_reason\":{\"snapshot_revision\":" << total.snapshot_revision_not_ready_errors
+        << ",\"other\":" << total.other_not_ready_errors << "}"
         << ",\"retries_by_reason\":{\"timeout\":" << total.retries_by_reason.timeout
         << ",\"transport\":" << total.retries_by_reason.transport << ",\"parse\":" << total.retries_by_reason.parse
         << ",\"full\":" << total.retries_by_reason.full << ",\"rate_limit\":" << total.retries_by_reason.rate_limit
@@ -2211,8 +2225,9 @@ class NativeLoadCoordinator final : public td::actor::Actor {
               << ",\"sources_at_canonical_backlog_cap_semantics\":\"sources unable to issue one more scalar transfer, one full effective NTRN quantum, or any NTRN after the exclusive uint64 nonce cursor is exhausted\""
               << ",\"task_errors_by_reason_semantics\":\"one mutually exclusive typed classification per failed admission result; canonical_state_lag requires an explicit canonical-watermark snapshot-lag diagnostic\""
               << ",\"retries_by_reason_semantics\":\"retry schedules by the typed error that caused them; counts schedules, not distinct transfers\""
-              << ",\"retry_exhausted_semantics\":\"source-head retry horizon expirations, not short max_retries backoff cycles; the source is quarantined because later native nonces cannot safely skip the unresolved head\""
-              << ",\"canonical_state_lag_retry_semantics\":\"bounded exponential retry without AIMD decrease until retry_horizon_s; intended to span temporary admission snapshots older than the latest canonical watermark\""
+              << ",\"retry_exhausted_semantics\":\"source-head retry horizon expirations, not short max_retries backoff cycles; fresh source offers stop, exact outstanding parents continue nonce-ordered reconciliation until the existing drain deadline, and capacity remains invalid\""
+              << ",\"canonical_state_lag_retry_semantics\":\"bounded exponential retry without AIMD decrease for explicit canonical-state lag and NTRN snapshot/revision races; independent attempt streaks reset on classification changes\""
+              << ",\"not_ready_by_reason_semantics\":\"exclusive split of task_errors_by_reason.not_ready into explicit NTRN snapshot/revision races and other availability or pressure responses; explicit canonical-state lag keeps its separate typed reason\""
               << ",\"latency_histogram_overflow_semantics\":\"overflow counts samples above overflow_lower_bound_ms; percentile_in_overflow flags a percentile that cannot be resolved within finite histogram buckets\""
               << ",\"benchmark_result_valid_semantics\":\"final proof-consistent run with complete measured and total cohorts, zero drain timeout, no fatal or retry-exhausted follower failure, and a final contiguous catch-up to the anchored shard tip\""
               << ",\"chain_correctness_valid_semantics\":\"proof-consistent canonical follower result; independent from whether generator or node scheduling limited the offered load\""
@@ -3403,7 +3418,7 @@ td::optional<std::size_t> NativeLoadWorker::find_available_wallet() {
       continue;
     }
     wallet.available_queued = false;
-    if (!wallet.disabled && !source_backlog_full(wallet)) {
+    if (!wallet.disabled && !wallet.retry_quarantined && !source_backlog_full(wallet)) {
       return entry.wallet_idx;
     }
     if (source_backlog_full(wallet)) {
@@ -3415,7 +3430,7 @@ td::optional<std::size_t> NativeLoadWorker::find_available_wallet() {
 
 void NativeLoadWorker::enqueue_available_wallet(std::size_t wallet_idx) {
   auto& wallet = wallets_[wallet_idx];
-  if (wallet.disabled || wallet.available_queued) {
+  if (wallet.disabled || wallet.retry_quarantined || wallet.available_queued) {
     return;
   }
   if (source_backlog_full(wallet)) {
@@ -3455,6 +3470,9 @@ void NativeLoadWorker::enqueue_ready_wallet(std::size_t wallet_idx) {
     return;
   }
   const auto& head = wallet.tasks.begin()->second;
+  if (head && head->first_retry_at >= 0.0) {
+    native_load::note_source_head_retry(true, td::Time::now(), head->source_head_retry_at);
+  }
   if (!head || head->state != TaskState::ready) {
     return;
   }
@@ -3507,10 +3525,10 @@ void NativeLoadWorker::pump() {
     }
     auto& wallet = wallets_[task->wallet_idx];
     bool is_source_head = !wallet.tasks.empty() && wallet.tasks.begin()->second == task;
-    if (is_source_head &&
-        native_load::retry_horizon_elapsed(task->first_retry_at, now, options_.retry_horizon_seconds)) {
-      abandon_wallet_after_retry_horizon(task, task->retry_reason);
-      continue;
+    native_load::note_source_head_retry(is_source_head, now, task->source_head_retry_at);
+    if (is_source_head && !wallet.retry_quarantined &&
+        native_load::retry_horizon_elapsed(task->source_head_retry_at, now, options_.retry_horizon_seconds)) {
+      quarantine_wallet_after_retry_horizon(task, task->retry_reason);
     }
     if (task->boc.empty()) {
       sign_task(std::move(task), false);
@@ -3651,6 +3669,10 @@ void NativeLoadWorker::create_transfer(std::size_t wallet_idx, td::uint64 nonce,
   task->measured = measured;
   task->repair = repair;
   task->proof_observed.assign(1, false);
+  if (!wallet.tasks.empty() && nonce < wallet.tasks.begin()->first) {
+    native_load::note_source_head_retry(false, task->first_issued_at,
+                                        wallet.tasks.begin()->second->source_head_retry_at);
+  }
   wallet.tasks.emplace(nonce, task);
   ++active_tasks_;
   if (repair) {
@@ -3737,6 +3759,10 @@ void NativeLoadWorker::create_signed_run(std::size_t wallet_idx,
   task->measured = measured;
   task->repair = repair;
   task->proof_observed.assign(plan.logical_count, false);
+  if (!wallet.tasks.empty() && plan.first_nonce < wallet.tasks.begin()->first) {
+    native_load::note_source_head_retry(false, task->first_issued_at,
+                                        wallet.tasks.begin()->second->source_head_retry_at);
+  }
   wallet.tasks.emplace(plan.first_nonce, task);
   active_tasks_ += plan.logical_count;
   ++stats_.native_signed_run_messages;
@@ -4574,6 +4600,14 @@ void NativeLoadWorker::increase_client_cwnd(std::size_t client_idx, td::uint32 l
 
 void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std::size_t client_idx,
                                          td::Status error, ErrorOrigin origin) {
+  task->last_error_code = error.code();
+  auto diagnostic = error.message();
+  task->last_error_message.assign(diagnostic.data(), std::min<std::size_t>(diagnostic.size(), 240));
+  for (auto& ch : task->last_error_message) {
+    if (static_cast<unsigned char>(ch) < 32 || ch == 127) {
+      ch = ' ';
+    }
+  }
   auto text = error.to_string();
   auto lower = text;
   std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
@@ -4616,6 +4650,19 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
                 : invalid                          ? TaskErrorReason::invalid
                                                    : TaskErrorReason::server_other;
   stats_.task_errors_by_reason.add(reason);
+  if (reason != TaskErrorReason::canonical_state_lag) {
+    task->canonical_state_lag_attempts = 0;
+  }
+  if (reason != TaskErrorReason::not_ready || !native_signed_run_snapshot_or_revision_race) {
+    task->snapshot_revision_retry_attempts = 0;
+  }
+  if (reason == TaskErrorReason::not_ready) {
+    if (native_signed_run_snapshot_or_revision_race) {
+      ++stats_.snapshot_revision_not_ready_errors;
+    } else {
+      ++stats_.other_not_ready_errors;
+    }
+  }
   if (timeout) {
     ++stats_.timeouts;
   } else if (origin == ErrorOrigin::server) {
@@ -4703,7 +4750,7 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
   if (too_new) {
     ++stats_.rejected_nonce;
   }
-  if (canonical_state_lag) {
+  if (reason == TaskErrorReason::canonical_state_lag) {
     ++task->canonical_state_lag_attempts;
     auto delay = native_load::canonical_state_lag_retry_delay_seconds(
         task->canonical_state_lag_attempts, options_.canonical_state_lag_retry_backoff_ms,
@@ -4711,7 +4758,14 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
     schedule_retry(std::move(task), std::max(0.001, delay), reason);
     return;
   }
-  task->canonical_state_lag_attempts = 0;
+  if (reason == TaskErrorReason::not_ready && native_signed_run_snapshot_or_revision_race) {
+    ++task->snapshot_revision_retry_attempts;
+    auto delay = native_load::canonical_state_lag_retry_delay_seconds(
+        task->snapshot_revision_retry_attempts, options_.canonical_state_lag_retry_backoff_ms,
+        options_.canonical_state_lag_retry_max_backoff_ms);
+    schedule_retry(std::move(task), std::max(0.001, delay), reason);
+    return;
+  }
   auto exponent = std::min<td::uint32>(task->attempts ? task->attempts - 1 : 0, 10);
   auto delay = options_.retry_backoff_ms / 1000.0 * static_cast<double>(1u << exponent);
   if (task->attempts > options_.max_retries) {
@@ -4730,12 +4784,20 @@ void NativeLoadWorker::schedule_retry(std::shared_ptr<TransferTask> task, double
   task->retry_reason = reason;
   auto& wallet = wallets_[task->wallet_idx];
   bool is_source_head = !wallet.tasks.empty() && wallet.tasks.begin()->second == task;
-  if (is_source_head && native_load::retry_horizon_elapsed(task->first_retry_at, now, options_.retry_horizon_seconds)) {
-    abandon_wallet_after_retry_horizon(std::move(task), reason);
-    return;
+  native_load::note_source_head_retry(is_source_head, now, task->source_head_retry_at);
+  if (is_source_head && !wallet.retry_quarantined &&
+      native_load::retry_horizon_elapsed(task->source_head_retry_at, now, options_.retry_horizon_seconds)) {
+    quarantine_wallet_after_retry_horizon(task, reason);
   }
-  delay_seconds = native_load::clamp_retry_delay_to_horizon(delay_seconds, task->first_retry_at, now,
-                                                            options_.retry_horizon_seconds);
+  if (wallet.retry_quarantined) {
+    // Reconcile retained work even after its capacity sample is invalid. The
+    // source cannot issue more, and maybe_finish() still enforces drain_deadline_.
+    delay_seconds = std::min(delay_seconds,
+                            options_.canonical_state_lag_retry_max_backoff_ms / 1000.0);
+  } else if (is_source_head) {
+    delay_seconds = native_load::clamp_retry_delay_to_horizon(delay_seconds, task->source_head_retry_at, now,
+                                                              options_.retry_horizon_seconds);
+  }
   task->state = TaskState::retry_wait;
   task->retry_at = now + delay_seconds;
   retry_tasks_.emplace(task->retry_at, std::move(task));
@@ -4743,12 +4805,13 @@ void NativeLoadWorker::schedule_retry(std::shared_ptr<TransferTask> task, double
   stats_.retries_by_reason.add(reason);
 }
 
-void NativeLoadWorker::abandon_wallet_after_retry_horizon(std::shared_ptr<TransferTask> task, TaskErrorReason reason) {
+void NativeLoadWorker::quarantine_wallet_after_retry_horizon(std::shared_ptr<TransferTask> task,
+                                                             TaskErrorReason reason) {
   if (!task_is_active(task)) {
     return;
   }
   auto& wallet = wallets_[task->wallet_idx];
-  if (wallet.tasks.empty() || wallet.tasks.begin()->second != task || wallet.disabled) {
+  if (wallet.tasks.empty() || wallet.tasks.begin()->second != task || wallet.disabled || wallet.retry_quarantined) {
     return;
   }
   task->retry_exhaustion_counted = true;
@@ -4758,22 +4821,19 @@ void NativeLoadWorker::abandon_wallet_after_retry_horizon(std::shared_ptr<Transf
   if (reason == TaskErrorReason::canonical_state_lag) {
     ++stats_.canonical_state_lag_retry_exhausted;
   }
-  wallet.disabled = true;
+  wallet.retry_quarantined = true;
   invalidate_available_wallet(task->wallet_idx);
-  invalidate_ready_wallet(task->wallet_idx);
-  auto pending_logical = active_logical_tasks(wallet);
-  CHECK(active_tasks_ >= pending_logical);
-  active_tasks_ = native_load::active_tasks_after_source_quarantine(active_tasks_, pending_logical);
-  for (auto& [nonce, pending] : wallet.tasks) {
-    static_cast<void>(nonce);
-    pending->state = TaskState::resolved;
-  }
-  auto elapsed = std::max(0.0, td::Time::now() - task->first_retry_at);
-  wallet.tasks.clear();
+  const auto now = td::Time::now();
+  auto elapsed = std::max(0.0, now - task->source_head_retry_at);
   LOG(ERROR) << "worker " << worker_id_ << " quarantined native source " << wallet.source.to_hex()
-             << " after retry horizon elapsed at nonce " << task->first_nonce() << ": elapsed_s=" << elapsed
-             << " canonical_state_lag=" << (reason == TaskErrorReason::canonical_state_lag);
-  update_backpressure_state(td::Time::now());
+             << " after source-head retry horizon elapsed at nonce " << task->first_nonce()
+             << ": head_elapsed_s=" << elapsed << " total_retry_elapsed_s=" << now - task->first_retry_at
+             << " canonical_state_lag=" << (reason == TaskErrorReason::canonical_state_lag)
+             << " last_error_code=" << task->last_error_code << " last_error=" << task->last_error_message
+             << " retained_active_parents=" << wallet.tasks.size()
+             << " retained_admitted_parents=" << wallet.admitted_tasks.size()
+             << "; new offers stopped; exact-parent reconciliation continues until the existing drain deadline";
+  update_backpressure_state(now);
 }
 
 void NativeLoadWorker::accept_task(std::shared_ptr<TransferTask> task, TaskResolution resolution) {
@@ -4986,12 +5046,15 @@ void NativeLoadWorker::log_unsettled_sources() const {
     LOG(ERROR) << "native drain unresolved source: worker=" << worker_id_
                << " source_index=" << options_.source_offset + i
                << " missing_logical=" << missing << " disabled=" << wallet.disabled
+               << " retry_quarantined=" << wallet.retry_quarantined
                << " anchored_nonce=" << wallet.anchored_nonce << " next_nonce=" << wallet.next_nonce
                << " active_parents=" << wallet.tasks.size() << " admitted_parents=" << wallet.admitted_tasks.size()
                << " head_state=" << state << " head_nonce=" << (task ? task->first_nonce() : wallet.anchored_nonce)
                << " head_admission_counted=" << (task && task->admission_counted)
                << " head_resigned_after_expiry=" << (task && task->resigned_after_expiry)
-               << " head_proven_children=" << (task ? task->proof_observed_count : 0);
+               << " head_proven_children=" << (task ? task->proof_observed_count : 0)
+               << " head_last_error_code=" << (task ? task->last_error_code : 0)
+               << " head_last_error=" << (task ? task->last_error_message : std::string{});
   }
   LOG(ERROR) << "native drain unresolved summary: worker=" << worker_id_
              << " sources=" << unresolved_sources << " samples=" << std::min(unresolved_sources, sample_limit)
@@ -5655,10 +5718,15 @@ void NativeLoadWorker::repair_gaps() {
         task->repair = true;
         task->attempts = 0;
         task->canonical_state_lag_attempts = 0;
+        task->snapshot_revision_retry_attempts = 0;
         task->first_retry_at = -1.0;
+        task->source_head_retry_at = -1.0;
         task->retry_exhaustion_counted = false;
         task->ever_submitted = false;
         task->first_issued_at = now;
+        if (!wallet.tasks.empty() && task->first_nonce() < wallet.tasks.begin()->first) {
+          native_load::note_source_head_retry(false, now, wallet.tasks.begin()->second->source_head_retry_at);
+        }
         wallet.tasks.emplace(task->first_nonce(), task);
         active_tasks_ += task->logical_count();
         stats_.repair_offered += task->logical_count();
@@ -5765,11 +5833,11 @@ int main(int argc, char* argv[]) {
     options.sources = td::to_integer<td::uint32>(value);
     return options.sources ? td::Status::OK() : td::Status::Error("sources must be positive");
   });
-  parser.add_checked_option('c', "connections", "persistent ADNL/TCP connections", [&](td::Slice value) {
+  parser.add_checked_option('c', "connections", "persistent ADNL/TCP connections (1..1024)", [&](td::Slice value) {
     options.connections = td::to_integer<td::uint32>(value);
-    return options.connections && options.connections <= 256
+    return native_load::valid_connection_count(options.connections)
                ? td::Status::OK()
-               : td::Status::Error("connections must be 1..256");
+               : td::Status::Error(PSTRING() << "connections must be 1.." << native_load::max_connections);
   });
   parser.add_checked_option('S', "signers", "parallel in-memory signing workers", [&](td::Slice value) {
     options.signers = td::to_integer<td::uint32>(value);
@@ -6067,6 +6135,9 @@ int main(int argc, char* argv[]) {
   if (options.workers > options.sources || options.workers > options.connections ||
       options.workers > options.signers || options.workers > options.max_inflight) {
     LOG(FATAL) << "workers must not exceed sources, connections, signers, or inflight";
+  }
+  if (options.connections > options.max_inflight) {
+    LOG(FATAL) << "inflight must be at least the connection count";
   }
   if (!native_load::valid_adaptive_max_cwnd(options.adaptive_max_cwnd,
                                              options.connections,

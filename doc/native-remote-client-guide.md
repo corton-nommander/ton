@@ -282,9 +282,9 @@ Omitting `--connections` uses the same 10/50/100 sequence. The updated runner de
 bash run-remote-load.sh --connections 10 --duration 600
 ```
 
-Run `bash run-remote-load.sh --help` for `--directory`, `--duration`, `--warmup`, `--drain`, `--profile`, `--cpus`, `--memory`, `--workers`, `--signers`, `--initial-cwnd`, `--max-cwnd`, `--output` and `--image`. The default `server48` profile uses 32 CPU equivalents, 32 GiB memory, eight workers and 24 signers, including when an older imported environment still specifies six workers/signers. `--profile preset` retains the imported worker/signer values and uses the earlier 4-CPU/8-GiB resource defaults; explicit CLI overrides win. Requested connection counts must fit the effective worker count (eight for the full server48 preset) and must not exceed 256. Duplicate counts are rejected. For a different CPU-compatible prebuilt image, import/load it before running and explicitly select it with `--image`; the runner freezes its resolved ID across all arms.
+Run `bash run-remote-load.sh --help` for `--directory`, `--duration`, `--warmup`, `--drain`, `--profile`, `--source-policy`, `--cpus`, `--memory`, `--workers`, `--signers`, `--initial-cwnd`, `--max-cwnd`, `--output` and `--image`. The default `server48` profile uses 40 CPU equivalents, 48 GiB memory, ten workers and 32 signers, including when an older imported environment still specifies six workers/signers. `--profile preset` retains the imported worker/signer values and uses the earlier 4-CPU/8-GiB resource defaults; explicit CLI overrides win. Requested connection counts must fit the effective worker count (ten for the full server48 preset) and must not exceed 1024 with the updated binary. Duplicate counts are rejected. For a different CPU-compatible prebuilt image, import/load it before running and explicitly select it with `--image`; the runner freezes its resolved ID across all arms.
 
-Each arm uses unpaced bounded load, 60 seconds of warm-up, **600 seconds measured load** and up to 180 seconds of drain, plus initial account/lane readiness work. A full three-count sweep therefore contains 30 measured minutes and takes longer than 33 minutes including warm-up, readiness and drain. It produces three separate load periods, with intentional gaps between counts. The server48 environment uses eight workers, 24 signers, 24,576 sources, 16 logical transfers per signed run, a 64-parent batch cap, 20 ms coalescing and global initial/max admission windows of 32,768/65,536 logical transfers. Exporting fewer sources reduces worker/signer counts only when necessary. That smaller workload is not the reference capacity test.
+Each arm uses unpaced bounded load, 60 seconds of warm-up, **600 seconds measured load** and up to 180 seconds of drain, plus initial account/lane readiness work. A full three-count sweep therefore contains 30 measured minutes and takes longer than 33 minutes including warm-up, readiness and drain. It produces three separate load periods, with intentional gaps between counts. The server48 environment uses ten workers, 32 signers, 24,576 sources, 16 logical transfers per signed run, a 64-parent batch cap, 20 ms coalescing and global initial/max admission windows of 32,768/65,536 logical transfers. Exporting fewer sources reduces worker/signer counts only when necessary. That smaller workload is not the reference capacity test.
 
 Duration extends the observation window; it does not guarantee a flat TPS line or fix a failed generator. Use one 10-connection arm first to observe an uninterrupted ten-minute measurement, then run the full sweep after resolving any previous failed arm. The native binary already supports this duration, so updating the host runner requires no new TON image, validator restart, wallet export, or image transfer.
 
@@ -337,14 +337,14 @@ A's `.env.physical` does not configure the standalone generator on B. The user h
 
 | Setting | Previous default | New default |
 | --- | ---: | ---: |
-| Container CPU budget | 4 | 32 |
-| Container memory ceiling | 8 GiB | 32 GiB |
-| Worker actors | 6 | 8 |
-| Signing actors | 6 | 24 |
-| Scheduler threads (native binary) | 13 | 33 |
+| Container CPU budget | 4 | 40 |
+| Container memory ceiling | 8 GiB | 48 GiB |
+| Worker actors | 6 | 10 |
+| Signing actors | 6 | 32 |
+| Scheduler threads (native binary) | 13 | 43 |
 | Initial / maximum logical admission window | 32,768 / 65,536 | 32,768 / 65,536 |
 
-Eight workers preserve support for the 10/50/100 sweep. The CPU allocation leaves room for the host, Docker, and monitoring. The memory value is a ceiling, not a reservation or instruction to fill RAM. The preset already uses `NATIVE_LOAD_TARGET_TPS=0`, meaning bounded **unpaced** load. The failed run's sample had a congestion window near 8,174, no acknowledgments clipped by the 65,536 ceiling, and no query-credit stalls; it does not justify automatically doubling admission or backlog limits.
+Ten workers distribute 10/50/100/300/500 connections evenly. The CPU allocation leaves room for the host, Docker, and monitoring. The memory value is a ceiling, not a reservation or instruction to fill RAM. The preset already uses `NATIVE_LOAD_TARGET_TPS=0`, meaning bounded **unpaced** load. The failed run's sample had a congestion window near 8,174, no acknowledgments clipped by the 65,536 ceiling, and no query-credit stalls; it does not justify automatically doubling admission or backlog limits.
 
 The profile applies even to an old imported environment when the host script is updated; it leaves that original file unchanged. Each arm records the effective profile/settings. Use `--profile preset` for the imported worker/signer settings and earlier 4-CPU/8-GiB budget; explicit CPU, memory, worker, signer, and window arguments override either profile. On smaller B hosts, select `preset` and size its resource/parallelism overrides explicitly.
 
@@ -372,7 +372,7 @@ bash run-remote-load.sh --profile preset --connections 10 --duration 600 \
 After obtaining repeatable valid results, the larger connection sweep remains available:
 
 ```sh
-bash run-remote-load.sh --connections 50 100 256 --duration 600
+bash run-remote-load.sh --connections 50 100 300 500 --duration 600
 ```
 
 Only if counters show the admission window now limits useful traffic, compare a larger window at a fixed connection count:
@@ -384,9 +384,15 @@ bash run-remote-load.sh --connections 100 --duration 600 \
 
 Windows count **logical transfers across all workers/connections**, not bytes or per-connection messages. Explicit values must be positive, the initial window must not exceed the maximum, and the maximum must fit the exported in-flight budget (262,144 in the reference preset). The runner validates that worker/client partitions can dispatch complete signed runs. The canonical backlog budget remains 2,097,120 logical transfers. Treat each command as a separate experiment and inspect its final result before reusing its sources. CPU and signing changes are new treatments, not measured TPS improvements.
 
-Both the current native binary and the runner accept at most **256 submission connections**. A 500-connection test would require a new binary and published/exported image. More connections divide the same global admission budget: at 65,536 logical transfers, 100 connections average about 40 sixteen-transfer parent messages of credit each, while 500 would average only eight. Increasing signing capacity or useful outstanding work can supply more load without adding that RPC overhead.
+The updated native binary and runner accept at most **1024 submission connections**. Values above 256 require the new published/exported generator image; the runner checks the binary capability before starting any arm. More connections divide the same global admission budget: at 65,536 logical transfers, 100 connections average about 40 sixteen-transfer parent messages of credit each, while 500 would average only eight. Increasing signing capacity or useful outstanding work can supply more load without adding that RPC overhead.
 
 The observed 50 Mbit/s on a 1 Gbit/s link does not establish unused validator capacity. At the reported 74.5k logical TPS, sixteen-transfer signed runs represent only about 4,660 fresh parent messages per second. Batch packing and retries affect wire traffic. Compare offered, admitted, and proven canonical TPS, signing rate, CPU usage/throttling on both hosts, admission-window limits, query stalls, follower lag, and final backlog. Retain the configuration with the highest **repeatable, valid ten-minute canonical TPS**, rerun its control, and save the image IDs, A's resource settings, and the runner's result directory. No TPS gain from the 44-CPU or larger-window treatments has been measured yet.
+
+### Retry-horizon recovery and connection counts above 256
+
+For a new sweep that must attempt later setups after an unresolved arm, use `--source-policy isolated --connections 100 300 500`. Each setup receives a disjoint, lane-balanced 8,192-source partition from a 24,576-source export. Failed arms stay invalid; later arms become observation-only if earlier traffic remains unresolved. This does not reconcile source ranges from a previous failed sweep. See the [isolation and comparison limits](native-remote-retry-recovery-2026-09-07.md#deployment-and-measurement).
+
+The subsequent 50-connection run used the timeout fix (`resigned=0`), but one exhausted source still left 128 logical transfers unresolved. The [follow-up correction and evidence](native-remote-retry-recovery-2026-09-07.md) preserve pending signed parents for bounded reconciliation after new issuance is quarantined, and shorten retries for explicit signed-run snapshot/revision races. It requires another generator image update, using the upgrade sequence below after publication. A recovered, fully proven run can continue to the next connection count but remains ineligible for capacity claims when retry exhaustion occurred. A genuinely incomplete drain still stops reuse of those sources.
 
 ### Upgrade the image for the admission-timeout drain fix
 
@@ -416,7 +422,7 @@ cd "$HOME/native-remote-client-fixed"
 bash run-remote-load.sh --connections 10 --duration 600
 ```
 
-The first announcement should show `profile=server48`, 32 CPUs/32g, eight workers and 24 signers. Its pinned image ID must differ from the old failing image `sha256:e016826b0bb5c4e11d01dd7b31cf5aae3843c9066720f2ad5affecfdcc59b731`. Check the exported receipt's source revision as well; a different image ID alone does not prove the fix is present. Keep the new image fixed across the next sweep. The original 180-second drain limit and failure gates remain in force.
+The first announcement should show `profile=server48`, 40 CPUs/48g, ten workers and 32 signers. Its pinned image ID must differ from the old failing image `sha256:e016826b0bb5c4e11d01dd7b31cf5aae3843c9066720f2ad5affecfdcc59b731`. Check the exported receipt's source revision as well; a different image ID alone does not prove the fix is present. Keep the new image fixed across the next sweep. The original 180-second drain limit and failure gates remain in force.
 
 If a drain still fails, inspect `summary.json`'s compact `generator_diagnostics`, `generator-final.json`, and `generator.stderr.log`. The fixed binary logs at most eight unresolved source samples per worker after the final proof poll, with source indices, nonce positions, disabled state and pending-parent state. Private keys and message bodies are not printed.
 

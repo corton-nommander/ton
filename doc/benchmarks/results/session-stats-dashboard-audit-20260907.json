@@ -1,0 +1,1678 @@
+{
+  "schema": "session-stats-dashboard-audit-v1",
+  "checked_utc": "2026-09-07T06:42:51.029194+00:00",
+  "image_id": "sha256:5f3576b583a98779069ea7e4900db2b3d74289aa99b230414c5226c1db792cb0",
+  "runtime_source_sha256": {
+    "/app/backend/app.py": "e6faf3f29cab59bebfc91c74f4313021b50ed4ba8b3b606c60cc7b72ca988493",
+    "/app/backend/updater.py": "45e2e8871e2f3bc51eab17db2ced622813d5e17b472e723f95808ce9af4c2547"
+  },
+  "query": {
+    "start": "2026-09-06T17:17:00Z",
+    "end": "2026-09-06T17:40:00Z",
+    "window_size": 60,
+    "total_range": 1
+  },
+  "verdict": {
+    "canonical_transactions_chart_correct_for_audited_runs": true,
+    "native_specific_chart_correct_for_ntrn": false,
+    "recommended_chart": "Canonical transactions per second",
+    "recommended_series": "Workchain",
+    "recommended_window_seconds": 60,
+    "new_load_run": false,
+    "deployed_fixes": false
+  },
+  "arms": [
+    {
+      "connections": 10,
+      "dashboard_query_start": "2026-09-06T17:17:00Z",
+      "dashboard_query_end": "2026-09-06T17:24:00Z",
+      "dashboard_logical_count": 15492864,
+      "generator_proven_logical_count": 15492864,
+      "exact_total_match": true,
+      "dashboard_peak_minute_tps": 64873.6,
+      "generator_measured_canonical_tps": 62800.804469273746,
+      "native_specific_chart_max_tps": 0,
+      "raw_bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/client-connections-20260906-sweep2/01-10-connections"
+    },
+    {
+      "connections": 50,
+      "dashboard_query_start": "2026-09-06T17:24:00Z",
+      "dashboard_query_end": "2026-09-06T17:31:00Z",
+      "dashboard_logical_count": 15465040,
+      "generator_proven_logical_count": 15465040,
+      "exact_total_match": true,
+      "dashboard_peak_minute_tps": 63591.73333333333,
+      "generator_measured_canonical_tps": 63433.117318435754,
+      "native_specific_chart_max_tps": 0,
+      "raw_bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/client-connections-20260906-sweep2/02-50-connections"
+    },
+    {
+      "connections": 100,
+      "dashboard_query_start": "2026-09-06T17:31:00Z",
+      "dashboard_query_end": "2026-09-06T17:38:00Z",
+      "dashboard_logical_count": 15458320,
+      "generator_proven_logical_count": 15458320,
+      "exact_total_match": true,
+      "dashboard_peak_minute_tps": 63615.2,
+      "generator_measured_canonical_tps": 60250.27932960894,
+      "native_specific_chart_max_tps": 0,
+      "raw_bundle": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark-results/client-connections-20260906-sweep2/03-100-connections"
+    }
+  ],
+  "combined_dashboard_logical_count": 46416224,
+  "combined_generator_proven_logical_count": 46416224,
+  "api_series": {
+    "BLOCK_APPLIED_blocks": [
+      {
+        "mc": 3.316666666666667,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:17:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 3.3333333333333335,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:18:00Z",
+        "wc": 0.06666666666666667,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 3.1333333333333333,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:19:00Z",
+        "wc": 7.733333333333333,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 2.6333333333333333,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:20:00Z",
+        "wc": 17.033333333333335,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 2.3833333333333333,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:21:00Z",
+        "wc": 14.683333333333334,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 1.65,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:22:00Z",
+        "wc": 10.616666666666667,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 2.3833333333333333,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:23:00Z",
+        "wc": 6.05,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 3.3333333333333335,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:24:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 3.35,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:25:00Z",
+        "wc": 0.06666666666666667,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 2.8333333333333335,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:26:00Z",
+        "wc": 7.7,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 2.1666666666666665,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:27:00Z",
+        "wc": 12.6,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 1.5333333333333334,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:28:00Z",
+        "wc": 10.033333333333333,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 1.5666666666666667,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:29:00Z",
+        "wc": 10.333333333333334,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 2.3833333333333333,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:30:00Z",
+        "wc": 5.2,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 3.3333333333333335,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:31:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 3.3333333333333335,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:32:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 2.3833333333333333,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:33:00Z",
+        "wc": 4.533333333333333,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 1.5833333333333333,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:34:00Z",
+        "wc": 10.95,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 1.5,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:35:00Z",
+        "wc": 10.383333333333333,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 1.45,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:36:00Z",
+        "wc": 9.633333333333333,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 1.8333333333333333,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:37:00Z",
+        "wc": 5.45,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 3.25,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:38:00Z",
+        "wc": 0.06666666666666667,
+        "wc_max": 1.0,
+        "wc_min": 1.0
+      },
+      {
+        "mc": 3.3333333333333335,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:39:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 3.3333333333333335,
+        "mc_max": 1.0,
+        "mc_min": 1.0,
+        "timestamp": "2026-09-06T17:40:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      }
+    ],
+    "BLOCK_APPLIED_native_transfers": [
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:18:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:19:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:24:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:25:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:26:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:28:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:29:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:30:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:32:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:33:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:34:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:36:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:37:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:38:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      }
+    ],
+    "BLOCK_APPLIED_transactions": [
+      {
+        "mc": 9.95,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:17:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 10.05,
+        "mc_max": 6.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:18:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 9.4,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:19:00Z",
+        "wc": 32873.333333333336,
+        "wc_max": 13136.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 7.9,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:20:00Z",
+        "wc": 64873.6,
+        "wc_max": 18432.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 7.2,
+        "mc_max": 5.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:21:00Z",
+        "wc": 60104.26666666667,
+        "wc_max": 18432.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 4.95,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:22:00Z",
+        "wc": 61995.73333333333,
+        "wc_max": 18432.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 7.15,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:23:00Z",
+        "wc": 38367.46666666667,
+        "wc_max": 18432.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 10.1,
+        "mc_max": 6.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:24:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 10.05,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:25:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 8.5,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:26:00Z",
+        "wc": 37323.46666666667,
+        "wc_max": 16016.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 6.55,
+        "mc_max": 5.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:27:00Z",
+        "wc": 62412.0,
+        "wc_max": 18432.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 4.6,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:28:00Z",
+        "wc": 62745.86666666667,
+        "wc_max": 18432.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 4.7,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:29:00Z",
+        "wc": 63591.73333333333,
+        "wc_max": 18432.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 7.2,
+        "mc_max": 6.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:30:00Z",
+        "wc": 31677.6,
+        "wc_max": 18432.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 10.0,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:31:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 10.0,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:32:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 7.233333333333333,
+        "mc_max": 5.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:33:00Z",
+        "wc": 29700.0,
+        "wc_max": 18432.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 4.75,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:34:00Z",
+        "wc": 63615.2,
+        "wc_max": 18432.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 4.5,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:35:00Z",
+        "wc": 61388.8,
+        "wc_max": 18432.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 4.4,
+        "mc_max": 5.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:36:00Z",
+        "wc": 63578.666666666664,
+        "wc_max": 18432.0,
+        "wc_min": 16.0
+      },
+      {
+        "mc": 5.5,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:37:00Z",
+        "wc": 39356.0,
+        "wc_max": 18432.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 9.75,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:38:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 10.05,
+        "mc_max": 6.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:39:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 10.0,
+        "mc_max": 3.0,
+        "mc_min": 3.0,
+        "timestamp": "2026-09-06T17:40:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      }
+    ],
+    "BLOCK_native_collate_wall_tps": [],
+    "BLOCK_native_transfers": [
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:18:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:19:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:24:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:25:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:26:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:28:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:29:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:30:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:32:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:33:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:34:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:36:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:37:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      },
+      {
+        "mc": 0.0,
+        "mc_max": 0.0,
+        "mc_min": 0.0,
+        "timestamp": "2026-09-06T17:38:00Z",
+        "wc": 0.0,
+        "wc_max": 0.0,
+        "wc_min": 0.0
+      }
+    ],
+    "BLOCK_native_validate_tps": []
+  },
+  "chart_config": {
+    "charts": [
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_APPLIED_blocks&mode=rate",
+        "labels": [
+          "Masterchain",
+          "Workchain"
+        ],
+        "metrics": [
+          "mc",
+          "wc"
+        ],
+        "title": "Canonical blocks per second",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_APPLIED_transactions&mode=rate",
+        "labels": [
+          "Masterchain",
+          "Workchain"
+        ],
+        "metrics": [
+          "mc",
+          "wc"
+        ],
+        "title": "Canonical transactions per second",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_APPLIED_native_transfers&mode=rate",
+        "labels": [
+          "Workchain"
+        ],
+        "metrics": [
+          "wc"
+        ],
+        "title": "Canonical native transfers per second",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_native_transfers&mode=avg",
+        "labels": [
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Native transfers per accepted block",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_native_bytes_per_transfer&mode=avg",
+        "labels": [
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Native block bytes per transfer",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats?wc=0&stats=BLOCK_native_collate_wall_tps,BLOCK_native_collate_work_tps&mode=avg",
+        "labels": [
+          "Total wall time",
+          "Collator work time"
+        ],
+        "metrics": [
+          "t1",
+          "t2"
+        ],
+        "title": "Mean per-block native collation service rate (transfers/s)",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_native_validate_tps&mode=avg",
+        "labels": [
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Mean per-block native validation service rate (transfers/s)",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats?wc=0&stats=BLOCK_validate_actual_work_time_parallel,BLOCK_validate_actual_work_time_singlethread&mode=avg",
+        "labels": [
+          "Parallel",
+          "Single thread"
+        ],
+        "metrics": [
+          "t1",
+          "t2"
+        ],
+        "title": "Validate: actual work time (shards)",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_size&mode=avg",
+        "labels": [
+          "MC avg",
+          "MC min",
+          "MC max",
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "mc",
+          "mc_min",
+          "mc_max",
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Block size",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_collated_data_size&mode=avg",
+        "labels": [
+          "MC avg",
+          "MC min",
+          "MC max",
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "mc",
+          "mc_min",
+          "mc_max",
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Collated data size",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_size_est&mode=avg",
+        "labels": [
+          "MC avg",
+          "MC min",
+          "MC max",
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "mc",
+          "mc_min",
+          "mc_max",
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Block size estimate",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_collated_data_size_est&mode=avg",
+        "labels": [
+          "MC avg",
+          "MC min",
+          "MC max",
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "mc",
+          "mc_min",
+          "mc_max",
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Collated data size estimate",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_transactions&mode=avg",
+        "labels": [
+          "MC avg",
+          "MC min",
+          "MC max",
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "mc",
+          "mc_min",
+          "mc_max",
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Tx per block",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats?wc=0&stats=BLOCK_ext_msgs_accepted,BLOCK_ext_msgs_rejected,BLOCK_ext_msgs_filtered&mode=avg",
+        "labels": [
+          "Accepted",
+          "Rejected",
+          "Filtered"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3"
+        ],
+        "title": "External messages per accepted block",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=shards_count&mode=avg",
+        "labels": [
+          "Masterchain"
+        ],
+        "metrics": [
+          "mc"
+        ],
+        "title": "Shards",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_APPLIED_shard_latency_a2a&mode=avg",
+        "labels": [
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Shard->Master latency (accepted shard -> accepted master)",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_APPLIED_master_latency_a2a&mode=avg",
+        "labels": [
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Master->Shard latency (accepted master -> accepted shard)",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_msg_queue_size&mode=avg",
+        "labels": [
+          "MC avg",
+          "MC min",
+          "MC max",
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "mc",
+          "mc_min",
+          "mc_max",
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Msg queue size per shard",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_msg_queue_cleaned&mode=avg",
+        "labels": [
+          "MC avg",
+          "MC min",
+          "MC max",
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "mc",
+          "mc_min",
+          "mc_max",
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Msg queue cleaned per block",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_queue_total_processed&mode=avg",
+        "labels": [
+          "MC avg",
+          "MC min",
+          "MC max",
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "mc",
+          "mc_min",
+          "mc_max",
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Queue total processed per block",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_queue_total_skipped&mode=avg",
+        "labels": [
+          "MC avg",
+          "MC min",
+          "MC max",
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "mc",
+          "mc_min",
+          "mc_max",
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Queue total skipped per block",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_queue_limit_reached&mode=avg",
+        "labels": [
+          "Masterchain",
+          "Workchain"
+        ],
+        "metrics": [
+          "mc",
+          "wc"
+        ],
+        "title": "Queue limit reached fraction",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats?wc=0&stats=BLOCK_load_fraction_queue_cleanup,BLOCK_load_fraction_dispatch,BLOCK_load_fraction_internals,BLOCK_load_fraction_externals,BLOCK_load_fraction_new_msgs&mode=avg",
+        "labels": [
+          "Queue cleanup",
+          "Dispatch",
+          "Internals",
+          "Externals (medium limit)",
+          "New msgs"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3",
+          "t4",
+          "t5"
+        ],
+        "title": "Load fractions (shards)",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_neighbor_msg_limit&mode=avg",
+        "labels": [
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Msg limit from neighbor queue (shards)",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats_single?stat=BLOCK_max_neighbor_processed&mode=avg",
+        "labels": [
+          "WC avg",
+          "WC min",
+          "WC max"
+        ],
+        "metrics": [
+          "wc",
+          "wc_min",
+          "wc_max"
+        ],
+        "title": "Max processed messages from one neighbor (shards)",
+        "type": "lines"
+      },
+      {
+        "dataSource": "/api/stats?wc=-1&stats=BLOCK_collate_work_time_real_preinit,BLOCK_collate_work_time_real_queue_cleanup,BLOCK_collate_work_time_real_prelim_storage_stat,BLOCK_collate_work_time_real_trx_tvm,BLOCK_collate_work_time_real_trx_storage_stat,BLOCK_collate_work_time_real_trx_other,BLOCK_collate_work_time_real_final_storage_stat,BLOCK_collate_work_time_real_enqueue_new_messages,BLOCK_collate_work_time_real_combine_account_transactions,BLOCK_collate_work_time_real_create_shard_state,BLOCK_collate_work_time_real_create_block,BLOCK_collate_work_time_real_create_collated_data,BLOCK_collate_work_time_real_create_block_candidate,BLOCK_collate_work_time_real_other,BLOCK_collate_time_wait_externals,BLOCK_collate_time_other_wait",
+        "labels": [
+          "Preinit",
+          "Queue cleanup",
+          "Prelim storage stat",
+          "Trx TVM",
+          "Trx storage stat",
+          "Trx other",
+          "Final storage stat",
+          "Enqueue new messages",
+          "Combine account transactions",
+          "Create shard state",
+          "Create block",
+          "Create collated data",
+          "Create block candidate",
+          "Other work",
+          "Wait externals",
+          "Other wait"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3",
+          "t4",
+          "t5",
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14",
+          "t15",
+          "t16"
+        ],
+        "title": "Collate time (master, real)",
+        "type": "stacked"
+      },
+      {
+        "dataSource": "/api/stats?wc=-1&stats=BLOCK_collate_work_time_real_preinit src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_queue_cleanup src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_prelim_storage_stat src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_trx_tvm src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_trx_storage_stat src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_trx_other src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_final_storage_stat src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_enqueue_new_messages src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_combine_account_transactions src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_create_shard_state src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_create_block src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_create_collated_data src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_create_block_candidate src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_other src=mylocalton-desktop_ton-db-val0,BLOCK_collate_time_wait_externals src=mylocalton-desktop_ton-db-val0,BLOCK_collate_time_other_wait src=mylocalton-desktop_ton-db-val0",
+        "labels": [
+          "Preinit",
+          "Queue cleanup",
+          "Prelim storage stat",
+          "Trx TVM",
+          "Trx storage stat",
+          "Trx other",
+          "Final storage stat",
+          "Enqueue new messages",
+          "Combine account transactions",
+          "Create shard state",
+          "Create block",
+          "Create collated data",
+          "Create block candidate",
+          "Other work",
+          "Wait externals",
+          "Other wait"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3",
+          "t4",
+          "t5",
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14",
+          "t15",
+          "t16"
+        ],
+        "title": "Collate time (master, real) by mylocalton-desktop_ton-db-val0",
+        "type": "stacked"
+      },
+      {
+        "dataSource": "/api/stats?wc=-1&stats=BLOCK_collate_work_time_cpu_preinit,BLOCK_collate_work_time_cpu_queue_cleanup,BLOCK_collate_work_time_cpu_prelim_storage_stat,BLOCK_collate_work_time_cpu_trx_tvm,BLOCK_collate_work_time_cpu_trx_storage_stat,BLOCK_collate_work_time_cpu_trx_other,BLOCK_collate_work_time_cpu_final_storage_stat,BLOCK_collate_work_time_cpu_enqueue_new_messages,BLOCK_collate_work_time_cpu_combine_account_transactions,BLOCK_collate_work_time_cpu_create_shard_state,BLOCK_collate_work_time_cpu_create_block,BLOCK_collate_work_time_cpu_create_collated_data,BLOCK_collate_work_time_cpu_create_block_candidate,BLOCK_collate_work_time_cpu_other",
+        "labels": [
+          "Preinit",
+          "Queue cleanup",
+          "Prelim storage stat",
+          "Trx TVM",
+          "Trx storage stat",
+          "Trx other",
+          "Final storage stat",
+          "Enqueue new messages",
+          "Combine account transactions",
+          "Create shard state",
+          "Create block",
+          "Create collated data",
+          "Create block candidate",
+          "Other work"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3",
+          "t4",
+          "t5",
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14"
+        ],
+        "title": "Collate time (master, cpu)",
+        "type": "stacked"
+      },
+      {
+        "dataSource": "/api/stats?wc=0&stats=BLOCK_collate_work_time_real_preinit,BLOCK_collate_work_time_real_queue_cleanup,BLOCK_collate_work_time_real_prelim_storage_stat,BLOCK_collate_work_time_real_trx_tvm,BLOCK_collate_work_time_real_trx_storage_stat,BLOCK_collate_work_time_real_trx_other,BLOCK_collate_work_time_real_final_storage_stat,BLOCK_collate_work_time_real_enqueue_new_messages,BLOCK_collate_work_time_real_combine_account_transactions,BLOCK_collate_work_time_real_create_shard_state,BLOCK_collate_work_time_real_create_block,BLOCK_collate_work_time_real_create_collated_data,BLOCK_collate_work_time_real_create_block_candidate,BLOCK_collate_work_time_real_other,BLOCK_collate_time_wait_externals,BLOCK_collate_time_other_wait",
+        "labels": [
+          "Preinit",
+          "Queue cleanup",
+          "Prelim storage stat",
+          "Trx TVM",
+          "Trx storage stat",
+          "Trx other",
+          "Final storage stat",
+          "Enqueue new messages",
+          "Combine account transactions",
+          "Create shard state",
+          "Create block",
+          "Create collated data",
+          "Create block candidate",
+          "Other work",
+          "Wait externals",
+          "Other wait"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3",
+          "t4",
+          "t5",
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14",
+          "t15",
+          "t16"
+        ],
+        "title": "Collate time (shards, real)",
+        "type": "stacked"
+      },
+      {
+        "dataSource": "/api/stats?wc=0&stats=BLOCK_collate_work_time_real_preinit src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_queue_cleanup src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_prelim_storage_stat src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_trx_tvm src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_trx_storage_stat src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_trx_other src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_final_storage_stat src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_enqueue_new_messages src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_combine_account_transactions src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_create_shard_state src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_create_block src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_create_collated_data src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_create_block_candidate src=mylocalton-desktop_ton-db-val0,BLOCK_collate_work_time_real_other src=mylocalton-desktop_ton-db-val0,BLOCK_collate_time_wait_externals src=mylocalton-desktop_ton-db-val0,BLOCK_collate_time_other_wait src=mylocalton-desktop_ton-db-val0",
+        "labels": [
+          "Preinit",
+          "Queue cleanup",
+          "Prelim storage stat",
+          "Trx TVM",
+          "Trx storage stat",
+          "Trx other",
+          "Final storage stat",
+          "Enqueue new messages",
+          "Combine account transactions",
+          "Create shard state",
+          "Create block",
+          "Create collated data",
+          "Create block candidate",
+          "Other work",
+          "Wait externals",
+          "Other wait"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3",
+          "t4",
+          "t5",
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14",
+          "t15",
+          "t16"
+        ],
+        "title": "Collate time (shards, real) by mylocalton-desktop_ton-db-val0",
+        "type": "stacked"
+      },
+      {
+        "dataSource": "/api/stats?wc=0&stats=BLOCK_collate_work_time_cpu_preinit,BLOCK_collate_work_time_cpu_queue_cleanup,BLOCK_collate_work_time_cpu_prelim_storage_stat,BLOCK_collate_work_time_cpu_trx_tvm,BLOCK_collate_work_time_cpu_trx_storage_stat,BLOCK_collate_work_time_cpu_trx_other,BLOCK_collate_work_time_cpu_final_storage_stat,BLOCK_collate_work_time_cpu_enqueue_new_messages,BLOCK_collate_work_time_cpu_combine_account_transactions,BLOCK_collate_work_time_cpu_create_shard_state,BLOCK_collate_work_time_cpu_create_block,BLOCK_collate_work_time_cpu_create_collated_data,BLOCK_collate_work_time_cpu_create_block_candidate,BLOCK_collate_work_time_cpu_other",
+        "labels": [
+          "Preinit",
+          "Queue cleanup",
+          "Prelim storage stat",
+          "Trx TVM",
+          "Trx storage stat",
+          "Trx other",
+          "Final storage stat",
+          "Enqueue new messages",
+          "Combine account transactions",
+          "Create shard state",
+          "Create block",
+          "Create collated data",
+          "Create block candidate",
+          "Other work"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3",
+          "t4",
+          "t5",
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14"
+        ],
+        "title": "Collate time (shards, cpu)",
+        "type": "stacked"
+      },
+      {
+        "dataSource": "/api/stats?wc=-1&stats=BLOCK_validate_work_time_real_unpack_block_candidate,BLOCK_validate_work_time_real_process_mc_state,BLOCK_validate_work_time_real_trx_tvm,BLOCK_validate_work_time_real_trx_storage_stat,BLOCK_validate_work_time_real_trx_other,BLOCK_validate_work_time_real_check_transactions_other,BLOCK_validate_work_time_real_unpack_state,BLOCK_validate_work_time_real_validate_block_tlb,BLOCK_validate_work_time_real_unpack_block_data,BLOCK_validate_work_time_real_precheck_account_updates,BLOCK_validate_work_time_real_precheck_account_transactions,BLOCK_validate_work_time_real_precheck_msg_queue,BLOCK_validate_work_time_real_unpack_dispatch_queue,BLOCK_validate_work_time_real_check_in_msg_descr,BLOCK_validate_work_time_real_check_out_msg_descr,BLOCK_validate_work_time_real_check_dispatch_queue,BLOCK_validate_work_time_real_check_processed_upto,BLOCK_validate_work_time_real_check_in_queue,BLOCK_validate_work_time_real_check_new_state,BLOCK_validate_work_time_real_other,BLOCK_validate_time_other_wait",
+        "labels": [
+          "Unpack block candidate",
+          "Process mc state",
+          "Trx TVM",
+          "Trx storage stat",
+          "Trx other",
+          "Check transactions other",
+          "Unpack state",
+          "Validate block TLB",
+          "Unpack block data",
+          "Precheck account updates",
+          "Precheck account transactions",
+          "Precheck msg queue",
+          "Unpack dispatch queue",
+          "Check in msg descr",
+          "Check out msg descr",
+          "Check dispatch queue",
+          "Check processed upto",
+          "Check in queue",
+          "Check new state",
+          "Other work",
+          "Other wait"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3",
+          "t4",
+          "t5",
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14",
+          "t15",
+          "t16",
+          "t17",
+          "t18",
+          "t19",
+          "t20",
+          "t21"
+        ],
+        "title": "Validate time (master, real)",
+        "type": "stacked"
+      },
+      {
+        "dataSource": "/api/stats?wc=-1&stats=BLOCK_validate_work_time_cpu_unpack_block_candidate,BLOCK_validate_work_time_cpu_process_mc_state,BLOCK_validate_work_time_cpu_trx_tvm,BLOCK_validate_work_time_cpu_trx_storage_stat,BLOCK_validate_work_time_cpu_trx_other,BLOCK_validate_work_time_cpu_check_transactions_other,BLOCK_validate_work_time_cpu_unpack_state,BLOCK_validate_work_time_cpu_validate_block_tlb,BLOCK_validate_work_time_cpu_unpack_block_data,BLOCK_validate_work_time_cpu_precheck_account_updates,BLOCK_validate_work_time_cpu_precheck_account_transactions,BLOCK_validate_work_time_cpu_precheck_msg_queue,BLOCK_validate_work_time_cpu_unpack_dispatch_queue,BLOCK_validate_work_time_cpu_check_in_msg_descr,BLOCK_validate_work_time_cpu_check_out_msg_descr,BLOCK_validate_work_time_cpu_check_dispatch_queue,BLOCK_validate_work_time_cpu_check_processed_upto,BLOCK_validate_work_time_cpu_check_in_queue,BLOCK_validate_work_time_cpu_check_new_state,BLOCK_validate_work_time_cpu_other",
+        "labels": [
+          "Unpack block candidate",
+          "Process mc state",
+          "Trx TVM",
+          "Trx storage stat",
+          "Trx other",
+          "Check transactions other",
+          "Unpack state",
+          "Validate block TLB",
+          "Unpack block data",
+          "Precheck account updates",
+          "Precheck account transactions",
+          "Precheck msg queue",
+          "Unpack dispatch queue",
+          "Check in msg descr",
+          "Check out msg descr",
+          "Check dispatch queue",
+          "Check processed upto",
+          "Check in queue",
+          "Check new state",
+          "Other work"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3",
+          "t4",
+          "t5",
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14",
+          "t15",
+          "t16",
+          "t17",
+          "t18",
+          "t19",
+          "t20"
+        ],
+        "title": "Validate time (master, cpu)",
+        "type": "stacked"
+      },
+      {
+        "dataSource": "/api/stats?wc=0&stats=BLOCK_validate_work_time_real_unpack_block_candidate,BLOCK_validate_work_time_real_process_mc_state,BLOCK_validate_work_time_real_trx_tvm,BLOCK_validate_work_time_real_trx_storage_stat,BLOCK_validate_work_time_real_trx_other,BLOCK_validate_work_time_real_check_transactions_other,BLOCK_validate_work_time_real_unpack_state,BLOCK_validate_work_time_real_validate_block_tlb,BLOCK_validate_work_time_real_unpack_block_data,BLOCK_validate_work_time_real_precheck_account_updates,BLOCK_validate_work_time_real_precheck_account_transactions,BLOCK_validate_work_time_real_precheck_msg_queue,BLOCK_validate_work_time_real_unpack_dispatch_queue,BLOCK_validate_work_time_real_check_in_msg_descr,BLOCK_validate_work_time_real_check_out_msg_descr,BLOCK_validate_work_time_real_check_dispatch_queue,BLOCK_validate_work_time_real_check_processed_upto,BLOCK_validate_work_time_real_check_in_queue,BLOCK_validate_work_time_real_check_new_state,BLOCK_validate_work_time_real_other,BLOCK_validate_time_other_wait",
+        "labels": [
+          "Unpack block candidate",
+          "Process mc state",
+          "Trx TVM",
+          "Trx storage stat",
+          "Trx other",
+          "Check transactions other",
+          "Unpack state",
+          "Validate block TLB",
+          "Unpack block data",
+          "Precheck account updates",
+          "Precheck account transactions",
+          "Precheck msg queue",
+          "Unpack dispatch queue",
+          "Check in msg descr",
+          "Check out msg descr",
+          "Check dispatch queue",
+          "Check processed upto",
+          "Check in queue",
+          "Check new state",
+          "Other work",
+          "Other wait"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3",
+          "t4",
+          "t5",
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14",
+          "t15",
+          "t16",
+          "t17",
+          "t18",
+          "t19",
+          "t20",
+          "t21"
+        ],
+        "title": "Validate time (shards, real)",
+        "type": "stacked"
+      },
+      {
+        "dataSource": "/api/stats?wc=0&stats=BLOCK_validate_work_time_cpu_unpack_block_candidate,BLOCK_validate_work_time_cpu_process_mc_state,BLOCK_validate_work_time_cpu_trx_tvm,BLOCK_validate_work_time_cpu_trx_storage_stat,BLOCK_validate_work_time_cpu_trx_other,BLOCK_validate_work_time_cpu_check_transactions_other,BLOCK_validate_work_time_cpu_unpack_state,BLOCK_validate_work_time_cpu_validate_block_tlb,BLOCK_validate_work_time_cpu_unpack_block_data,BLOCK_validate_work_time_cpu_precheck_account_updates,BLOCK_validate_work_time_cpu_precheck_account_transactions,BLOCK_validate_work_time_cpu_precheck_msg_queue,BLOCK_validate_work_time_cpu_unpack_dispatch_queue,BLOCK_validate_work_time_cpu_check_in_msg_descr,BLOCK_validate_work_time_cpu_check_out_msg_descr,BLOCK_validate_work_time_cpu_check_dispatch_queue,BLOCK_validate_work_time_cpu_check_processed_upto,BLOCK_validate_work_time_cpu_check_in_queue,BLOCK_validate_work_time_cpu_check_new_state,BLOCK_validate_work_time_cpu_other",
+        "labels": [
+          "Unpack block candidate",
+          "Process mc state",
+          "Trx TVM",
+          "Trx storage stat",
+          "Trx other",
+          "Check transactions other",
+          "Unpack state",
+          "Validate block TLB",
+          "Unpack block data",
+          "Precheck account updates",
+          "Precheck account transactions",
+          "Precheck msg queue",
+          "Unpack dispatch queue",
+          "Check in msg descr",
+          "Check out msg descr",
+          "Check dispatch queue",
+          "Check processed upto",
+          "Check in queue",
+          "Check new state",
+          "Other work"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3",
+          "t4",
+          "t5",
+          "t6",
+          "t7",
+          "t8",
+          "t9",
+          "t10",
+          "t11",
+          "t12",
+          "t13",
+          "t14",
+          "t15",
+          "t16",
+          "t17",
+          "t18",
+          "t19",
+          "t20"
+        ],
+        "title": "Validate time (shards, cpu)",
+        "type": "stacked"
+      },
+      {
+        "dataSource": "/api/stats?wc=0&stats=BLOCK_collate_storage_stat_cache_small_cnt,BLOCK_collate_storage_stat_cache_hit_cnt,BLOCK_collate_storage_stat_cache_miss_cnt",
+        "labels": [
+          "Small",
+          "Hit",
+          "Miss"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3"
+        ],
+        "title": "Collate storage stat cache (count)",
+        "type": "stacked"
+      },
+      {
+        "dataSource": "/api/stats?wc=0&stats=BLOCK_collate_storage_stat_cache_small_cells,BLOCK_collate_storage_stat_cache_hit_cells,BLOCK_collate_storage_stat_cache_miss_cells",
+        "labels": [
+          "Small",
+          "Hit",
+          "Miss"
+        ],
+        "metrics": [
+          "t1",
+          "t2",
+          "t3"
+        ],
+        "title": "Collate storage stat cache (cells)",
+        "type": "stacked"
+      }
+    ],
+    "title": "Native TON sidechain session stats"
+  },
+  "native_detection_counterexample": {
+    "workchain": 0,
+    "shard": "-2305843009213693952",
+    "seqno": 1546,
+    "transactions": 2528,
+    "ext_msgs_accepted": 158,
+    "gas": 0,
+    "explicit_native_transfers_present": false,
+    "explicit_native_transactions_present": false,
+    "importer_requires": "accepted == transactions and gas == 0",
+    "actual_native_count_result": null
+  },
+  "semantics": [
+    "Dashboard counts masterchain-anchored accepted blocks from validator logs, deduplicated by full block ID; generator independently fetches canonical proofs.",
+    "Dashboard uses consensus-acceptance-time minute buckets; generator uses fully contained block gen_utime seconds.",
+    "All four workchain-0 lane counts are summed; no extra factor of 16 is applied to transactions.",
+    "Peak minute rates and measured 179-second averages are different windows.",
+    "Native classification is independent of ADNL/tonlib/lite-client transport. The audited high-rate runs used persistent ADNL; tonlib was integration-tested at low volume, not benchmarked at 60k.",
+    "The current frontend defaults to last 2h and 60s windows; it has no automatic refresh timer.",
+    "Native-specific counting bug is identified and documented, not deployed as a fix."
+  ],
+  "evidence_sha256": {
+    "build/benchmarks/session-stats-audit-20260907/BLOCK_APPLIED_blocks.json": "a99ba01f141b7139cdd1acddf7585b5df6649825bd68d9f214166d0f8901a5f1",
+    "build/benchmarks/session-stats-audit-20260907/BLOCK_APPLIED_native_transfers.json": "21f20ce7102c0ec308cccb7514ebaa4244fa26a677e8e4e342432a1dddbb2eff",
+    "build/benchmarks/session-stats-audit-20260907/BLOCK_APPLIED_transactions.json": "32b0b2ea898d0b5e9f85f42de8d2fa7db3df4ddc21f06a1d10d0e48b3bad1bb9",
+    "build/benchmarks/session-stats-audit-20260907/BLOCK_native_collate_wall_tps.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "build/benchmarks/session-stats-audit-20260907/BLOCK_native_transfers.json": "21f20ce7102c0ec308cccb7514ebaa4244fa26a677e8e4e342432a1dddbb2eff",
+    "build/benchmarks/session-stats-audit-20260907/BLOCK_native_validate_tps.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "build/benchmarks/session-stats-audit-20260907/chart-config.json": "c673e8fbed0e868e44228a7db4bf213489c35d9440bcba9bfc219117d61746b1"
+  }
+}

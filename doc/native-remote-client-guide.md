@@ -233,6 +233,14 @@ For current progress, read the JSONL file in another terminal. If interrupted or
 
 Use `canonical_chain_measure_avg_tps` for block-time canonical throughput; `steady_mempool_accept_avg_tps` measures admission. The shell stops on incomplete/incorrect runs but retains capacity-rejected observations, just as the local sweep distinguishes observations from capacity results. Inspect signed-run density and lane validity too. This shell does not independently collect A's validator process identity, resources, logs or mempool-cleanup evidence. Preserve A-side evidence separately; do not label its output as having passed the full local harness's strict capacity acceptance. Keep A unchanged during the entire sequence and ensure offered load exceeds canonical TPS before making a capacity claim.
 
+## Verified dashboard chart
+
+The [2026-09-07 dashboard audit](session-stats-dashboard-audit-2026-09-07.md) verified the running image against all three completed tests. Use **“Canonical transactions per second” → “Workchain”**, with **Window size: 1m**. Its full-run totals exactly match the generator's independently proven 46,416,224 transfers. Minute peaks were 64,874 / 63,592 / 63,615 TPS for 10 / 50 / 100 connections; these are different windows from the measured-run averages.
+
+The separate **“Canonical native transfers per second”** chart currently reports zero for NTRN: its importer assumes one logical transfer per physical accepted message. That bug is not fixed by this guide. Collation/validation service-rate charts are also not canonical chain throughput. The client transport does not change these counting rules.
+
+The page defaults to the last two hours and does not auto-refresh. Reload or change the range during a test, allow importer delay, and select the historical interval when reviewing an older test. Use `BLOCK_APPLIED_transactions`, `mode=rate`, `window_size=60` for the verified API series.
+
 ## Bandwidth for the same approximately 60k TPS workload
 
 60,000 TPS means **60,000 logical transfers/s**, packed into **3,750 new signed parents/s**. The measured generator repeats an identical destination/amount/fee 16 times within each parent; BOC cell deduplication makes that parent approximately **260 bytes**. Consequently, the fresh BOC payload alone is **7.8 Mbit/s B → A**.

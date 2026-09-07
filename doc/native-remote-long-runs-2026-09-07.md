@@ -70,3 +70,22 @@ The user's latest container listing also publishes management TCP 40002 and file
 All 37 remote integration tests passed after the final preset/documentation changes (58.558 seconds). The focused watchdog test also passed after adding an ambiguous exit-137 case: a killed `docker wait` reports unknown watchdog expiry rather than claiming a timeout or an OOM without evidence. All 28 shell examples checked across the updated remote documentation parse successfully.
 
 These checks cover duration propagation (including upgrading an old imported preset), the scaled watchdog, progress, OOM/nonzero-exit evidence, retained final diagnostics and stopping before a subsequent arm on failure. They use simulated Docker and synthetic test keys. No new ten-minute A/B load was submitted by the assistant, and the old 50-connection failure remains unclassified pending its saved exit state and error logs.
+
+## Subsequent 48-CPU scaling preparation
+
+Implemented in [MyLocalTonDocker commit fd6f466](https://github.com/neodix42/mylocalton-docker/commit/fd6f466). The installed runner SHA-256 is `df90240dc0da067eac5a4f6adc8da3bd03315176af998e45eab959f703e7cc70`.
+
+The user reported that A exposes 48 CPUs but uses only about 20, and that test traffic peaked around 50 Mbit/s on a 1 Gbit/s link. The old physical profile imposed an 18-CPU quota and an 18-CPU affinity mask, with 16 scheduler threads. The new `.env.physical` removes that affinity restriction and assigns 44 CPU equivalents, 40 scheduler threads, and 2 CPU equivalents for Session Stats. Eight native executor workers and the existing chain, queue, and checkpoint-retention settings remain fixed for the comparison. The historical profile is retained in MyLocalTonDocker commit `41c4107`.
+
+B's standalone runner is independent of A's `.env.physical`. Its preset was already unpaced; its default CPU quota was four. The runner now accepts explicit worker, signer, initial-window, and maximum-window overrides, records their effective values, and checks their agreement with the final generator output. These options work with the already exported image. The [scaling procedure](native-remote-client-guide.md#increase-offered-load-on-b) tests CPU budget, signing parallelism, and admission windows separately before sweeping 50/100/256 connections. The reference defaults remain available as the control.
+
+| Prepared comparison | Control | Treatment | Measured canonical TPS gain |
+| --- | --- | --- | --- |
+| A's CPU allocation and scheduler | 18 CPU / 16 threads / old affinity | 44 CPU / 40 threads / all available CPUs | Pending |
+| B's CPU budget, if hardware permits | 4 CPU | 12 CPU | Pending |
+| B's worker/signer parallelism | 6 / 6 | 12 / 12 | Pending |
+| B's initial/maximum logical admission windows | 32,768 / 65,536 | 65,536 / 131,072 | Pending |
+
+The larger maximum window gives roughly 81 sixteen-transfer parent messages of credit per connection at 100 connections, compared with roughly 40 previously. This permits a full 64-parent batch when sufficient work is ready; it is not a measured batching or throughput improvement. Connections still share one global window, and the current binary's limit remains 256. The in-flight and canonical backlog limits are unchanged.
+
+Compose configuration validation confirmed the new quotas, empty affinity, 40 scheduler threads, and eight native workers without starting containers. All 41 runner integration tests passed with the new overrides, including invalid worker/window partitions, frozen image reuse, and failure-stop behavior. A subsequent review added a check that canonical backlog capacity covers every worker; its new regression and two related focused tests passed (the suite now contains 42 tests). The native batching entrypoint/configuration test also passed. These are offline correctness checks. No new A/B throughput result has been produced, so the earlier reported 74,512.27 TPS observation remains the recorded remote result, not a result of these settings.

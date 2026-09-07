@@ -25,7 +25,7 @@ EXTERNAL_IP=
 
 Allow inbound **TCP 40004** for ADNL/TCP and **TCP 18000** for the dashboard in A's hosting firewall/security group, and forward them if A is behind NAT. If only B needs admission, allow B's public IP on 40004. Additional UDP consensus/DHT ports are not required by this remote client. Keep the file server private: the current genesis script copies validator/config/faucet private keys into `/usr/share/data`, which that service serves. Transfer only the selected public config and test source keys below.
 
-For a **new checkout and fresh network**, `.env.physical` is the starting profile used by the measured desktop experiment:
+For a **new checkout and fresh network**, `.env.physical` now targets a 48-logical-CPU server A with load generated remotely. Its CPU allocation is a new, unmeasured scaling treatment; the older desktop measurements used a different allocation:
 
 ```sh
 # Fresh checkout only; preserve an existing deployment's .env and project name.
@@ -103,6 +103,54 @@ curl --fail http://127.0.0.1:18000/api/chart-config
 `docker compose up --no-build --pull never genesis` alone deliberately reuses local images. Use `start-native-genesis.sh` when launching/updating from the current registry version. A plain `docker restart` cannot fetch a new image.
 
 A binding change on an existing container takes effect through Compose recreation, not plain `docker restart`; complete that work before timing. Keep the existing project name and mounts so the database is preserved. Open `http://SERVER_A_PUBLIC_IP:18000/` remotely. Public Session Stats does not require changing `UI_BIND_IP`.
+
+### Scale an existing 48-CPU server A
+
+The previous `.env.physical` limited genesis to **18 CPU equivalents**, the affinity mask `0-8,12-20`, and **16 scheduler threads**. That mask exposes only 18 logical CPUs even on a 48-CPU host. The updated profile uses:
+
+```dotenv
+GENESIS_CPU_QUOTE=44
+VALIDATOR_CPU_QUOTE=44
+GENESIS_CPUSET=
+SESSION_STATS_CPU_QUOTE=2
+SESSION_STATS_CPUSET=
+NATIVE_LOAD_CPUSET=
+```
+
+In the existing `CUSTOM_PARAMETERS` entry, change only `--threads 16` to `--threads 40`. Keep `TON_NATIVE_EXECUTOR_THREADS=8` for this comparison: ingress verifier actors share the scheduler, but native execution helpers can also create threads. The empty affinity settings allow scheduling across all CPUs available to Docker. The 44-CPU limit leaves four CPU equivalents outside the validator's budget; it does not reserve particular cores or guarantee full utilization. See [Docker CPU constraints](https://docs.docker.com/engine/containers/resource_constraints/#cpu).
+
+Pulling the repository does **not** update an existing deployment's `.env`. Save it before editing, then replace the resource entries above in that file. Preserve its project name, mounts, public bindings, image settings, and genesis parameters. Use `nproc` and `lscpu -e=CPU,NODE,SOCKET,CORE` on A to confirm the host exposes the intended 48 logical CPUs. This profile assumes the generator runs on B; a simultaneously running local generator would share A's resources.
+
+After any active load run has finished and drained, apply the updated `.env` using the **currently running genesis image ID**. Run this from MyLocalTonDocker on A:
+
+```sh
+bash -s <<'SH'
+set -eu
+umask 077
+genesis_image_id=$(docker inspect --format '{{.Image}}' genesis)
+resource_override=$(mktemp)
+trap 'rm -f "$resource_override"' EXIT
+python3 - "$genesis_image_id" "$resource_override" <<'PY'
+import json, pathlib, re, sys
+assert re.fullmatch(r'sha256:[0-9a-f]{64}', sys.argv[1]), 'Expected immutable image ID'
+pathlib.Path(sys.argv[2]).write_text(json.dumps({'services': {'genesis': {'image': sys.argv[1]}}}))
+PY
+docker compose --env-file .env -f docker-compose.yaml -f "$resource_override" \
+  up -d --no-deps --no-build --pull never --force-recreate genesis
+docker inspect --format 'image={{.Image}} nano_cpus={{.HostConfig.NanoCpus}} cpuset={{.HostConfig.CpusetCpus}}' genesis
+SH
+```
+
+This deliberately restarts genesis once to apply the resource/thread settings. Compose preserves its mounted database; no new zero state or wallet export is needed. `nano_cpus=44000000000` and an empty `cpuset` confirm the new CPU limit and affinity. Wait for healthy status and advancing blocks before measuring again. [Compose recreation behavior](https://docs.docker.com/reference/cli/docker/compose/up/) documents the volume preservation and `--no-build`/`--pull never` options.
+
+Apply the Session Stats quota separately, also reusing its prepared image:
+
+```sh
+docker compose --env-file .env --profile session-stats \
+  up -d --no-deps --no-build --pull never --force-recreate session-stats
+```
+
+Recreating only Session Stats also resolves an old stopped stats container referencing a deleted Compose network. Neither this command nor the export script starts the load generator. Keep all images and validator settings fixed throughout each subsequent measurement sequence. The historical 18-CPU profile is available in MyLocalTonDocker at `41c4107:.env.physical` for a controlled comparison; do not replace the deployment's entire `.env` with that historical file.
 
 ## Export client materials on A
 
@@ -234,7 +282,7 @@ Omitting `--connections` uses the same 10/50/100 sequence. The updated runner de
 bash run-remote-load.sh --connections 10 --duration 600
 ```
 
-Run `bash run-remote-load.sh --help` for `--directory`, `--duration`, `--warmup`, `--drain`, `--cpus`, `--memory`, `--output` and `--image`. The default resource limits are 4 CPU equivalents and 8 GiB memory. Requested connection counts must fit the exported worker count (at least 6 for the reference preset) and must not exceed 256. Duplicate counts are rejected. For a different CPU-compatible prebuilt image, import/load it before running and explicitly select it with `--image`; the runner freezes its resolved ID across all arms.
+Run `bash run-remote-load.sh --help` for `--directory`, `--duration`, `--warmup`, `--drain`, `--cpus`, `--memory`, `--workers`, `--signers`, `--initial-cwnd`, `--max-cwnd`, `--output` and `--image`. The default resource limits are 4 CPU equivalents and 8 GiB memory. Requested connection counts must fit the effective worker count (at least 6 for the reference preset) and must not exceed 256. Duplicate counts are rejected. For a different CPU-compatible prebuilt image, import/load it before running and explicitly select it with `--image`; the runner freezes its resolved ID across all arms.
 
 Each arm uses unpaced bounded load, 60 seconds of warm-up, **600 seconds measured load** and up to 180 seconds of drain, plus initial account/lane readiness work. A full three-count sweep therefore contains 30 measured minutes and takes longer than 33 minutes including warm-up, readiness and drain. It produces three separate load periods, with intentional gaps between counts. The reference environment fixes six workers/signers, 24,576 sources, 16 logical transfers per signed run, a 64-parent batch cap, 20 ms coalescing and global initial/max admission windows of 32,768/65,536 logical transfers. Exporting fewer sources reduces worker/signer counts only when necessary. That smaller workload is not the reference capacity test.
 
@@ -282,6 +330,64 @@ SH
 ```
 
 The [remote run observations and duration change](native-remote-long-runs-2026-09-07.md) distinguish the reported 74.5k TPS three-minute result from the ten-minute measurements that still need to be run.
+
+### Increase offered load on B
+
+A's `.env.physical` does not configure the standalone generator on B. B's reference preset already uses `NATIVE_LOAD_TARGET_TPS=0`, meaning bounded **unpaced** load; setting a larger positive TPS target would add a rate cap. Its default Docker quota is only **4 CPU equivalents**, with six workers and six signers. Check `nproc` and `free -h` on B before allocating more resources. Worker/signer counts configure parallelism; `--cpus` controls the container's CPU time budget.
+
+Update the installed host script using the procedure above. These controls work with the existing pinned generator image; they do not require rebuilding TON or exporting another image. Once the earlier failed arm has been diagnosed and reconciled, compare treatments one at a time. Each command below measures at least ten minutes and must finish valid with zero backlog before the next command starts.
+
+For example, **if B has at least 16 available logical CPUs and enough free RAM for its 8 GiB container**, start with more CPU alone at a fixed connection count:
+
+```sh
+cd "$HOME/native-remote-client"
+# Control, using the same A configuration as the following treatments.
+bash run-remote-load.sh --connections 100 --duration 600 \
+  --cpus 4 --memory 8g --workers 6 --signers 6 \
+  --initial-cwnd 32768 --max-cwnd 65536
+```
+
+After a valid control, increase only B's CPU time budget:
+
+```sh
+# Increase only B's CPU time budget.
+bash run-remote-load.sh --connections 100 --duration 600 \
+  --cpus 12 --memory 8g --workers 6 --signers 6 \
+  --initial-cwnd 32768 --max-cwnd 65536
+```
+
+If that result is valid, compare higher worker/signing parallelism:
+
+```sh
+# Then compare higher worker/signing parallelism.
+bash run-remote-load.sh --connections 100 --duration 600 \
+  --cpus 12 --memory 8g --workers 12 --signers 12 \
+  --initial-cwnd 32768 --max-cwnd 65536
+```
+
+If the admission window limits further load and the preceding run is valid,
+test twice the initial and maximum window:
+
+```sh
+# Finally test twice the initial and maximum admission window.
+bash run-remote-load.sh --connections 100 --duration 600 \
+  --cpus 12 --memory 8g --workers 12 --signers 12 \
+  --initial-cwnd 65536 --max-cwnd 131072
+```
+
+Choose each next treatment only if the preceding result and resource counters justify it; these examples are separate invocations, not a script to continue after a failure. Windows count **logical transfers across all workers/connections**, not bytes or per-connection messages. Explicit window overrides must be positive, the initial window must not exceed the maximum, and the maximum must fit the exported in-flight budget (262,144 in the reference preset). The runner also checks that worker/client partitions can dispatch complete signed runs. All effective overrides are frozen in each arm's runtime artifacts. The global canonical backlog limit remains unchanged. More outstanding work can increase memory use, drain time, or backpressure; retain failed-run diagnostics rather than automatically enlarging those limits.
+
+After selecting a valid resource/window combination, compare **50 / 100 / 256 connections**, for example:
+
+```sh
+bash run-remote-load.sh --connections 50 100 256 --duration 600 \
+  --cpus 12 --memory 8g --workers 12 --signers 12 \
+  --initial-cwnd 65536 --max-cwnd 131072
+```
+
+Both the current native binary and the runner accept at most **256 submission connections**. A 500-connection test would require a new binary and published/exported image. More connections divide the same global admission budget: at 65,536 logical transfers, 100 connections average about 40 sixteen-transfer parent messages of credit each, while 500 would average only eight. Increasing signing capacity or useful outstanding work can supply more load without adding that RPC overhead.
+
+The observed 50 Mbit/s on a 1 Gbit/s link does not establish unused validator capacity. At the reported 74.5k logical TPS, sixteen-transfer signed runs represent only about 4,660 fresh parent messages per second. Batch packing and retries affect wire traffic. Compare offered, admitted, and proven canonical TPS, signing rate, CPU usage/throttling on both hosts, admission-window limits, query stalls, follower lag, and final backlog. Retain the configuration with the highest **repeatable, valid ten-minute canonical TPS**, rerun its control, and save the image IDs, A's resource settings, and the runner's result directory. No TPS gain from the 44-CPU or larger-window treatments has been measured yet.
 
 ## Verified dashboard chart
 

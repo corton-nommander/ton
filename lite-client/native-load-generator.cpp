@@ -1006,6 +1006,7 @@ class NativeLoadWorker final : public td::actor::Actor {
   void begin_drain(double now);
   void maybe_finish();
   void finish();
+  void log_unsettled_sources() const;
   void refresh_stats();
   void publish_stats();
 
@@ -4584,7 +4585,8 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
   bool rate_limit = contains("per-address") || contains("too many external") || contains("rate limit");
   bool duplicate = contains("duplicate native nonce") || contains("already exists");
   bool too_old = contains("too old native nonce");
-  bool expired = contains("valid_until") || contains("expired");
+  bool expired = native_load::is_native_message_expiry_diagnostic(
+      origin == ErrorOrigin::server, timeout || error.code() == ton::ErrorCode::cancelled, lower);
   bool too_new = contains("too new native nonce");
   bool canonical_state_lag = native_load::is_canonical_state_lag_diagnostic(lower);
   bool native_signed_run_snapshot_or_revision_race =
@@ -4949,6 +4951,54 @@ void NativeLoadWorker::maybe_finish() {
   }
 }
 
+void NativeLoadWorker::log_unsettled_sources() const {
+  // A bounded final diagnostic makes a small stranded tail reviewable without
+  // dumping millions of transfer records or any private signing material.
+  std::size_t unresolved_sources = 0;
+  constexpr std::size_t sample_limit = 8;
+  for (std::size_t i = 0; i < wallets_.size(); ++i) {
+    const auto& wallet = wallets_[i];
+    const auto offered = wallet.next_nonce - wallet.run_start_nonce;
+    const auto matched = options_.canonical_block_follower
+                             ? wallet.canonical_total_matched
+                             : std::min(offered, wallet.anchored_nonce - wallet.run_start_nonce);
+    const auto missing = offered - std::min(offered, matched);
+    if (!missing && wallet.tasks.empty()) {
+      continue;
+    }
+    if (++unresolved_sources > sample_limit) {
+      continue;
+    }
+    const auto task = !wallet.tasks.empty() ? wallet.tasks.begin()->second
+                     : !wallet.admitted_tasks.empty() ? wallet.admitted_tasks.begin()->second
+                                                      : std::shared_ptr<TransferTask>{};
+    const char* state = "none";
+    if (task) {
+      switch (task->state) {
+        case TaskState::signing: state = "signing"; break;
+        case TaskState::ready: state = "ready"; break;
+        case TaskState::dispatching: state = "dispatching"; break;
+        case TaskState::inflight: state = "inflight"; break;
+        case TaskState::retry_wait: state = "retry_wait"; break;
+        case TaskState::resolved: state = "admitted"; break;
+      }
+    }
+    LOG(ERROR) << "native drain unresolved source: worker=" << worker_id_
+               << " source_index=" << options_.source_offset + i
+               << " missing_logical=" << missing << " disabled=" << wallet.disabled
+               << " anchored_nonce=" << wallet.anchored_nonce << " next_nonce=" << wallet.next_nonce
+               << " active_parents=" << wallet.tasks.size() << " admitted_parents=" << wallet.admitted_tasks.size()
+               << " head_state=" << state << " head_nonce=" << (task ? task->first_nonce() : wallet.anchored_nonce)
+               << " head_admission_counted=" << (task && task->admission_counted)
+               << " head_resigned_after_expiry=" << (task && task->resigned_after_expiry)
+               << " head_proven_children=" << (task ? task->proof_observed_count : 0);
+  }
+  LOG(ERROR) << "native drain unresolved summary: worker=" << worker_id_
+             << " sources=" << unresolved_sources << " samples=" << std::min(unresolved_sources, sample_limit)
+             << " active_logical=" << active_tasks_ << " inflight_logical=" << inflight_
+             << " signing_parents=" << signing_;
+}
+
 void NativeLoadWorker::finish() {
   if (finished_) {
     return;
@@ -4964,6 +5014,9 @@ void NativeLoadWorker::finish() {
     // coordinator's final proof poll.  The final observations can then update
     // canonical_after_drain instead of being discarded after worker_done().
     return;
+  }
+  if (stats_.drain_timed_out) {
+    log_unsettled_sources();
   }
   clients_.clear();
   signers_.clear();
@@ -5544,6 +5597,9 @@ void NativeLoadWorker::finalize_after_canonical_poll() {
                  canonical_cohorts_complete(stats_.anchored_after_drain, stats_.steady_offered,
                                             stats_.total_anchored_after_drain, stats_.offered);
   stats_.drain_timed_out = !settled;
+  if (!settled) {
+    log_unsettled_sources();
+  }
   if (settled) {
     stats_.drain_to_anchor_seconds = std::max(0.0, now - drain_started_at_);
   }

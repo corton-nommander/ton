@@ -145,6 +145,23 @@ inline bool release_admission_query_credit(std::uint32_t& queries_inflight) {
   return true;
 }
 
+// Only an authoritative payload-expiry response can replace a signed parent.
+// Admission/query deadlines can expire after the node has reserved or accepted
+// the original bytes, so those failures must retry that exact authorization.
+// Retention/suffix eviction likewise does not establish that this payload's
+// valid_until has elapsed; a still-valid evicted parent can be readmitted.
+// The caller supplies a lower-case diagnostic, as for the other classifiers.
+inline bool is_native_message_expiry_diagnostic(bool server_response, bool transient_query_failure,
+                                                 std::string_view lowercase_diagnostic) {
+  if (!server_response || transient_query_failure) {
+    return false;
+  }
+  return lowercase_diagnostic.find("valid_until is in the past") != std::string_view::npos ||
+         lowercase_diagnostic.find("valid_until expired") != std::string_view::npos ||
+         lowercase_diagnostic.find("native transfer expired") != std::string_view::npos ||
+         lowercase_diagnostic.find("native message expired before mempool commit") != std::string_view::npos;
+}
+
 // The caller lower-cases the server diagnostic before classification.  Keep
 // this deliberately narrow: ErrorCode::notready is also used for real
 // admission pressure and revision races, while these exact diagnostics mean

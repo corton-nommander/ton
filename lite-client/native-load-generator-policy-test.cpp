@@ -163,6 +163,45 @@ TEST(NativeLoadGeneratorPolicy, SubmitQueryCreditReleasesOnceForErrorInactiveAnd
   ASSERT_TRUE(!native_load::release_admission_query_credit(queries_inflight));
 }
 
+TEST(NativeLoadGeneratorPolicy, AdmissionDeadlineExpiryNeverReplacesSignedParent) {
+  // These are the actual single/batch admission deadline diagnostics. The
+  // node may have committed the first request before the response deadline;
+  // replacing its hash would then collide with that still-valid reservation.
+  for (const auto diagnostic : {"external message admission deadline expired",
+                                "[error : 652 : external message admission deadline expired]",
+                                "lite server query deadline expired",
+                                "timeout for adnl query native-load-batch"}) {
+    ASSERT_TRUE(!native_load::is_native_message_expiry_diagnostic(true, true, diagnostic));
+    // Even a response wrapper that loses the original timeout code cannot
+    // turn these words into an authoritative payload-expiry decision.
+    ASSERT_TRUE(!native_load::is_native_message_expiry_diagnostic(true, false, diagnostic));
+  }
+}
+
+TEST(NativeLoadGeneratorPolicy, ActualPayloadExpiryRetainsResigningAndErrorOriginChecks) {
+  for (const auto diagnostic : {"native transfer valid_until is in the past",
+                                "[error : 0 : valid_until is in the past]",
+                                "valid_until expired", "native transfer expired",
+                                "native message expired before mempool commit"}) {
+    ASSERT_TRUE(native_load::is_native_message_expiry_diagnostic(true, false, diagnostic));
+    // Transport/parse failures and timeout/cancellation codes remain retry
+    // failures even if their contextual diagnostic mentions payload validity.
+    ASSERT_TRUE(!native_load::is_native_message_expiry_diagnostic(false, false, diagnostic));
+    ASSERT_TRUE(!native_load::is_native_message_expiry_diagnostic(true, true, diagnostic));
+  }
+}
+
+TEST(NativeLoadGeneratorPolicy, RetentionAndSuffixExpiryPreserveStillValidAuthorization) {
+  for (const auto diagnostic : {"native transfer retention expired; removed this nonce and its pending suffix",
+                                "native transfer suffix removed after a nonce expired",
+                                "native transfer valid_until is outside the allowed range", "expired"}) {
+    // An eviction may concern an earlier nonce or a shorter mempool TTL. It
+    // does not invalidate this parent's signature; the ordinary retry path
+    // renews it only if the parent's own valid_until has actually elapsed.
+    ASSERT_TRUE(!native_load::is_native_message_expiry_diagnostic(true, false, diagnostic));
+  }
+}
+
 TEST(NativeLoadGeneratorPolicy, DetectsOnlyExplicitCanonicalStateLag) {
   ASSERT_TRUE(native_load::is_canonical_state_lag_diagnostic(
       "error 651: canonical native account state has not caught up with finalized balance"));

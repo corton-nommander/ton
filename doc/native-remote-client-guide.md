@@ -225,26 +225,63 @@ The installed `run-remote-load.sh` is a real repository script. It runs only the
 
 ```sh
 cd "$HOME/native-remote-client"
-bash run-remote-load.sh --connections 10 50 100
+bash run-remote-load.sh --connections 10 50 100 --duration 600
 ```
 
-Omitting `--connections` uses the same 10/50/100 sequence. For a later independent single-count run or a different measurement duration:
+Omitting `--connections` uses the same 10/50/100 sequence. The updated runner defaults to **at least 600 measured seconds per count**, even when an older installed `remote-load.env` still says 180. Longer environment durations remain effective; an explicit `--duration` selects the requested duration, including a shorter diagnostic run. For a later independent single-count run:
 
 ```sh
-bash run-remote-load.sh --connections 50 --duration 300
+bash run-remote-load.sh --connections 10 --duration 600
 ```
 
 Run `bash run-remote-load.sh --help` for `--directory`, `--duration`, `--warmup`, `--drain`, `--cpus`, `--memory`, `--output` and `--image`. The default resource limits are 4 CPU equivalents and 8 GiB memory. Requested connection counts must fit the exported worker count (at least 6 for the reference preset) and must not exceed 256. Duplicate counts are rejected. For a different CPU-compatible prebuilt image, import/load it before running and explicitly select it with `--image`; the runner freezes its resolved ID across all arms.
 
-Each arm uses unpaced bounded load, 60 seconds of warm-up, 180 seconds measured load and up to 180 seconds of drain, plus initial account/lane readiness work. The reference environment fixes six workers/signers, 24,576 sources, 16 logical transfers per signed run, a 64-parent batch cap, 20 ms coalescing and global initial/max admission windows of 32,768/65,536 logical transfers. Exporting fewer sources reduces worker/signer counts only when necessary. That smaller workload is not the reference capacity test.
+Each arm uses unpaced bounded load, 60 seconds of warm-up, **600 seconds measured load** and up to 180 seconds of drain, plus initial account/lane readiness work. A full three-count sweep therefore contains 30 measured minutes and takes longer than 33 minutes including warm-up, readiness and drain. It produces three separate load periods, with intentional gaps between counts. The reference environment fixes six workers/signers, 24,576 sources, 16 logical transfers per signed run, a 64-parent batch cap, 20 ms coalescing and global initial/max admission windows of 32,768/65,536 logical transfers. Exporting fewer sources reduces worker/signer counts only when necessary. That smaller workload is not the reference capacity test.
 
-Results are saved under a unique `remote-results/` subdirectory of the client installation, or the new directory provided with `--output`. The top-level `summary.json` contains every arm's status; each numbered connection directory retains `runtime-settings.json`, `runtime.env`, `generator.log`, `container.json`, `generator-final.json` and `summary.json`. Image identity, effective settings and public config are retained. Source keys are mounted read-only and are not copied into result reports. Exited workload containers remain available for inspection.
+Duration extends the observation window; it does not guarantee a flat TPS line or fix a failed generator. Use one 10-connection arm first to observe an uninterrupted ten-minute measurement, then run the full sweep after resolving any previous failed arm. The native binary already supports this duration, so updating the host runner requires no new TON image, validator restart, wallet export, or image transfer.
+
+Results are saved under a unique `remote-results/` subdirectory of the client installation, or the new directory provided with `--output`. The top-level `summary.json` contains every attempted arm's status. The runner saves its own source and SHA-256 alongside the image identity, effective settings and public config. Each numbered connection directory retains `runtime-settings.json`, `runtime.env`, `generator.log`, `generator.stderr.log`, `container.json`, `execution.json` and `summary.json`, plus `generator-final.json` whenever a final record was emitted, including on a nonzero exit. Source keys are mounted read-only and are not copied into result reports. Exited workload containers remain available for inspection.
+
+Periodic console progress reports phase, elapsed/measurement time and available provisional TPS/backlog counters. Those live counters do not replace the final proof/completion checks. The watchdog grows with the selected duration, warm-up, ramp, drain and readiness budgets.
 
 The runner serializes access to the installed client-data directory. Do not run another generator elsewhere using the same source keys; auto-nonce discovers canonical state but does not coordinate independent writers. Keep unrelated native traffic off A, keep A's images/process/configuration unchanged during the sequence, and synchronize A/B clocks through NTP. Chain TPS counts all native transfers in observed blocks, not only requests from B.
 
-SIGINT/SIGTERM stops the runner-owned generator and preserves the partial result; a finite watchdog also bounds each arm. Inspect and reconcile an interrupted/incomplete run before reusing its source keys. The runner checks canonical proof/completion, zero final backlog, requested connection counts, signed-run density, batching and lane validity before starting another arm. Capacity-only rejections remain visible as `observation_only`; they do not discard valid throughput observations.
+SIGINT/SIGTERM stops the runner-owned generator and preserves the partial result; a finite watchdog also bounds each arm. Inspect and reconcile an interrupted/incomplete run before reusing its source keys. The runner checks canonical proof/completion, zero final backlog, requested connection counts, signed-run density, batching and lane validity before starting another arm. Capacity-only rejections remain visible as `observation_only`; they do not discard valid throughput observations. A failed 50-connection arm therefore stops before 100, with the exact exit/OOM/watchdog state and any final generator failure reasons retained. It never silently skips an incomplete arm and reuses its keys.
+
+For an older result that says only `container did not exit cleanly`, inspect the saved files on B (substitute the actual arm directory):
+
+```sh
+cd "$HOME/native-remote-client/remote-results/RUN/02-50-connections"
+python3 -c 'import json; d=json.load(open("container.json"))[0]; print(json.dumps({"State":d.get("State"),"RestartCount":d.get("RestartCount")},indent=2))'
+cat wait.log
+tail -n 60 generator.stderr.log
+tail -n 5 generator.log
+```
+
+Exit 2 can indicate unsettled drain; exit 3 can indicate canonical follower/proof/correctness failure. Use the final record and stderr to identify the actual reason. Exit 137 alone does not prove OOM; inspect `State.OOMKilled`. CPU and memory limits are explicit knobs for B, not established explanations for an unexplained exit.
 
 Use `canonical_chain_measure_avg_tps` in `generator-final.json` for block-time canonical throughput and `steady_mempool_accept_avg_tps` for admission. The runner's summary distinguishes `generator_capacity_eligible` from `observation_only`. It does not collect A's independent validator process/resource/pool-cleanup evidence, so neither label certifies the full local harness's strict capacity acceptance. Preserve A-side evidence separately and ensure offered load exceeds canonical TPS before making a capacity claim.
+
+### Update an already imported runner on B
+
+After the previous runner has exited, update only the installed host script below. The original exported directory remains unchanged because its checksums cover the original scripts. The existing pinned generator image and installed wallets are reused. For a fixed update, set `runner_ref` to the reviewed MyLocalTonDocker commit instead of the maintained branch shown.
+
+```sh
+bash -s <<'SH'
+set -eu
+umask 077
+runner_ref=native-payment-lanes-step6
+client_dir="$HOME/native-remote-client"
+runner_download=$(mktemp)
+trap 'rm -f "$runner_download"' EXIT
+curl --fail --location "https://raw.githubusercontent.com/neodix42/mylocalton-docker/$runner_ref/benchmark/remote/run-remote-load.sh" --output "$runner_download"
+bash -n "$runner_download"
+cp -p "$client_dir/run-remote-load.sh" "$client_dir/run-remote-load.sh.before-update-$(date -u +%Y%m%dT%H%M%SZ)"
+install -m 700 "$runner_download" "$client_dir/run-remote-load.sh"
+SH
+```
+
+The [remote run observations and duration change](native-remote-long-runs-2026-09-07.md) distinguish the reported 74.5k TPS three-minute result from the ten-minute measurements that still need to be run.
 
 ## Verified dashboard chart
 
@@ -253,6 +290,8 @@ The [2026-09-07 dashboard audit](session-stats-dashboard-audit-2026-09-07.md) ve
 The separate **“Canonical native transfers per second”** chart currently reports zero for NTRN: its importer assumes one logical transfer per physical accepted message. That bug is not fixed by this guide. Collation/validation service-rate charts are also not canonical chain throughput. The client transport does not change these counting rules.
 
 The page defaults to the last two hours and does not auto-refresh. Reload or change the range during a test, allow importer delay, and select the historical interval when reviewing an older test. Use `BLOCK_APPLIED_transactions`, `mode=rate`, `window_size=60` for the verified API series.
+
+For a ten-minute stability observation, choose a 15–20 minute interval around that arm and keep the 1-minute window. A 600-second measurement plus warm-up should occupy a visibly longer interval than the old three-minute measurement; gaps between separate setups are expected. Preserve the exact generator measurement timestamps and compare only buckets within that window. A high minute peak, or a longer configured duration alone, does not prove stable TPS for ten minutes.
 
 ## Bandwidth for the same approximately 60k TPS workload
 

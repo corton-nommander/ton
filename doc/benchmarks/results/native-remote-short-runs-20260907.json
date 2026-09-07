@@ -1,0 +1,332 @@
+{
+  "schema": "native-remote-short-run-observations-v1",
+  "recorded_at": "2026-09-07T13:30:24.154794+00:00",
+  "dashboard": "Server A; public endpoint omitted from repository report",
+  "dashboard_query": {
+    "stat": "BLOCK_APPLIED_transactions",
+    "mode": "rate",
+    "window_size": 60,
+    "start": "2026-09-07T12:50:00Z",
+    "end": "2026-09-07T13:20:00Z"
+  },
+  "evidence_sources": {
+    "generator_results": "User-pasted Server B summaries; full original artifacts have not been independently inspected.",
+    "dashboard": "Read-only HTTP API query against Server A."
+  },
+  "generator_image_id": "sha256:2f39a329b4edacd7f014f3bb4004597cfd63d036502643784210a8ad6aa79d79",
+  "server_b_results": "/root/native-remote-client/remote-results/20260907T125604Z-396449",
+  "reported_arms": [
+    {
+      "connections": 10,
+      "valid_run": true,
+      "capacity_classification": "generator_capacity_eligible",
+      "measured": {
+        "offered_logical_tps": 74648.88888888889,
+        "admission_logical_tps": 74648.88888888889,
+        "canonical_logical_tps": 74512.26815642459,
+        "offer_duration_s": 180,
+        "canonical_bucket_duration_s": 179
+      },
+      "invalid_reasons": []
+    },
+    {
+      "connections": 50,
+      "valid_run": false,
+      "capacity_classification": "invalid",
+      "measured": null,
+      "invalid_reasons": [
+        "container did not exit cleanly"
+      ],
+      "root_cause": "Unresolved pending saved Docker State and generator final/stderr diagnostics."
+    },
+    {
+      "connections": 100,
+      "status": "not_started_after_invalid_50_connection_arm"
+    }
+  ],
+  "dashboard_minute_series": [
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T12:50:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.1,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T12:51:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T12:52:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T12:53:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.1,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T12:54:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T12:55:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T12:56:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T12:57:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 9.95,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T12:58:00Z",
+      "wc": 11195.733333333334,
+      "wc_max": 18432.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T12:59:00Z",
+      "wc": 81022.93333333333,
+      "wc_max": 17376.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:00:00Z",
+      "wc": 81081.86666666667,
+      "wc_max": 13776.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:01:00Z",
+      "wc": 73851.73333333334,
+      "wc_max": 13728.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:02:00Z",
+      "wc": 58505.86666666667,
+      "wc_max": 12384.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:03:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:04:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 9.95,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:05:00Z",
+      "wc": 33344.53333333333,
+      "wc_max": 18432.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 9.65,
+      "mc_max": 5.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:06:00Z",
+      "wc": 66637.33333333333,
+      "wc_max": 17744.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 9.95,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:07:00Z",
+      "wc": 74958.4,
+      "wc_max": 12880.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 9.95,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:08:00Z",
+      "wc": 64663.73333333333,
+      "wc_max": 13888.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:09:00Z",
+      "wc": 44381.86666666667,
+      "wc_max": 11792.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:10:00Z",
+      "wc": 35.46666666666667,
+      "wc_max": 304.0,
+      "wc_min": 48.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:11:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.1,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:12:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:13:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:14:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.1,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:15:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:16:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:17:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:18:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:19:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T13:20:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    }
+  ],
+  "dashboard_peak_minute_tps": 81081.86666666667,
+  "dashboard_interval_logical_transactions": 35380768,
+  "interpretation": "Dashboard interval includes warm-up, measurement, drain and the failed arm. It has not been reconciled against complete proof-checked results; it is not a ten-minute sustained capacity result.",
+  "new_ten_minute_benchmark_performed_by_assistant": false
+}

@@ -68,7 +68,25 @@ The Git branch `native-payment-lanes-step6` selects MyLocalTonDocker's scripts. 
 | `NATIVE_LOAD_IMAGE` | Derived client image with the load-generator entrypoint and lane helper |
 | `SESSION_STATS_IMAGE` | Separate dashboard image |
 
-For **first-time setup**, make the matching TON base image available on A, then build the two derived images locally and obtain Session Stats:
+For **first-time setup**, make the matching TON base image available on A **before** building the derived images. A registry error such as `ghcr.io/corton-nommander/ton:cycle-clients-ed666c9a: not found` means the recorded base is unavailable to that build. `TON_BUILD_PULL=false` does not create a missing base, and neither MyLocalTonDocker Dockerfile compiles TON.
+
+The exact recorded base was verified in the desktop's Docker image store on 2026-09-07. For this local tag, transfer it from that desktop first (replace `SERVER_A` with A's SSH hostname/IP):
+
+```sh
+# On the desktop/image-owning machine; use the Docker context holding the image.
+docker image save --output "$HOME/ton-cycle-clients-ed666c9a.tar" \
+  ghcr.io/corton-nommander/ton:cycle-clients-ed666c9a
+scp "$HOME/ton-cycle-clients-ed666c9a.tar" root@SERVER_A:~/
+
+# On server A.
+docker image load --input "$HOME/ton-cycle-clients-ed666c9a.tar"
+docker image inspect --format '{{.Id}} {{.Os}}/{{.Architecture}}' \
+  ghcr.io/corton-nommander/ton:cycle-clients-ed666c9a
+```
+
+The recorded base ID is `sha256:f9e73cdb0c5463268b66046f76e2dc30eb7bb489c87189064c01ddc5b8a3ec0a`, platform `linux/amd64`, source revision `ed666c9a36674d15c08d2fd3564bc080aad677af`. The receiving servers must support its CPU architecture/instructions. Copying an image archive transfers binaries/layers and tags; it does not copy a running validator's database or container volumes. See [Docker image save](https://docs.docker.com/reference/cli/docker/image/save/).
+
+Then build the two derived images locally and obtain Session Stats:
 
 ```sh
 # From MyLocalTonDocker on A, after configuring .env.
@@ -77,7 +95,9 @@ TON_BUILD_PULL=false docker compose --env-file .env \
 docker compose --env-file .env --profile session-stats pull session-stats
 ```
 
-These are image-preparation commands; they do not start or recreate containers. The builds copy the checkout's current scripts onto `TON_IMAGE:TON_BRANCH`; they do not compile TON. `TON_BUILD_PULL=false` avoids deliberately refreshing an existing base image, but Docker may still fetch a missing base. The tag must therefore exist locally or in its registry. The recorded `cycle-clients-ed666c9a` base was a local build: if it has not been published, transfer it from the image-owning machine with `docker image save` / `docker image load`, or build the matching sidechain source before this step. Do not assume that cloning either repository makes that image available. Session Stats can likewise be loaded from an archive instead of pulled.
+These are image-preparation commands; they do not start or recreate containers. The builds copy the checkout's current scripts onto `TON_IMAGE:TON_BRANCH`. `TON_BUILD_PULL=false` avoids deliberately refreshing an existing base image, but Docker may still fetch a missing base. For another tag, load it, use an available matching registry image, or build the matching sidechain source first. Do not assume that cloning either repository makes an image available. Session Stats can likewise be loaded from an archive instead of pulled.
+
+If the same registry lookup fails after loading, first confirm `docker image inspect` succeeds in the context used for the build, then check `docker buildx ls`. For this local-base workflow, use the daemon's `docker` builder; for example, prefix the build command with `BUILDX_BUILDER=default` alongside `TON_BUILD_PULL=false`. Docker documents the [default builder's relationship to the active context](https://docs.docker.com/build/builders/).
 
 If the required derived images are already loaded on A, skip their builds. For an **already-running healthy genesis**, prepare only the client with `TON_BUILD_PULL=false docker compose --env-file .env --profile native-load-generator build native-load-generator`; the exporter can also build that service automatically when its configured image is missing. Complete image preparation before measurement.
 

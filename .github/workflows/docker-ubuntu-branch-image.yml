@@ -39,7 +39,8 @@ jobs:
           import urllib.parse
           import urllib.request
 
-          # Start and cancel an empty upload: no image or tag is published.
+          # Start an empty upload and cancel when the registry supports it:
+          # no blob, image, or tag is uploaded or published.
           # Never print registry tokens, response bodies, or upload URLs.
           class NoRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, request, response, code, message, headers, new_url):
@@ -102,10 +103,17 @@ jobs:
                   raise RegistryCheckError('Upload cleanup location is outside this repository upload path.')
               stage = 'empty upload cleanup'
               request = urllib.request.Request(cleanup_url, headers=headers, method='DELETE')
-              with opener.open(request, timeout=30) as response:
-                  print('GHCR empty upload cleanup returned HTTP ' + str(response.status) + '.')
-                  if response.status != 204:
-                      raise RegistryCheckError('Expected HTTP 204 to confirm empty upload cleanup.')
+              try:
+                  with opener.open(request, timeout=30) as response:
+                      print('GHCR empty upload cleanup returned HTTP ' + str(response.status) + '.')
+                      if response.status != 204:
+                          raise RegistryCheckError('Expected HTTP 204 to confirm empty upload cleanup.')
+                  print('Empty upload canceled.')
+              except urllib.error.HTTPError as error:
+                  if error.code != 405:
+                      raise
+                  print('Registry does not support empty-upload cancellation; '
+                        'no image or tag was published.')
           except RegistryCheckError as error:
               print('::error::GHCR ' + stage + ' failed: ' + str(error))
               sys.exit(1)
@@ -120,7 +128,7 @@ jobs:
               # Exception text can contain credential-bearing URLs or bodies.
               print('::error::GHCR ' + stage + ' failed (' + type(error).__name__ + ').')
               sys.exit(1)
-          print('GHCR package upload permission verified; empty upload canceled.')
+          print('GHCR package upload permission verified.')
           PY
 
   build-arm64:

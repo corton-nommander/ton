@@ -455,3 +455,53 @@ An exact minimum has not been measured. For planning, avoid links below **100 Mb
 This estimate is workload-specific: 16 distinct outputs instead of repeated identical outputs produce approximately **1,018-byte parents**, raising fresh BOC request payload to about **30.5 Mbit/s before retries**. Sixty thousand independent scalar messages/s is also a different test from sixty thousand batched logical transfers/s.
 
 Source references: `lite-client/native-load-generator.cpp:3725` (outputs), `crypto/vm/boc.cpp:223` (deduplication), `adnl/adnl-ext-connection.cpp:30` (framing), and `lite-client/native-load-generator.cpp:2603` (block downloads). The [saved desktop report](native-client-connections-2026-09-06.md) links original counters and classifications. A repeated remote benchmark with physical interface byte counters is needed to replace these estimates with a measured network requirement.
+
+
+## Admission profiling after the eight-lane plateau
+
+The admission profiling update adds exact-state configuration caching, stage and retry-cause counters,
+and block-signature executor measurements. MyLocalTonDocker's
+`benchmark/remote/admission-test-guide.md` contains the full A/B procedure and parameter table.
+Keep the current eight-lane database intact and four lanes as the historical performance reference;
+compare settings on the same topology first. Sixteen lanes remain deferred.
+
+Prepare the new published TON image and derived wrappers once on A using
+`bash start-native-genesis.sh --env-file .env`, then export with `--no-build-image` and import
+that new bundle on B. Stop/drain the existing test before upgrading. Both cache-off and cache-on
+controls must reuse this prebuilt image; do not pull/build between paired measurements.
+
+A now accepts `TON_NATIVE_ADMISSION_CONFIG_CACHE=0|1` (default 1) and
+`TON_NATIVE_VALIDATION_SIGNATURE_THREADS=1..64` (physical preset 8; fewer than 64 signed
+parents remain serial). The latter tunes NTRN block-signature fanout independently of
+`TON_NATIVE_EXECUTOR_THREADS=8` used by admission/state helpers. Existing eight-lane depth/split
+values and candidate timeout/reserve remain unchanged. These are starting settings to test,
+not an established optimum.
+
+From MyLocalTonDocker on A, run the read-only sampler in a separate terminal before B:
+
+```sh
+sudo python3 benchmark/remote/profile-native-validator.py \
+  --duration 1200 --interval 30 --dashboard-url http://127.0.0.1:18000 \
+  --output "$HOME/native-profile-cache-on-01"
+```
+
+From the newly imported directory on B:
+
+```sh
+bash run-remote-load.sh --connections 10 --duration 600 --warmup 60 \
+  --initial-cwnd 32768 --max-cwnd 65536 --submit-coalesce-ms 20
+```
+
+The standalone default is now one 10-connection arm, with 10 workers/32 signers and unchanged
+40-CPU/48g ceilings and admission/backlog budgets. A saves counter deltas and raw per-thread,
+CPU/cgroup and optional dashboard evidence. B saves `client-limits.json` even on successful runs,
+plus measurement-phase window/RTT/retry/backlog gauges in `progress.jsonl`.
+Use B's final timestamps to select A's matching samples; A's full sampling interval can include
+readiness, warm-up and drain. Sampler Ctrl-C stops only sampling, never genesis.
+
+For cache off/on/on/off, recreate and settle A identically using the same image and B settings;
+change only the cache environment flag. Then screen block-signature thread tiers 1/2/4/8 or B's
+coalescing 20/10 ms separately. Increase the window only when cap counters and live gauges show
+a binding credit limit. Full commands and artifact semantics are in the companion guide.
+Snapshot refresh/revalidation remains conditional on evidence that snapshot-change retries dominate;
+the current implementation retains the exact-state rejection and all proof/source-reuse gates.

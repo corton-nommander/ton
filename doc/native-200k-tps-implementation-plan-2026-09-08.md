@@ -60,6 +60,12 @@ Parameter calibration may remove an avoidable ceiling. No percentage gain or fou
 
 ## Priority 2 — admission and producer scheduling
 
+Implementation update: the admission profiling change adds exact-state configuration caching,
+retry-cause/stage counters, block-signature fanout measurements and a separate thread control,
+A-side profiling and B-side client-limit reports. Runtime gains remain unmeasured. Bounded snapshot
+refresh/revalidation and a persistent signature executor remain conditional on the collected evidence.
+See [diagnostic semantics](native-admission-diagnostics.md) and the remote client guide.
+
 This is the first substantive validator change, guided by the new measurements:
 
 1. Cache immutable decoded admission configuration by its exact masterchain state instead of rebuilding it unnecessarily. Measure parsing, state reads, signature verification, actor waiting and final reservation separately.

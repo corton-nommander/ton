@@ -1668,11 +1668,13 @@ class NativeLoadCoordinator final : public td::actor::Actor {
     auto canonical_overdrive_ratio = measured_canonical_avg_tps > 0.0
                                          ? measured_offered_avg_tps / measured_canonical_avg_tps
                                          : 0.0;
+    const bool chain_capacity_load_sufficient = native_load::chain_capacity_load_sufficient(
+        options_.target_tps, offer_target_attained, canonical_overdrive_ratio);
     bool chain_capacity_valid = final && benchmark_result_valid && total.measure_elapsed_seconds > 0.0 &&
                                 canonical_bucket_seconds > 0 &&
                                 measure_backpressure_fraction <= 0.01 && total.retry_exhausted == 0 &&
                                 total.sign_errors == 0 && total.transport_errors == 0 &&
-                                (offer_target_attained || canonical_overdrive_ratio >= 1.05);
+                                chain_capacity_load_sufficient;
     std::vector<const char*> correctness_reasons;
     std::vector<const char*> completion_reasons;
     std::vector<const char*> ingress_capacity_reasons;
@@ -1758,7 +1760,7 @@ class NativeLoadCoordinator final : public td::actor::Actor {
       append_reason(chain_capacity_reasons, total.transport_errors != 0,
                     "transport_errors");
       append_reason(chain_capacity_reasons,
-                    !offer_target_attained && canonical_overdrive_ratio < 1.05,
+                    !chain_capacity_load_sufficient,
                     "insufficient_load_over_canonical_throughput");
     }
     auto write_reason_array = [](const std::vector<const char*>& reasons) {

@@ -5,6 +5,17 @@
 
 #include "native-load-generator-policy.hpp"
 
+TEST(NativeLoadGeneratorPolicy, UnpacedCapacityRequiresIndependentOverdrive) {
+  // target_attained is historically true for an absent target. It must not
+  // turn a balanced, unpaced closed-loop run into capacity evidence.
+  ASSERT_TRUE(!native_load::chain_capacity_load_sufficient(0.0, true, 1.000337));
+  ASSERT_TRUE(!native_load::chain_capacity_load_sufficient(0.0, true, 1.04999));
+  ASSERT_TRUE(native_load::chain_capacity_load_sufficient(0.0, true, 1.05));
+  ASSERT_TRUE(native_load::chain_capacity_load_sufficient(80000.0, true, 1.0));
+  ASSERT_TRUE(!native_load::chain_capacity_load_sufficient(80000.0, false, 1.0));
+  ASSERT_TRUE(native_load::chain_capacity_load_sufficient(80000.0, false, 1.05));
+}
+
 TEST(NativeLoadGeneratorPolicy, ConnectionCountSupportsLargeSweepsWithinBoundedLimit) {
   for (auto connections : {1u, 10u, 50u, 100u, 256u, 300u, 500u, 1024u}) {
     ASSERT_TRUE(native_load::valid_connection_count(connections));

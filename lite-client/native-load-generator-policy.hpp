@@ -16,6 +16,13 @@ constexpr bool valid_connection_count(std::uint32_t connections) {
   return connections != 0 && connections <= max_connections;
 }
 
+// Unpaced load has no offered-rate target to attain. It must independently
+// demonstrate overdrive before being classified as chain-capacity evidence.
+constexpr bool chain_capacity_load_sufficient(double target_tps, bool target_attained,
+                                               double canonical_overdrive_ratio) {
+  return (target_tps > 0.0 && target_attained) || canonical_overdrive_ratio >= 1.05;
+}
+
 struct AdaptiveCwndAckResult {
   double cwnd{1.0};
   bool limited{false};

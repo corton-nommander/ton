@@ -2,7 +2,7 @@
 
 Date: 2026-09-08. This is an implementation and measurement plan, not a new benchmark result. No remote load, deployment, hardware purchase, or validator configuration change was performed for this plan.
 
-Implementation update: the subsequent eight-lane task extends the MyLocalTonDocker helpers through depth 3 and makes eight lanes the fresh `.env.physical` and remote-preset default. Exports still inherit the actual genesis topology. Sixteen lanes and the throughput experiments below remain future work; eight-lane throughput has not yet been measured. See the updated [remote client guide](native-remote-client-guide.md) for fresh-state and image requirements.
+Implementation update: MyLocalTonDocker commit `b5f5e76` extends the helpers through depth 3 and makes eight lanes the fresh `.env.physical` and remote-preset default. Exports still inherit the actual genesis topology. The subsequent user-reported eight-lane run increased block production to approximately 40–50 blocks/s while canonical native TPS remained approximately 50k: no reported throughput gain. Its exact measurement window, effective settings and final proof/drain record were not supplied, and the public dashboard was unreachable during follow-up. See the [eight-lane result and revised priorities](native-eight-lane-plateau-2026-09-08.md) and [remote client guide](native-remote-client-guide.md).
 
 ## Target and evidence
 
@@ -85,11 +85,11 @@ The published workflow already uses Clang 22 Release optimization, native Ed2551
 
 ## Priority 4 — scale independent lanes, then distribute their work
 
-Extend the test stack to fixed depths 3 and 4 (8 and 16 lanes): genesis configuration/marker validation, wallet-prefix generation, manifests, readiness, export/import, runner limits and all lane-balance acceptance checks. In particular, the local jq acceptance logic currently treats depth-2/four-lane balance specially and must validate every supported topology. The native consensus lane policy and follower are more general than these wrappers.
+Depth 3 support is implemented across genesis configuration/marker validation, wallet-prefix generation, manifests, readiness, export/import, runner limits and strict eight-lane balance acceptance. The reported eight-lane plateau makes further lane expansion a deferred experiment. First identify the shared admission, workload or validator-processing limit; more lanes on the same host have not demonstrated higher throughput. Depth 4 (16 lanes) still requires coordinated wrapper and validation changes.
 
 Wallet generation needs a deeper-prefix attempt budget or a better generation strategy: a fixed 128 attempts per wallet becomes unreliable across tens of thousands of wallets at depth 4. Use a new isolated genesis and lane-compatible funded accounts for topology experiments; do not treat changing split variables on the current chain as sufficient. Preserve the existing chain and materials.
 
-First compare 4/8/16 lanes on one host to identify shard concurrency and shared bottlenecks. Hold total source population fixed for that comparison; separately test holding sources per lane fixed. The latter changes state size and must not be attributed solely to lane count.
+Use four lanes as the incumbent performance reference and retain the current eight-lane state for diagnosis. Compare matched four/eight-lane results before considering sixteen lanes. Hold total source population fixed for that comparison; separately test holding sources per lane fixed. The latter changes state size and must not be attributed solely to lane count. Do not restart an eight-lane database with depth-2 settings to recover the reference.
 
 Four lanes at 50k imply roughly 12.5k/lane. Maintaining that per-lane rate across 16 independent lanes gives 200k **arithmetically**, or eight lanes at 25k/lane gives the same target. Both are engineering targets, not forecasts: all lanes on A still share its CPUs, pool actor, storage and masterchain work.
 
@@ -115,7 +115,7 @@ Architecture references: [TON sharding](https://docs.ton.org/foundations/shards)
 2. Independent window/coalescing/batch/resource screens.
 3. Admission/snapshot and ready-work scheduling improvements.
 4. Profile-led state commit and deterministic validation improvements.
-5. Coordinated 8/16-lane test support and single-host scaling results.
+5. Recheck four/eight-lane scaling after removing the identified shared limit; defer sixteen-lane support until justified.
 6. Hardware comparison and distributed shard placement where the measured ceiling requires them.
 
 Produce an intermediate commit for each isolated change, build both images before its comparison, save effective settings and every result, and keep the best **repeatably validated** version. Confirm the final target with repeated 600-second measurements and then a longer soak, recording proof completeness, final backlog, p95/p99 latency, per-lane balance and resource/network cost. Throughput must not come from omitted validation, unresolved offers, changed transfer counting or hidden state/durability reductions.

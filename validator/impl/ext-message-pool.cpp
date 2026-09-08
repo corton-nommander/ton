@@ -21,6 +21,7 @@
 #include "block/block.h"
 #include "block/mc-config.h"
 #include "td/actor/SharedFuture.h"
+#include "td/utils/StringBuilder.h"
 #include "tl/tlblib.hpp"
 #include "vm/dict.h"
 
@@ -38,6 +39,10 @@
 
 namespace ton::validator {
 void ExtMessagePool::start_up() {
+  if (const char* value = std::getenv("TON_NATIVE_ADMISSION_CONFIG_CACHE")) {
+    CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
+    native_config_cache_enabled_ = td::Slice(value) == "1";
+  }
   auto parse_bounded_env = [](const char* name, unsigned long fallback, unsigned long maximum) {
     const char* value = std::getenv(name);
     if (!value) {
@@ -71,6 +76,7 @@ void ExtMessagePool::start_up() {
     native_signature_verifiers_.push_back(td::actor::create_actor<NativeSignatureVerifier>("native-sig-verify"));
   }
   LOG(WARNING) << "native mempool configuration: signature_workers=" << workers
+               << " admission_config_cache=" << native_config_cache_enabled_
                << " collator_queue_limit=" << native_collator_queue_limit_
                << " max_retention_s=" << native_mempool_max_ttl_
                << " generic_retention_s=" << MempoolMsg::GENERIC_MEMPOOL_TTL_SECONDS;
@@ -150,6 +156,30 @@ td::Result<td::Ref<MasterchainState>> ExtMessagePool::pin_native_admission_maste
 td::Result<ExtMessagePool::NativeAdmissionSnapshot> ExtMessagePool::pin_native_admission_snapshot() {
   TRY_RESULT(state, pin_native_admission_masterchain_state());
   const auto block_id = state->get_block_id();
+  const auto state_cell = state->root_cell();
+  // Malformed/bootstrap roots still go through the ordinary parser error;
+  // never dereference a null root or cache a failed extraction.
+  const RootHash state_root = state_cell.not_null() ? RootHash{state_cell->get_hash().bits()} : RootHash::zero();
+  if (native_config_cache_enabled_ && state_cell.not_null()) {
+    if (const auto* cached = native_config_cache_.lookup(block_id, state_root)) {
+      ++native_config_cache_hits_;
+      // Apply mode transitions through the same path on hits and misses.
+      update_native_transfer_runs_mode(cached->runs_enabled);
+      update_native_payment_lane_depth(cached->payment_lane_policy
+          ? td::optional<td::uint32>{cached->payment_lane_policy.value().depth()} : td::optional<td::uint32>{});
+      auto snapshot = *cached;
+      snapshot.state = std::move(state);
+      return snapshot;
+    }
+  }
+  ++native_config_cache_misses_;
+  native_config_cache_.clear();
+  const double extract_started = td::Time::now();
+  bool extracted = false;
+  SCOPE_EXIT {
+    native_config_extract_time_.observe(td::Time::now() - extract_started);
+    if (!extracted) { ++native_config_errors_; }
+  };
   auto config_result =
       block::ConfigInfo::extract_config(state->root_cell(), block_id,
                                         block::ConfigInfo::needCapabilities | block::ConfigInfo::needWorkchainInfo);
@@ -162,11 +192,16 @@ td::Result<ExtMessagePool::NativeAdmissionSnapshot> ExtMessagePool::pin_native_a
   update_native_transfer_runs_mode(runs_enabled);
   update_native_payment_lane_depth(payment_lane_policy ? td::optional<td::uint32>{payment_lane_policy.value().depth()}
                                                        : td::optional<td::uint32>{});
-  return NativeAdmissionSnapshot{.state = std::move(state),
+  NativeAdmissionSnapshot snapshot{.state = std::move(state),
                                  .block_id = block_id,
                                  .chain_domain = config.get_zerostate_id().root_hash,
                                  .runs_enabled = runs_enabled,
                                  .payment_lane_policy = std::move(payment_lane_policy)};
+  extracted = true;
+  if (native_config_cache_enabled_) {
+    native_config_cache_.store(block_id, state_root, snapshot);
+  }
+  return snapshot;
 }
 
 td::Status ExtMessagePool::validate_native_admission_mode(const NativeAdmissionSnapshot &snapshot,
@@ -743,8 +778,30 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_parsed_ex
 
 td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_external_messages_until(
     std::vector<td::BufferSlice> batch, int priority, bool add_to_mempool, td::Timestamp deadline) {
+  const double batch_started_at = td::Time::now();
+  native_batch_telemetry_.begin_batch();
+  bool batch_completed = false;
+  const auto pool = actor_id(this);
+  SCOPE_EXIT {
+    if (!batch_completed) {
+      // An abandoned task frame may be destroyed by its caller. Keep all
+      // telemetry mutations on the pool actor, and measure before queueing.
+      td::actor::send_closure(pool, &ExtMessagePool::record_native_batch_abort, td::Time::now() - batch_started_at);
+    }
+  };
   BatchCheckResult output;
   output.statuses.resize(batch.size());
+  // Count final wire-indexed outcomes once, after duplicate statuses resolve.
+  // Abandonment can discard partial outcomes, recorded separately. Completion
+  // means a full pool result was produced; it does not imply RPC delivery.
+  auto complete_batch = [&](bool missing_masterchain = false) {
+    for (const auto& status : output.statuses) {
+      native_batch_telemetry_.record_result(status.accepted, status.error_code, status.error_message,
+                                            missing_masterchain);
+    }
+    native_batch_telemetry_.finish_batch(td::Time::now() - batch_started_at, true);
+    batch_completed = true;
+  };
   std::vector<bool> status_set(batch.size(), false);
   auto reject = [&](std::size_t index, td::Status error) {
     output.statuses[index] = ExternalMessageAdmissionResult::failure(std::move(error));
@@ -762,6 +819,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
       reject(i, td::Status::Error(ErrorCode::timeout, "external message admission deadline expired"));
     }
     native_batch_rejected_ += batch.size();
+    complete_batch();
     log_native_batch_stats();
     co_return output;
   }
@@ -770,6 +828,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
       reject(i, td::Status::Error(ErrorCode::notready, "not ready"));
     }
     native_batch_rejected_ += batch.size();
+    complete_batch(true);
     log_native_batch_stats();
     co_return output;
   }
@@ -786,6 +845,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
   std::vector<std::size_t> generic_indices;
   std::vector<std::size_t> native_indices;
   auto limits = last_masterchain_state_->get_ext_msg_limits();
+  const double decode_started = td::Time::now();
   for (std::size_t i = 0; i < batch.size(); ++i) {
     if (deadline && deadline.is_in_past()) {
       reject(i, td::Status::Error(ErrorCode::timeout, "external message admission deadline expired"));
@@ -838,7 +898,9 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     }
   }
 
+  native_batch_telemetry_.decode.observe(td::Time::now() - decode_started);
   td::optional<NativeAdmissionSnapshot> native_snapshot;
+  double snapshot_pinned_at = 0;
   if (!native_indices.empty()) {
     auto snapshot = pin_native_admission_snapshot();
     if (snapshot.is_error()) {
@@ -850,6 +912,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
       }
     } else {
       native_snapshot = snapshot.move_as_ok();
+      snapshot_pinned_at = td::Time::now();
       for (auto index : native_indices) {
         if (status_set[index]) {
           continue;
@@ -1040,11 +1103,13 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
           auto shard_view = lookup_native_admission_shard_view(mc_block_id, shard_block_id);
           if (!shard_view) {
             ++native_batch_shard_manager_waits_;
+            const double shard_wait_started_at = td::Time::now();
             auto state_result = co_await td::actor::await_with_timeout(
                                     td::actor::ask(manager_, &ValidatorManager::wait_block_state_short,
                                                    shard_block_id, 0, deadline, false),
                                     deadline)
                                     .wrap();
+            native_batch_telemetry_.shard_wait.observe(td::Time::now() - shard_wait_started_at);
             if (state_result.is_error()) {
               auto error = state_result.move_as_error();
               record_native_admission_manager_wait_error(error);
@@ -1145,6 +1210,9 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     wake_native_callbacks(&changed_native_sources);
   }
 
+  // Includes native prechecks, dispatch to signature actors, and waiting for
+  // their group. This is batch wall residence, not summed verifier CPU time.
+  const double verification_started_at = td::Time::now();
   std::vector<std::size_t> verify_indices;
   std::vector<td::actor::StartedTask<td::Unit>> verification_tasks;
   for (const auto &[address, indices] : source_items) {
@@ -1205,6 +1273,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
   }
   if (!verification_tasks.empty()) {
     auto verification_results = co_await td::actor::all_wrap(std::move(verification_tasks));
+    native_batch_telemetry_.verification.observe(td::Time::now() - verification_started_at);
     for (std::size_t i = 0; i < verification_results.size(); ++i) {
       if (verification_results[i].is_error()) {
         reject(verify_indices[i], verification_results[i].move_as_error());
@@ -1219,6 +1288,8 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     // after that snapshot changed. Legacy scalar admission retains its old
     // behavior unless the newly applied config has switched to run-only.
     auto current_snapshot = pin_native_admission_snapshot();
+    const double snapshot_age = td::Time::now() - snapshot_pinned_at;
+    native_batch_telemetry_.snapshot_age.observe(snapshot_age);
     if (current_snapshot.is_error()) {
       auto error = current_snapshot.move_as_error();
       for (auto index : verify_indices) {
@@ -1229,12 +1300,17 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     } else {
       const auto &current = current_snapshot.ok();
       const bool mc_changed = current.block_id != native_snapshot.value().block_id;
+      bool changed_snapshot_recorded = false;
       for (auto index : verify_indices) {
         if (status_set[index]) {
           continue;
         }
         const bool is_run = items[index].native_admission.value().is_run;
         if (is_run && mc_changed) {
+          if (!changed_snapshot_recorded) {
+            native_batch_telemetry_.changed_snapshot_age.observe(snapshot_age);
+            changed_snapshot_recorded = true;
+          }
           reject(index, td::Status::Error(ErrorCode::notready,
                                           "native transfer run admission snapshot changed; retry"));
           continue;
@@ -1247,6 +1323,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     }
   }
 
+  const double reservation_started = td::Time::now();
   std::vector<NativeAdmissionOrderKey> order_keys;
   for (auto index : verify_indices) {
     if (!status_set[index]) {
@@ -1283,6 +1360,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     accept(index);
   }
 
+  native_batch_telemetry_.reservation.observe(td::Time::now() - reservation_started);
   for (std::size_t i = 0; i < items.size(); ++i) {
     if (items[i].duplicate_of) {
       auto primary = items[i].duplicate_of.value();
@@ -1303,8 +1381,46 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
       ++native_batch_rejected_;
     }
   }
+  complete_batch();
   log_native_batch_stats();
   co_return output;
+}
+
+void ExtMessagePool::record_native_batch_abort(double residence_seconds) {
+  native_batch_telemetry_.finish_batch(residence_seconds, false);
+}
+
+std::string ExtMessagePool::native_batch_telemetry_string(char separator) const {
+  td::StringBuilder out;
+  auto emit = [&](const char* name, auto value) { out << ' ' << name << separator << value; };
+  const auto& telemetry = native_batch_telemetry_;
+  emit("finished_batches", telemetry.finished_batches);
+  emit("aborted_batches", telemetry.aborted_batches);
+  emit("active_batches", telemetry.active_batches);
+  emit("peak_active_batches", telemetry.peak_active_batches);
+  emit("not_ready_total", telemetry.not_ready_total);
+  emit("config_cache_enabled", native_config_cache_enabled_ ? 1 : 0);
+  emit("config_cache_hits", native_config_cache_hits_);
+  emit("config_cache_misses", native_config_cache_misses_);
+  emit("config_errors", native_config_errors_);
+  for (std::size_t i = 0; i < telemetry.cause_names.size(); ++i) {
+    emit(telemetry.cause_names[i], telemetry.not_ready[i]);
+  }
+  auto timing = [&](const char* name, const NativeAdmissionWallTime& value) {
+    out << ' ' << name << "_samples" << separator << value.samples
+        << ' ' << name << "_sum_s" << separator << value.sum_seconds
+        << ' ' << name << "_max_s" << separator << value.max_seconds;
+  };
+  timing("decode", telemetry.decode);
+  timing("reservation", telemetry.reservation);
+  timing("residence", telemetry.residence);
+  timing("aborted_residence", telemetry.aborted_residence);
+  timing("shard_wait", telemetry.shard_wait);
+  timing("verification", telemetry.verification);
+  timing("snapshot_age", telemetry.snapshot_age);
+  timing("changed_snapshot_age", telemetry.changed_snapshot_age);
+  timing("config_extract", native_config_extract_time_);
+  return out.as_cslice().str();
 }
 
 void ExtMessagePool::log_native_batch_stats() {
@@ -1343,6 +1459,7 @@ void ExtMessagePool::log_native_batch_stats() {
             << " watermark_lag_rejections=" << native_batch_watermark_lag_rejections_
             << " max_watermark_nonce_lag=" << native_batch_max_watermark_nonce_lag_
             << " ignored_mc_state_updates=" << native_batch_ignored_mc_state_updates_
+            << native_batch_telemetry_string('=')
             << " reconciliation_tracked_candidates=" << native_reconciliation_tracked_candidates_
             << " reconciliation_tracked_messages=" << native_reconciliation_tracked_messages_
             << " reconciliation_runs=" << native_reconciliation_runs_
@@ -3215,6 +3332,8 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                 << " watermark_lag_rejections:" << native_batch_watermark_lag_rejections_
                 << " max_watermark_nonce_lag:" << native_batch_max_watermark_nonce_lag_
                 << " ignored_mc_state_updates:" << native_batch_ignored_mc_state_updates_);
+  vec.emplace_back("total.ext_msg_batch_diagnostics", native_batch_telemetry_string(':'));
+  vec.emplace_back("total.native_signature_executor", block::native_signature_executor_stats());
   vec.emplace_back(
       "total.ext_msg_native_reconciliation",
       PSTRING() << "tracked_candidates:" << native_reconciliation_tracked_candidates_

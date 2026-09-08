@@ -636,6 +636,10 @@ td::Status verify_native_transfer_signatures_parallel(const std::vector<const Na
                                                       unsigned workers = 0);
 td::Status verify_native_transfer_signatures_parallel(const std::vector<const NativeTransfer*>& transfers,
                                                       const ton::Bits256& chain_domain, unsigned workers = 0);
+// Cumulative completed NTRN signature invocations, including rejected blocks.
+// Launch/join are overlapping wall-time attribution, never summed CPU time.
+std::string native_signature_executor_stats();
+
 // A v5 NativeTransferRun authorizes all of its ordered outputs with one
 // domain-separated signature.  Keep this separate from the transfer helper:
 // flattened v5 entries deliberately do not have independently valid NTFX

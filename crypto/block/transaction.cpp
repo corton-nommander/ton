@@ -24,6 +24,7 @@
 #include "crypto/Ed25519.h"
 #include "crypto/openssl/rand.hpp"
 #include "td/utils/Timer.h"
+#include "td/utils/StringBuilder.h"
 #include "td/utils/bits.h"
 #include "td/utils/uint128.h"
 #include "ton/ton-shard.h"
@@ -1570,12 +1571,66 @@ td::Status verify_native_transfer_signatures_parallel(const std::vector<const Na
   return td::Status::OK();
 }
 
+namespace {
+struct NativeSignatureExecutorTelemetry {
+  std::atomic<td::uint64> calls{0}, parents{0}, threads{0}, serial{0};
+  std::atomic<td::uint64> launch_ns{0}, join_ns{0}, residence_ns{0};
+  std::array<std::atomic<td::uint64>, 4> sizes{};
+  std::array<std::atomic<td::uint64>, 5> workers{};
+} native_signature_telemetry;
+
+td::uint64 native_wall_ns(double seconds) {
+  return static_cast<td::uint64>(std::max(0.0, seconds) * 1e9);
+}
+}  // namespace
+
+std::string native_signature_executor_stats() {
+  const auto& t = native_signature_telemetry;
+  td::StringBuilder out;
+  out << "calls:" << t.calls.load(std::memory_order_relaxed)
+      << " parents:" << t.parents.load(std::memory_order_relaxed)
+      << " threads_created:" << t.threads.load(std::memory_order_relaxed)
+      << " serial_calls:" << t.serial.load(std::memory_order_relaxed)
+      << " launch_sum_s:" << t.launch_ns.load(std::memory_order_relaxed) * 1e-9
+      << " join_sum_s:" << t.join_ns.load(std::memory_order_relaxed) * 1e-9
+      << " residence_sum_s:" << t.residence_ns.load(std::memory_order_relaxed) * 1e-9;
+  const char* sizes[] = {"lt64", "64_127", "128_255", "ge256"};
+  const char* workers[] = {"1", "2", "4", "8", "other"};
+  for (unsigned i = 0; i < 4; ++i) out << " parents_" << sizes[i] << ':' << t.sizes[i].load(std::memory_order_relaxed);
+  for (unsigned i = 0; i < 5; ++i) out << " workers_" << workers[i] << ':' << t.workers[i].load(std::memory_order_relaxed);
+  return out.as_cslice().str();
+}
+
 td::Status verify_native_transfer_run_signatures_parallel(const std::vector<const NativeTransferRun*>& runs,
                                                           const ton::Bits256& chain_domain, unsigned workers) {
+  // Tune block-signature fanout independently from admission verifier actors
+  // and state/trie helpers. Explicit callers still take precedence.
+  if (!workers) {
+    if (const char* value = std::getenv("TON_NATIVE_VALIDATION_SIGNATURE_THREADS")) {
+      char* end = nullptr;
+      auto parsed = std::strtoul(value, &end, 10);
+      CHECK(end != value && !*end && parsed >= 1 && parsed <= 64);
+      workers = static_cast<unsigned>(parsed);
+    }
+  }
   workers = native_executor_workers(workers, runs.size());
   if (!workers) {
     return td::Status::OK();
   }
+  const double started = td::Time::now();
+  double launch_seconds = 0, join_seconds = 0;
+  SCOPE_EXIT {
+    auto& t = native_signature_telemetry;
+    t.parents.fetch_add(runs.size(), std::memory_order_relaxed);
+    t.threads.fetch_add(workers > 1 ? workers : 0, std::memory_order_relaxed);
+    t.serial.fetch_add(workers == 1, std::memory_order_relaxed);
+    t.launch_ns.fetch_add(native_wall_ns(launch_seconds), std::memory_order_relaxed);
+    t.join_ns.fetch_add(native_wall_ns(join_seconds), std::memory_order_relaxed);
+    t.residence_ns.fetch_add(native_wall_ns(td::Time::now() - started), std::memory_order_relaxed);
+    t.sizes[runs.size() < 64 ? 0 : runs.size() < 128 ? 1 : runs.size() < 256 ? 2 : 3].fetch_add(1, std::memory_order_relaxed);
+    t.workers[workers == 1 ? 0 : workers == 2 ? 1 : workers == 4 ? 2 : workers == 8 ? 3 : 4].fetch_add(1, std::memory_order_relaxed);
+    t.calls.fetch_add(1, std::memory_order_relaxed);
+  };
   std::atomic<std::size_t> cursor{0};
   std::atomic<std::size_t> first_failure{runs.size()};
   auto run = [&] {
@@ -1595,12 +1650,16 @@ td::Status verify_native_transfer_run_signatures_parallel(const std::vector<cons
   } else {
     std::vector<std::thread> threads;
     threads.reserve(workers);
+    const double launch_started = td::Time::now();
     for (unsigned i = 0; i < workers; ++i) {
       threads.emplace_back(run);
     }
+    launch_seconds = td::Time::now() - launch_started;
+    const double join_started = td::Time::now();
     for (auto& thread : threads) {
       thread.join();
     }
+    join_seconds = td::Time::now() - join_started;
   }
   auto failure = first_failure.load(std::memory_order_relaxed);
   if (failure != runs.size()) {

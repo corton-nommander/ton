@@ -1,9 +1,9 @@
 # Native admission diagnostics
 
-This document describes the preserved, unpromoted diagnostic trial in local
-branch `perf/proof-trial-20260906` (live image source `6a96c953`). Production
-code on master retains incumbent `4caa92df` after the full live series failed
-capacity gates. See [the selection report](native-performance-cycles-2026-09-06-followup.md).
+The current admission profiling change restores the tested diagnostic instrumentation
+from `perf/proof-trial-20260906` without adopting that branch's unpromoted proof
+optimization. It also adds an exact-state configuration cache and signature
+executor measurements. Production TPS improvement remains to be measured on A/B.
 
 `total.ext_msg_batch_diagnostics` is a cumulative ExtMessagePool statistics key.
 The same fields appear as `name=value` in the existing, rate-limited native
@@ -67,6 +67,9 @@ Each timing prefix has `_samples`, `_sum_s`, and `_max_s` fields:
 
 | Prefix | One sample covers |
 | --- | --- |
+| `decode` | Native/generic batch decoding and duplicate detection, before initial snapshot pin. |
+| `reservation` | Deterministic ordering, native reservation and finalization before duplicate statuses resolve. |
+| `config_extract` | One uncached configuration projection, including mode updates/cache fill; errors also count. This covers batch and single-message snapshot pins. |
 | `residence` | Pool coroutine entry through completed result accounting. |
 | `aborted_residence` | Pool coroutine entry through abandoned-frame cleanup, measured before posting bookkeeping. |
 | `shard_wait` | One completed native shard-manager await, including timeout/error results. |
@@ -95,3 +98,62 @@ and invalid timing samples. These helper tests do not simulate a complete
 liteserver timeout or force a live masterchain/account-revision race. Runtime
 before/after counter deltas are still required to establish which causes explain
 an observed retry increase.
+
+## Exact-state configuration cache
+
+`TON_NATIVE_ADMISSION_CONFIG_CACHE=1` is the binary default. Set it to `0` for
+a matched control using the **same image**; restart/settle both arms consistently.
+The single actor-local entry is keyed by the full masterchain `BlockIdExt` and
+state-root hash, never sequence number alone. It retains only one snapshot's
+immutable domain, activation and lane-policy facts and its state reference.
+Null roots and extraction errors are never cached. Misses replace the previous
+entry; mode transition checks run on hits as well as misses. Existing nonce,
+balance, locality, reservation and post-verification snapshot guards are unchanged.
+
+`config_cache_enabled`, `config_cache_hits`, `config_cache_misses`, `config_errors`
+and `config_extract_{samples,sum_s,max_s}` appear in the diagnostics key. Disabled
+cache pins count as misses/extractions. Configuration parsing during applied-state
+mode refresh is outside this pin-path timer. A high hit rate alone is not a TPS win.
+
+## Block signature overhead
+
+`total.native_signature_executor` records completed NTRN block-signature verifier
+invocations, including rejected blocks; it is **not canonical block accounting**.
+It contains `calls`, `parents`, `threads_created`, `serial_calls`,
+`launch_sum_s`, `join_sum_s`, `residence_sum_s`, parent-count buckets
+`parents_lt64`, `parents_64_127`, `parents_128_255`, `parents_ge256`, and actual
+worker-count buckets `workers_1`, `workers_2`, `workers_4`, `workers_8`, `workers_other`.
+Values are relaxed atomic snapshots and may briefly be mutually inconsistent.
+Thread launch wall time overlaps verification already running on launched threads;
+join measures remaining wait. Neither is exclusive CPU cost. Empty invocations
+are excluded. Existing per-block validation replay/materialization/dictionary
+and collation execution/commit timers remain available through Session Stats.
+
+`TON_NATIVE_VALIDATION_SIGNATURE_THREADS=1..64` overrides NTRN block-signature
+fanout only. Unset retains `TON_NATIVE_EXECUTOR_THREADS`; explicit function
+arguments take precedence. Fewer than 64 signed parents still use one worker.
+The physical preset explicitly retains 8. Compare 1/2/4/8 individually with
+admission workers and workload fixed before selecting a winner. No reusable
+thread-pool rewrite is promoted without profiling evidence.
+
+Use MyLocalTonDocker's `benchmark/remote/profile-native-validator.py` on A for
+counter deltas, stage means, per-thread CPU/runqueue samples, resource limits,
+container/process identity and optional dashboard observations. B's runner saves
+`client-limits.json` on every arm and includes live window/RTT/retry observations
+in `progress.jsonl`. Missing diagnostics or resets are reported, not inferred as
+zero. Whole-sampler intervals can include readiness/warmup/drain; match the raw
+sample timestamps to B's final measurement window.
+
+A bounded snapshot refresh/revalidation remains conditional: use the completed
+input rejection fraction and stage timings to establish material snapshot churn
+first. Do not remove the exact-state rejection, lengthen its RPC deadline or count
+retries as new offered transfers to improve a benchmark number.
+
+## Local validation for this implementation
+
+The Release validator-engine build and focused tests passed: 8 admission telemetry/cache tests,
+69 pool scheduler tests (including malformed configuration not entering the cache), and 35
+native-state tests including serial/parallel valid, invalid-domain and null-parent signatures.
+MyLocalTonDocker passed 67 remote-client integration tests, 7 profiler tests and the full benchmark
+reporting suite. Compose rendering confirmed cache/thread overrides while retaining lane depth 3.
+These checks do not simulate a production snapshot race or establish a TPS gain; A/B results are pending.

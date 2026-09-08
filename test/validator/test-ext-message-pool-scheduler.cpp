@@ -99,6 +99,16 @@ class ExtMessagePoolTestAccess {
     td::uint64 excluded{0};
   };
 
+  static bool malformed_config_is_never_cached() {
+    auto pool = make_pool();
+    pool.last_masterchain_state_ = masterchain_state(42);
+    for (unsigned i = 0; i < 2; ++i) {
+      if (pool.pin_native_admission_snapshot().is_ok()) { return false; }
+    }
+    return pool.native_config_cache_hits_ == 0 && pool.native_config_cache_misses_ == 2 &&
+           pool.native_config_errors_ == 2;
+  }
+
   static ExtMessagePool make_pool() {
     return ExtMessagePool({}, {});
   }
@@ -887,6 +897,10 @@ class ExtMessagePoolTestAccess {
 static_assert(ExtMessagePoolTestAccess::max_native_queue_limit() == 65'536);
 static_assert(ExtMessagePoolTestAccess::max_native_queue_limit() == block::NativeTransferBatch::max_entries);
 static_assert(ExtMessagePoolTestAccess::native_delivery_chunk() == 512);
+
+TEST(ExtMessagePoolScheduler, MalformedConfigurationDoesNotPopulateAdmissionCache) {
+  ASSERT_TRUE(ExtMessagePoolTestAccess::malformed_config_is_never_cached());
+}
 
 TEST(ExtMessagePoolScheduler, NativeTransferRunAdmissionRequiresVersionAndCapability) {
   ASSERT_TRUE(!ExtMessagePoolTestAccess::native_transfer_runs_enabled(

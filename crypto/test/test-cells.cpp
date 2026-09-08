@@ -1699,6 +1699,19 @@ TEST(NativeStateEngine, native_transfer_run_is_domain_signed_and_canonical) {
   std::vector<const block::NativeTransferRun*> signed_runs{&run};
   ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain_a).is_ok());
   ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain_b).is_error());
+  // Exercise both executor paths without changing signature acceptance, and
+  // keep telemetry observational even for rejected/null signed parents.
+  signed_runs.assign(64, &run);
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain_a).is_ok());
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain_a, 1).is_ok());
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain_a, 4).is_ok());
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain_b, 4).is_error());
+  signed_runs[31] = nullptr;
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain_a, 4).is_error());
+  auto executor_stats = block::native_signature_executor_stats();
+  ASSERT_TRUE(executor_stats.find("threads_created:") != std::string::npos);
+  ASSERT_TRUE(executor_stats.find("parents_64_127:") != std::string::npos);
+
 
   vm::CellBuilder first_builder;
   ASSERT_TRUE(run.store_external(first_builder));

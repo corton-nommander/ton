@@ -1,6 +1,6 @@
 # Desktop admission measurements — 2026-09-08
 
-Status: cache-off control completed; treatment cycles in progress.
+Status: three measurements completed; intermediate admission-window screen pending.
 
 ## Fixed workload and provenance
 
@@ -29,7 +29,9 @@ reports, getstats samples, Docker resource samples and `analysis.json`.
 
 | Arm | Cache | Initial / max logical window | Offered TPS | Canonical native TPS | Drain / proof |
 | --- | --- | --- | ---: | ---: | --- |
-| `02-cache-off` | 0 | 32,768 / 65,536 | 61,170.6 | **61,150.0** | Passed; zero backlog/conflicts/follower errors |
+| `02-cache-off` | 0 | 32,768 / 65,536 | 61,170.6 | 61,150.0 | Passed; zero backlog/conflicts/follower errors |
+| `03-cache-on` | 1 | 32,768 / 65,536 | 61,892.2 | **61,950.3** | Passed; zero backlog/conflicts/follower errors |
+| `04-smaller-window` | 1 | 4,096 / 8,192 | 62,003.3 | 61,843.8 | Passed; zero backlog/conflicts/follower errors |
 
 TPS counts logical native transfers, not independent signatures or general TVM
 transactions. This control observed 36,628,864 canonical transfers in 599 complete
@@ -41,8 +43,15 @@ it was stopped during topology readiness and is preserved as rejected setup evid
 (`target_tps=0`) attained when evaluating its capacity flag. Raw flags are retained,
 but the table reports sustained observed throughput. Control offered/canonical ratio
 is only 1.00034, not the required 1.05 independent overdrive for an unpaced capacity
-claim. A reporting correction is being validated separately; measured binaries are
-kept fixed throughout the comparison.
+claim. Reporting correction `3dffcd38` passed 65 policy tests and a Release generator
+build. It is not injected into the measured images; binaries remain fixed
+throughout the comparison. Both arms are observed-throughput evidence.
+
+Cache-on was 1.31% above the first control. One pair does not establish a repeatable
+gain at this size. The 8,192-window arm was only 0.17% below cache-on, with lower latency and
+no timeouts: `not_ready` responses fell from 624,249 to 333,984 (whole-run
+physical response counts, including warm-up). The intermediate 16,384 ceiling
+is the next screen; neither small difference establishes a repeatable TPS gain.
 
 ## Control diagnostics
 

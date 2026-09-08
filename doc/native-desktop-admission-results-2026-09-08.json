@@ -1,0 +1,185 @@
+{
+  "schema": "native-desktop-admission-comparison-v1",
+  "scope": "Sustained observed native logical throughput, not an independently overdriven unpaced capacity ceiling. Sequential arms; no repeated-setting significance claim.",
+  "ton_image_revision": "64aabbff41d7a9d3e7d649994896baa9b27a69d0",
+  "mylocalton_config_commit": "e44ea67",
+  "connections": 10,
+  "submit_coalesce_ms": 20,
+  "lane_depth": 2,
+  "sources": 24576,
+  "signed_run_quantum": 16,
+  "client_workers": 6,
+  "client_signers": 6,
+  "validator_cpu_quota": 16,
+  "client_cpu_quota": 6,
+  "results": [
+    {
+      "arm": "02-cache-off",
+      "cache_enabled": false,
+      "initial_cwnd": 32768,
+      "max_cwnd": 65536,
+      "canonical_logical_tps": 61150.02337228714,
+      "offered_logical_tps": 61170.613333333335,
+      "duration_s": 600,
+      "canonical_bucket_s": 599,
+      "canonical_transfers": 36628864,
+      "proof_and_drain_complete": true,
+      "strict_reuse_valid": true,
+      "snapshot_rejection_fraction": 0.1854807202593515,
+      "cache_hit_fraction": 0.0,
+      "stage_mean_ms": {
+        "decode": 0.2927789423294953,
+        "reservation": 0.4329155880470981,
+        "residence": 98.69574720137037,
+        "shard_wait": 51.86910229346636,
+        "verification": 80.15780509998943,
+        "snapshot_age": 97.94324205047589,
+        "changed_snapshot_age": 118.43624100660064,
+        "config_extract": 0.011722456635421014
+      },
+      "mean_cpu_equivalents": {
+        "genesis": 9.574294736842106,
+        "native-load-generator": 0.7831473684210526,
+        "session-stats": 0.5490105263157895
+      },
+      "timeouts": 114,
+      "not_ready_responses": 660797,
+      "retry_exhausted": 0,
+      "median_admission_latency_bucket_ms": 200,
+      "max_admission_latency_ms": 4392.029416000241,
+      "independent_load_margin": {
+        "offered_over_canonical": 1.0003367122351015,
+        "at_least_five_percent_overdrive": false,
+        "semantics": "Original generator capacity flag is preserved above; target=0 incorrectly satisfied its target-attainment branch. Do not use that flag to claim capacity for this image."
+      },
+      "artifact": "build/benchmarks/desktop-admission-20260908/02-cache-off"
+    },
+    {
+      "arm": "03-cache-on",
+      "cache_enabled": true,
+      "initial_cwnd": 32768,
+      "max_cwnd": 65536,
+      "canonical_logical_tps": 61950.317195325544,
+      "offered_logical_tps": 61892.24,
+      "duration_s": 600,
+      "canonical_bucket_s": 599,
+      "canonical_transfers": 37108240,
+      "proof_and_drain_complete": true,
+      "strict_reuse_valid": true,
+      "snapshot_rejection_fraction": 0.18180593080991048,
+      "cache_hit_fraction": 0.9991364927580526,
+      "stage_mean_ms": {
+        "decode": 0.3290154944251103,
+        "reservation": 0.5326771029591045,
+        "residence": 113.33601149266053,
+        "shard_wait": 54.74768191157716,
+        "verification": 94.6512209821676,
+        "snapshot_age": 112.46557579048866,
+        "changed_snapshot_age": 113.52171287933244,
+        "config_extract": 0.025752727272727274
+      },
+      "mean_cpu_equivalents": {
+        "genesis": 9.809726315789474,
+        "native-load-generator": 0.7460684210526316,
+        "session-stats": 0.7048684210526316
+      },
+      "timeouts": 89,
+      "not_ready_responses": 624249,
+      "retry_exhausted": 0,
+      "median_admission_latency_bucket_ms": 200,
+      "max_admission_latency_ms": 3997.1905309998874,
+      "independent_load_margin": {
+        "offered_over_canonical": 0.9990625198069215,
+        "at_least_five_percent_overdrive": false,
+        "semantics": "Original generator capacity flag is preserved above; target=0 incorrectly satisfied its target-attainment branch. Do not use that flag to claim capacity for this image."
+      },
+      "artifact": "build/benchmarks/desktop-admission-20260908/03-cache-on"
+    },
+    {
+      "arm": "04-smaller-window",
+      "cache_enabled": true,
+      "initial_cwnd": 4096,
+      "max_cwnd": 8192,
+      "canonical_logical_tps": 61843.81969949917,
+      "offered_logical_tps": 62003.306666666664,
+      "duration_s": 600,
+      "canonical_bucket_s": 599,
+      "canonical_transfers": 37044448,
+      "proof_and_drain_complete": true,
+      "strict_reuse_valid": true,
+      "snapshot_rejection_fraction": 0.11400672109667002,
+      "cache_hit_fraction": 0.9985881225155384,
+      "stage_mean_ms": {
+        "decode": 0.22631711547495256,
+        "reservation": 0.4179189590719824,
+        "residence": 72.85267610531345,
+        "shard_wait": 29.943722356772163,
+        "verification": 65.81833269623806,
+        "snapshot_age": 72.20062270976965,
+        "changed_snapshot_age": 70.95993259529145,
+        "config_extract": 0.027351783517835175
+      },
+      "mean_cpu_equivalents": {
+        "genesis": 9.986994736842105,
+        "native-load-generator": 0.8823736842105263,
+        "session-stats": 0.7013
+      },
+      "timeouts": 0,
+      "not_ready_responses": 333984,
+      "retry_exhausted": 0,
+      "median_admission_latency_bucket_ms": 100,
+      "max_admission_latency_ms": 1474.9924340003417,
+      "independent_load_margin": {
+        "offered_over_canonical": 1.002578866699089,
+        "at_least_five_percent_overdrive": false,
+        "semantics": "Original generator capacity flag is preserved above; target=0 incorrectly satisfied its target-attainment branch. Do not use that flag to claim capacity for this image."
+      },
+      "artifact": "build/benchmarks/desktop-admission-20260908/04-smaller-window"
+    },
+    {
+      "arm": "05-intermediate-window",
+      "cache_enabled": true,
+      "initial_cwnd": 8192,
+      "max_cwnd": 16384,
+      "canonical_logical_tps": 61883.13856427379,
+      "offered_logical_tps": 61764.45333333333,
+      "duration_s": 600,
+      "canonical_bucket_s": 599,
+      "canonical_transfers": 37068000,
+      "proof_and_drain_complete": true,
+      "strict_reuse_valid": true,
+      "snapshot_rejection_fraction": 0.1735271691679645,
+      "cache_hit_fraction": 0.9981893607755953,
+      "stage_mean_ms": {
+        "decode": 0.32799016935470504,
+        "reservation": 0.6006512413602432,
+        "residence": 128.04886626559988,
+        "shard_wait": 61.96433159484457,
+        "verification": 108.1341266298037,
+        "snapshot_age": 127.1105895659386,
+        "changed_snapshot_age": 123.96882561385704,
+        "config_extract": 0.030396624472573838
+      },
+      "mean_cpu_equivalents": {
+        "genesis": 9.869126315789474,
+        "native-load-generator": 0.9133631578947369,
+        "session-stats": 0.7458684210526316
+      },
+      "timeouts": 24,
+      "not_ready_responses": 524550,
+      "retry_exhausted": 0,
+      "median_admission_latency_bucket_ms": 200,
+      "max_admission_latency_ms": 3798.253083000418,
+      "independent_load_margin": {
+        "offered_over_canonical": 0.998082107118449,
+        "at_least_five_percent_overdrive": false,
+        "semantics": "Original generator capacity flag is preserved above; target=0 incorrectly satisfied its target-attainment branch. Do not use that flag to claim capacity for this image."
+      },
+      "artifact": "build/benchmarks/desktop-admission-20260908/05-intermediate-window"
+    }
+  ],
+  "retained_highest_observed_arm": "03-cache-on",
+  "setup_attempt_excluded": "01-control: interrupted while waiting for four lanes; zero native-load-v2 reports and no offered traffic",
+  "reporting_fix_commit": "3dffcd38",
+  "validation": "65 policy tests passed; Release native-load-generator build passed; activation/configuration tests passed; all four measured runs passed strict reuse and full canonical proof/drain checks."
+}

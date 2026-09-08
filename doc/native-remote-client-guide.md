@@ -505,3 +505,27 @@ coalescing 20/10 ms separately. Increase the window only when cap counters and l
 a binding credit limit. Full commands and artifact semantics are in the companion guide.
 Snapshot refresh/revalidation remains conditional on evidence that snapshot-change retries dominate;
 the current implementation retains the exact-state rejection and all proof/source-reuse gates.
+
+
+## Desktop reference measurements (2026-09-08)
+
+The desktop `.env.desktop` now selects a fresh four-lane reference, 10 connections,
+600 measured seconds and 20 ms coalescing, using the verified revision image.
+[The completed desktop report](native-desktop-admission-benchmark-2026-09-08.md)
+records the four strict-image-reuse tests, bootstrap workaround, canonical results
+and the capacity-reporting correction. The highest observed result was 61,950
+logical native transfers/s; the small differences between settings are not a
+repeatable gain or a production-server capacity claim. Do not change an existing
+production eight-lane database to the desktop topology.
+
+On the already healthy, settled four-lane desktop chain with images prepared once:
+
+```sh
+python3 benchmark/run-native-connections-sweep.py \
+  --env-file .env.desktop --connections 10 --lane-depth 2 \
+  --duration 600 --warmup 60 --drain 180 --coalesce-ms 20 \
+  --initial-cwnd 32768 --max-cwnd 65536
+```
+
+A lower-latency comparison can use `--initial-cwnd 4096 --max-cwnd 8192`; it must
+still pass complete drain/proof checks. Do not rebuild the images between arms.

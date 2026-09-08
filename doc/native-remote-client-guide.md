@@ -42,13 +42,15 @@ TON_BUILD_PULL=true
 
 NATIVE_TRANSFER_RUNS_ENABLED=1
 NATIVE_PAYMENT_LANES_ENABLED=1
-NATIVE_PAYMENT_LANE_DEPTH=2
-ACTUAL_MIN_SPLIT=2
-MIN_SPLIT=2
-MAX_SPLIT=2
+NATIVE_PAYMENT_LANE_DEPTH=3
+ACTUAL_MIN_SPLIT=3
+MIN_SPLIT=3
+MAX_SPLIT=3
+NATIVE_LOAD_PAYMENT_LANE_DEPTH=3
 NATIVE_SPAM_GENESIS_DESTINATIONS=1
 NATIVE_LOAD_SOURCES=24576
 NATIVE_PAYMENT_LANE_WALLET_PARALLELISM=12
+NATIVE_PAYMENT_LANE_WALLET_RETRIES=256
 GENESIS_HEALTHCHECK_START_PERIOD=60m
 TON_SIMPLEX_MAX_TPS=1
 TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=0
@@ -56,7 +58,11 @@ SPAM_RUN=0
 NATIVE_SPAM_RUN=0
 ```
 
-Four-lane native activation and funded accounts are **genesis requirements**, not changes to apply to an existing v14 chain. A correctly prepared, already-running four-lane chain can be reused. Check `/var/ton-work/db/native-spam/genesis.env` and its wallet manifest if unsure; verify that blocks are advancing. Do not reset an existing chain to follow this guide.
+Eight-lane native activation and matching funded accounts are **genesis requirements** for a fresh physical-server deployment. The updated MyLocalTonDocker helpers support fixed depths 1, 2 and 3 (two, four and eight lanes). The 24,576 sources remain evenly distributed, giving 3,072 sources per lane at depth 3. Topology readiness allows 1,800 seconds for three masterchain-anchored split rounds after bootstrap; this is outside measured load time.
+
+Keep an existing four-lane deployment's depth/split values at 2. To test eight lanes, use separate genesis state and matching new wallets; changing these environment variables cannot convert an existing chain by restart. Check `/var/ton-work/db/native-spam/genesis.env` and its wallet manifest before selecting a topology. Do not reset an existing chain to follow this guide.
+
+The exporter derives lane count and both client depth settings from that manifest, so old two/four-lane exports remain supported while a fresh physical-server genesis exports eight-lane tests automatically. Update the MyLocalTonDocker checkout and rebuild the derived genesis/client wrappers through the launcher below; an old wrapper image still rejects depth 3. The TON binary already supports this depth, so these changes do not require a new consensus feature or a TON image workflow change.
 
 Adjust the copied `.env` CPU sets, quota and host database path to A's hardware before creating containers. For named database volumes, Session Stats' `TON_WORK_DOCKER_VOLUME` must identify A's actual genesis database volume; the sample project uses `mylocalton-desktop_ton-db-val0`. For a bind mount, use its absolute path as `TON_WORK_HOST_DIR` and clear `TON_WORK_DOCKER_VOLUME`. Retain the native Session Stats flags and `--session-logs` validator option in that profile.
 
@@ -193,7 +199,7 @@ bash benchmark/remote/export-native-client.sh \
 
 Use `--env-file /path/to/deployment.env` for another Compose environment file. `--build-image` explicitly selects the default registry preparation. `--no-build-image` opts into strict reuse of the existing configured client, skipping all pulls/builds. An explicit `--image PREBUILT_IMAGE` also bypasses registry preparation and requires that image locally. These explicit reuse modes are for an already prepared benchmark; ordinary deployment/export follows the registry by default. Complete preparation before the benchmark, then reuse the exported immutable image throughout all runs.
 
-Use `--no-image` if B already has the exact generator image. Existing output directories are refused; choose a new name for another export. Source count/offset select a contiguous funded range from A's existing lane manifest. The exporter discovers depth 1 or 2 from that manifest and adjusts the client preset accordingly; it does not create new accounts or change the chain. The reference 60k workload uses depth 2 and 24,576 sources.
+Use `--no-image` if B already has the exact generator image. Existing output directories are refused; choose a new name for another export. Source count/offset select a contiguous funded range from A's existing lane manifest. The exporter discovers depth 1, 2 or 3 from that manifest and adjusts the client preset accordingly; it does not create new accounts or change the chain. Before publishing a depth-3 bundle, it checks that the pinned generator image contains eight-lane initialization helpers. The historical reference 60k workload uses depth 2 and 24,576 sources.
 
 The resulting **private directory** contains:
 

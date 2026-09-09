@@ -82,6 +82,7 @@ class BroadcastSimple : public td::ListNode {
   bool is_valid_;
   adnl::AdnlNodeIdShort src_peer_id_;
   bool is_ours_;
+  td::optional<LocalBroadcastSignature> local_signature_;
 };
 
 td::Status BroadcastSimple::run(OverlayImpl *overlay) {
@@ -98,7 +99,8 @@ td::Status BroadcastSimple::run(OverlayImpl *overlay) {
   }
   {
     TD_PERF_COUNTER(check_signature_overlay_broadcast_simple);
-    TRY_STATUS(overlay->check_signature_from_peer(source_, to_sign().as_slice(), signature_.as_slice(), src_peer_id_));
+    TRY_STATUS(overlay->check_signature_from_peer(source_, to_sign().as_slice(), signature_.as_slice(), src_peer_id_,
+                                                 local_signature_ ? &local_signature_.value() : nullptr));
   }
   limiter.register_broadcast(data_.size());
   if (!is_valid_) {
@@ -159,6 +161,9 @@ void BroadcastsSimple::send(OverlayImpl *overlay, PublicKeyHash send_as, td::Buf
   auto bcast = std::make_unique<BroadcastSimple>(broadcast_hash, PublicKey{}, nullptr, flags, std::move(data), date,
                                                  td::BufferSlice{}, false, adnl::AdnlNodeIdShort::zero(), true);
   auto to_sign = bcast->to_sign();
+  if (overlay->local_signature_reuse_enabled()) {
+    bcast->local_signature_ = LocalBroadcastSignature(send_as, to_sign.as_slice());
+  }
   auto P = td::PromiseCreator::lambda([overlay = actor_id(overlay), bcast = std::move(bcast)](
                                           td::Result<std::pair<td::BufferSlice, PublicKey>> R) mutable {
     td::actor::send_closure(overlay, &OverlayImpl::broadcast_simple_signed, std::move(bcast), std::move(R));
@@ -169,6 +174,9 @@ void BroadcastsSimple::send(OverlayImpl *overlay, PublicKeyHash send_as, td::Buf
 
 void BroadcastsSimple::signed_(OverlayImpl *overlay, std::unique_ptr<BroadcastSimple> &&bcast,
                                td::Result<std::pair<td::BufferSlice, PublicKey>> &&R) {
+  if (bcast->local_signature_) {
+    bcast->local_signature_.value().complete(R);
+  }
   if (R.is_error()) {
     td::Status reason = R.move_as_error();
     if (reason.code() == ErrorCode::notready) {

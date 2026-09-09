@@ -282,6 +282,7 @@ class BroadcastFecPart {
 
   bool is_short_;
   bool untrusted_{false};
+  td::optional<LocalBroadcastSignature> local_signature_;
 
   adnl::AdnlNodeIdShort src_peer_id_ = adnl::AdnlNodeIdShort::zero();
 };
@@ -303,7 +304,8 @@ td::Status BroadcastFecPart::run_checks(OverlayImpl *overlay, BroadcastFec *bcas
     TRY_STATUS(bcast->is_eligible_sender(source_));
   }
   TD_PERF_COUNTER(check_signature_overlay_broadcast_fec);
-  TRY_STATUS(overlay->check_signature_from_peer(source_, to_sign(), signature_, src_peer_id_));
+  TRY_STATUS(overlay->check_signature_from_peer(source_, to_sign(), signature_, src_peer_id_,
+                                               local_signature_ ? &local_signature_.value() : nullptr));
   return td::Status::OK();
 }
 
@@ -433,6 +435,9 @@ void BroadcastsFec::send_part(OverlayImpl *overlay, PublicKeyHash send_as, Overl
       broadcast_hash, part_hash, PublicKey{}, overlay->get_certificate(send_as), data_hash, size, flags, part_data_hash,
       std::move(part), seqno, std::move(fec_type), date, td::BufferSlice{}, false, adnl::AdnlNodeIdShort::zero());
   auto to_sign = part_obj->to_sign();
+  if (overlay->local_signature_reuse_enabled()) {
+    part_obj->local_signature_ = LocalBroadcastSignature(send_as, to_sign.as_slice());
+  }
   auto P = td::PromiseCreator::lambda([overlay = actor_id(overlay), part = std::move(part_obj)](
                                           td::Result<std::pair<td::BufferSlice, PublicKey>> R) mutable {
     td::actor::send_closure(overlay, &OverlayImpl::broadcast_fec_signed, std::move(part), std::move(R));
@@ -443,6 +448,9 @@ void BroadcastsFec::send_part(OverlayImpl *overlay, PublicKeyHash send_as, Overl
 
 void BroadcastsFec::signed_(OverlayImpl *overlay, std::unique_ptr<BroadcastFecPart> &&part,
                             td::Result<std::pair<td::BufferSlice, PublicKey>> &&R) {
+  if (part->local_signature_) {
+    part->local_signature_.value().complete(R);
+  }
   if (R.is_error()) {
     td::Status reason = R.move_as_error();
     if (reason.code() == ErrorCode::notready) {

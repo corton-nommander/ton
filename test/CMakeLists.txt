@@ -11,6 +11,11 @@ target_include_directories(test-keyring-prepared-signing PRIVATE ${CMAKE_SOURCE_
 target_link_libraries(test-keyring-prepared-signing PRIVATE td-test-main keyring keys tdactor)
 ton_test(test-keyring-prepared-signing)
 
+add_executable(test-overlay-local-signature test-overlay-local-signature.cpp)
+target_include_directories(test-overlay-local-signature PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test-overlay-local-signature PRIVATE td-test-main overlay keyring keys tdactor tdfec)
+ton_test(test-overlay-local-signature)
+
 add_subdirectory(tdactor)
 add_subdirectory(tdutils)
 add_subdirectory(tonlib)

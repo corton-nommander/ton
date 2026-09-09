@@ -32,6 +32,8 @@
 
 #include "overlay.hpp"
 
+#include <cstdlib>
+
 namespace ton {
 
 namespace overlay {
@@ -103,6 +105,9 @@ OverlayImpl::OverlayImpl(td::actor::ActorId<keyring::Keyring> keyring, td::actor
     , announce_self_(opts.announce_self_)
     , opts_(std::move(opts)) {
   overlay_id_ = id_full_.compute_short_id();
+  if (const char *value = std::getenv("TON_OVERLAY_LOCAL_SIGNATURE_REUSE")) {
+    local_signature_reuse_enabled_ = td::Slice(value) == "1";
+  }
   frequent_dht_lookup_ = opts_.frequent_dht_lookup_;
   peer_list_.local_member_flags_ = opts_.local_overlay_member_flags_;
   opts_.broadcast_speed_multiplier_ = std::max(opts_.broadcast_speed_multiplier_, 1e-9);
@@ -792,6 +797,12 @@ void OverlayImpl::get_stats(td::Promise<tl_object_ptr<ton_api::engine_validator_
   res->total_traffic_responses_ = total_traffic_responses.tl();
   res->stats_.push_back(
       create_tl_object<ton_api::engine_validator_oneStat>("neighbours_cnt", PSTRING() << neighbours_cnt()));
+  res->stats_.push_back(create_tl_object<ton_api::engine_validator_oneStat>(
+      "local_signature_reuse", PSTRING() << "enabled:" << local_signature_reuse_enabled_
+                                         << " receipt_checks:" << local_signature_receipt_checks_
+                                         << " hits:" << local_signature_reuse_hits_
+                                         << " mismatches:" << local_signature_receipt_mismatches_
+                                         << " crypto_checks:" << signature_crypto_checks_));
 
   double now = td::Clocks::system();
   for (const PublicKeyHash &key : rules_.get_authorized_keys()) {
@@ -818,10 +829,23 @@ bool OverlayImpl::has_valid_broadcast_certificate(const PublicKeyHash &source, s
 }
 
 td::Status OverlayImpl::check_signature_from_peer(PublicKey key, td::Slice message, td::Slice signature,
-                                                  adnl::AdnlNodeIdShort message_from) {
+                                                  adnl::AdnlNodeIdShort message_from,
+                                                  const LocalBroadcastSignature *local_signature) {
   if (reject_signatures_from_.contains(message_from)) {
     return td::Status::Error("peer is temporary banned");
   }
+  // A receipt can only come from our completed signing request. Incoming
+  // broadcasts and certificate checks never carry one. Keep the ban check
+  // before reuse, and fall back to the ordinary verifier on every mismatch.
+  if (local_signature_reuse_enabled_ && local_signature) {
+    ++local_signature_receipt_checks_;
+    if (local_signature->matches(key, message, signature)) {
+      ++local_signature_reuse_hits_;
+      return td::Status::OK();
+    }
+    ++local_signature_receipt_mismatches_;
+  }
+  ++signature_crypto_checks_;
   TRY_RESULT(enc, get_encryptor(std::move(key)));
   auto S = enc->check_signature(message, signature);
   if (S.is_error() && !message_from.is_zero()) {

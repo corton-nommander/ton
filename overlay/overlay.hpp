@@ -46,6 +46,7 @@
 
 #include "broadcast-fec.hpp"
 #include "broadcast-simple.hpp"
+#include "local-broadcast-signature.h"
 #include "broadcast-twostep.hpp"
 #include "overlay-id.hpp"
 #include "overlay-manager.h"
@@ -197,6 +198,7 @@ struct AuthorizedKeyLimiter {
 };
 
 class OverlayImpl : public Overlay {
+  friend struct LocalBroadcastSignatureTestAccess;
  public:
   OverlayImpl(td::actor::ActorId<keyring::Keyring> keyring, td::actor::ActorId<adnl::Adnl> adnl,
               td::actor::ActorId<OverlayManager> manager, td::actor::ActorId<dht::Dht> dht_node,
@@ -368,7 +370,11 @@ class OverlayImpl : public Overlay {
 
   // Check signature signed by `key`. If invalid, signatures from `message_from` will be rejected for 5 seconds
   td::Status check_signature_from_peer(PublicKey key, td::Slice message, td::Slice signature,
-                                       adnl::AdnlNodeIdShort message_from = adnl::AdnlNodeIdShort::zero());
+                                       adnl::AdnlNodeIdShort message_from = adnl::AdnlNodeIdShort::zero(),
+                                       const LocalBroadcastSignature *local_signature = nullptr);
+  bool local_signature_reuse_enabled() const {
+    return local_signature_reuse_enabled_;
+  }
 
   BroadcastsLimiter &get_broadcasts_limiter(PublicKeyHash source, const Certificate *certificate);
 
@@ -539,6 +545,11 @@ class OverlayImpl : public Overlay {
   BroadcastsLimiter unauthorized_broadcasts_limiter_;
 
   std::set<adnl::AdnlNodeIdShort> reject_signatures_from_;
+  bool local_signature_reuse_enabled_{false};
+  td::uint64 signature_crypto_checks_{0};
+  td::uint64 local_signature_receipt_checks_{0};
+  td::uint64 local_signature_reuse_hits_{0};
+  td::uint64 local_signature_receipt_mismatches_{0};
   td::RateLimiterWindow receive_peers_rate_limiter_;
   td::RateLimiterWindow process_pending_peers_rate_limiter_{60.0, 60};
   std::set<adnl::AdnlNodeIdShort> processing_pending_peers_;

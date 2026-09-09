@@ -14,6 +14,7 @@ set(OVERLAY_SOURCE
   overlay.hpp
   overlays.h
   traffic-update-yield-policy.h
+  local-broadcast-signature.h
 )
 
 add_library(overlay STATIC ${OVERLAY_SOURCE})

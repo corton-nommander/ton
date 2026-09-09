@@ -505,7 +505,7 @@ seconds with 20 ms coalescing, all cohorts proven and no final backlog.
 Mean canonical TPS improves **4.103%**. Both candidates exceed both controls;
 individual cross-pair gains range from **3.585% to 4.626%**. The full control
 range is 0.818% of its mean, and the candidate range is 0.183%. This passes the
-predeclared desktop selection screen: both candidates above both controls, mean
+desktop selection screen: both candidates above both controls, mean
 gain at least 2%, and gain greater than the full control repeat range. Four
 observations do not establish formal statistical significance.
 
@@ -545,6 +545,12 @@ The source is `be235e037826a36e4f57125d15c73aa0513973af`; later commits save
 results and harness corrections without rebuilding these binaries. Docker Desktop
 retains its corrected 64 GiB allocation. No database reset or image rebuild is
 needed to select the winner.
+
+After selection, genesis restarted from the existing database with that exact
+image and reuse enabled. At 10:06 UTC it and Session Stats were healthy;
+masterchain sequence numbers advanced from 40,954 to 41,245. The load generator
+was stopped after exit 0. The final runtime check is saved in
+`build/benchmarks/admission-cycles-20260909/retained-desktop-runtime.json`.
 
 Physical-server and C++/Compose fallback defaults remain off. These CPU-specific
 local images have not been published. Deploying on Server A requires a published

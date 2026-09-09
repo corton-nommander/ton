@@ -135,7 +135,37 @@ those counts include warmup and drain. The sampled canonical-backlog peak was
 830,096, with no final backlog. Offered/canonical throughput was approximately
 1.0, so this remains an observation without an independently overdriven capacity
 claim. The [control record](benchmarks/results/native-candidate-metadata-20260909-01-metadata-control.json)
-is retained. The next arm changes only metadata projection to 1.
+is retained.
+
+## First candidate measurement
+
+`02-metadata-projection` passed the complete controller/wrapper at **61,380.86
+canonical logical TPS**, with 61,654.45 offered/admitted TPS: **+2.67%** relative
+to control 01. The independent comparison accepted all arm checks, immutable
+image equality, recorded VM/host resource equality and the sole metadata 0→1
+configuration difference. It counted 36,767,136 canonical transfers across 599
+fully contained block-time seconds. Both cohorts drained completely; hash and
+follower errors and exhausted retries remained zero. Whole-run transient
+counters were 40 timeouts, 682,815 not-ready replies and 485 too-old replies;
+these are not canonical proof conflicts.
+
+The comparison helper's consistent interior sampling policy reports validator
+CPU equivalents **9.3273→8.3295 (−10.70%)**, generator **0.8163→0.9187** and
+Session Stats **0.9386→0.9514**. These are sampled rate estimates, not integrated
+CPU time. The earlier control diagnostic average above uses a slightly different
+sample boundary; paired comparisons use the helper's same policy for both arms.
+Native packing was 10,881.07 transfers/block, RTT p50/p95/p99 buckets were
+500/500/1,000 ms, and sampled canonical backlog peaked at 1,223,120. Larger
+backlog and not-ready counts mean that lower decoding CPU does not eliminate
+admission/delivery delays. Offered/canonical throughput was 1.0045, so this is a
+controlled observation, without a maximum-capacity claim.
+
+The [candidate record](benchmarks/results/native-candidate-metadata-20260909-02-metadata-projection.json)
+is saved, with the full comparison in `01-vs-02.json` under the raw artifact
+root. This first gain meets the threshold for repeating the candidate and then
+the control; it is not yet a repeatable promotion result. Genesis is explicitly
+recreated before the same-flag candidate repeat, preserving the database and
+all frozen images.
 
 Raw artifacts are retained under
 `build/benchmarks/candidate-metadata-cycles-20260909/`.

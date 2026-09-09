@@ -1,0 +1,1775 @@
+{
+  "schema": "native-candidate-metadata-cycle-v1",
+  "arm": "01-metadata-control",
+  "source_revision": "7b73cdb157a1f5e621e420e1e5c913726b267cf5",
+  "raw_artifact_directory": "build/benchmarks/candidate-metadata-cycles-20260909/01-metadata-control",
+  "execution": {
+    "exit_code": 0,
+    "validator_unchanged": true,
+    "cache": "1",
+    "sharing": "0",
+    "refresh": "0",
+    "reconciliation_profile": "1",
+    "prepared_signing": "0",
+    "local_signature_reuse": "1",
+    "metadata_projection": "0",
+    "signature_threads": "8",
+    "excluded_from_tps_comparisons": false,
+    "measurement_seconds": 600,
+    "resource_scope": "Docker stats valid for Desktop VM; host /proc-derived harness thread/cgroup metrics excluded from interpretation"
+  },
+  "analysis": {
+    "arm": "01-metadata-control",
+    "assessment": [
+      {
+        "admitted_logical_tps": 59821.22666666667,
+        "canonical_backlog_at_measure_end": 478368,
+        "canonical_backlog_sampled_peak": 830096,
+        "canonical_logical_tps": 59784.974958263774,
+        "capacity_claim_allowed": false,
+        "classification": "observation_only",
+        "connections": 10,
+        "continue_safe": true,
+        "launch_sha256": "6b98f31a2981b01a39fab7630d6804776258f546384c2b29a37f9c9e2e314763",
+        "load_mode": "bounded_unpaced",
+        "measure_elapsed_s": 600,
+        "measured_admitted_logical_transfers": 35892736,
+        "measured_offered_logical_transfers": 35892736,
+        "offered_logical_tps": 59821.22666666667,
+        "original_acceptance": {
+          "canonical_lane_balance_invalid_reasons": [],
+          "canonical_lane_balance_required": true,
+          "canonical_lane_balance_valid": true,
+          "capacity_load": {
+            "invalid_reasons": [],
+            "measured_canonical_chain_avg_tps": 59784.974958263774,
+            "measured_offered_avg_tps": 59821.22666666667,
+            "offered_above_canonical": true
+          },
+          "chain_capacity_invalid_reasons": [
+            "insufficient_load_over_canonical_throughput"
+          ],
+          "chain_capacity_valid": false,
+          "chain_correctness_valid": true,
+          "correctness_invalid_reasons": [],
+          "ingress_capacity_invalid_reasons": [],
+          "ingress_capacity_valid": true,
+          "native_run_batching_enforced": true,
+          "native_run_batching_invalid_reasons": [],
+          "native_run_batching_required": true,
+          "native_run_batching_valid": true,
+          "native_signed_run_quantum_benchmark_profile_valid": true,
+          "native_signed_run_quantum_invalid_reasons": [],
+          "native_signed_run_quantum_required": true,
+          "native_signed_run_quantum_telemetry_contract_valid": true,
+          "native_signed_run_quantum_valid": true,
+          "reproducibility_reasons": [
+            "one_or_more_images_lack_source_revision_label"
+          ],
+          "reproducible": false,
+          "run_complete": true,
+          "run_incomplete_reasons": [],
+          "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions",
+          "strict_image_reuse_required": true,
+          "strict_image_reuse_valid": true,
+          "validator_cleanup_invalid_reasons": [],
+          "validator_cleanup_valid": true
+        },
+        "original_load_level_acceptance": {
+          "capacity_claim_allowed": false,
+          "classification": "rejected",
+          "semantics": "load_validation proves the offered level only; it does not establish chain capacity",
+          "valid": false
+        },
+        "raw_bundle": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/candidate-metadata-cycles-20260909/01-metadata-control/sweep/01-10-connections",
+        "stop_reasons": [],
+        "summary_sha256": "60d2c72f837896c974e3cf6ee190cb8bc77f596a56c50fdb75bbae290d53c747",
+        "target_attainment": "not_applicable",
+        "target_tps": 0,
+        "wrapper_exit": 0
+      }
+    ],
+    "metrics": {
+      "measure_elapsed_s": 600,
+      "canonical_gen_utime_bucket_duration_s": 599,
+      "steady_offered_avg_tps": 59821.22666666667,
+      "steady_mempool_accept_avg_tps": 59821.22666666667,
+      "canonical_chain_measure_avg_tps": 59784.974958263774,
+      "canonical_chain_measure_transfers": 35811200,
+      "benchmark_result_valid": true,
+      "chain_capacity_valid": false,
+      "ingress_capacity_valid": true,
+      "canonical_hash_conflicts": 0,
+      "canonical_follower_errors": 0,
+      "canonical_follower_final_catchup_complete": true,
+      "canonical_total_backlog_after_drain": 0,
+      "retry_exhausted": 0,
+      "task_errors_by_reason": {
+        "timeout": 69,
+        "transport": 0,
+        "parse": 0,
+        "full": 0,
+        "rate_limit": 0,
+        "duplicate": 0,
+        "too_old": 0,
+        "too_new": 0,
+        "expired": 0,
+        "canonical_state_lag": 0,
+        "not_ready": 638989,
+        "balance": 0,
+        "invalid": 0,
+        "signing": 0,
+        "server_other": 0
+      },
+      "native_signed_run_messages": 2495119,
+      "wire_batch_avg_size": 15.808882298876256,
+      "rtt_ms": {
+        "p50": 200,
+        "p95": 500,
+        "p99": 1000,
+        "max": 3713.6740070000087,
+        "samples": 50146832,
+        "overflow": 0,
+        "overflow_lower_bound_ms": 86400000,
+        "p50_in_overflow": false,
+        "p95_in_overflow": false,
+        "p99_in_overflow": false
+      },
+      "canonical_chain_measure_avg_native_transfers_per_block": 9142.507020679092,
+      "canonical_backlog_sampled_peak": 830096,
+      "congestion_window_sampled_peak": 33138.11318649865
+    },
+    "measurement_interior_diagnostics": {
+      "schema": "native-validator-profile-v1",
+      "samples": 19,
+      "statistics_samples": 19,
+      "diagnostics_available": true,
+      "errors": [],
+      "semantics": "Observation only. Match timestamps to B measurement; startup/drain may be included. Stage wall times overlap. Maxima are lifetime values. Executor counters are concurrent snapshots. Thread CPU excludes vanished threads; network counters cover the network namespace.",
+      "start_unix_s": 1788952099.771705,
+      "end_unix_s": 1788952667.2588062,
+      "counter_deltas": {
+        "total.ext_msg_batch_admission": {
+          "batches": 178077,
+          "messages": 2624811,
+          "shard_state_requests": 605208,
+          "shard_manager_waits": 60123,
+          "shard_fetches": 60123,
+          "shard_cache_hits": 545085,
+          "shard_cache_fills": 3011,
+          "shard_cache_fill_races": 57027,
+          "shard_cache_fill_conflicts": 0,
+          "shard_cache_generation_resets": 753,
+          "shard_cache_stale_generation_fill_skips": 82,
+          "shard_cache_wrong_id": 0,
+          "shard_cache_invalid_header": 0,
+          "shard_miss_errors": 0,
+          "shard_fetch_errors": 0,
+          "shard_manager_wait_errors": 0,
+          "shard_manager_wait_timeouts": 0,
+          "shard_manager_wait_notready": 0,
+          "shard_manager_wait_other_errors": 0,
+          "shard_manager_wait_late_results": 3,
+          "account_lookups": 2624802,
+          "accepted": 2121402,
+          "rejected": 503340
+        },
+        "total.ext_msg_batch_diagnostics": {
+          "finished_batches": 178071,
+          "aborted_batches": 0,
+          "not_ready_total": 503296,
+          "config_cache_hits": 361932,
+          "config_cache_misses": 753,
+          "config_errors": 0,
+          "snapshot_refresh_attempts": 0,
+          "snapshot_refresh_successes": 0,
+          "snapshot_refresh_accepted_messages": 0,
+          "snapshot_refresh_exhausted": 0,
+          "snapshot_refresh_deadlines": 0,
+          "snapshot_refresh_signature_reuses": 0,
+          "shard_shared_dispatches": 0,
+          "shard_shared_joins": 0,
+          "shard_shared_completions": 0,
+          "shard_shared_errors": 0,
+          "shard_shared_table_full": 0,
+          "shard_shared_waiters_full": 0,
+          "shard_shared_deadline_fallbacks": 0,
+          "shard_shared_timeouts": 0,
+          "not_ready_snapshot_changed": 503296,
+          "not_ready_account_changed_verification": 0,
+          "not_ready_account_changed_insertion": 0,
+          "not_ready_account_changed_commit": 0,
+          "not_ready_canonical_watermark_lag": 0,
+          "not_ready_masterchain_unavailable": 0,
+          "not_ready_shard_unavailable": 0,
+          "not_ready_mempool_full": 0,
+          "not_ready_per_address_limit": 0,
+          "not_ready_other": 0,
+          "decode_samples": 178076,
+          "decode_sum_s": 62.20372199999999,
+          "reservation_samples": 178070,
+          "reservation_sum_s": 101.341509,
+          "residence_samples": 178071,
+          "residence_sum_s": 23330.416576999996,
+          "aborted_residence_samples": 0,
+          "aborted_residence_sum_s": 0.0,
+          "shard_wait_samples": 60123,
+          "shard_wait_sum_s": 3198.2303469999997,
+          "verification_samples": 178068,
+          "verification_sum_s": 19834.329761999998,
+          "snapshot_age_samples": 178068,
+          "snapshot_age_sum_s": 23163.557194,
+          "changed_snapshot_age_samples": 33928,
+          "changed_snapshot_age_sum_s": 3777.6213800000005,
+          "config_extract_samples": 753,
+          "config_extract_sum_s": 0.025488
+        },
+        "total.native_signature_executor": {
+          "calls": 3792,
+          "parents": 2163939,
+          "threads_created": 28096,
+          "serial_calls": 280,
+          "launch_sum_s": 14.768476,
+          "join_sum_s": 7.449376,
+          "residence_sum_s": 22.270563000000003,
+          "parents_lt64": 280,
+          "parents_64_127": 182,
+          "parents_128_255": 816,
+          "parents_ge256": 2514,
+          "workers_1": 280,
+          "workers_2": 0,
+          "workers_4": 0,
+          "workers_8": 3512,
+          "workers_other": 0
+        },
+        "total.ext_msg_native_reconciliation": {
+          "runs": 752,
+          "state_fetches": 2867,
+          "account_lookups": 11189662,
+          "sources_advanced": 2087510,
+          "messages_purged": 2120841,
+          "failures": 37,
+          "unchanged_state_skips": 1,
+          "unchanged_top_skips": 142,
+          "unchanged_source_skips": 554398,
+          "rebased_reservations": 931462,
+          "unaffordable_tail_pruned": 0,
+          "stale_uncommitted_tail_pruned": 0,
+          "expiry_suffix_events": 0,
+          "expiry_suffix_pruned": 0,
+          "exact_retry_preserved_stale_revision": 0
+        },
+        "total.ext_msg_native_reconciliation_diagnostics": {
+          "snapshot_finishes": 753,
+          "snapshot_errors": 37,
+          "register_source_visits": 11795148,
+          "register_tracked_visits": 10552518,
+          "group_source_visits": 11737247,
+          "group_shards": 3008,
+          "account_lookups": 11189662,
+          "account_empty": 0,
+          "account_unpack_failures": 0,
+          "account_kind_failures": 0,
+          "account_balance_failures": 0,
+          "apply_calls": 11189662,
+          "apply_errors": 2874,
+          "apply_stale_lt": 2874,
+          "apply_first_observation": 0,
+          "apply_nonce_advanced": 1917107,
+          "apply_balance_only_changed": 0,
+          "apply_unchanged": 9269681,
+          "apply_effects": 1917107,
+          "apply_balance_increased": 0,
+          "apply_balance_decreased": 1917107,
+          "pending_reservations_before_apply_sum": 14504816,
+          "reservation_prefix_entries": 12557629,
+          "messages_purged": 1947187,
+          "reservation_rebases": 884276,
+          "tail_prunes": 0,
+          "registration_samples": 752,
+          "registration_sum_s": 14.830278000000002,
+          "grouping_samples": 752,
+          "grouping_sum_s": 14.253955,
+          "manager_wait_samples": 2868,
+          "manager_wait_sum_s": 181.391808,
+          "lookup_samples": 11189662,
+          "lookup_sum_s": 33.099331,
+          "unpack_samples": 11189662,
+          "unpack_sum_s": 14.961809000000002,
+          "apply_samples": 11189662,
+          "apply_sum_s": 89.44583300000001,
+          "wake_samples": 748,
+          "wake_sum_s": 0.432186
+        }
+      },
+      "stage_mean_ms": {
+        "decode": 0.3493099687773759,
+        "reservation": 0.569110512719717,
+        "residence": 131.01749626272664,
+        "shard_wait": 53.19478979758162,
+        "verification": 111.38626683064895,
+        "snapshot_age": 130.082649291282,
+        "changed_snapshot_age": 111.34229485970292,
+        "config_extract": 0.03384860557768924
+      },
+      "config_cache_hit_fraction": 0.9979238181893378,
+      "snapshot_changed_fraction_of_not_ready": 1.0,
+      "snapshot_changed_fraction_of_completed_inputs": 0.19175065587398685,
+      "reconciliation": {
+        "available": true,
+        "valid": true,
+        "profile_enabled": true,
+        "stage_mean_ms": {
+          "registration": 19.72111436170213,
+          "grouping": 18.95472739361702,
+          "manager_wait": 63.246794979079496,
+          "lookup": 0.0029580277759953784,
+          "unpack": 0.0013371100038589193,
+          "apply": 0.007993613480013964,
+          "wake": 0.577788770053476
+        },
+        "apply_outcome_counts": {
+          "apply_errors": 2874,
+          "apply_first_observation": 0,
+          "apply_nonce_advanced": 1917107,
+          "apply_balance_only_changed": 0,
+          "apply_unchanged": 9269681
+        },
+        "apply_outcome_fractions": {
+          "apply_errors": 0.0002568442192445134,
+          "apply_first_observation": 0.0,
+          "apply_nonce_advanced": 0.17132841009853558,
+          "apply_balance_only_changed": 0.0,
+          "apply_unchanged": 0.8284147456822198
+        },
+        "apply_outcomes_match_calls": true,
+        "apply_effects_fraction": 0.17132841009853558,
+        "errors": [],
+        "semantics": "Reconciliation calls only. Outcomes partition apply_calls; balance changes and effects overlap these outcomes. Unchanged account facts can still require expiry/prefix work. Legacy sources_advanced includes admission progress. Manager waiting is wall time, not CPU time. Missing timings are not zero work."
+      }
+    },
+    "independent_load_margin": {
+      "offered_over_canonical": 1.0006063682125517,
+      "at_least_five_percent_overdrive": false,
+      "semantics": "Report observed throughput separately; an unpaced capacity claim requires at least five percent actual offered overdrive."
+    },
+    "mean_cpu_equivalents": {
+      "genesis": 9.337542105263157,
+      "native-load-generator": 0.8334842105263158,
+      "session-stats": 0.9433315789473684
+    },
+    "signature_threads_created_per_s": 49.509495343282914,
+    "dashboard_full_measurement_minutes": {
+      "rows": [
+        {
+          "mc": 0.0,
+          "mc_max": 0.0,
+          "mc_min": 0.0,
+          "timestamp": "2026-09-09T11:09:00Z",
+          "wc": 59608.0,
+          "wc_max": 18432.0,
+          "wc_min": 16.0
+        },
+        {
+          "mc": 0.0,
+          "mc_max": 0.0,
+          "mc_min": 0.0,
+          "timestamp": "2026-09-09T11:10:00Z",
+          "wc": 59274.4,
+          "wc_max": 18432.0,
+          "wc_min": 0.0
+        },
+        {
+          "mc": 0.0,
+          "mc_max": 0.0,
+          "mc_min": 0.0,
+          "timestamp": "2026-09-09T11:11:00Z",
+          "wc": 59741.86666666667,
+          "wc_max": 18432.0,
+          "wc_min": 16.0
+        },
+        {
+          "mc": 0.0,
+          "mc_max": 0.0,
+          "mc_min": 0.0,
+          "timestamp": "2026-09-09T11:12:00Z",
+          "wc": 61240.53333333333,
+          "wc_max": 18432.0,
+          "wc_min": 16.0
+        },
+        {
+          "mc": 0.0,
+          "mc_max": 0.0,
+          "mc_min": 0.0,
+          "timestamp": "2026-09-09T11:13:00Z",
+          "wc": 61587.73333333333,
+          "wc_max": 18432.0,
+          "wc_min": 16.0
+        },
+        {
+          "mc": 0.0,
+          "mc_max": 0.0,
+          "mc_min": 0.0,
+          "timestamp": "2026-09-09T11:14:00Z",
+          "wc": 58194.4,
+          "wc_max": 18432.0,
+          "wc_min": 48.0
+        },
+        {
+          "mc": 0.0,
+          "mc_max": 0.0,
+          "mc_min": 0.0,
+          "timestamp": "2026-09-09T11:15:00Z",
+          "wc": 59522.4,
+          "wc_max": 18432.0,
+          "wc_min": 0.0
+        },
+        {
+          "mc": 0.0,
+          "mc_max": 0.0,
+          "mc_min": 0.0,
+          "timestamp": "2026-09-09T11:16:00Z",
+          "wc": 60114.4,
+          "wc_max": 18432.0,
+          "wc_min": 16.0
+        },
+        {
+          "mc": 0.0,
+          "mc_max": 0.0,
+          "mc_min": 0.0,
+          "timestamp": "2026-09-09T11:17:00Z",
+          "wc": 60090.4,
+          "wc_max": 18432.0,
+          "wc_min": 48.0
+        }
+      ],
+      "min_tps": 58194.4,
+      "max_tps": 61587.73333333333,
+      "semantics": "Dashboard corroboration only; complete minute buckets inside measurement; proof-checked generator canonical TPS remains authoritative."
+    }
+  },
+  "delivery": {
+    "semantics": "Diagnostic collated candidates in generator measurement interval, not independently canonical-filtered; timings overlap. Pending epoch does not prove ready work. Published probe lower bound does prove completed publication before probe.",
+    "collated_candidates": 4011,
+    "candidate_logical_transfers": 36568640,
+    "sums": {
+      "native_execute": 48.382614999999966,
+      "native_commit": 149.3248419999997,
+      "external_wait_round_live_s": 0.0,
+      "external_wait_round_live_calls": 0.0,
+      "external_wait_round_native_coalescing_s": 0.0,
+      "external_wait_round_native_coalescing_calls": 0.0,
+      "external_wait_generic_try_pop_s": 0.0,
+      "external_wait_generic_try_pop_calls": 0.0,
+      "external_wait_generic_sync_snapshot_s": 0.0,
+      "external_wait_generic_sync_snapshot_calls": 0.0,
+      "external_wait_native_probe_s": 3.320402999999995,
+      "external_wait_native_probe_calls": 4825.0,
+      "external_wait_native_first_work_s": 367.9299890000006,
+      "external_wait_native_first_work_calls": 3946.0,
+      "external_wait_native_fragment_refill_s": 47.60378799999999,
+      "external_wait_native_fragment_refill_calls": 4641.0,
+      "external_wait_native_post_commit_idle_s": 50.668490000000034,
+      "external_wait_native_post_commit_idle_calls": 4841.0,
+      "external_wait_native_producer_drain_s": 0.0,
+      "external_wait_native_producer_drain_calls": 0.0,
+      "external_wait_native_sync_snapshot_s": 0.0,
+      "external_wait_native_sync_snapshot_calls": 0.0,
+      "external_wait_accounted_s": 469.5226659999997,
+      "external_wait_calls": 18253.0,
+      "external_delivery_first_work_no_producer_s": 351.3928990000006,
+      "external_delivery_first_work_no_producer_calls": 3503.0,
+      "external_delivery_first_work_no_producer_work_wakes": 3304.0,
+      "external_delivery_first_work_no_producer_marker_wakes": 199.0,
+      "external_delivery_first_work_no_producer_timeouts": 0.0,
+      "external_delivery_first_work_no_producer_errors": 0.0,
+      "external_delivery_first_work_producer_pending_s": 15.631204,
+      "external_delivery_first_work_producer_pending_calls": 443.0,
+      "external_delivery_first_work_producer_pending_work_wakes": 406.0,
+      "external_delivery_first_work_producer_pending_marker_wakes": 37.0,
+      "external_delivery_first_work_producer_pending_timeouts": 0.0,
+      "external_delivery_first_work_producer_pending_errors": 0.0,
+      "external_delivery_fragment_refill_no_producer_s": 5.727540999999997,
+      "external_delivery_fragment_refill_no_producer_calls": 585.0,
+      "external_delivery_fragment_refill_no_producer_work_wakes": 50.0,
+      "external_delivery_fragment_refill_no_producer_marker_wakes": 13.0,
+      "external_delivery_fragment_refill_no_producer_timeouts": 522.0,
+      "external_delivery_fragment_refill_no_producer_errors": 0.0,
+      "external_delivery_fragment_refill_producer_pending_s": 41.68646,
+      "external_delivery_fragment_refill_producer_pending_calls": 4056.0,
+      "external_delivery_fragment_refill_producer_pending_work_wakes": 410.0,
+      "external_delivery_fragment_refill_producer_pending_marker_wakes": 198.0,
+      "external_delivery_fragment_refill_producer_pending_timeouts": 3448.0,
+      "external_delivery_fragment_refill_producer_pending_errors": 0.0,
+      "external_delivery_post_commit_idle_no_producer_s": 9.787040999999975,
+      "external_delivery_post_commit_idle_no_producer_calls": 932.0,
+      "external_delivery_post_commit_idle_no_producer_work_wakes": 26.0,
+      "external_delivery_post_commit_idle_no_producer_marker_wakes": 31.0,
+      "external_delivery_post_commit_idle_no_producer_timeouts": 874.0,
+      "external_delivery_post_commit_idle_no_producer_errors": 1.0,
+      "external_delivery_post_commit_idle_producer_pending_s": 40.65372399999997,
+      "external_delivery_post_commit_idle_producer_pending_calls": 3909.0,
+      "external_delivery_post_commit_idle_producer_pending_work_wakes": 548.0,
+      "external_delivery_post_commit_idle_producer_pending_marker_wakes": 268.0,
+      "external_delivery_post_commit_idle_producer_pending_timeouts": 3093.0,
+      "external_delivery_post_commit_idle_producer_pending_errors": 0.0,
+      "external_delivery_first_work_no_producer_uninstalled_s": 343.0102250000003,
+      "external_delivery_first_work_no_producer_uninstalled_calls": 3333.0,
+      "external_delivery_first_work_no_producer_uninstalled_work_wakes": 3207.0,
+      "external_delivery_first_work_no_producer_uninstalled_marker_wakes": 126.0,
+      "external_delivery_first_work_no_producer_uninstalled_timeouts": 0.0,
+      "external_delivery_first_work_no_producer_uninstalled_errors": 0.0,
+      "external_delivery_first_work_no_producer_completed_s": 8.382683999999998,
+      "external_delivery_first_work_no_producer_completed_calls": 170.0,
+      "external_delivery_first_work_no_producer_completed_work_wakes": 97.0,
+      "external_delivery_first_work_no_producer_completed_marker_wakes": 73.0,
+      "external_delivery_first_work_no_producer_completed_timeouts": 0.0,
+      "external_delivery_first_work_no_producer_completed_errors": 0.0,
+      "external_delivery_first_work_no_producer_uninstalled_pre_epoch_s": 168.30823500000008,
+      "external_delivery_first_work_no_producer_uninstalled_post_epoch_s": 174.7019810000005,
+      "external_delivery_first_work_no_producer_uninstalled_split_calls": 3333.0,
+      "external_delivery_first_work_no_producer_uninstalled_epoch_unobserved": 0.0,
+      "external_delivery_probe_unconfirmed_s": 3.3769499999999963,
+      "external_delivery_probe_unconfirmed_calls": 16691.0,
+      "external_delivery_probe_unconfirmed_work_wakes": 2431.0,
+      "external_delivery_probe_published_s": 1.2313340000000015,
+      "external_delivery_probe_published_calls": 1562.0,
+      "external_delivery_probe_published_work_wakes": 1562.0,
+      "work_time": 220.4270959999998,
+      "wait_externals_time": 469.5226659999997,
+      "total_time": 972.9268119999986
+    },
+    "mean_ms_per_call": {
+      "external_delivery_first_work_no_producer_mean_ms": 100.31198943762507,
+      "external_delivery_first_work_producer_pending_mean_ms": 35.2848848758465,
+      "external_delivery_fragment_refill_no_producer_mean_ms": 9.79066837606837,
+      "external_delivery_fragment_refill_producer_pending_mean_ms": 10.277726824457593,
+      "external_delivery_post_commit_idle_no_producer_mean_ms": 10.501116952789673,
+      "external_delivery_post_commit_idle_producer_pending_mean_ms": 10.400031721667936,
+      "external_delivery_first_work_no_producer_uninstalled_mean_ms": 102.91335883588367,
+      "external_delivery_first_work_no_producer_completed_mean_ms": 49.30990588235293,
+      "external_delivery_probe_unconfirmed_mean_ms": 0.2023216104487446,
+      "external_delivery_probe_published_mean_ms": 0.7883060179257372
+    },
+    "mean_s_per_candidate": {
+      "work_time": 0.05495564597357263,
+      "wait_externals_time": 0.11705875492395904,
+      "total_time": 0.24256465021191687,
+      "native_execute": 0.012062481924707047,
+      "native_commit": 0.037228831214160985
+    },
+    "capture_complete": true,
+    "first_epoch_capture_complete": true,
+    "first_epoch_partitions": {
+      "no_producer_s": 351.3928990000006,
+      "uninstalled_s": 343.0102250000003,
+      "completed_s": 8.382683999999998,
+      "pre_epoch_s": 168.30823500000008,
+      "post_epoch_s": 174.7019810000005,
+      "epoch_unobserved": 0.0,
+      "calls_reconcile": true,
+      "seconds_reconcile": true
+    }
+  },
+  "overlay_signature": {
+    "schema": "overlay-local-signature-endpoints-v1",
+    "before_path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/candidate-metadata-cycles-20260909/01-metadata-control/overlay-stats-before.txt",
+    "after_path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/candidate-metadata-cycles-20260909/01-metadata-control/overlay-stats-after.txt",
+    "capture_errors": {
+      "before": [],
+      "after": []
+    },
+    "endpoint_overlay_counts": {
+      "before": 23,
+      "after": 23,
+      "after_with_valid_counters": 23
+    },
+    "status_counts": {
+      "new_overlay_at_after_endpoint": 15,
+      "matched_observable_delta": 8,
+      "removed_overlay_at_after_endpoint": 15
+    },
+    "observable_matched_interval_lower_bound": {
+      "receipt_checks": 6298531,
+      "hits": 6298531,
+      "mismatches": 0,
+      "crypto_checks": 135
+    },
+    "matched_net_delta_reuse_fraction": 0.9999785668901955,
+    "positive_reuse_observed_between_matched_endpoints": true,
+    "after_current_generation_lifetime_counters": {
+      "receipt_checks": 6329690,
+      "hits": 6329690,
+      "mismatches": 0,
+      "crypto_checks": 140
+    },
+    "matched_lower_bounds_by_scope_type": {
+      "shard": {
+        "matched_overlays": 8,
+        "counters": {
+          "receipt_checks": 6298531,
+          "hits": 6298531,
+          "mismatches": 0,
+          "crypto_checks": 135
+        }
+      }
+    },
+    "all_endpoint_sections_comparable": false,
+    "complete_full_interval_totals_proven": false,
+    "measurement_window_tps_applicable": false,
+    "caveats": [
+      "These captures bracket client startup through full cleanup, not the 600-second measurement cohort. No TPS or per-second rate is inferred.",
+      "Only matching (overlay_id, adnl_id) sections with stable mode/metadata and nondecreasing valid counters contribute net deltas.",
+      "New, removed, reset, mode-changed, missing or invalid sections are excluded rather than filled with zero. Their endpoint lifetime counters remain visible for diagnosis.",
+      "A session can be created and retired entirely between endpoints; even identical endpoint sets and monotonic counters cannot prove complete coverage or uninterrupted actor identity.",
+      "Net increases are observable lower bounds between each section's corresponding observations. Reset-and-regrow within a matched section can conceal additional work.",
+      "After-endpoint lifetime counters are not interval deltas and may include work before the run. They are never added to the interval lower bound.",
+      "The reuse fraction describes matched net counts only; it is not a lower bound on the global reuse fraction or a CPU saving.",
+      "crypto_checks counts entry into the original signature-check path (including certificate/type/factory failures), not exclusively completed Ed25519 operations."
+    ],
+    "overlays": [
+      {
+        "overlay_id": "/wGQaJ/LdweWNKZGm7qU4f01NAvTE1qZK4ox9L9SZe4=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "/wGQaJ/LdweWNKZGm7qU4f01NAvTE1qZK4ox9L9SZe4=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,e000000000000000)",
+            "cc_seqno": 130
+          },
+          "header_line": 203,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 221
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "1MVz5V0WnplffPzHwXATE5bQqHDLL2kxgqHYk9d2KGU=",
+        "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+        "before": {
+          "overlay_id": "1MVz5V0WnplffPzHwXATE5bQqHDLL2kxgqHYk9d2KGU=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 11529215046068469760,
+            "workchain_id": 0
+          },
+          "header_line": 430,
+          "counters": {
+            "receipt_checks": 8,
+            "hits": 8,
+            "mismatches": 0,
+            "crypto_checks": 1
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 440
+        },
+        "after": {
+          "overlay_id": "1MVz5V0WnplffPzHwXATE5bQqHDLL2kxgqHYk9d2KGU=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 11529215046068469760,
+            "workchain_id": 0
+          },
+          "header_line": 385,
+          "counters": {
+            "receipt_checks": 1558832,
+            "hits": 1558832,
+            "mismatches": 0,
+            "crypto_checks": 27
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 395
+        },
+        "observable_delta_lower_bound": {
+          "receipt_checks": 1558824,
+          "hits": 1558824,
+          "mismatches": 0,
+          "crypto_checks": 26
+        },
+        "status": "matched_observable_delta"
+      },
+      {
+        "overlay_id": "3XAmFSuhRt1oayqeyg0e6NYfRXwgbCDhtPBwzfvkX2w=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "3XAmFSuhRt1oayqeyg0e6NYfRXwgbCDhtPBwzfvkX2w=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,a000000000000000)",
+            "cc_seqno": 130
+          },
+          "header_line": 159,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 177
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "3d+5w+583djn5j3F0T2ZxVVEPgC9tqviXcqEiL18m4M=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "3d+5w+583djn5j3F0T2ZxVVEPgC9tqviXcqEiL18m4M=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,6000000000000000)",
+            "cc_seqno": 129
+          },
+          "header_line": 93,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 111
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "5e+OagZkbZRVtrYiqsXkHr/L9QurtFAFdTVLi7LhhHY=",
+        "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+        "before": {
+          "overlay_id": "5e+OagZkbZRVtrYiqsXkHr/L9QurtFAFdTVLi7LhhHY=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 16140901064495857664,
+            "workchain_id": 0
+          },
+          "header_line": 462,
+          "counters": {
+            "receipt_checks": 8,
+            "hits": 8,
+            "mismatches": 0,
+            "crypto_checks": 1
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 472
+        },
+        "after": {
+          "overlay_id": "5e+OagZkbZRVtrYiqsXkHr/L9QurtFAFdTVLi7LhhHY=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 16140901064495857664,
+            "workchain_id": 0
+          },
+          "header_line": 415,
+          "counters": {
+            "receipt_checks": 1558315,
+            "hits": 1558315,
+            "mismatches": 0,
+            "crypto_checks": 27
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 425
+        },
+        "observable_delta_lower_bound": {
+          "receipt_checks": 1558307,
+          "hits": 1558307,
+          "mismatches": 0,
+          "crypto_checks": 26
+        },
+        "status": "matched_observable_delta"
+      },
+      {
+        "overlay_id": "6UAoHYdbToIKysc+pBMJnhX489t87qvt4NimXttPBMU=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "6UAoHYdbToIKysc+pBMJnhX489t87qvt4NimXttPBMU=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(-1,8000000000000000)",
+            "cc_seqno": 130
+          },
+          "header_line": 27,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 45
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "CD3TZI79a/x5WO5Rgpu73rVqJ1VrowA78/BrD2Gu0Sg=",
+        "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+        "before": {
+          "overlay_id": "CD3TZI79a/x5WO5Rgpu73rVqJ1VrowA78/BrD2Gu0Sg=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 2305843009213693952,
+            "workchain_id": 0
+          },
+          "header_line": 478,
+          "counters": {
+            "receipt_checks": 8,
+            "hits": 8,
+            "mismatches": 0,
+            "crypto_checks": 1
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 488
+        },
+        "after": {
+          "overlay_id": "CD3TZI79a/x5WO5Rgpu73rVqJ1VrowA78/BrD2Gu0Sg=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 2305843009213693952,
+            "workchain_id": 0
+          },
+          "header_line": 430,
+          "counters": {
+            "receipt_checks": 1562609,
+            "hits": 1562609,
+            "mismatches": 0,
+            "crypto_checks": 27
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 440
+        },
+        "observable_delta_lower_bound": {
+          "receipt_checks": 1562601,
+          "hits": 1562601,
+          "mismatches": 0,
+          "crypto_checks": 26
+        },
+        "status": "matched_observable_delta"
+      },
+      {
+        "overlay_id": "FcaxE86BDvymsZtDKQ5qYXUeI9YZCzEeq+S1JHO4g8s=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "FcaxE86BDvymsZtDKQ5qYXUeI9YZCzEeq+S1JHO4g8s=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(-1,8000000000000000)",
+            "cc_seqno": 124
+          },
+          "header_line": 5,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 23
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "IXSy/hDXparNm0kR+q3D5Q3+ggjElS3bkp/vi5u9dgs=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "IXSy/hDXparNm0kR+q3D5Q3+ggjElS3bkp/vi5u9dgs=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "fast-sync",
+            "shard_id": 6917529027641081856,
+            "workchain_id": 0
+          },
+          "header_line": 321,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 348
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "IXSy/hDXparNm0kR+q3D5Q3+ggjElS3bkp/vi5u9dgs=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "IXSy/hDXparNm0kR+q3D5Q3+ggjElS3bkp/vi5u9dgs=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "fast-sync",
+            "shard_id": 6917529027641081856,
+            "workchain_id": 0
+          },
+          "header_line": 348,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 383
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "KMVHTK6RbWsoDIuOsueEQmT2FcSD3dAF3i1H4Nj2s6c=",
+        "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+        "before": {
+          "overlay_id": "KMVHTK6RbWsoDIuOsueEQmT2FcSD3dAF3i1H4Nj2s6c=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 13835058055282163712,
+            "workchain_id": 0
+          },
+          "header_line": 446,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 456
+        },
+        "after": {
+          "overlay_id": "KMVHTK6RbWsoDIuOsueEQmT2FcSD3dAF3i1H4Nj2s6c=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 13835058055282163712,
+            "workchain_id": 0
+          },
+          "header_line": 400,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 410
+        },
+        "observable_delta_lower_bound": {
+          "receipt_checks": 0,
+          "hits": 0,
+          "mismatches": 0,
+          "crypto_checks": 0
+        },
+        "status": "matched_observable_delta"
+      },
+      {
+        "overlay_id": "Kk+YTk3RR0hIWW4cCJ1oB6NqgVjN4IT+CPpeF5xk0YE=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "Kk+YTk3RR0hIWW4cCJ1oB6NqgVjN4IT+CPpeF5xk0YE=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(-1,8000000000000000)",
+            "cc_seqno": 125
+          },
+          "header_line": 27,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 45
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "NUMZnli7jqhiZ44MkLOVivEc4l7NxGxJb2RRR67nhW4=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "NUMZnli7jqhiZ44MkLOVivEc4l7NxGxJb2RRR67nhW4=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,2000000000000000)",
+            "cc_seqno": 130
+          },
+          "header_line": 71,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 89
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "P8hO+IKO9yWtUA0K/kkTIPVggLVipIGV2OW8p51BhMQ=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "P8hO+IKO9yWtUA0K/kkTIPVggLVipIGV2OW8p51BhMQ=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,a000000000000000)",
+            "cc_seqno": 124
+          },
+          "header_line": 137,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 155
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "PRhX7dgjTvgDKdiT0lHI42+GUE/aeMQr2qTP9bWiuwE=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "PRhX7dgjTvgDKdiT0lHI42+GUE/aeMQr2qTP9bWiuwE=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,6000000000000000)",
+            "cc_seqno": 125
+          },
+          "header_line": 115,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 133
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "PU4Pks1jQIL0uvS+5w7YVAL3eeTw7ZC4RdgEzmq2sMM=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "PU4Pks1jQIL0uvS+5w7YVAL3eeTw7ZC4RdgEzmq2sMM=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,e000000000000000)",
+            "cc_seqno": 129
+          },
+          "header_line": 181,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 199
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "Q7QXS7FNDd2ZQw4yDk2/d2sEClKT7MOErOHfML4rKYE=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "Q7QXS7FNDd2ZQw4yDk2/d2sEClKT7MOErOHfML4rKYE=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,e000000000000000)",
+            "cc_seqno": 125
+          },
+          "header_line": 203,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 221
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "R+z/7zJPCIIQG4Au2mNKRLLCdJu/ojtSRLC0tBJu0OA=",
+        "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+        "before": {
+          "overlay_id": "R+z/7zJPCIIQG4Au2mNKRLLCdJu/ojtSRLC0tBJu0OA=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 4611686018427387904,
+            "workchain_id": 0
+          },
+          "header_line": 494,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 504
+        },
+        "after": {
+          "overlay_id": "R+z/7zJPCIIQG4Au2mNKRLLCdJu/ojtSRLC0tBJu0OA=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 4611686018427387904,
+            "workchain_id": 0
+          },
+          "header_line": 445,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 455
+        },
+        "observable_delta_lower_bound": {
+          "receipt_checks": 0,
+          "hits": 0,
+          "mismatches": 0,
+          "crypto_checks": 0
+        },
+        "status": "matched_observable_delta"
+      },
+      {
+        "overlay_id": "RACdTFDqh1I8iYqPiw1OkHpcVbt7+Rcky6+veHmu/Qg=",
+        "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+        "before": {
+          "overlay_id": "RACdTFDqh1I8iYqPiw1OkHpcVbt7+Rcky6+veHmu/Qg=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 9223372036854775808,
+            "workchain_id": -1
+          },
+          "header_line": 526,
+          "counters": {
+            "receipt_checks": 1373,
+            "hits": 1373,
+            "mismatches": 0,
+            "crypto_checks": 1
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 536
+        },
+        "after": {
+          "overlay_id": "RACdTFDqh1I8iYqPiw1OkHpcVbt7+Rcky6+veHmu/Qg=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 9223372036854775808,
+            "workchain_id": -1
+          },
+          "header_line": 475,
+          "counters": {
+            "receipt_checks": 64931,
+            "hits": 64931,
+            "mismatches": 0,
+            "crypto_checks": 32
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 485
+        },
+        "observable_delta_lower_bound": {
+          "receipt_checks": 63558,
+          "hits": 63558,
+          "mismatches": 0,
+          "crypto_checks": 31
+        },
+        "status": "matched_observable_delta"
+      },
+      {
+        "overlay_id": "S/JT1pCdkxL/HIwC/YKhD5PTN5OuQBr/u4h40GYwTl8=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "S/JT1pCdkxL/HIwC/YKhD5PTN5OuQBr/u4h40GYwTl8=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,a000000000000000)",
+            "cc_seqno": 125
+          },
+          "header_line": 159,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 177
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "TRxePijUWYFIk8sdegzmwFSzeu8tAlTH+8Xr9UlsjtM=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "TRxePijUWYFIk8sdegzmwFSzeu8tAlTH+8Xr9UlsjtM=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "fast-sync",
+            "shard_id": 9223372036854775808,
+            "workchain_id": -1
+          },
+          "header_line": 353,
+          "counters": {
+            "receipt_checks": 29754,
+            "hits": 29754,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 380
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "TRxePijUWYFIk8sdegzmwFSzeu8tAlTH+8Xr9UlsjtM=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "TRxePijUWYFIk8sdegzmwFSzeu8tAlTH+8Xr9UlsjtM=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "fast-sync",
+            "shard_id": 9223372036854775808,
+            "workchain_id": -1
+          },
+          "header_line": 389,
+          "counters": {
+            "receipt_checks": 16,
+            "hits": 16,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 424
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "VnJz90GzOEs4HxlWG5u/FAvNuPeBkwl+3ciAZzUDN8s=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "VnJz90GzOEs4HxlWG5u/FAvNuPeBkwl+3ciAZzUDN8s=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "fast-sync",
+            "shard_id": 16140901064495857664,
+            "workchain_id": 0
+          },
+          "header_line": 257,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 284
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "VnJz90GzOEs4HxlWG5u/FAvNuPeBkwl+3ciAZzUDN8s=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "VnJz90GzOEs4HxlWG5u/FAvNuPeBkwl+3ciAZzUDN8s=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "fast-sync",
+            "shard_id": 16140901064495857664,
+            "workchain_id": 0
+          },
+          "header_line": 266,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 301
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "ZRGclhUPV4sIa2BZ8zcqClrBmzsL+ntZHvAtxxQgSj4=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "ZRGclhUPV4sIa2BZ8zcqClrBmzsL+ntZHvAtxxQgSj4=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,e000000000000000)",
+            "cc_seqno": 124
+          },
+          "header_line": 181,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 199
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "b+pX4K4YaX0BXd1a4R1PQhSLDRYJMTM6DHful4j7/FQ=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "b+pX4K4YaX0BXd1a4R1PQhSLDRYJMTM6DHful4j7/FQ=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "fast-sync",
+            "shard_id": 11529215046068469760,
+            "workchain_id": 0
+          },
+          "header_line": 225,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 252
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "b+pX4K4YaX0BXd1a4R1PQhSLDRYJMTM6DHful4j7/FQ=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "b+pX4K4YaX0BXd1a4R1PQhSLDRYJMTM6DHful4j7/FQ=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "fast-sync",
+            "shard_id": 11529215046068469760,
+            "workchain_id": 0
+          },
+          "header_line": 225,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 260
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "dOx+LCNrU2f8gpZgDQD2O+zyysNVVfZXVILKD3q4jOU=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "dOx+LCNrU2f8gpZgDQD2O+zyysNVVfZXVILKD3q4jOU=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,6000000000000000)",
+            "cc_seqno": 130
+          },
+          "header_line": 115,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 133
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "dcY5bRaBzjaDTgquZhYyLVEWMcxjV0ye0RVk10XhZcI=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "dcY5bRaBzjaDTgquZhYyLVEWMcxjV0ye0RVk10XhZcI=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,2000000000000000)",
+            "cc_seqno": 125
+          },
+          "header_line": 71,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 89
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "flWXHZXn4aoWreLOR+2jlJBcXlBJXD25FzvckLLCKAI=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "flWXHZXn4aoWreLOR+2jlJBcXlBJXD25FzvckLLCKAI=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,a000000000000000)",
+            "cc_seqno": 129
+          },
+          "header_line": 137,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 155
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "fpnSzn/ydCoR2fxtbCsdItdCycDuf2W4D5SOM37wyj0=",
+        "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+        "before": {
+          "overlay_id": "fpnSzn/ydCoR2fxtbCsdItdCycDuf2W4D5SOM37wyj0=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 6917529027641081856,
+            "workchain_id": 0
+          },
+          "header_line": 510,
+          "counters": {
+            "receipt_checks": 8,
+            "hits": 8,
+            "mismatches": 0,
+            "crypto_checks": 1
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 520
+        },
+        "after": {
+          "overlay_id": "fpnSzn/ydCoR2fxtbCsdItdCycDuf2W4D5SOM37wyj0=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 6917529027641081856,
+            "workchain_id": 0
+          },
+          "header_line": 460,
+          "counters": {
+            "receipt_checks": 1555249,
+            "hits": 1555249,
+            "mismatches": 0,
+            "crypto_checks": 27
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 470
+        },
+        "observable_delta_lower_bound": {
+          "receipt_checks": 1555241,
+          "hits": 1555241,
+          "mismatches": 0,
+          "crypto_checks": 26
+        },
+        "status": "matched_observable_delta"
+      },
+      {
+        "overlay_id": "g+ottCQpnqHT0y3iAow7ZMWrXdAxOPQzHO3zcnFLp4s=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "g+ottCQpnqHT0y3iAow7ZMWrXdAxOPQzHO3zcnFLp4s=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,6000000000000000)",
+            "cc_seqno": 124
+          },
+          "header_line": 93,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 111
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "m3jvqjWG744MFHiAWfek6bAIkgmc1mX5Bn+qZrQbMNQ=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "m3jvqjWG744MFHiAWfek6bAIkgmc1mX5Bn+qZrQbMNQ=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,2000000000000000)",
+            "cc_seqno": 124
+          },
+          "header_line": 49,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 67
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "ndENvJv7mYd/zUeauKt4GqgpFTLquX0+L/0IAoCACh8=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "ndENvJv7mYd/zUeauKt4GqgpFTLquX0+L/0IAoCACh8=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(-1,8000000000000000)",
+            "cc_seqno": 129
+          },
+          "header_line": 5,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 23
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "rUcyL3NM8v+jnzuSNwN5AHkRZlVnN3N4sK7IPUxanDE=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "rUcyL3NM8v+jnzuSNwN5AHkRZlVnN3N4sK7IPUxanDE=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "consensus",
+            "shard": "(0,2000000000000000)",
+            "cc_seqno": 129
+          },
+          "header_line": 49,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 67
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "tIMqQOGT1g4Hao+kHC+5okqr7RZwcGN9nybpZzvhsoE=",
+        "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+        "before": null,
+        "after": {
+          "overlay_id": "tIMqQOGT1g4Hao+kHC+5okqr7RZwcGN9nybpZzvhsoE=",
+          "adnl_id": "SiWGcXPSwx4NpPXWm9l6QDKnkDfKIY0y6+jRBEUtXsg=",
+          "scope": {
+            "type": "fast-sync",
+            "shard_id": 2305843009213693952,
+            "workchain_id": 0
+          },
+          "header_line": 289,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 316
+        },
+        "status": "new_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "tIMqQOGT1g4Hao+kHC+5okqr7RZwcGN9nybpZzvhsoE=",
+        "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+        "before": {
+          "overlay_id": "tIMqQOGT1g4Hao+kHC+5okqr7RZwcGN9nybpZzvhsoE=",
+          "adnl_id": "hq1IuQgNbg3WbtWZqGdr5PTJB2L+w8TpaffOuwtdLbc=",
+          "scope": {
+            "type": "fast-sync",
+            "shard_id": 2305843009213693952,
+            "workchain_id": 0
+          },
+          "header_line": 307,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 342
+        },
+        "after": null,
+        "status": "removed_overlay_at_after_endpoint"
+      },
+      {
+        "overlay_id": "vj+R7GgyyxEiObE+JWVL+USzG0OWGBAaTpVEMZMNiCc=",
+        "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+        "before": {
+          "overlay_id": "vj+R7GgyyxEiObE+JWVL+USzG0OWGBAaTpVEMZMNiCc=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 9223372036854775808,
+            "workchain_id": 0
+          },
+          "header_line": 542,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 552
+        },
+        "after": {
+          "overlay_id": "vj+R7GgyyxEiObE+JWVL+USzG0OWGBAaTpVEMZMNiCc=",
+          "adnl_id": "MsN4oDZfyWdERltoT7loGA/zSTKK8nyfV7zfoTuy3VU=",
+          "scope": {
+            "type": "shard",
+            "shard_id": 9223372036854775808,
+            "workchain_id": 0
+          },
+          "header_line": 490,
+          "counters": {
+            "receipt_checks": 0,
+            "hits": 0,
+            "mismatches": 0,
+            "crypto_checks": 0
+          },
+          "enabled": 1,
+          "errors": [],
+          "counter_line": 500
+        },
+        "observable_delta_lower_bound": {
+          "receipt_checks": 0,
+          "hits": 0,
+          "mismatches": 0,
+          "crypto_checks": 0
+        },
+        "status": "matched_observable_delta"
+      }
+    ]
+  }
+}

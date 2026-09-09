@@ -1,7 +1,7 @@
 # Strict candidate metadata projection — 9 September 2026
 
 Status: implementation, correctness checks and microbenchmark complete; matched
-TPS measurements are next. The user approved
+TPS measurements are running. The user approved
 this next CPU target after the completed
 [admission/signing cycle](native-admission-cycles-2026-09-09.md). No TPS gain is
 assigned to this candidate before matched measurements complete.
@@ -118,6 +118,24 @@ The experimental `env.cpu` keeps overlay signature reuse on in both arms and
 changes only metadata projection from 0 to 1. `.env.desktop` retains the previous
 winning images until this comparison supports a new selection. The existing
 four-lane database is preserved and the generator remains stopped during startup.
+
+## Control measurement
+
+`01-metadata-control`, projection 0 with overlay reuse 1, passed the complete
+controller and wrapper at **59,784.97 canonical logical TPS**, with 59,821.23
+offered/admitted TPS. It proved 35,811,200 transfers in the 599 fully contained
+integer block-time seconds of its 600-second measurement. Proof/catch-up, full
+drain, validator cleanup and strict image/container identity checks passed;
+final backlog, canonical hash/follower errors and exhausted retries were zero.
+
+Mean interior sampled CPU equivalents were validator **9.34**, generator 0.83
+and Session Stats 0.94. Admission p50/p95/p99 RTT buckets were 200/500/1,000 ms.
+Whole-run counters included 69 transient timeouts and 638,989 not-ready replies;
+those counts include warmup and drain. The sampled canonical-backlog peak was
+830,096, with no final backlog. Offered/canonical throughput was approximately
+1.0, so this remains an observation without an independently overdriven capacity
+claim. The [control record](benchmarks/results/native-candidate-metadata-20260909-01-metadata-control.json)
+is retained. The next arm changes only metadata projection to 1.
 
 Raw artifacts are retained under
 `build/benchmarks/candidate-metadata-cycles-20260909/`.

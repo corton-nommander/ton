@@ -351,27 +351,41 @@ bash benchmark/remote/export-native-client.sh \
 
 The commands use A's deployment `.env`; add `--env-file PATH` if it differs.
 Each bundle includes the image pinned by immutable ID. Copy B's bundle only to
-B and C's only to C, then import each into a new client directory using the
-normal importer. Source offsets are export options, not remote-runner arguments.
-On each client, after import:
+B and C's only to C. Import into a new client directory; the importer refuses
+to overwrite the old full-range installation. On B:
 
 ```sh
-cd "$HOME/native-remote-client"
+bash "$HOME/native-client-B/import-native-client.sh" \
+  --bundle "$HOME/native-client-B" --output "$HOME/native-remote-client-split" \
+  --load-image --non-interactive
+```
+
+On C, substitute `native-client-C` for `native-client-B` in that import command.
+Source offsets are export options, not remote-runner arguments. On each client,
+after import:
+
+```sh
+cd "$HOME/native-remote-client-split"
 bash run-remote-load.sh --connections 10 --duration 900 --warmup 60 \
   --submit-coalesce-ms 20
 ```
 
-Start both close together with synchronized host clocks. Readiness and warmup
+Start both close together with synchronized clocks on A, B and C. Readiness and warmup
 are independent; there is no synchronized measurement-start barrier. Confirm
 at least 600 seconds of overlapping measured load in the final timestamps and
 analyze that common interval on A. A 900-second run provides room for startup
-skew, but does not guarantee the overlap.
+skew, but does not guarantee the overlap. From the two final reports use
+`start = max(canonical_gen_utime_bucket_start_unix_s)` and
+`end = min(canonical_gen_utime_bucket_end_unix_s)`; require `end - start >= 600`
+and select one contained 600-second interval.
 
 **Do not add the two canonical TPS readings.** Both followers count the same
 whole-chain transfers; their source-cohort proof accounting is separate. Use one
 canonical chain measurement for the common window and sum only distinct offered
 or admitted logical transfers over that same window. Retry attempts are not new
-offered transfers. Separate per-client capacity labels compare that client's own
+offered transfers. Use time-series cumulative counter deltas and record their
+sampling precision; separate 900-second final averages cannot recover the offer
+or admission rate inside the common interval. Separate per-client capacity labels compare that client's own
 offer rate with whole-chain TPS and may correctly remain `observation_only`.
 Complete proof/drain checks on both clients and retain A's matching profile.
 

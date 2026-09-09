@@ -331,3 +331,28 @@ all comparison gates: the sole runtime difference is prepared signing 0 → 1.
 Eleven helper tests cover absent/conflicting flags and container-identity mismatches.
 No raw wrapper fields were rewritten. The tests still lack independently offered 5%
 overdrive and therefore report observed throughput, not a proven capacity limit.
+
+
+Saved time-series review found two synchronized masterchain/basechain progress
+pauses in the prepared-key arm: **22.405 seconds at 07:55 UTC** and **8.030 seconds
+at 08:00 UTC**. Of 1,479 admission timeouts, 1,420 clustered around these pauses;
+the client then reduced its congestion window. It continued reporting queued
+ready work during the first pause, and a validator-control request took 15 seconds.
+This establishes stalled validator progress, rather than a dashboard-only gap.
+It does not establish that prepared-key reuse caused the stall.
+
+Matching host samples show available memory declining from 20.58 → 5.76 GiB across
+control 08, then 5.02 → 2.71 GiB across arm 09 (minimum 1.90 GiB). Mean host full
+memory-pressure `avg10` increased 0.460 → 1.783%, with peaks 4.46 → 8.29%.
+These are physical desktop host observations, distinct from the Docker VM. A
+subsequent check during arm 10 found approximately 65 GiB available inside the
+VM and zero guest memory pressure, while the host had roughly 1.55 GiB available
+and its 8 GiB swap was full. The VM is configured with a 99,840 MiB shared memory
+backend. This resource contention limits causal interpretation of the desktop
+comparison; spare guest memory does not establish spare host memory.
+
+At the original control rate, the two pauses represent about 76% of the
+whole-window transfer deficit, solely as an illustrative scale comparison.
+The reported TPS still includes every measured second; no pause was deleted or
+used to manufacture an adjusted result. Detailed evidence is retained in
+[the stall analysis](benchmarks/results/native-admission-20260909-prepared-stalls.json).

@@ -149,7 +149,56 @@ input rejection fraction and stage timings to establish material snapshot churn
 first. Do not remove the exact-state rejection, lengthen its RPC deadline or count
 retries as new offered transfers to improve a benchmark number.
 
+## Experimental bounded batch snapshot refresh
+
+`TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=1` enables one request-local refresh in
+`sendMessageBatch` admission; the default is **0** for matched measurement.
+When the exact masterchain block ID or state-root hash changes while native
+account reads or signature verification are suspended, unresolved native inputs
+may restart their mutable admission stages once. A second snapshot change still
+returns the original snapshot-changed rejection. Repeated manager and signature
+waits use the original absolute RPC deadline, and existing reservation/finalization
+deadline checks remain in place. The refresh never renews the deadline.
+
+The new pass rechecks activation, lane policy, current locality, wire size/depth,
+wall-clock expiry, source account nonce/balance and watermark revision. Refreshed
+inputs are checked again after their state wait and before reservation so the
+extra attempt cannot extend signed authorization lifetime.
+It preserves the existing full-interval reservation and commit checks. Parsed
+BOCs and successful signatures are reusable only for the same external cell hash,
+source public key and signing domain. Duplicate BOCs with different wire sizes
+receive their own refreshed size check. Already completed inputs and generic
+message processing are not replayed; no reservation precedes the refresh decision.
+The single-message path retains its existing strict snapshot-change rejection.
+
+The `total.ext_msg_batch_diagnostics` key adds:
+
+| Field | Meaning |
+| --- | --- |
+| `snapshot_refresh_enabled` | Effective switch for this process. |
+| `snapshot_refresh_attempts` | Batches that took their one allowed refresh. |
+| `snapshot_refresh_successes` | Completed refreshed batches with at least one accepted unique native input afterward; this is not an all-input success count. |
+| `snapshot_refresh_accepted_messages` | Unique native inputs accepted after a refresh, including exact-hash idempotent admission; duplicate wire slots and logical children are not expanded. |
+| `snapshot_refresh_exhausted` | Batches rejected after their refreshed snapshot also changed. |
+| `snapshot_refresh_deadlines` | Batches with a timeout during the refreshed stages, or found expired at the post-verification refresh decision; counted at most once per batch. |
+| `snapshot_refresh_signature_reuses` | Inputs whose exact request-local signature proof avoided another verifier dispatch. |
+
+Verification wall-time samples include second-pass mutable prechecks even when
+all signatures are reused. These counters do not establish canonical inclusion
+or a TPS gain. Keep the switch off until controlled production-size measurements
+show a repeatable benefit; ordinary client retries remain necessary for requests
+that exhaust the one refresh or their original deadline.
+
 ## Local validation for this implementation
+
+For the September 9 experimental refresh and attribution changes, Release builds
+passed 8 refresh-policy tests, 8 actual batch-coroutine tests, 8 admission tests,
+85 pool scheduler tests and 13 collation-wait tests. The batch fixtures use real
+BOCs, signature verifiers, account dictionaries and reservation/commit code with
+a controlled state manager and seeded immutable configuration projections. They
+exercise one successful refresh, exhausted refresh, original deadline, signed
+expiry, changed signing domain/nonce/balance/mode/lane/limits, duplicate wire
+encoding and disabled controls. They do not establish a production TPS gain.
 
 The Release validator-engine build and focused tests passed: 8 admission telemetry/cache tests,
 69 pool scheduler tests (including malformed configuration not entering the cache), and 35

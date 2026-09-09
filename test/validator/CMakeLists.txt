@@ -56,3 +56,17 @@ target_include_directories(test-ext-message-pool-scheduler PRIVATE ${CMAKE_SOURC
                                                                    ${CMAKE_SOURCE_DIR}/third-party/rocksdb/include)
 target_link_libraries(test-ext-message-pool-scheduler PRIVATE td-test-main tdutils ton_validator validator)
 ton_test(test-ext-message-pool-scheduler)
+
+add_executable(test-native-admission-refresh-batch test-native-admission-refresh-batch.cpp)
+target_include_directories(test-native-admission-refresh-batch PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+                                                                       ${CMAKE_SOURCE_DIR}/common
+                                                                       ${CMAKE_SOURCE_DIR}/crypto
+                                                                       ${CMAKE_SOURCE_DIR}/tdactor
+                                                                       ${CMAKE_SOURCE_DIR}/tddb
+                                                                       ${CMAKE_SOURCE_DIR}/tdnet
+                                                                       ${CMAKE_SOURCE_DIR}/tdfec
+                                                                       ${CMAKE_SOURCE_DIR}/tl
+                                                                       ${CMAKE_SOURCE_DIR}/tl/generate
+                                                                       ${CMAKE_SOURCE_DIR}/third-party/rocksdb/include)
+target_link_libraries(test-native-admission-refresh-batch PRIVATE td-test-main tdutils ton_validator validator)
+ton_test(test-native-admission-refresh-batch)

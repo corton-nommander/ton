@@ -26,6 +26,7 @@
 #include "vm/dict.h"
 
 #include "ext-message-pool.hpp"
+#include "native-admission-refresh-policy.h"
 #include "external-message.hpp"
 #include "fabric.h"
 #include "transaction.h"
@@ -46,6 +47,10 @@ void ExtMessagePool::start_up() {
   if (const char* value = std::getenv("TON_NATIVE_ADMISSION_SHARD_SHARING")) {
     CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
     native_admission_shard_sharing_enabled_ = td::Slice(value) == "1";
+  }
+  if (const char* value = std::getenv("TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH")) {
+    CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
+    native_admission_snapshot_refresh_enabled_ = td::Slice(value) == "1";
   }
   auto parse_bounded_env = [](const char* name, unsigned long fallback, unsigned long maximum) {
     const char* value = std::getenv(name);
@@ -82,6 +87,7 @@ void ExtMessagePool::start_up() {
   LOG(WARNING) << "native mempool configuration: signature_workers=" << workers
                << " admission_config_cache=" << native_config_cache_enabled_
                << " admission_shard_sharing=" << native_admission_shard_sharing_enabled_
+               << " admission_snapshot_refresh=" << native_admission_snapshot_refresh_enabled_
                << " collator_queue_limit=" << native_collator_queue_limit_
                << " max_retention_s=" << native_mempool_max_ttl_
                << " generic_retention_s=" << MempoolMsg::GENERIC_MEMPOOL_TTL_SECONDS;
@@ -199,6 +205,7 @@ td::Result<ExtMessagePool::NativeAdmissionSnapshot> ExtMessagePool::pin_native_a
                                                        : td::optional<td::uint32>{});
   NativeAdmissionSnapshot snapshot{.state = std::move(state),
                                  .block_id = block_id,
+                                 .state_root = state_root,
                                  .chain_domain = config.get_zerostate_id().root_hash,
                                  .runs_enabled = runs_enabled,
                                  .payment_lane_policy = std::move(payment_lane_policy)};
@@ -911,6 +918,9 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
   const double batch_started_at = td::Time::now();
   native_batch_telemetry_.begin_batch();
   bool batch_completed = false;
+  bool refresh_attempted = false;
+  bool refresh_accepted = false;
+  bool refresh_deadline_recorded = false;
   const auto pool = actor_id(this);
   SCOPE_EXIT {
     if (!batch_completed) {
@@ -929,15 +939,27 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
       native_batch_telemetry_.record_result(status.accepted, status.error_code, status.error_message,
                                             missing_masterchain);
     }
+    if (refresh_attempted && refresh_accepted) {
+      ++native_batch_snapshot_refresh_successes_;
+    }
     native_batch_telemetry_.finish_batch(td::Time::now() - batch_started_at, true);
     batch_completed = true;
   };
   std::vector<bool> status_set(batch.size(), false);
   auto reject = [&](std::size_t index, td::Status error) {
+    if (refresh_attempted && !refresh_deadline_recorded &&
+        (error.code() == ErrorCode::timeout || error.code() == td::actor::AWAIT_TIMEOUT_CODE)) {
+      ++native_batch_snapshot_refresh_deadlines_;
+      refresh_deadline_recorded = true;
+    }
     output.statuses[index] = ExternalMessageAdmissionResult::failure(std::move(error));
     status_set[index] = true;
   };
   auto accept = [&](std::size_t index) {
+    if (refresh_attempted) {
+      refresh_accepted = true;
+      ++native_batch_snapshot_refresh_accepted_messages_;
+    }
     output.statuses[index] = ExternalMessageAdmissionResult::success();
     status_set[index] = true;
   };
@@ -969,6 +991,8 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     td::optional<block::NativeTransferRun> native_transfer_run;
     td::optional<NativeAdmission> native_admission;
     td::optional<std::size_t> duplicate_of;
+    std::size_t wire_size{0};
+    NativeAdmissionSignatureProof signature_proof;
   };
   std::vector<BatchItem> items(batch.size());
   std::map<ExtMessage::Hash, std::size_t> first_by_hash;
@@ -981,6 +1005,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
       reject(i, td::Status::Error(ErrorCode::timeout, "external message admission deadline expired"));
       continue;
     }
+    items[i].wire_size = batch[i].size();
     auto r_message = create_ext_message(std::move(batch[i]), limits);
     if (r_message.is_error()) {
       reject(i, r_message.move_as_error());
@@ -1031,6 +1056,55 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
   native_batch_telemetry_.decode.observe(td::Time::now() - decode_started);
   td::optional<NativeAdmissionSnapshot> native_snapshot;
   double snapshot_pinned_at = 0;
+  auto validate_snapshot_items = [&] {
+    const auto &snapshot = native_snapshot.value();
+    // Initial decoding already checked every wire representation. Only a
+    // refreshed state requires repeating these limits.
+    if (refresh_attempted) {
+      const auto current_limits = snapshot.state->get_ext_msg_limits();
+      // Wire size is representation-specific: distinct BOC encodings can
+      // share one root hash. Check duplicate inputs too, before propagating a
+      // primary result, and preserve a duplicate's own size/depth rejection.
+      for (std::size_t index = 0; index < items.size(); ++index) {
+        const auto primary = items[index].duplicate_of ? items[index].duplicate_of.value() : index;
+        if (status_set[index] || status_set[primary] || !items[primary].native_admission) {
+          continue;
+        }
+        if (items[index].wire_size > current_limits.max_size) {
+          reject(index, td::Status::Error("external message too large, rejecting"));
+        } else if (items[index].message->root_cell()->get_depth() >= current_limits.max_depth) {
+          reject(index, td::Status::Error("external message is too deep"));
+        }
+      }
+    }
+    for (auto index : native_indices) {
+      if (status_set[index]) {
+        continue;
+      }
+      if (deadline && deadline.is_in_past()) {
+        reject(index, td::Status::Error(ErrorCode::timeout, "external message admission deadline expired"));
+        continue;
+      }
+      auto mode_status = validate_native_admission_mode(snapshot, items[index].native_admission.value().is_run);
+      if (mode_status.is_error()) {
+        reject(index, std::move(mode_status));
+        continue;
+      }
+      // Repeat current locality before exact-hash idempotence. A retained
+      // parent from an earlier split or lane policy cannot bypass this gate.
+      auto locality = items[index].native_transfer
+                          ? validate_native_transfer_locality(items[index].native_transfer.value(),
+                                                              *snapshot.state, snapshot.payment_lane_policy)
+                          : validate_native_transfer_locality(items[index].native_transfer_run.value(),
+                                                              *snapshot.state, snapshot.payment_lane_policy);
+      if (locality.is_error()) {
+        reject(index, locality.move_as_error());
+        continue;
+      }
+      items[index].native_admission.value().payment_lane_depth =
+          snapshot.payment_lane_policy ? snapshot.payment_lane_policy.value().depth() : 0;
+    }
+  };
   if (!native_indices.empty()) {
     auto snapshot = pin_native_admission_snapshot();
     if (snapshot.is_error()) {
@@ -1043,35 +1117,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     } else {
       native_snapshot = snapshot.move_as_ok();
       snapshot_pinned_at = td::Time::now();
-      for (auto index : native_indices) {
-        if (status_set[index]) {
-          continue;
-        }
-        auto mode_status = validate_native_admission_mode(native_snapshot.value(),
-                                                          items[index].native_admission.value().is_run);
-        if (mode_status.is_error()) {
-          reject(index, std::move(mode_status));
-          continue;
-        }
-        // The batch path must make the same pre-idempotence locality decision
-        // as the single-message path. Otherwise an exact retry retained from
-        // before a split or lane activation could bypass the new policy.
-        auto locality = items[index].native_transfer
-                            ? validate_native_transfer_locality(items[index].native_transfer.value(),
-                                                               *native_snapshot.value().state,
-                                                               native_snapshot.value().payment_lane_policy)
-                            : validate_native_transfer_locality(items[index].native_transfer_run.value(),
-                                                               *native_snapshot.value().state,
-                                                               native_snapshot.value().payment_lane_policy);
-        if (locality.is_error()) {
-          reject(index, locality.move_as_error());
-          continue;
-        }
-        if (native_snapshot.value().payment_lane_policy) {
-          items[index].native_admission.value().payment_lane_depth =
-              native_snapshot.value().payment_lane_policy.value().depth();
-        }
-      }
+      validate_snapshot_items();
     }
   }
 
@@ -1100,374 +1146,437 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     }
   }
 
-  std::map<NativeAddress, std::vector<std::size_t>> source_items;
-  for (auto index : native_indices) {
-    if (status_set[index]) {
-      continue;
-    }
-    auto &message = items[index].message;
-    const auto &admission = items[index].native_admission.value();
-    const auto &native_source = items[index].native_transfer
-                                    ? items[index].native_transfer.value().src
-                                    : items[index].native_transfer_run.value().src;
-    auto existing = check_existing_external_message(message, priority, add_to_mempool);
-    if (existing.is_error()) {
-      reject(index, existing.move_as_error());
-      continue;
-    }
-    auto existing_result = existing.move_as_ok();
-    if (existing_result) {
-      accept(index);
-      continue;
-    }
-    if (checked_ext_msg_counter_.get_msg_count(message->wc(), message->addr()) >= MAX_EXT_MSG_PER_ADDR) {
-      reject(index, td::Status::Error(PSTRING() << "too many external messages to address " << message->wc() << ":"
-                                                << message->addr().to_hex()));
-      continue;
-    }
-    if (message->wc() != basechainId || native_source != message->addr()) {
-      reject(index, td::Status::Error("native transfer is routed to the wrong source account"));
-      continue;
-    }
-    if (admission.valid_until <= static_cast<UnixTime>(td::Clocks::system())) {
-      reject(index, td::Status::Error("native transfer valid_until is in the past"));
-      continue;
-    }
-    source_items[{message->wc(), message->addr()}].push_back(index);
-  }
-
-  struct SourceSnapshot {
-    UnixTime utime{0};
-    LogicalTime lt{0};
-    td::uint64 balance{0};
-    td::uint64 first_nonce{0};
-    td::uint64 revision{0};
-  };
-  std::map<NativeAddress, SourceSnapshot> source_snapshots;
-  std::set<NativeAddress> changed_native_sources;
-  Bits256 chain_domain;
-  if (!source_items.empty()) {
-    if (!native_snapshot) {
-      for (const auto &[_, indices] : source_items) {
-        for (auto index : indices) {
-          reject(index, td::Status::Error(ErrorCode::notready,
-                                          "native admission configuration was not pinned; retry"));
-        }
-      }
-      source_items.clear();
-    } else {
-      const auto &admission_snapshot = native_snapshot.value();
-      auto mc_state = admission_snapshot.state;
-      const auto &mc_block_id = admission_snapshot.block_id;
-      // Keep the cache generation tied to the exact state pinned by this
-      // actor turn. update_last_masterchain_state normally established it,
-      // while this idempotent reset also makes the invariant local to the
-      // admission path (including tests and future initialization paths).
-      reset_native_admission_cache_generation(mc_block_id);
-      ++native_batch_mc_state_pins_;
-      native_batch_last_pinned_mc_seqno_ = mc_block_id.seqno();
-      chain_domain = admission_snapshot.chain_domain;
-      auto erase_rejected_source_items = [&] {
-          for (auto it = source_items.begin(); it != source_items.end();) {
-            auto &indices = it->second;
-            indices.erase(std::remove_if(indices.begin(), indices.end(),
-                                         [&](std::size_t index) { return status_set[index]; }),
-                          indices.end());
-            if (indices.empty()) {
-              it = source_items.erase(it);
-            } else {
-              ++it;
-            }
-          }
-        };
-        erase_rejected_source_items();
-        std::map<BlockIdExt, std::vector<NativeAddress>> shard_sources;
-        for (const auto &[address, indices] : source_items) {
-          bool has_admissible_item = false;
-          for (auto index : indices) {
-            if (status_set[index]) {
-              continue;
-            }
-            // Locality and the optional fixed-lane predicate were checked
-            // before the exact-hash lookup, against this same immutable
-            // snapshot. Do not repeat shard-map lookups on the hot batch
-            // path merely to derive the source-state fetch grouping.
-            has_admissible_item = true;
-          }
-          if (!has_admissible_item) {
-            continue;
-          }
-          auto shard = mc_state->get_shard_from_config(extract_addr_prefix(address.first, address.second).as_leaf_shard(),
-                                                       false);
-          if (shard.is_null()) {
-            for (auto index : indices) {
-              if (!status_set[index]) {
-                reject(index, td::Status::Error(ErrorCode::notready,
-                                                "cannot locate native source shard in pinned masterchain state"));
-              }
-            }
-            continue;
-          }
-          shard_sources[shard->top_block_id()].push_back(address);
-        }
-
-        // Preserve the first, most useful admission failure for rejected runs
-        // while still allowing scalar entries from the same source to use the
-        // pinned account read below.
-        erase_rejected_source_items();
-
-        for (const auto &[shard_block_id, addresses] : shard_sources) {
-          auto reject_shard = [&](td::Status error) {
-            auto code = error.code();
-            auto message = error.message().str();
-            for (const auto &address : addresses) {
-              for (auto index : source_items[address]) {
-                reject(index, td::Status::Error(code, message));
-              }
-            }
-          };
-          if (deadline && deadline.is_in_past()) {
-            reject_shard(td::Status::Error(ErrorCode::timeout, "external message admission deadline expired"));
-            continue;
-          }
-          auto shard_view = lookup_native_admission_shard_view(mc_block_id, shard_block_id);
-          if (!shard_view) {
-            const double shard_wait_started_at = td::Time::now();
-            auto view_result = co_await wait_native_admission_shard_view(mc_block_id, shard_block_id, deadline).wrap();
-            native_batch_telemetry_.shard_wait.observe(td::Time::now() - shard_wait_started_at);
-            if (view_result.is_error()) {
-              reject_shard(view_result.move_as_error());
-              continue;
-            }
-            shard_view = view_result.move_as_ok();
-          }
-          native_batch_last_pinned_shard_seqno_ = shard_view->block_id.seqno();
-          if (mc_state->get_unix_time() >= shard_view->gen_utime) {
-            native_batch_max_mc_shard_utime_lag_s_ = std::max<td::uint64>(
-                native_batch_max_mc_shard_utime_lag_s_, mc_state->get_unix_time() - shard_view->gen_utime);
-          }
-          vm::AugmentedDictionary accounts{vm::load_cell_slice_ref(shard_view->accounts), 256,
-                                           block::tlb::aug_ShardAccounts};
-          for (const auto &address : addresses) {
-            ++native_batch_account_lookups_;
-            block::Account account;
-            auto shard_account = accounts.lookup(address.second);
-            if (!account.unpack(shard_account, shard_view->gen_utime, false)) {
-              for (auto index : source_items[address]) {
-                reject(index, td::Status::Error("Failed to unpack account state"));
-              }
-              continue;
-            }
-            account.block_lt = shard_view->gen_lt;
-            if (account.status != block::Account::acc_uninit || !account.is_native) {
-              for (auto index : source_items[address]) {
-                reject(index, td::Status::Error("native transfer source account must be balance-only"));
-              }
-              continue;
-            }
-            auto available_balance = account.native_balance_uint64();
-            if (!available_balance) {
-              for (auto index : source_items[address]) {
-                reject(index, td::Status::Error(
-                                  "native transfer source balance must be uint64 grams without extra currencies"));
-              }
-              continue;
-            }
-            auto applied = apply_canonical_native_account_state(address, account.native_nonce,
-                                                                 available_balance.value(), shard_view->gen_utime,
-                                                                 shard_view->gen_lt);
-            if (applied.is_error()) {
-              ++native_batch_watermark_lag_rejections_;
-              const auto &watermark = native_nonce_watermarks_.at(address);
-              if (watermark.observed_next_nonce > account.native_nonce) {
-                native_batch_max_watermark_nonce_lag_ =
-                    std::max(native_batch_max_watermark_nonce_lag_,
-                             watermark.observed_next_nonce - account.native_nonce);
-              }
-              for (auto index : source_items[address]) {
-                reject(index, td::Status::Error(
-                                  ErrorCode::notready,
-                                  "native account state predates the latest observed canonical state"));
-              }
-              continue;
-            }
-            if (applied.ok()) {
-              changed_native_sources.insert(address);
-            }
-            const auto &watermark = native_nonce_watermarks_.at(address);
-            auto first_nonce = watermark.first_unconsumed_nonce();
-            if (!first_nonce) {
-              for (auto index : source_items[address]) {
-                reject(index, td::Status::Error("native account nonce space is exhausted"));
-              }
-              continue;
-            }
-            source_snapshots[address] = SourceSnapshot{.utime = shard_view->gen_utime,
-                                                       .lt = shard_view->gen_lt,
-                                                       .balance = available_balance.value(),
-                                                       .first_nonce = first_nonce.value(),
-                                                       .revision = watermark.revision};
-          }
-        }
-      }
-    }
-  if (!changed_native_sources.empty()) {
-    wake_native_callbacks(&changed_native_sources);
-  }
-
-  // Includes native prechecks, dispatch to signature actors, and waiting for
-  // their group. This is batch wall residence, not summed verifier CPU time.
-  const double verification_started_at = td::Time::now();
-  std::vector<std::size_t> verify_indices;
-  std::vector<td::actor::StartedTask<td::Unit>> verification_tasks;
-  for (const auto &[address, indices] : source_items) {
-    auto snapshot_it = source_snapshots.find(address);
-    if (snapshot_it == source_snapshots.end()) {
-      continue;
-    }
-    const auto &snapshot = snapshot_it->second;
-    for (auto index : indices) {
+  NativeAdmissionRefreshPolicy refresh_policy(deadline, native_admission_snapshot_refresh_enabled_);
+  // Parsing, deduplication, generic results and prior native outcomes stay
+  // outside this loop. At most one refresh reaches its second iteration.
+  for (;;) {
+    std::map<NativeAddress, std::vector<std::size_t>> source_items;
+    for (auto index : native_indices) {
       if (status_set[index]) {
         continue;
       }
+      auto &message = items[index].message;
       const auto &admission = items[index].native_admission.value();
-      if (!admission.has_valid_interval()) {
-        reject(index, td::Status::Error("native transfer has an invalid nonce interval"));
+      const auto &native_source = items[index].native_transfer
+                                      ? items[index].native_transfer.value().src
+                                      : items[index].native_transfer_run.value().src;
+      auto existing = check_existing_external_message(message, priority, add_to_mempool);
+      if (existing.is_error()) {
+        reject(index, existing.move_as_error());
         continue;
       }
-      if (admission.first_nonce < snapshot.first_nonce) {
-        reject(index, td::Status::Error(PSTRING() << "Too old native nonce: msg_nonce=" << admission.first_nonce
-                                                  << ", account_nonce=" << snapshot.first_nonce));
+      auto existing_result = existing.move_as_ok();
+      if (existing_result) {
+        accept(index);
         continue;
       }
-      auto last_nonce = admission.last_nonce();
-      CHECK(last_nonce);
-      if (last_nonce.value() - snapshot.first_nonce > MAX_NATIVE_NONCE_DIFF) {
-        reject(index, td::Status::Error(PSTRING() << "Too new native nonce: msg_nonce=" << last_nonce.value()
-                                                  << ", account_nonce=" << snapshot.first_nonce));
+      if (checked_ext_msg_counter_.get_msg_count(message->wc(), message->addr()) >= MAX_EXT_MSG_PER_ADDR) {
+        reject(index, td::Status::Error(PSTRING() << "too many external messages to address " << message->wc() << ":"
+                                                  << message->addr().to_hex()));
         continue;
       }
-      auto required_amount = admission.required_amount();
-      if (!required_amount) {
-        reject(index, td::Status::Error("native transfer aggregate debit overflow"));
+      if (message->wc() != basechainId || native_source != message->addr()) {
+        reject(index, td::Status::Error("native transfer is routed to the wrong source account"));
         continue;
       }
-      if (required_amount.value() > snapshot.balance) {
-        reject(index, td::Status::Error("native transfer has insufficient source balance"));
+      if (admission.valid_until <= static_cast<UnixTime>(td::Clocks::system())) {
+        reject(index, td::Status::Error("native transfer valid_until is in the past"));
         continue;
       }
-      CHECK(!native_signature_verifiers_.empty());
-      auto &verifier =
-          native_signature_verifiers_[native_signature_verifier_cursor_++ % native_signature_verifiers_.size()];
-      if (items[index].native_transfer_run) {
-        verification_tasks.push_back(
-            td::actor::await_with_timeout(
-                td::actor::ask(verifier, &NativeSignatureVerifier::verify_run,
-                               items[index].native_transfer_run.value(), chain_domain),
-                deadline)
-                .start());
-      } else {
-        verification_tasks.push_back(
-            td::actor::await_with_timeout(td::actor::ask(verifier, &NativeSignatureVerifier::verify,
-                                                         items[index].native_transfer.value(), chain_domain),
-                                          deadline)
-                .start());
-      }
-      verify_indices.push_back(index);
+      source_items[{message->wc(), message->addr()}].push_back(index);
     }
-  }
-  if (!verification_tasks.empty()) {
-    auto verification_results = co_await td::actor::all_wrap(std::move(verification_tasks));
-    native_batch_telemetry_.verification.observe(td::Time::now() - verification_started_at);
-    for (std::size_t i = 0; i < verification_results.size(); ++i) {
-      if (verification_results[i].is_error()) {
-        reject(verify_indices[i], verification_results[i].move_as_error());
-      }
-    }
-  }
 
-  if (!verify_indices.empty() && native_snapshot) {
-    // Shard reads and signature workers can suspend this actor while the
-    // applied MC topology/config advances. Direct-run locality and its signature
-    // domain are bound to the exact snapshot above, so never reserve a run
-    // after that snapshot changed. Legacy scalar admission retains its old
-    // behavior unless the newly applied config has switched to run-only.
-    auto current_snapshot = pin_native_admission_snapshot();
-    const double snapshot_age = td::Time::now() - snapshot_pinned_at;
-    native_batch_telemetry_.snapshot_age.observe(snapshot_age);
-    if (current_snapshot.is_error()) {
-      auto error = current_snapshot.move_as_error();
-      for (auto index : verify_indices) {
-        if (!status_set[index]) {
-          reject(index, td::Status::Error(error.code(), error.message().str()));
+    struct SourceSnapshot {
+      UnixTime utime{0};
+      LogicalTime lt{0};
+      td::uint64 balance{0};
+      td::uint64 first_nonce{0};
+      td::uint64 revision{0};
+    };
+    std::map<NativeAddress, SourceSnapshot> source_snapshots;
+    std::set<NativeAddress> changed_native_sources;
+    Bits256 chain_domain;
+    if (!source_items.empty()) {
+      if (!native_snapshot) {
+        for (const auto &[_, indices] : source_items) {
+          for (auto index : indices) {
+            reject(index, td::Status::Error(ErrorCode::notready,
+                                            "native admission configuration was not pinned; retry"));
+          }
+        }
+        source_items.clear();
+      } else {
+        const auto &admission_snapshot = native_snapshot.value();
+        auto mc_state = admission_snapshot.state;
+        const auto &mc_block_id = admission_snapshot.block_id;
+        // Keep the cache generation tied to the exact state pinned by this
+        // actor turn. update_last_masterchain_state normally established it,
+        // while this idempotent reset also makes the invariant local to the
+        // admission path (including tests and future initialization paths).
+        reset_native_admission_cache_generation(mc_block_id);
+        ++native_batch_mc_state_pins_;
+        native_batch_last_pinned_mc_seqno_ = mc_block_id.seqno();
+        chain_domain = admission_snapshot.chain_domain;
+        auto erase_rejected_source_items = [&] {
+            for (auto it = source_items.begin(); it != source_items.end();) {
+              auto &indices = it->second;
+              indices.erase(std::remove_if(indices.begin(), indices.end(),
+                                           [&](std::size_t index) { return status_set[index]; }),
+                            indices.end());
+              if (indices.empty()) {
+                it = source_items.erase(it);
+              } else {
+                ++it;
+              }
+            }
+          };
+          erase_rejected_source_items();
+          std::map<BlockIdExt, std::vector<NativeAddress>> shard_sources;
+          for (const auto &[address, indices] : source_items) {
+            bool has_admissible_item = false;
+            for (auto index : indices) {
+              if (status_set[index]) {
+                continue;
+              }
+              // Locality and the optional fixed-lane predicate were checked
+              // before the exact-hash lookup, against this same immutable
+              // snapshot. Do not repeat shard-map lookups on the hot batch
+              // path merely to derive the source-state fetch grouping.
+              has_admissible_item = true;
+            }
+            if (!has_admissible_item) {
+              continue;
+            }
+            auto shard = mc_state->get_shard_from_config(extract_addr_prefix(address.first, address.second).as_leaf_shard(),
+                                                         false);
+            if (shard.is_null()) {
+              for (auto index : indices) {
+                if (!status_set[index]) {
+                  reject(index, td::Status::Error(ErrorCode::notready,
+                                                  "cannot locate native source shard in pinned masterchain state"));
+                }
+              }
+              continue;
+            }
+            shard_sources[shard->top_block_id()].push_back(address);
+          }
+
+          // Preserve the first, most useful admission failure for rejected runs
+          // while still allowing scalar entries from the same source to use the
+          // pinned account read below.
+          erase_rejected_source_items();
+
+          for (const auto &[shard_block_id, addresses] : shard_sources) {
+            auto reject_shard = [&](td::Status error) {
+              auto code = error.code();
+              auto message = error.message().str();
+              for (const auto &address : addresses) {
+                for (auto index : source_items[address]) {
+                  reject(index, td::Status::Error(code, message));
+                }
+              }
+            };
+            if (deadline && deadline.is_in_past()) {
+              reject_shard(td::Status::Error(ErrorCode::timeout, "external message admission deadline expired"));
+              continue;
+            }
+            auto shard_view = lookup_native_admission_shard_view(mc_block_id, shard_block_id);
+            if (!shard_view) {
+              const double shard_wait_started_at = td::Time::now();
+              auto view_result = co_await wait_native_admission_shard_view(mc_block_id, shard_block_id, deadline).wrap();
+              native_batch_telemetry_.shard_wait.observe(td::Time::now() - shard_wait_started_at);
+              if (view_result.is_error()) {
+                reject_shard(view_result.move_as_error());
+                continue;
+              }
+              shard_view = view_result.move_as_ok();
+            }
+            native_batch_last_pinned_shard_seqno_ = shard_view->block_id.seqno();
+            if (mc_state->get_unix_time() >= shard_view->gen_utime) {
+              native_batch_max_mc_shard_utime_lag_s_ = std::max<td::uint64>(
+                  native_batch_max_mc_shard_utime_lag_s_, mc_state->get_unix_time() - shard_view->gen_utime);
+            }
+            vm::AugmentedDictionary accounts{vm::load_cell_slice_ref(shard_view->accounts), 256,
+                                             block::tlb::aug_ShardAccounts};
+            for (const auto &address : addresses) {
+              ++native_batch_account_lookups_;
+              block::Account account;
+              auto shard_account = accounts.lookup(address.second);
+              if (!account.unpack(shard_account, shard_view->gen_utime, false)) {
+                for (auto index : source_items[address]) {
+                  reject(index, td::Status::Error("Failed to unpack account state"));
+                }
+                continue;
+              }
+              account.block_lt = shard_view->gen_lt;
+              if (account.status != block::Account::acc_uninit || !account.is_native) {
+                for (auto index : source_items[address]) {
+                  reject(index, td::Status::Error("native transfer source account must be balance-only"));
+                }
+                continue;
+              }
+              auto available_balance = account.native_balance_uint64();
+              if (!available_balance) {
+                for (auto index : source_items[address]) {
+                  reject(index, td::Status::Error(
+                                    "native transfer source balance must be uint64 grams without extra currencies"));
+                }
+                continue;
+              }
+              auto applied = apply_canonical_native_account_state(address, account.native_nonce,
+                                                                   available_balance.value(), shard_view->gen_utime,
+                                                                   shard_view->gen_lt);
+              if (applied.is_error()) {
+                ++native_batch_watermark_lag_rejections_;
+                const auto &watermark = native_nonce_watermarks_.at(address);
+                if (watermark.observed_next_nonce > account.native_nonce) {
+                  native_batch_max_watermark_nonce_lag_ =
+                      std::max(native_batch_max_watermark_nonce_lag_,
+                               watermark.observed_next_nonce - account.native_nonce);
+                }
+                for (auto index : source_items[address]) {
+                  reject(index, td::Status::Error(
+                                    ErrorCode::notready,
+                                    "native account state predates the latest observed canonical state"));
+                }
+                continue;
+              }
+              if (applied.ok()) {
+                changed_native_sources.insert(address);
+              }
+              const auto &watermark = native_nonce_watermarks_.at(address);
+              auto first_nonce = watermark.first_unconsumed_nonce();
+              if (!first_nonce) {
+                for (auto index : source_items[address]) {
+                  reject(index, td::Status::Error("native account nonce space is exhausted"));
+                }
+                continue;
+              }
+              source_snapshots[address] = SourceSnapshot{.utime = shard_view->gen_utime,
+                                                         .lt = shard_view->gen_lt,
+                                                         .balance = available_balance.value(),
+                                                         .first_nonce = first_nonce.value(),
+                                                         .revision = watermark.revision};
+            }
+          }
         }
       }
-    } else {
-      const auto &current = current_snapshot.ok();
-      const bool mc_changed = current.block_id != native_snapshot.value().block_id;
-      bool changed_snapshot_recorded = false;
-      for (auto index : verify_indices) {
+    if (!changed_native_sources.empty()) {
+      wake_native_callbacks(&changed_native_sources);
+    }
+
+    // Includes native prechecks, dispatch to signature actors, and waiting for
+    // their group. This is batch wall residence, not summed verifier CPU time.
+    const double verification_started_at = td::Time::now();
+    std::vector<std::size_t> verify_indices;
+    std::vector<td::actor::StartedTask<td::Unit>> verification_tasks;
+    std::vector<std::size_t> verification_task_indices;
+    auto signature_key = [&](std::size_t index) {
+      return NativeAdmissionSignatureKey{items[index].message->hash(), items[index].message->addr(), chain_domain};
+    };
+    for (const auto &[address, indices] : source_items) {
+      auto snapshot_it = source_snapshots.find(address);
+      if (snapshot_it == source_snapshots.end()) {
+        continue;
+      }
+      const auto &snapshot = snapshot_it->second;
+      for (auto index : indices) {
         if (status_set[index]) {
           continue;
         }
-        const bool is_run = items[index].native_admission.value().is_run;
-        if (is_run && mc_changed) {
-          if (!changed_snapshot_recorded) {
-            native_batch_telemetry_.changed_snapshot_age.observe(snapshot_age);
-            changed_snapshot_recorded = true;
-          }
-          reject(index, td::Status::Error(ErrorCode::notready,
-                                          "native transfer run admission snapshot changed; retry"));
+        const auto &admission = items[index].native_admission.value();
+        if (refresh_attempted && admission.valid_until <= static_cast<UnixTime>(td::Clocks::system())) {
+          reject(index, td::Status::Error("native transfer valid_until is in the past"));
           continue;
         }
-        auto mode_status = validate_native_admission_mode(current, is_run);
-        if (mode_status.is_error()) {
-          reject(index, std::move(mode_status));
+        if (!admission.has_valid_interval()) {
+          reject(index, td::Status::Error("native transfer has an invalid nonce interval"));
+          continue;
+        }
+        if (admission.first_nonce < snapshot.first_nonce) {
+          reject(index, td::Status::Error(PSTRING() << "Too old native nonce: msg_nonce=" << admission.first_nonce
+                                                    << ", account_nonce=" << snapshot.first_nonce));
+          continue;
+        }
+        auto last_nonce = admission.last_nonce();
+        CHECK(last_nonce);
+        if (last_nonce.value() - snapshot.first_nonce > MAX_NATIVE_NONCE_DIFF) {
+          reject(index, td::Status::Error(PSTRING() << "Too new native nonce: msg_nonce=" << last_nonce.value()
+                                                    << ", account_nonce=" << snapshot.first_nonce));
+          continue;
+        }
+        auto required_amount = admission.required_amount();
+        if (!required_amount) {
+          reject(index, td::Status::Error("native transfer aggregate debit overflow"));
+          continue;
+        }
+        if (required_amount.value() > snapshot.balance) {
+          reject(index, td::Status::Error("native transfer has insufficient source balance"));
+          continue;
+        }
+        verify_indices.push_back(index);
+        if (native_admission_snapshot_refresh_enabled_ &&
+            items[index].signature_proof.reusable(signature_key(index))) {
+          ++native_batch_snapshot_refresh_signature_reuses_;
+          continue;
+        }
+        CHECK(!native_signature_verifiers_.empty());
+        auto &verifier =
+            native_signature_verifiers_[native_signature_verifier_cursor_++ % native_signature_verifiers_.size()];
+        if (items[index].native_transfer_run) {
+          verification_tasks.push_back(
+              td::actor::await_with_timeout(
+                  td::actor::ask(verifier, &NativeSignatureVerifier::verify_run,
+                                 items[index].native_transfer_run.value(), chain_domain),
+                  deadline)
+                  .start());
+        } else {
+          verification_tasks.push_back(
+              td::actor::await_with_timeout(td::actor::ask(verifier, &NativeSignatureVerifier::verify,
+                                                           items[index].native_transfer.value(), chain_domain),
+                                            deadline)
+                  .start());
+        }
+        verification_task_indices.push_back(index);
+      }
+    }
+    if (!verification_tasks.empty()) {
+      auto verification_results = co_await td::actor::all_wrap(std::move(verification_tasks));
+      for (std::size_t i = 0; i < verification_results.size(); ++i) {
+        const auto index = verification_task_indices[i];
+        if (native_admission_snapshot_refresh_enabled_) {
+          items[index].signature_proof.record_result(signature_key(index), verification_results[i].is_ok());
+        }
+        if (verification_results[i].is_error()) {
+          reject(index, verification_results[i].move_as_error());
         }
       }
     }
-  }
 
-  const double reservation_started = td::Time::now();
-  std::vector<NativeAdmissionOrderKey> order_keys;
-  for (auto index : verify_indices) {
-    if (!status_set[index]) {
-      const auto &message = items[index].message;
-      order_keys.push_back(NativeAdmissionOrderKey{.workchain = message->wc(),
-                                                   .source = message->addr(),
-                                                   .nonce = items[index].native_admission.value().first_nonce,
-                                                   .hash = message->hash(),
-                                                   .input_index = index});
+    if (!verify_indices.empty()) {
+      native_batch_telemetry_.verification.observe(td::Time::now() - verification_started_at);
     }
-  }
-  for (auto index : order_native_admissions(std::move(order_keys))) {
-    auto address = NativeAddress{items[index].message->wc(), items[index].message->addr()};
-    const auto &snapshot = source_snapshots.at(address);
-    auto reserved = co_await reserve_verified_native_message(items[index].message,
-                                                              items[index].native_admission.value(), snapshot.balance,
-                                                              snapshot.revision, snapshot.utime, deadline)
-                        .wrap();
-    if (reserved.is_error()) {
-      ++total_check_ext_messages_error_;
-      reject(index, reserved.move_as_error());
-      continue;
-    }
-    auto finalized = finalize_checked_message(reserved.move_as_ok(), priority, add_to_mempool, deadline);
-    if (finalized.is_error()) {
-      ++total_check_ext_messages_error_;
-      reject(index, finalized.move_as_error());
-      continue;
-    }
-    auto checked = finalized.move_as_ok();
-    if (checked.should_broadcast) {
-      output.checked_messages.push_back(std::move(checked));
-    }
-    accept(index);
-  }
 
-  native_batch_telemetry_.reservation.observe(td::Time::now() - reservation_started);
+    if (!verify_indices.empty() && native_snapshot) {
+      // Only this batch path may refresh. A refresh reruns every mutable gate
+      // against one new exact state before any reservation is attempted.
+      auto current_snapshot = pin_native_admission_snapshot();
+      const double snapshot_age = td::Time::now() - snapshot_pinned_at;
+      native_batch_telemetry_.snapshot_age.observe(snapshot_age);
+      if (current_snapshot.is_error()) {
+        auto error = current_snapshot.move_as_error();
+        for (auto index : verify_indices) {
+          if (!status_set[index]) {
+            reject(index, td::Status::Error(error.code(), error.message().str()));
+          }
+        }
+      } else {
+        const auto &current = current_snapshot.ok();
+        const NativeAdmissionStateIdentity pinned_identity{native_snapshot.value().block_id,
+                                                           native_snapshot.value().state_root};
+        const NativeAdmissionStateIdentity current_identity{current.block_id, current.state_root};
+        const bool mc_changed = !(pinned_identity == current_identity);
+        const bool unresolved_native = std::any_of(verify_indices.begin(), verify_indices.end(),
+                                                   [&](std::size_t index) { return !status_set[index]; });
+        if (mc_changed && unresolved_native) {
+          native_batch_telemetry_.changed_snapshot_age.observe(snapshot_age);
+        }
+        if (native_admission_snapshot_refresh_enabled_ && unresolved_native) {
+          const auto decision = refresh_policy.check(pinned_identity, current_identity);
+          if (decision == NativeAdmissionRefreshDecision::refresh) {
+            ++native_batch_snapshot_refresh_attempts_;
+            refresh_attempted = true;
+            native_snapshot = current_snapshot.move_as_ok();
+            snapshot_pinned_at = td::Time::now();
+            validate_snapshot_items();
+            continue;
+          }
+          if (decision == NativeAdmissionRefreshDecision::reject_changed) {
+            ++native_batch_snapshot_refresh_exhausted_;
+          }
+          if (decision == NativeAdmissionRefreshDecision::deadline_expired && !refresh_deadline_recorded) {
+            ++native_batch_snapshot_refresh_deadlines_;
+            refresh_deadline_recorded = true;
+          }
+          if (decision == NativeAdmissionRefreshDecision::reject_changed ||
+              decision == NativeAdmissionRefreshDecision::deadline_expired) {
+            for (auto index : verify_indices) {
+              if (!status_set[index]) {
+                reject(index, decision == NativeAdmissionRefreshDecision::deadline_expired
+                                  ? td::Status::Error(ErrorCode::timeout, "external message admission deadline expired")
+                                  : td::Status::Error(ErrorCode::notready,
+                                                      "native transfer run admission snapshot changed; retry"));
+              }
+            }
+          }
+        }
+        for (auto index : verify_indices) {
+          if (status_set[index]) {
+            continue;
+          }
+          const bool is_run = items[index].native_admission.value().is_run;
+          if (is_run && mc_changed) {
+            reject(index, td::Status::Error(ErrorCode::notready,
+                                            "native transfer run admission snapshot changed; retry"));
+            continue;
+          }
+          auto mode_status = validate_native_admission_mode(current, is_run);
+          if (mode_status.is_error()) {
+            reject(index, std::move(mode_status));
+          }
+        }
+      }
+    }
+
+    const double reservation_started = td::Time::now();
+    std::vector<NativeAdmissionOrderKey> order_keys;
+    for (auto index : verify_indices) {
+      if (!status_set[index]) {
+        const auto &message = items[index].message;
+        order_keys.push_back(NativeAdmissionOrderKey{.workchain = message->wc(),
+                                                     .source = message->addr(),
+                                                     .nonce = items[index].native_admission.value().first_nonce,
+                                                     .hash = message->hash(),
+                                                     .input_index = index});
+      }
+    }
+    for (auto index : order_native_admissions(std::move(order_keys))) {
+      // An extra state/verification wait must not extend signed authorization
+      // lifetime, even while the original RPC deadline still has room.
+      if (refresh_attempted &&
+          items[index].native_admission.value().valid_until <= static_cast<UnixTime>(td::Clocks::system())) {
+        reject(index, td::Status::Error("native transfer valid_until is in the past"));
+        continue;
+      }
+      auto address = NativeAddress{items[index].message->wc(), items[index].message->addr()};
+      const auto &snapshot = source_snapshots.at(address);
+      auto reserved = co_await reserve_verified_native_message(items[index].message,
+                                                                items[index].native_admission.value(), snapshot.balance,
+                                                                snapshot.revision, snapshot.utime, deadline)
+                          .wrap();
+      if (reserved.is_error()) {
+        ++total_check_ext_messages_error_;
+        reject(index, reserved.move_as_error());
+        continue;
+      }
+      auto finalized = finalize_checked_message(reserved.move_as_ok(), priority, add_to_mempool, deadline);
+      if (finalized.is_error()) {
+        ++total_check_ext_messages_error_;
+        reject(index, finalized.move_as_error());
+        continue;
+      }
+      auto checked = finalized.move_as_ok();
+      if (checked.should_broadcast) {
+        output.checked_messages.push_back(std::move(checked));
+      }
+      accept(index);
+    }
+
+    native_batch_telemetry_.reservation.observe(td::Time::now() - reservation_started);
+    break;
+  }
   for (std::size_t i = 0; i < items.size(); ++i) {
-    if (items[i].duplicate_of) {
+    if (items[i].duplicate_of && !status_set[i]) {
       auto primary = items[i].duplicate_of.value();
       if (!status_set[primary]) {
         reject(primary, td::Status::Error("batch admission did not produce a primary result"));
@@ -1508,6 +1617,13 @@ std::string ExtMessagePool::native_batch_telemetry_string(char separator) const 
   emit("config_cache_hits", native_config_cache_hits_);
   emit("config_cache_misses", native_config_cache_misses_);
   emit("config_errors", native_config_errors_);
+  emit("snapshot_refresh_enabled", native_admission_snapshot_refresh_enabled_ ? 1 : 0);
+  emit("snapshot_refresh_attempts", native_batch_snapshot_refresh_attempts_);
+  emit("snapshot_refresh_successes", native_batch_snapshot_refresh_successes_);
+  emit("snapshot_refresh_accepted_messages", native_batch_snapshot_refresh_accepted_messages_);
+  emit("snapshot_refresh_exhausted", native_batch_snapshot_refresh_exhausted_);
+  emit("snapshot_refresh_deadlines", native_batch_snapshot_refresh_deadlines_);
+  emit("snapshot_refresh_signature_reuses", native_batch_snapshot_refresh_signature_reuses_);
   emit("shard_sharing_enabled", native_admission_shard_sharing_enabled_ ? 1 : 0);
   emit("shard_shared_dispatches", native_batch_shard_shared_dispatches_);
   emit("shard_shared_joins", native_batch_shard_shared_joins_);

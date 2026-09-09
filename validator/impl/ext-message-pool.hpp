@@ -324,6 +324,11 @@ class ExtMessagePool : public td::actor::Actor {
   td::uint64 native_batch_shard_manager_wait_late_results_{0};
   // Experimental pool-local sharing: caller deadlines remain independent.
   bool native_admission_shard_sharing_enabled_{false};
+  // Experimental request-local refresh; never renews the RPC deadline.
+  bool native_admission_snapshot_refresh_enabled_{false};
+  td::uint64 native_batch_snapshot_refresh_attempts_{0}, native_batch_snapshot_refresh_successes_{0};
+  td::uint64 native_batch_snapshot_refresh_accepted_messages_{0}, native_batch_snapshot_refresh_exhausted_{0};
+  td::uint64 native_batch_snapshot_refresh_deadlines_{0}, native_batch_snapshot_refresh_signature_reuses_{0};
   td::uint64 native_batch_shard_shared_dispatches_{0}, native_batch_shard_shared_joins_{0};
   td::uint64 native_batch_shard_shared_completions_{0}, native_batch_shard_shared_errors_{0};
   td::uint64 native_batch_shard_shared_peak_entries_{0}, native_batch_shard_shared_peak_waiters_{0};
@@ -391,6 +396,7 @@ class ExtMessagePool : public td::actor::Actor {
   struct NativeAdmissionSnapshot {
     td::Ref<MasterchainState> state;
     BlockIdExt block_id;
+    RootHash state_root;
     Bits256 chain_domain;
     bool runs_enabled{false};
     // Present only under the v16 payment-lane capability.  It is derived from
@@ -905,6 +911,7 @@ class ExtMessagePool : public td::actor::Actor {
   std::vector<std::shared_ptr<InstalledCallback>> callbacks_;
 
   friend class ExtMessagePoolTestAccess;
+  friend class NativeAdmissionRefreshBatchTestAccess;
 
   static constexpr double MAX_EXT_MSG_PER_ADDR_TIME_WINDOW = 10.0;
   static constexpr size_t MAX_EXT_MSG_PER_ADDR = 4096;

@@ -2,6 +2,7 @@ set(KEYRING_SOURCE
   keyring.h
   keyring.hpp
   keyring.cpp
+  prepared-key-signer.hpp
 )
 
 add_library(keyring STATIC ${KEYRING_SOURCE})

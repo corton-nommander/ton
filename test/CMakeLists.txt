@@ -6,6 +6,11 @@ target_include_directories(test-overlay-traffic-yield-policy PRIVATE ${CMAKE_SOU
 target_link_libraries(test-overlay-traffic-yield-policy PRIVATE td-test-main tdutils)
 ton_test(test-overlay-traffic-yield-policy)
 
+add_executable(test-keyring-prepared-signing test-keyring-prepared-signing.cpp)
+target_include_directories(test-keyring-prepared-signing PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test-keyring-prepared-signing PRIVATE td-test-main keyring keys tdactor)
+ton_test(test-keyring-prepared-signing)
+
 add_subdirectory(tdactor)
 add_subdirectory(tdutils)
 add_subdirectory(tonlib)

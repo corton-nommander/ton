@@ -22,18 +22,37 @@
 #include "td/utils/filesystem.h"
 #include "td/utils/port/path.h"
 
+#include <cstdlib>
+
 #include "keyring.hpp"
+#include "prepared-key-signer.hpp"
 
 namespace ton {
 
 namespace keyring {
 
-KeyringImpl::PrivateKeyDescr::PrivateKeyDescr(PrivateKey private_key, bool is_temp)
+KeyringImpl::KeyringImpl(std::string db_root) : db_root_(std::move(db_root)) {
+  if (const char *value = std::getenv("TON_KEYRING_PREPARED_SIGNING")) {
+    prepared_signing_ = td::Slice(value) == "1";
+  }
+}
+
+KeyringImpl::PrivateKeyDescr::PrivateKeyDescr(PrivateKey private_key, bool is_temp, bool prepared_signing)
     : public_key(private_key.compute_public_key()), private_key(private_key), is_temp(is_temp) {
+  // Only the keyring's signing actor opts in. The original decryptor and all
+  // public/private key import/export operations keep their existing behavior.
+  auto signing_decryptor_result = private_key.create_decryptor();
+  signing_decryptor_result.ensure();
+  auto signing_decryptor = signing_decryptor_result.move_as_ok();
+  if (prepared_signing) {
+    auto ed25519_key = private_key.export_as_ed25519();
+    if (ed25519_key.is_ok()) {
+      signing_decryptor = std::make_unique<PreparedKeySigner>(ed25519_key.move_as_ok(),
+                                                            std::move(signing_decryptor));
+    }
+  }
+  decryptor_sign = td::actor::create_actor<DecryptorAsync>("decryptor", std::move(signing_decryptor));
   auto D = private_key.create_decryptor_async();
-  D.ensure();
-  decryptor_sign = D.move_as_ok();
-  D = private_key.create_decryptor_async();
   D.ensure();
   decryptor_decrypt = D.move_as_ok();
 }
@@ -65,7 +84,7 @@ td::Result<KeyringImpl::PrivateKeyDescr*> KeyringImpl::load_key(PublicKeyHash ke
   R2.ensure();
 
   auto key = R2.move_as_ok();
-  auto desc = std::make_unique<PrivateKeyDescr>(key, false);
+  auto desc = std::make_unique<PrivateKeyDescr>(key, false, prepared_signing_);
   auto short_id = desc->public_key.compute_short_id();
   CHECK(short_id == key_hash);
   return map_.emplace(short_id, std::move(desc)).first->second.get();
@@ -83,7 +102,7 @@ void KeyringImpl::add_key(PrivateKey key, bool is_temp, td::Promise<td::Unit> pr
   if (db_root_.size() == 0) {
     CHECK(is_temp);
   }
-  map_.emplace(short_id, std::make_unique<PrivateKeyDescr>(key, is_temp));
+  map_.emplace(short_id, std::make_unique<PrivateKeyDescr>(key, is_temp, prepared_signing_));
 
   if (!is_temp && key.exportable()) {
     auto S = key.export_as_slice();

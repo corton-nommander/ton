@@ -30,13 +30,14 @@ namespace keyring {
 
 class KeyringImpl : public Keyring {
  private:
+  friend class PreparedKeySignerTestAccess;
   struct PrivateKeyDescr {
     td::actor::ActorOwn<DecryptorAsync> decryptor_sign;
     td::actor::ActorOwn<DecryptorAsync> decryptor_decrypt;
     PublicKey public_key;
     PrivateKey private_key;
     bool is_temp;
-    PrivateKeyDescr(PrivateKey private_key, bool is_temp);
+    PrivateKeyDescr(PrivateKey private_key, bool is_temp, bool prepared_signing);
   };
 
  public:
@@ -61,8 +62,7 @@ class KeyringImpl : public Keyring {
 
   void export_all_private_keys(td::Promise<std::vector<PrivateKey>> promise) override;
 
-  KeyringImpl(std::string db_root) : db_root_(db_root) {
-  }
+  explicit KeyringImpl(std::string db_root);
 
  private:
   std::map<PublicKeyHash, std::unique_ptr<PrivateKeyDescr>> map_;
@@ -70,6 +70,7 @@ class KeyringImpl : public Keyring {
   std::unique_ptr<Encryptor> encryptor_;
 
   std::string db_root_;
+  bool prepared_signing_{false};
 };
 
 }  // namespace keyring

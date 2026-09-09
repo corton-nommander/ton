@@ -57,9 +57,10 @@ Retry reduction therefore helps latency/reliability but is not a demonstrated
 throughput cure by itself.
 
 The same interior interval also contains 11,884,177 canonical-reconciliation
-account lookups for 2,187,509 source advances (5.43 lookups/advance), in addition
-to admission account reads. This identifies another shared-actor profiling target;
-the ratio does not establish that the extra lookups can safely be skipped.
+account lookups, in addition to admission account reads. The 2,187,509
+`sources_advanced` counter also includes advances from admission paths, so it is
+not a matching denominator for those reconciliation reads. The lookup volume
+identifies another shared-actor profiling target, not a redundant-read percentage.
 
 ### 2. Gaps between admissible work and collator consumption
 

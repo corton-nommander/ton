@@ -1,0 +1,668 @@
+{
+  "schema": "native-admission-cycle-v1",
+  "arm": "11-memory64-control",
+  "source_revision": "be235e037826a36e4f57125d15c73aa0513973af",
+  "raw_artifact_directory": "build/benchmarks/admission-cycles-20260909/11-memory64-control",
+  "execution": {
+    "exit_code": 3,
+    "validator_unchanged": true,
+    "cache": "1",
+    "sharing": "0",
+    "refresh": "0",
+    "reconciliation_profile": "1",
+    "prepared_signing": "0",
+    "local_signature_reuse": "0",
+    "signature_threads": "8",
+    "excluded_from_tps_comparisons": false,
+    "measurement_seconds": 600,
+    "resource_scope": "Docker stats valid for Desktop VM; host /proc-derived harness thread/cgroup metrics excluded from interpretation"
+  },
+  "comparison_environment": {
+    "docker_vm_memory_bytes": 67421605888,
+    "docker_vm_cpus": 24,
+    "physical_host_memtotal_kib": 131820736
+  },
+  "classification": "observation_only_after_verified_postprocessing_reassessment",
+  "capacity_claim_allowed": false,
+  "postprocessing_reassessment": {
+    "certificate_path": "build/benchmarks/admission-cycles-20260909/11-memory64-control-duration-reassessment.json",
+    "certificate_sha256": "4f1943aed424240da2c084e5de20f1769822415ad5010b1be140cb652b0accb8",
+    "original_controller_exit_code": 3,
+    "wrapper_exit_code": 0,
+    "original_sweep_complete": false,
+    "original_stop_reasons": [
+      "measurement_duration"
+    ],
+    "corrected_observation_valid": true,
+    "configured_duration_seconds": 600,
+    "reported_duration_seconds": 600.0000000000001,
+    "duration_difference_seconds": 1.1368683772161603e-13,
+    "tolerance_seconds": 9.094947017729282e-13,
+    "original_assessment": {
+      "admitted_logical_tps": 57447.493333333325,
+      "canonical_backlog_at_measure_end": 555408,
+      "canonical_backlog_sampled_peak": 793808,
+      "canonical_logical_tps": 57437.35559265442,
+      "capacity_claim_allowed": false,
+      "classification": "rejected",
+      "connections": 10,
+      "continue_safe": false,
+      "launch_sha256": "2dd711e1ec6554d8686aafe774dd6a7e306720780a88bf21357878ef4ef1e90b",
+      "load_mode": "bounded_unpaced",
+      "measure_elapsed_s": 600.0000000000001,
+      "measured_admitted_logical_transfers": 34468496,
+      "measured_offered_logical_transfers": 34468496,
+      "offered_logical_tps": 57447.493333333325,
+      "original_acceptance": {
+        "canonical_lane_balance_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "capacity_load": {
+          "invalid_reasons": [],
+          "measured_canonical_chain_avg_tps": 57437.35559265442,
+          "measured_offered_avg_tps": 57447.493333333325,
+          "offered_above_canonical": true
+        },
+        "chain_capacity_invalid_reasons": [
+          "insufficient_load_over_canonical_throughput"
+        ],
+        "chain_capacity_valid": false,
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "ingress_capacity_invalid_reasons": [],
+        "ingress_capacity_valid": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_valid": true,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "reproducible": false,
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions",
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "validator_cleanup_valid": true
+      },
+      "original_load_level_acceptance": {
+        "capacity_claim_allowed": false,
+        "classification": "rejected",
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity",
+        "valid": false
+      },
+      "raw_bundle": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/sweep/01-10-connections",
+      "stop_reasons": [
+        "measurement_duration"
+      ],
+      "summary_sha256": "2aaebd1d106fa19e1902988a5e9ca42257db70a57e49d0b5cdee705f919ef296",
+      "target_attainment": "not_applicable",
+      "target_tps": 0,
+      "wrapper_exit": 0
+    },
+    "reassessed_assessment": {
+      "connections": 10,
+      "offered_logical_tps": 57447.493333333325,
+      "admitted_logical_tps": 57447.493333333325,
+      "canonical_logical_tps": 57437.35559265442,
+      "target_tps": 0,
+      "target_attainment": "not_applicable",
+      "load_mode": "bounded_unpaced",
+      "continue_safe": true,
+      "stop_reasons": [],
+      "capacity_claim_allowed": false,
+      "original_load_level_acceptance": {
+        "valid": false,
+        "classification": "rejected",
+        "capacity_claim_allowed": false,
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+      },
+      "original_acceptance": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": true,
+        "ingress_capacity_invalid_reasons": [],
+        "chain_capacity_valid": false,
+        "chain_capacity_invalid_reasons": [
+          "insufficient_load_over_canonical_throughput"
+        ],
+        "capacity_load": {
+          "measured_offered_avg_tps": 57447.493333333325,
+          "measured_canonical_chain_avg_tps": 57437.35559265442,
+          "offered_above_canonical": true,
+          "invalid_reasons": []
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_valid": true,
+        "native_run_batching_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      },
+      "classification": "observation_only",
+      "measured_offered_logical_transfers": 34468496,
+      "measured_admitted_logical_transfers": 34468496,
+      "measure_elapsed_s": 600.0000000000001,
+      "canonical_backlog_at_measure_end": 555408,
+      "canonical_backlog_sampled_peak": 793808
+    },
+    "changed_assessment_fields": {
+      "continue_safe": [
+        false,
+        true
+      ],
+      "stop_reasons": [
+        [
+          "measurement_duration"
+        ],
+        []
+      ],
+      "classification": [
+        "rejected",
+        "observation_only"
+      ]
+    },
+    "source_transition": {
+      "repository": "/home/neodix/gitProjects/MyLocalTonDocker",
+      "old_revision": "993996dd048ad0ec4486fb6c762e5dc53a566d99",
+      "new_revision": "51726864224d978cc1cbbba74abc82e1945f9299",
+      "old_assessor_sha256": "1b7fa129224d595a03cfed99d184984e60fa3f156914e61ae7707352b3714bea",
+      "new_assessor_sha256": "d6f0a3babc048b1bf264f5a237e8cc9a8026c124448db652653d6e7667b53732",
+      "changed_files": [
+        "benchmark/run-native-connections-sweep.py",
+        "benchmark/tests/native-connections-sweep-test.py"
+      ],
+      "unchanged_runtime_harness_files": {
+        "benchmark/jq/native-benchmark-lib.jq": "cb8d93974af5501193061f5599bf56bd7fa7a4ac62ef7e4977975f7144a31d6b",
+        "benchmark/native-payment-lanes-profile.sh": "6e044f9ccf5681c623de4ad95f3ed6da470276f22ebc722a6bdcedfcd175f80d",
+        "docker-compose.yaml": "b548151de5e1069d23742d1b8703cdd4e3a7e8ee9969513b29d93f2b2c1475f0",
+        "native-load-generator/entrypoint.sh": "f89c85429a3d7f9a8b1d10f352563fa02925ad7edf84f7fbaa399e56bab997eb",
+        "native-load-generator/payment-lanes.sh": "73bcb2b407b83593c2910da4ba2abc0d914ffc5349903a3ae3fb9880d867a1c6",
+        "run-native-benchmark.sh": "bc518fedebe7a2b0d237045b720da2824840126c06372c0e5309807cfaa2dd20"
+      },
+      "exact_duration_only_executable_change_proven": true,
+      "source_patch": "diff --git a/benchmark/run-native-connections-sweep.py b/benchmark/run-native-connections-sweep.py\nindex 0e5dac1..e041b73 100644\n--- a/benchmark/run-native-connections-sweep.py\n+++ b/benchmark/run-native-connections-sweep.py\n@@ -57,6 +57,16 @@ def share(total, index, count):\n     return total // count + (index < total % count)\n \n \n+def measurement_duration_matches(elapsed, expected):\n+    # Subtracting worker measurement deadlines may leave a few representable doubles\n+    # (e.g. 600.0000000000001). Permit only floating-point representation noise,\n+    # with no relative tolerance that could admit a materially shorter run.\n+    if type(elapsed) is int:\n+        return elapsed == expected\n+    return (type(elapsed) is float and math.isfinite(elapsed) and\n+            math.isclose(elapsed, expected, rel_tol=0.0, abs_tol=8 * math.ulp(float(expected))))\n+\n+\n def connection_list(values):\n     result = []\n     for value in values:\n@@ -334,7 +344,7 @@ def assess(summary, a, count, frozen, wrapper_exit):\n               ('canonical_logical_tps', 'canonical_chain_measure_avg_tps')]}\n     check(all(type(v) in (int, float) and math.isfinite(v) and v > 0 for v in rates.values()), 'missing_or_invalid_rates')\n     elapsed = f.get('measure_elapsed_s')\n-    check(type(elapsed) in (int, float) and elapsed == a.duration, 'measurement_duration')\n+    check(measurement_duration_matches(elapsed, a.duration), 'measurement_duration')\n     for count_key, rate_key in [('steady_offered', 'steady_offered_avg_tps'),\n                                 ('steady_mempool_accepted', 'steady_mempool_accept_avg_tps')]:\n         logical, rate = f.get(count_key), f.get(rate_key)\n"
+    },
+    "input_artifact_hashes": {
+      "execution.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/execution.json",
+        "sha256": "3028f5d3164bd3732f5e765f8e99de8f97f8258a96accc587f21ddc4af7c6c00",
+        "bytes": 432
+      },
+      "command.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/command.json",
+        "sha256": "a1d2f3f6cbcf1e9ade7df054d20abeffbf14ab8ee98af872d6558a027c83d1fd",
+        "bytes": 583
+      },
+      "run-purpose.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/run-purpose.json",
+        "sha256": "e0018e72813cc1dfe7bb470ac8be31136863cb2ff5087cac6280172a0a68cedd",
+        "bytes": 269
+      },
+      "comparison-environment.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/comparison-environment.json",
+        "sha256": "6c3e72d07f87171aeb796306c56bad25a5f955240dcbfb301af3903321b882dc",
+        "bytes": 111
+      },
+      "sweep/sweep-summary.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/sweep/sweep-summary.json",
+        "sha256": "5df2b05e72c242ae7a3b5f830b78644cda67ae153ad74e7693cc5331ae7451b2",
+        "bytes": 4303
+      },
+      "sweep/plan.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/sweep/plan.json",
+        "sha256": "c64b5e916fa3daeb12da44a08340f157d8559809c9e9b49418fa9bb8a3c8d521",
+        "bytes": 6643
+      },
+      "sweep/frozen-preflight.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/sweep/frozen-preflight.json",
+        "sha256": "efdc2e96b926134b7f13531ea9c3f6c95d2f3d02c3670c88e864bab3726b9472",
+        "bytes": 3832
+      },
+      "sweep/01-10-connections/benchmark-summary.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/sweep/01-10-connections/benchmark-summary.json",
+        "sha256": "2aaebd1d106fa19e1902988a5e9ca42257db70a57e49d0b5cdee705f919ef296",
+        "bytes": 226443
+      },
+      "sweep/01-10-connections/generator-summary.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/sweep/01-10-connections/generator-summary.json",
+        "sha256": "1e7f083721eef07c4255381cabc955d055087ab8b37fc314017fdd6815d61808",
+        "bytes": 42546
+      },
+      "sweep/01-10-connections/container-runtime.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/sweep/01-10-connections/container-runtime.json",
+        "sha256": "df458b6fb9bc739247b3a6b57a4821a3e93df8130f66114897005e0ba4b6bd96",
+        "bytes": 8479
+      },
+      "sweep/01-10-connections/strict-image-reuse.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/sweep/01-10-connections/strict-image-reuse.json",
+        "sha256": "de9926a46df368d6361d7d4a7555ee169abd926c4b0c104d4a139d774c4715d9",
+        "bytes": 1331
+      },
+      "sweep/01-launch.json": {
+        "path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/11-memory64-control/sweep/01-launch.json",
+        "sha256": "2dd711e1ec6554d8686aafe774dd6a7e306720780a88bf21357878ef4ef1e90b",
+        "bytes": 1989
+      }
+    }
+  },
+  "analysis": {
+    "metrics": {
+      "measure_elapsed_s": 600.0000000000001,
+      "canonical_gen_utime_bucket_duration_s": 599,
+      "steady_offered_avg_tps": 57447.493333333325,
+      "steady_mempool_accept_avg_tps": 57447.493333333325,
+      "canonical_chain_measure_avg_tps": 57437.35559265442,
+      "canonical_chain_measure_transfers": 34404976,
+      "benchmark_result_valid": true,
+      "chain_correctness_valid": true,
+      "chain_capacity_valid": false,
+      "ingress_capacity_valid": true,
+      "canonical_hash_conflicts": 0,
+      "canonical_follower_errors": 0,
+      "canonical_follower_fatal_errors": 0,
+      "canonical_follower_retry_exhausted": 0,
+      "canonical_follower_final_catchup_complete": true,
+      "canonical_total_backlog_after_drain": 0,
+      "retry_exhausted": 0,
+      "drain_timed_out": false,
+      "task_errors_by_reason": {
+        "timeout": 92,
+        "transport": 0,
+        "parse": 0,
+        "full": 0,
+        "rate_limit": 0,
+        "duplicate": 0,
+        "too_old": 0,
+        "too_new": 0,
+        "expired": 0,
+        "canonical_state_lag": 21,
+        "not_ready": 659388,
+        "balance": 0,
+        "invalid": 0,
+        "signing": 0,
+        "server_other": 0
+      },
+      "rtt_ms": {
+        "p50": 200,
+        "p95": 500,
+        "p99": 1000,
+        "max": 4502.357237000069,
+        "samples": 49201888,
+        "overflow": 0,
+        "overflow_lower_bound_ms": 86400000,
+        "p50_in_overflow": false,
+        "p95_in_overflow": false,
+        "p99_in_overflow": false
+      },
+      "native_signed_run_messages": 2415617,
+      "wire_batch_avg_size": 17.98954439217949,
+      "canonical_chain_measure_avg_native_transfers_per_block": 8677.16923076923,
+      "canonical_backlog_sampled_peak": 793808,
+      "congestion_window_sampled_peak": 33474.79538584961,
+      "canonical_backpressure_s": 0
+    },
+    "offered_over_canonical": 1.0001765008255394,
+    "proof_drain_identity_checks": {
+      "wrapper_exit_zero": true,
+      "not_interrupted": true,
+      "run_complete": true,
+      "validator_unchanged": true,
+      "strict_reuse_valid": true,
+      "strict_validator_identity_equal": true,
+      "strict_generator_image_equal": true,
+      "strict_generator_container_equal": true,
+      "final_report": true,
+      "benchmark_result_valid": true,
+      "chain_correctness_valid": true,
+      "canonical_result_valid": true,
+      "final_follower_catchup": true,
+      "zero_follower_errors": true,
+      "zero_hash_conflicts": true,
+      "zero_drained_backlog": true,
+      "no_drain_timeout": true,
+      "no_retry_exhaustion": true,
+      "validator_cleanup_valid": true,
+      "lane_balance_valid": true,
+      "signed_run_quantum_valid": true,
+      "run_batching_valid": true,
+      "controller_status_resolved_by_verified_duration_reassessment": true,
+      "strict_reuse_required": true,
+      "acceptance_strict_reuse_valid": true,
+      "final_generator_exit_zero": true,
+      "runtime_genesis_healthy": true,
+      "runtime_generator_exited_zero": true,
+      "runtime_generator_never_restarted": true,
+      "runtime_observer_running": true,
+      "runtime_no_oom": true,
+      "validator_identity_image_linked": true,
+      "validator_identity_container_linked": true,
+      "validator_identity_start_linked": true,
+      "validator_identity_restarts_linked": true,
+      "generator_identity_image_linked": true,
+      "strict_process_identity_present": true,
+      "all_runtime_images_immutable": true,
+      "ordinary_tps_purpose": true,
+      "controller_not_diagnostic": true,
+      "full_600_second_target": true,
+      "full_measurement_completed": true,
+      "valid_canonical_bucket_duration": true,
+      "finite_positive_canonical_tps": true,
+      "no_fatal_follower_errors": true,
+      "no_exhausted_follower_retries": true,
+      "resource_fields_present": true,
+      "effective_load_fields_present": true,
+      "recorded_harness_identity_present": true,
+      "controller_effective_environment_flag:TON_NATIVE_ADMISSION_CONFIG_CACHE": true,
+      "controller_effective_environment_flag:TON_NATIVE_ADMISSION_SHARD_SHARING": true,
+      "controller_effective_environment_flag:TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH": true,
+      "controller_effective_environment_flag:TON_NATIVE_RECONCILIATION_PROFILE": true,
+      "controller_effective_environment_flag:TON_KEYRING_PREPARED_SIGNING": true,
+      "controller_effective_environment_flag:TON_OVERLAY_LOCAL_SIGNATURE_REUSE": true,
+      "controller_effective_environment_flag:TON_NATIVE_VALIDATION_SIGNATURE_THREADS": true,
+      "environment_evidence_consistent": true,
+      "comparison_environment_record_valid_if_present": true
+    },
+    "interior_sample_count": 19,
+    "interior_duration_seconds": 568.2190823554993,
+    "interior_admission": {
+      "completed_batches": 151454,
+      "completed_wire_inputs": 2508932,
+      "entered_wire_inputs_minus_completed_outcomes": -773,
+      "snapshot_rejection_fraction_of_completed_wire_inputs": 0.19057351893156133,
+      "snapshot_rejection_fraction_of_not_ready": 0.9999707204852034,
+      "wire_rejection_fraction": 0.19060062209737053,
+      "completed_batch_successes_per_started_refresh_attempt": null,
+      "refresh_counter_deltas_nonexclusive": {
+        "snapshot_refresh_attempts": 0,
+        "snapshot_refresh_successes": 0,
+        "snapshot_refresh_accepted_messages": 0,
+        "snapshot_refresh_exhausted": 0,
+        "snapshot_refresh_deadlines": 0,
+        "snapshot_refresh_signature_reuses": 0
+      },
+      "not_ready_cause_deltas": {
+        "not_ready_account_changed_commit": 0,
+        "not_ready_account_changed_insertion": 0,
+        "not_ready_account_changed_verification": 0,
+        "not_ready_canonical_watermark_lag": 14,
+        "not_ready_masterchain_unavailable": 0,
+        "not_ready_mempool_full": 0,
+        "not_ready_other": 0,
+        "not_ready_per_address_limit": 0,
+        "not_ready_shard_unavailable": 0,
+        "not_ready_snapshot_changed": 478136,
+        "not_ready_total": 478150
+      },
+      "extra_read_work": {
+        "account_lookups": {
+          "delta": 2509011,
+          "per_completed_batch": 16.566158701651986,
+          "per_interval_s": 4415.569765096816,
+          "per_canonical_transfer_rate_normalized_estimate": 0.07687627188849057
+        },
+        "mc_state_pins": {
+          "delta": 151437,
+          "per_completed_batch": 0.999887754697796,
+          "per_interval_s": 266.51164084851223,
+          "per_canonical_transfer_rate_normalized_estimate": 0.004640040233373766
+        },
+        "shard_state_requests": {
+          "delta": 520546,
+          "per_completed_batch": 3.43699076947456,
+          "per_interval_s": 916.1008775737081,
+          "per_canonical_transfer_rate_normalized_estimate": 0.015949565715920024
+        },
+        "shard_manager_waits": {
+          "delta": 49373,
+          "per_completed_batch": 0.32599337092450514,
+          "per_interval_s": 86.89078127283024,
+          "per_canonical_transfer_rate_normalized_estimate": 0.0015127921607160928
+        },
+        "shard_cache_fills": {
+          "delta": 2988,
+          "per_completed_batch": 0.019728762528556525,
+          "per_interval_s": 5.258535119259854,
+          "per_canonical_transfer_rate_normalized_estimate": 9.155252822837756e-05
+        },
+        "shard_cache_fill_races": {
+          "delta": 45909,
+          "per_completed_batch": 0.30312173993423747,
+          "per_interval_s": 80.79454109441119,
+          "per_canonical_transfer_rate_normalized_estimate": 0.0014066549593161263
+        }
+      },
+      "admission_stage_wall": {
+        "decode": {
+          "completed_stage_samples": 151437,
+          "wall_sum_s": 59.271606999999996,
+          "wall_mean_ms_per_stage_sample": 0.3913944874766404,
+          "wall_sum_s_per_interval_s": 0.1043111870764619,
+          "wall_ms_per_completed_batch_rate_normalized": 0.39135055528411267,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 1.8160861690123162
+        },
+        "reservation": {
+          "completed_stage_samples": 151453,
+          "wall_sum_s": 90.686742,
+          "wall_mean_ms_per_stage_sample": 0.5987781159831763,
+          "wall_sum_s_per_interval_s": 0.1595981986808091,
+          "wall_ms_per_completed_batch_rate_normalized": 0.5987741624519656,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 2.778648094676905
+        },
+        "residence": {
+          "completed_stage_samples": 151454,
+          "wall_sum_s": 19303.76804,
+          "wall_mean_ms_per_stage_sample": 127.4563104308899,
+          "wall_sum_s_per_interval_s": 33.972403672150584,
+          "wall_ms_per_completed_batch_rate_normalized": 127.4563104308899,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 591.4687979906802
+        },
+        "aborted_residence": {
+          "completed_stage_samples": 0,
+          "wall_sum_s": 0.0,
+          "wall_mean_ms_per_stage_sample": null,
+          "wall_sum_s_per_interval_s": 0.0,
+          "wall_ms_per_completed_batch_rate_normalized": 0.0,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 0.0
+        },
+        "shard_wait": {
+          "completed_stage_samples": 49424,
+          "wall_sum_s": 2921.682512,
+          "wall_mean_ms_per_stage_sample": 59.114651019747484,
+          "wall_sum_s_per_interval_s": 5.141823994872606,
+          "wall_ms_per_completed_batch_rate_normalized": 19.2908903825584,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 89.52055577451038
+        },
+        "verification": {
+          "completed_stage_samples": 151450,
+          "wall_sum_s": 16106.497322,
+          "wall_mean_ms_per_stage_sample": 106.34861222845822,
+          "wall_sum_s_per_interval_s": 28.345576243641826,
+          "wall_ms_per_completed_batch_rate_normalized": 106.34580349148915,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 493.5042003790805
+        },
+        "snapshot_age": {
+          "completed_stage_samples": 151450,
+          "wall_sum_s": 19150.015822999998,
+          "wall_mean_ms_per_stage_sample": 126.44447555628919,
+          "wall_sum_s_per_interval_s": 33.7018175166089,
+          "wall_ms_per_completed_batch_rate_normalized": 126.44113607431959,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 586.7578193470832
+        },
+        "changed_snapshot_age": {
+          "completed_stage_samples": 28525,
+          "wall_sum_s": 3729.3906960000004,
+          "wall_mean_ms_per_stage_sample": 130.74112869412798,
+          "wall_sum_s_per_interval_s": 6.563297171471537,
+          "wall_ms_per_completed_batch_rate_normalized": 24.623916806423075,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 114.26879082000961
+        },
+        "config_extract": {
+          "completed_stage_samples": 749,
+          "wall_sum_s": 0.021203999999999997,
+          "wall_mean_ms_per_stage_sample": 0.028309746328437912,
+          "wall_sum_s_per_interval_s": 3.731659259330185e-05,
+          "wall_ms_per_completed_batch_rate_normalized": 0.0001400029051725276,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 0.0006496920376688479
+        }
+      },
+      "reconciliation_stage_wall": {
+        "registration": {
+          "completed_stage_samples": 747,
+          "wall_sum_s": 13.957410999999999,
+          "wall_mean_ms_per_stage_sample": 18.684619812583666,
+          "wall_sum_s_per_interval_s": 0.02456343236862242,
+          "wall_ms_per_completed_batch_rate_normalized": 0.09215610680470637,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 0.4276560457070172
+        },
+        "grouping": {
+          "completed_stage_samples": 746,
+          "wall_sum_s": 13.727768000000001,
+          "wall_mean_ms_per_stage_sample": 18.40183378016086,
+          "wall_sum_s_per_interval_s": 0.024159287194461716,
+          "wall_ms_per_completed_batch_rate_normalized": 0.09063985104388132,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 0.42061976818360713
+        },
+        "manager_wait": {
+          "completed_stage_samples": 2868,
+          "wall_sum_s": 189.429939,
+          "wall_mean_ms_per_stage_sample": 66.04949058577405,
+          "wall_sum_s_per_interval_s": 0.33337482826999726,
+          "wall_ms_per_completed_batch_rate_normalized": 1.2507423970314417,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 5.804146531993755
+        },
+        "lookup": {
+          "completed_stage_samples": 10843442,
+          "wall_sum_s": 32.614518,
+          "wall_mean_ms_per_stage_sample": 0.0030077643242800577,
+          "wall_sum_s_per_interval_s": 0.057397787249241175,
+          "wall_ms_per_completed_batch_rate_normalized": 0.21534273112628255,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 0.9993111043674457
+        },
+        "unpack": {
+          "completed_stage_samples": 10843442,
+          "wall_sum_s": 13.63609,
+          "wall_mean_ms_per_stage_sample": 0.0012575425773476724,
+          "wall_sum_s_per_interval_s": 0.02399794449611382,
+          "wall_ms_per_completed_batch_rate_normalized": 0.09003453193708981,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 0.41781074787473127
+        },
+        "apply": {
+          "completed_stage_samples": 10843442,
+          "wall_sum_s": 81.807837,
+          "wall_mean_ms_per_stage_sample": 0.007544452859156715,
+          "wall_sum_s_per_interval_s": 0.14397235070120004,
+          "wall_ms_per_completed_batch_rate_normalized": 0.5401497286304753,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 2.5065978267218916
+        },
+        "wake": {
+          "completed_stage_samples": 741,
+          "wall_sum_s": 0.407942,
+          "wall_mean_ms_per_stage_sample": 0.5505290148448043,
+          "wall_sum_s_per_interval_s": 0.0007179308345452154,
+          "wall_ms_per_completed_batch_rate_normalized": 0.002693504298334808,
+          "wall_us_per_canonical_transfer_rate_normalized_estimate": 0.012499371308748595
+        }
+      },
+      "reconciliation_outcome_fractions": {
+        "apply_errors": 0.0004815814019201652,
+        "apply_first_observation": 0.0,
+        "apply_nonce_advanced": 0.16881789011275203,
+        "apply_balance_only_changed": 0.0,
+        "apply_unchanged": 0.8307005284853278
+      }
+    },
+    "sampled_cpu": {
+      "containers": {
+        "genesis": {
+          "samples": 18,
+          "mean_cpu_equivalents": 10.07081111111111,
+          "min_cpu_equivalents": 8.9519,
+          "max_cpu_equivalents": 10.8973,
+          "cpu_us_per_canonical_transfer_rate_normalized_estimate": 175.33556354044703,
+          "canonical_transfers_per_sampled_cpu_second_estimate": 5703.349507695947
+        },
+        "native-load-generator": {
+          "samples": 18,
+          "mean_cpu_equivalents": 0.8307166666666667,
+          "min_cpu_equivalents": 0.267,
+          "max_cpu_equivalents": 1.4674,
+          "cpu_us_per_canonical_transfer_rate_normalized_estimate": 14.463003355483618,
+          "canonical_transfers_per_sampled_cpu_second_estimate": 69141.93237885491
+        },
+        "session-stats": {
+          "samples": 18,
+          "mean_cpu_equivalents": 0.9693277777777778,
+          "min_cpu_equivalents": 0.0002,
+          "max_cpu_equivalents": 1.0901,
+          "cpu_us_per_canonical_transfer_rate_normalized_estimate": 16.876260541175466,
+          "canonical_transfers_per_sampled_cpu_second_estimate": 59254.83299811321
+        }
+      },
+      "errors": [],
+      "usable": true
+    }
+  },
+  "strict_image_reuse": {
+    "required": true,
+    "valid": true,
+    "validator_before": {
+      "container_id": "095569a90ccdd296987bd0465b8b1c4889330932940c36936c18955f7c21176b",
+      "image_id": "sha256:d0067d546b6bb2c9aeab62a29e30b0264dc97cd1a5a2fe02f947ac102f057758",
+      "started_at": "2026-09-09T08:29:41.133114727Z",
+      "restart_count": 0,
+      "running": true,
+      "validator_process": {
+        "pid": 31,
+        "start_ticks": 11129
+      }
+    },
+    "validator_after": {
+      "container_id": "095569a90ccdd296987bd0465b8b1c4889330932940c36936c18955f7c21176b",
+      "image_id": "sha256:d0067d546b6bb2c9aeab62a29e30b0264dc97cd1a5a2fe02f947ac102f057758",
+      "started_at": "2026-09-09T08:29:41.133114727Z",
+      "restart_count": 0,
+      "running": true,
+      "validator_process": {
+        "pid": 31,
+        "start_ticks": 11129
+      }
+    },
+    "generator_image_before": "sha256:380a0cccbca243c2ba1dc0f14ed0f9b5a6df3fafaf45ead06b596e2195f3f842",
+    "generator_image_after": "sha256:380a0cccbca243c2ba1dc0f14ed0f9b5a6df3fafaf45ead06b596e2195f3f842",
+    "generator_container_before": "72733c84a56c7d4a4c477b89fa77d46abdbfdf5278e2f5bbe017cc290887e3d5",
+    "generator_container_after": "72733c84a56c7d4a4c477b89fa77d46abdbfdf5278e2f5bbe017cc290887e3d5",
+    "semantics": "prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"
+  },
+  "limitations": [
+    "Original controller exit3 and failed sweep assessment are retained verbatim; a separate hashed certificate corrects only the postprocessing floating-point duration predicate.",
+    "The original wrapper completed with exit0 and unchanged strict identities. All existing proof, drain, arithmetic, image, environment and offered-load gates were rerun from identical captured inputs.",
+    "This new64GiB Docker VM control must not be treated as directly matched to the earlier99840MiB VM series.",
+    "Offered load exceeded observed canonical throughput by less than5%; this arm establishes an observed result, not maximum capacity.",
+    "Interior stage times overlap and are wall times; Docker CPU figures are sampled estimates, not integrated exclusive CPU."
+  ]
+}

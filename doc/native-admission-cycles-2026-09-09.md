@@ -382,3 +382,37 @@ The runtime environment collector now captures both signing flags directly.
 Its three projection tests and the benchmark reporting suite pass, including
 18 canonical reporting tests and 14 profiler tests. Earlier raw captures remain
 unchanged.
+
+
+## Fresh 64 GiB control and duration reassessment
+
+`11-memory64-control` completed at **57,437.36 canonical logical TPS**, with
+57,447.49 offered/admitted TPS. Its generator, proof/catch-up, complete drain,
+validator cleanup and immutable-image checks passed. Final backlog, hash/follower
+errors and exhausted retries were zero; transient timeouts were 92 and not-ready
+responses 659,388. Mean sampled CPU equivalents were validator 10.08, client 0.83
+and Session Stats 0.97. This is an observation, without independent 5% overdrive.
+
+The outer sweep initially rejected `measure_elapsed_s=600.0000000000001` using
+exact floating-point equality with 600. MyLocal commit `5172686` permits at most
+eight floating-point ULPs; integers still compare exactly, and non-finite values,
+wrong types and materially short/long durations fail. All 20 sweep tests pass,
+including unchanged proof, drain, transfer arithmetic and wrapper-failure gates.
+
+An explicit offline reassessment replays the original assessor on the exact hashed
+plan, preflight, launch and benchmark inputs, reproducing its sole duration
+rejection. It then applies the corrected assessor to those same bytes. The review
+also verifies that executable source differs only in the duration predicate/helper
+and that all other runtime harness files are unchanged. Original controller exit 3
+and the failed assessment remain recorded; the successful underlying wrapper exit
+0 and all other checks are preserved. Five certificate tests and 15 comparison
+tests cover input tampering, unrelated source edits and remaining acceptance gates.
+The [compact control record](benchmarks/results/native-admission-20260909-11-memory64-control.json)
+contains both assessments and their provenance.
+
+The 4,088 captured collation candidates averaged 120.32 ms external wait. All 1,707
+probes with confirmed published work returned work, averaging 0.94 ms; the first
+epoch wait partitions reconcile. These remain diagnostic candidate wall times,
+not exclusive CPU measurements or independently canonical-filtered block metrics.
+The next arm isolates local-signature reuse against this control in the same
+recorded 64 GiB VM environment.

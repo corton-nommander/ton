@@ -94,6 +94,72 @@ TEST(CollatorExternalWaitStats, SerializesStableKeysForWallTimeOnly) {
   ASSERT_TRUE(cpu_stats.find("external_wait_") == std::string::npos);
 }
 
+TEST(CollatorExternalWaitStats, DeliveryWaitOutcomesPartitionEachProducerState) {
+  using DeliveryStats = ton::validator::CollationStats::NativeDeliveryStats;
+  using Outcome = DeliveryStats::Outcome;
+  DeliveryStats stats;
+  for (auto kind : {ExternalWaitKind::native_first_work, ExternalWaitKind::native_fragment_refill,
+                    ExternalWaitKind::native_post_commit_idle}) {
+    for (bool pending : {false, true}) {
+      stats.record_wait(kind, pending, 0.125, Outcome::work);
+      stats.record_wait(kind, pending, 0.25, Outcome::marker);
+      stats.record_wait(kind, pending, 0.375, Outcome::timeout);
+      stats.record_wait(kind, pending, 0.5, Outcome::error);
+      const auto& bucket = stats.wait(kind, pending);
+      ASSERT_EQ(bucket.seconds, 1.25);
+      ASSERT_EQ(bucket.calls, 4u);
+      ASSERT_EQ(bucket.work_wakes, 1u);
+      ASSERT_EQ(bucket.marker_wakes, 1u);
+      ASSERT_EQ(bucket.timeouts, 1u);
+      ASSERT_EQ(bucket.errors, 1u);
+      ASSERT_EQ(bucket.calls, bucket.work_wakes + bucket.marker_wakes + bucket.timeouts + bucket.errors);
+    }
+  }
+}
+
+TEST(CollatorExternalWaitStats, DeliveryTimersDoNotInflateLegacyWaitOrCpuAccounting) {
+  using Outcome = ton::validator::CollationStats::NativeDeliveryStats::Outcome;
+  ton::validator::CollationStats stats;
+  stats.external_wait.record(ExternalWaitKind::native_first_work, 0.5);
+  stats.native_delivery.record_probe(true, 0.125, true);
+  stats.native_delivery.record_probe(false, 0.0625, false);
+  stats.native_delivery.record_wait(ExternalWaitKind::native_first_work, true, 0.25, Outcome::work);
+  ASSERT_EQ(stats.external_wait.total_seconds(), 0.5);
+  ASSERT_EQ(stats.native_delivery.probe(true).seconds, 0.125);
+  ASSERT_EQ(stats.native_delivery.probe(true).work_wakes, 1u);
+  ASSERT_EQ(stats.native_delivery.probe(false).calls, 1u);
+  ASSERT_EQ(stats.native_delivery.probe(false).work_wakes, 0u);
+  const auto wall = stats.work_time_to_str(false);
+  ASSERT_TRUE(wall.find("external_delivery_first_work_producer_pending_s=0.25") != std::string::npos);
+  ASSERT_TRUE(wall.find("external_delivery_first_work_producer_pending_work_wakes=1") != std::string::npos);
+  ASSERT_TRUE(wall.find("external_delivery_probe_published_s=0.125") != std::string::npos);
+  ASSERT_TRUE(wall.find("external_delivery_probe_unconfirmed_s=0.0625") != std::string::npos);
+  ASSERT_TRUE(wall.find("external_wait_accounted_s=0.5") != std::string::npos);
+  ASSERT_TRUE(stats.work_time_to_str(true).find("external_delivery_") == std::string::npos);
+}
+
+TEST(CollatorExternalWaitStats, PublishedLowerBoundDoesNotCountReservedOrAlreadyConsumedWork) {
+  ton::validator::ExtMsgQueueState state;
+  state.record_selected(8, 128);
+  state.record_push_started(4, 64);
+  // The producer may be suspended in a bounded push. The consumer can observe
+  // some inserted entries before that push has returned its completed count.
+  ASSERT_EQ(state.native_published_ahead_lower_bound(), 0u);
+  state.record_consumed(2, 32);
+  ASSERT_EQ(state.native_published_ahead_lower_bound(), 0u);
+  state.record_push_completed(4, 4, 64, 64);
+  ASSERT_EQ(state.native_published_ahead_lower_bound(), 2u);
+  state.record_push_started(4, 64);
+  // New reserved work must not inflate the known-published prefix.
+  ASSERT_EQ(state.native_published_ahead_lower_bound(), 2u);
+  state.record_consumed(3, 48);
+  ASSERT_EQ(state.native_published_ahead_lower_bound(), 0u);
+  state.record_push_completed(4, 4, 64, 64);
+  ASSERT_EQ(state.native_published_ahead_lower_bound(), 3u);
+  state.record_consumed(3, 48);
+  ASSERT_EQ(state.native_published_ahead_lower_bound(), 0u);
+}
+
 TEST(CollatorExternalWaitStats, SerializesNativeCheckpointCoalescingTelemetry) {
   ton::validator::CollationStats stats;
   stats.native_checkpoint_groups = 2;

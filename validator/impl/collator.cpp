@@ -5430,7 +5430,12 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
         if (work_driven) {
           // Always drain already-published work first.  Only an empty queue
           // enters one of the bounded waits selected below.
+          const bool published_before =
+              ext_msg_queue_state_ && ext_msg_queue_state_->native_published_ahead_lower_bound() != 0;
+          td::Timer delivery_probe_timer;
           maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), false).wrap();
+          stats_.native_delivery.record_probe(published_before, delivery_probe_timer.elapsed(),
+                                              maybe.is_ok() && !maybe.ok().messages.empty());
           if (!check_cancelled()) {
             co_return false;
           }
@@ -5497,7 +5502,20 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
               }
               checkpoint_waited = !pending_checkpoint.empty();
               bounded_refill_attempted = true;
+              // Sample the epoch at actual wait entry: it can change while
+              // this actor evaluates the refill policy. Do not use this
+              // telemetry-only sample to alter the chosen deadline.
+              const bool pending_at_wait = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
+              td::Timer delivery_wait_timer;
               maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), true, wait_until).wrap();
+              using DeliveryOutcome = CollationStats::NativeDeliveryStats::Outcome;
+              const auto delivery_outcome =
+                  maybe.is_error()
+                      ? (maybe.error().code() == td::actor::AWAIT_TIMEOUT_CODE ? DeliveryOutcome::timeout
+                                                                             : DeliveryOutcome::error)
+                      : (maybe.ok().messages.empty() ? DeliveryOutcome::marker : DeliveryOutcome::work);
+              stats_.native_delivery.record_wait(wait_kind, pending_at_wait, delivery_wait_timer.elapsed(),
+                                                 delivery_outcome);
             }
           }
         } else if (params_.wait_externals_until || saw_item) {

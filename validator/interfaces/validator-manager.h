@@ -177,6 +177,95 @@ struct CollationStats {
     std::array<Bucket, bucket_count> buckets_{};
   };
 
+  // These wall timers overlap ExternalWaitStats, rather than adding to its
+  // total. Unlike the legacy kind timer, each timed-wait sample excludes the
+  // preceding nonblocking probe and refill-policy decision. Pending means an
+  // unfinished producer epoch at wait entry, not proven admissible work.
+  struct NativeDeliveryStats {
+    enum class Outcome : td::uint8 { work, marker, timeout, error };
+    struct WaitBucket {
+      double seconds{0};
+      td::uint64 calls{0}, work_wakes{0}, marker_wakes{0}, timeouts{0}, errors{0};
+    };
+    struct ProbeBucket {
+      double seconds{0};
+      td::uint64 calls{0}, work_wakes{0};
+    };
+
+    void record_wait(ExternalWaitStats::Kind kind, bool producer_pending, double seconds, Outcome outcome) {
+      auto& bucket = waits_[wait_index(kind)][producer_pending ? 1 : 0];
+      bucket.seconds += seconds;
+      ++bucket.calls;
+      switch (outcome) {
+        case Outcome::work:
+          ++bucket.work_wakes;
+          break;
+        case Outcome::marker:
+          ++bucket.marker_wakes;
+          break;
+        case Outcome::timeout:
+          ++bucket.timeouts;
+          break;
+        case Outcome::error:
+          ++bucket.errors;
+          break;
+      }
+    }
+
+    void record_probe(bool published_before, double seconds, bool returned_work) {
+      auto& bucket = probes_[published_before ? 1 : 0];
+      bucket.seconds += seconds;
+      ++bucket.calls;
+      bucket.work_wakes += returned_work;
+    }
+
+    const WaitBucket& wait(ExternalWaitStats::Kind kind, bool producer_pending) const {
+      return waits_[wait_index(kind)][producer_pending ? 1 : 0];
+    }
+    const ProbeBucket& probe(bool published_before) const {
+      return probes_[published_before ? 1 : 0];
+    }
+
+    std::string to_str() const {
+      std::string result;
+      constexpr std::array<const char*, 3> kinds{"first_work", "fragment_refill", "post_commit_idle"};
+      constexpr std::array<const char*, 2> pending_names{"no_producer", "producer_pending"};
+      for (std::size_t i = 0; i < waits_.size(); ++i) {
+        for (std::size_t j = 0; j < waits_[i].size(); ++j) {
+          const auto& bucket = waits_[i][j];
+          const auto prefix = PSTRING() << " external_delivery_" << kinds[i] << "_" << pending_names[j];
+          result += PSTRING() << prefix << "_s=" << bucket.seconds << prefix << "_calls=" << bucket.calls
+                              << prefix << "_work_wakes=" << bucket.work_wakes
+                              << prefix << "_marker_wakes=" << bucket.marker_wakes
+                              << prefix << "_timeouts=" << bucket.timeouts << prefix << "_errors=" << bucket.errors;
+        }
+      }
+      for (std::size_t i = 0; i < probes_.size(); ++i) {
+        const auto& bucket = probes_[i];
+        const auto prefix = PSTRING() << " external_delivery_probe_" << (i ? "published" : "unconfirmed");
+        result += PSTRING() << prefix << "_s=" << bucket.seconds << prefix << "_calls=" << bucket.calls
+                            << prefix << "_work_wakes=" << bucket.work_wakes;
+      }
+      return result;
+    }
+
+   private:
+    static std::size_t wait_index(ExternalWaitStats::Kind kind) {
+      switch (kind) {
+        case ExternalWaitStats::Kind::native_first_work:
+          return 0;
+        case ExternalWaitStats::Kind::native_fragment_refill:
+          return 1;
+        case ExternalWaitStats::Kind::native_post_commit_idle:
+          return 2;
+        default:
+          UNREACHABLE();
+      }
+    }
+    std::array<std::array<WaitBucket, 2>, 3> waits_{};
+    std::array<ProbeBucket, 2> probes_{};
+  };
+
   // Logical-entry reasons are mutually exclusive and reconcile exactly to
   // native_microbatch_delayed. Prebatch counters describe physical work that
   // never entered native_microbatch_input, so they remain a separate domain.
@@ -483,6 +572,7 @@ struct CollationStats {
   bool native_canonical_root_reused = false;
   NativeDeferralCounters native_deferrals;
   ExternalWaitStats external_wait;
+  NativeDeliveryStats native_delivery;
   double wait_externals_time = 0.0;
   double check_load_do_collate_time = -1.0;
   double check_load_total_time = -1.0;
@@ -560,6 +650,7 @@ struct CollationStats {
     result += PSTRING() << " " << native_deferrals.to_str();
     if (!is_cpu) {
       result += PSTRING() << " " << external_wait.to_str();
+      result += native_delivery.to_str();
     }
     return result;
   }
@@ -910,6 +1001,13 @@ struct ExtMsgQueueState {
     std::lock_guard lock(accounting_mutex_);
     CHECK(native_consumed_ <= native_selected_);
     return native_selected_ - native_consumed_;
+  }
+  // A completed push has definitely published this prefix. A suspended
+  // bounded push may already have published more, so zero is unconfirmed,
+  // not evidence that the queue is empty. Completion markers are excluded.
+  td::uint64 native_published_ahead_lower_bound() {
+    std::lock_guard lock(accounting_mutex_);
+    return native_pushed_ > native_consumed_ ? native_pushed_ - native_consumed_ : 0;
   }
   td::uint64 native_consumed_count() {
     std::lock_guard lock(accounting_mutex_);

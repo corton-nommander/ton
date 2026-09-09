@@ -5,6 +5,11 @@ target_include_directories(test-native-admission-batch PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(test-native-admission-batch PRIVATE td-test-main tdutils ton_validator)
 ton_test(test-native-admission-batch)
 
+add_executable(test-native-admission-refresh test-native-admission-refresh.cpp)
+target_include_directories(test-native-admission-refresh PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/crypto)
+target_link_libraries(test-native-admission-refresh PRIVATE td-test-main tdutils)
+ton_test(test-native-admission-refresh)
+
 add_executable(test-native-work-scratch test-native-work-scratch.cpp)
 target_include_directories(test-native-work-scratch PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/crypto)
 target_link_libraries(test-native-work-scratch PRIVATE td-test-main tdutils ton_crypto_core)

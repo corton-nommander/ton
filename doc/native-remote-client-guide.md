@@ -460,24 +460,40 @@ Source references: `lite-client/native-load-generator.cpp:3725` (outputs), `cryp
 ## Admission profiling after the eight-lane plateau
 
 The [September 9 admission plan](native-bottleneck-action-plan-2026-09-09.md) is
-approved and under local evaluation. `TON_NATIVE_ADMISSION_SHARD_SHARING=0|1`
-controls bounded sharing of exact-state admission requests in candidate builds;
-it defaults to 0 until measured promotion. The companion Compose configuration
-also reserves `TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0|1` for the subsequent
-bounded-refresh experiment; exposing that environment variable alone does not
-establish that a running image implements it. Verify the candidate revision and
-its diagnostic counters before claiming either feature is active. A `master`
-image does not acquire local changes without a successful publication.
+approved and under local evaluation. The [current experiment report](native-admission-cycles-2026-09-09.md)
+records the fixed images and completed measurements. Request sharing remains
+default-off: its first valid comparison reduced manager requests by 94.7% but
+observed 59,219 canonical transfers/s versus the 59,834 control.
 
-Updated profiler output includes shard-fetch/cache-fill and canonical
-reconciliation deltas. Existing recordings without the optional reconciliation
-group remain readable. Current gauges and sequence numbers are excluded from
-counter subtraction. Candidate `external_delivery_*` fields distinguish actual
-queue awaits from nonblocking probes; see
-[delivery diagnostic semantics](native-collator-delivery-diagnostics.md). Existing
-Session Stats revision `97c4f771` can ingest these fields without a dashboard update.
-Keep the existing eight-lane production database and prepare test images once
-before an A/B comparison; local evaluation is not production promotion.
+Local candidate flags are:
+
+- `TON_NATIVE_ADMISSION_SHARD_SHARING=0|1`: bounded sharing of simultaneous
+  exact-state admission shard-view requests, with independent caller deadlines.
+- `TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0|1`: at most one batch snapshot
+  refresh within the original deadline. It rechecks mutable admission conditions
+  and reuses only matching immutable signature evidence. Single-message admission
+  keeps its existing strict snapshot rejection. Default 0; local validation and
+  separate measurements are required before promotion.
+- `TON_NATIVE_RECONCILIATION_PROFILE=0|1`: optional stage clocks for canonical
+  reconciliation, default 0. Enable it before starting both diagnostic arms;
+  always-on outcome counters distinguish unchanged accounts from necessary
+  nonce/balance updates and expiry work. It changes measurement, not scheduling.
+
+These variables take effect at validator startup. Set them in A's selected env
+file and recreate/settle genesis before measurement, using the same prebuilt
+image in both arms. Environment passthrough alone does not establish that an
+image implements the feature. Check its revision and diagnostic counters; a
+published `master` image does not acquire local changes automatically.
+
+Updated profiler output includes shard requests/cache fills and optional
+[reconciliation-local attribution](native-reconciliation-diagnostics.md).
+Older recordings remain readable; current gauges and sequence numbers are
+excluded from counter subtraction. Candidate `external_delivery_*` fields
+separate published probes, producer state, first-epoch dispatch and subsequent
+waiting; see [delivery semantics](native-collator-delivery-diagnostics.md).
+Existing Session Stats revision `97c4f771` can ingest these additive fields.
+Keep the eight-lane production database and prepare images once before an A/B
+comparison; these desktop results do not constitute production promotion.
 
 The admission profiling update adds exact-state configuration caching, stage and retry-cause counters,
 and block-signature executor measurements. MyLocalTonDocker's
@@ -519,12 +535,13 @@ plus measurement-phase window/RTT/retry/backlog gauges in `progress.jsonl`.
 Use B's final timestamps to select A's matching samples; A's full sampling interval can include
 readiness, warm-up and drain. Sampler Ctrl-C stops only sampling, never genesis.
 
-For cache off/on/on/off, recreate and settle A identically using the same image and B settings;
-change only the cache environment flag. Then screen block-signature thread tiers 1/2/4/8 or B's
-coalescing 20/10 ms separately. Increase the window only when cap counters and live gauges show
-a binding credit limit. Full commands and artifact semantics are in the companion guide.
-Snapshot refresh/revalidation remains conditional on evidence that snapshot-change retries dominate;
-the current implementation retains the exact-state rejection and all proof/source-reuse gates.
+Keep configuration caching on for the admission experiments. Recreate and settle A
+identically, changing only the feature under test; repeat promising candidates
+off/on/on/off with fixed images and B settings. Keep 20 ms coalescing, 10 connections
+and existing windows as the control. Increase windows only when cap counters and
+live gauges identify a binding credit limit. Thread-count changes remain separate,
+profile-led experiments. Every result retains full proof, drain and safe source-reuse
+gates. Full commands and artifact semantics are in the companion guide.
 
 
 ## Desktop reference measurements (2026-09-08)

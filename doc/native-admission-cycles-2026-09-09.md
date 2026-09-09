@@ -124,5 +124,15 @@ Before this comparison, the sharing implementation passed 81 scheduler tests,
 eight admission tests and nine collator-wait tests. Coverage includes exact-state
 fanout, fork identity, caller deadlines/cancellation, caps, stale generations,
 early manager errors and actor teardown. The validator Release build and fixed
-runtime image executable checks passed. Snapshot refresh is not enabled until
-its actual batch-coroutine tests and a separate frozen-image comparison pass.
+runtime image executable checks passed. Snapshot refresh subsequently passed all eight actual batch-coroutine cases,
+including real Ed25519 verification, exact state/header decoding and reservation
+counts. All 122 focused tests passed: refresh integration 8, refresh policy 8,
+admission 8, pool scheduler 85 and collator wait 13. The MyLocal profiler passed
+14 tests. These correctness results allow an opt-in performance screen; they do
+not establish a throughput gain or justify a default change.
+
+Isolated implementation commits are `7bcf9b99` (bounded batch refresh), `09c625a6`
+(reconciliation attribution) and `c2843fe4` (first-epoch delivery timing). The
+subsequent refresh comparison will use a newly frozen image set with sharing off
+and reconciliation stage profiling on in both arms. Its results must be compared
+to that image's own refresh-off control.

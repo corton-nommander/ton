@@ -3,9 +3,11 @@
 
 #include "td/utils/tests.h"
 #include "td/actor/TestScheduler.h"
+#include "td/actor/SharedFuture.h"
 #include "validator/consensus/manager-facade.h"
 #include "validator/impl/ext-message-pool.hpp"
 #include "validator/impl/shard.hpp"
+#include "validator/manager.hpp"
 
 namespace ton::validator {
 namespace {
@@ -213,6 +215,40 @@ class ExtMessagePoolTestAccess {
         .entries = pool.native_admission_shard_cache_.shard_views.size(),
         .peak_entries = pool.native_batch_shard_cache_peak_entries_,
     };
+  }
+
+  using ShardRequest = ExtMessagePool::NativeAdmissionShardRequest;
+  using ShardViewPtr = ExtMessagePool::NativeAdmissionShardViewPtr;
+
+  static void enable_shared_admission(ExtMessagePool &pool, bool enabled) {
+    pool.native_admission_shard_sharing_enabled_ = enabled;
+  }
+
+  static td::actor::Task<ShardViewPtr> wait_admission_view(ExtMessagePool &pool, BlockIdExt mc,
+                                                        BlockIdExt shard, td::Timestamp deadline) {
+    co_return co_await pool.wait_native_admission_shard_view(mc, shard, deadline);
+  }
+
+  static td::optional<ShardRequest> queue_admission_view(ExtMessagePool &pool, const BlockIdExt &mc,
+                                                       const BlockIdExt &shard, td::Timestamp deadline) {
+    return pool.queue_native_admission_shard_view({mc, shard}, deadline);
+  }
+
+  static void complete_shared_admission_view(ExtMessagePool &pool, const BlockIdExt &mc,
+                                             const BlockIdExt &shard, td::Result<ShardViewPtr> result) {
+    pool.complete_native_admission_shared_shard_view({mc, shard}, std::move(result));
+  }
+
+  static std::string shared_admission_stats(const ExtMessagePool &pool) {
+    return pool.native_batch_telemetry_string(':');
+  }
+
+  static std::size_t shared_admission_entries(const ExtMessagePool &pool) {
+    return pool.native_admission_shard_waits_.size();
+  }
+
+  static std::size_t shared_admission_waiters(const ExtMessagePool &pool) {
+    return pool.native_admission_shard_waiter_count_;
   }
 
   static void record_admission_manager_wait(ExtMessagePool &pool) {
@@ -1232,6 +1268,402 @@ TEST(ExtMessagePoolScheduler, NativeAdmissionManagerWaitTelemetrySeparatesDeadli
   ASSERT_TRUE(emitted.find("shard_manager_wait_notready:1") != std::string::npos);
   ASSERT_TRUE(emitted.find("shard_manager_wait_other_errors:1") != std::string::npos);
   ASSERT_TRUE(emitted.find("shard_manager_wait_late_results:1") != std::string::npos);
+}
+
+namespace {
+
+struct SharedAdmissionManagerRequests {
+  struct Request {
+    BlockIdExt block;
+    td::Timestamp deadline;
+    td::Promise<td::Ref<ShardState>> promise;
+  };
+  std::vector<Request> requests;
+};
+
+class SharedAdmissionTestManager final : public ValidatorManagerImpl {
+ public:
+  explicit SharedAdmissionTestManager(std::shared_ptr<SharedAdmissionManagerRequests> requests)
+      : ValidatorManagerImpl({}, "", {}, {}, {}, {}, {}), requests_(std::move(requests)) {
+  }
+  void start_up() override {
+  }
+  void wait_block_state_short(BlockIdExt block, td::uint32, td::Timestamp deadline, bool,
+                              td::Promise<td::Ref<ShardState>> promise) override {
+    requests_->requests.push_back({block, deadline, std::move(promise)});
+  }
+
+ private:
+  std::shared_ptr<SharedAdmissionManagerRequests> requests_;
+};
+
+class SharedAdmissionTestState final : public ShardStateQ {
+ public:
+  explicit SharedAdmissionTestState(const BlockIdExt &id) : ShardStateQ(id, make_root(id)) {
+  }
+  RootHash root_hash() const override {
+    return RootHash{root_cell()->get_hash().bits()};
+  }
+
+ private:
+  static td::Ref<vm::Cell> make_root(const BlockIdExt &id) {
+    // A minimally encoded unsplit basechain header with empty currency,
+    // libraries and master-ref auxiliary fields. The admission projection
+    // validates this actual TLB header rather than a preconstructed view.
+    auto empty = vm::CellBuilder{}.finalize_novm();
+    auto auxiliary = vm::CellBuilder{}.store_zeroes(140).finalize_novm();
+    return vm::CellBuilder{}.store_long(0x9023afe2, 32).store_long(0, 32)
+        .store_long(0, 8).store_long(basechainId, 32).store_long(0, 64)
+        .store_long(id.seqno(), 32).store_long(0, 32).store_long(100, 32)
+        .store_long(200, 64).store_long(0, 32).store_ref(empty)
+        .store_long(0, 1).store_ref(empty).store_ref(auxiliary).store_long(0, 1).finalize_novm();
+  }
+};
+
+class SharedAdmissionTestPool final : public ExtMessagePool {
+ public:
+  SharedAdmissionTestPool(td::actor::ActorId<ValidatorManager> manager, bool enabled)
+      : ExtMessagePool({}, manager), enabled_(enabled) {
+  }
+  void start_up() override {
+    ExtMessagePoolTestAccess::enable_shared_admission(*this, enabled_);
+  }
+  td::actor::Task<ExtMessagePoolTestAccess::ShardViewPtr> get(BlockIdExt mc, BlockIdExt shard,
+                                                            td::Timestamp deadline) {
+    co_return co_await ExtMessagePoolTestAccess::wait_admission_view(*this, mc, shard, deadline);
+  }
+  std::string diagnostics() {
+    return ExtMessagePoolTestAccess::shared_admission_stats(*this);
+  }
+  void initialize_cache(BlockIdExt mc) {
+    ExtMessagePoolTestAccess::reset_admission_generation(*this, mc);
+  }
+  std::string cache_diagnostics() {
+    return ExtMessagePoolTestAccess::batch_admission_stats(*this);
+  }
+  void shutdown() {
+    stop();
+  }
+
+ private:
+  bool enabled_;
+};
+
+}  // namespace
+
+TEST(ExtMessagePoolScheduler, SharedAdmissionFetchCoroutineDispatchesOnceAndFansOutManagerFailure) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto requests = std::make_shared<SharedAdmissionManagerRequests>();
+    auto manager = td::actor::create_actor<SharedAdmissionTestManager>("shared-admission-manager", requests);
+    auto pool = td::actor::create_actor<SharedAdmissionTestPool>("shared-admission-pool", manager.get(), true);
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    auto first = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(5));
+    auto joined = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(8));
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(requests->requests.size(), 1u);
+    requests->requests[0].promise.set_error(td::Status::Error(ErrorCode::notready, "test unavailable"));
+    auto first_result = co_await std::move(first).wrap();
+    auto joined_result = co_await std::move(joined).wrap();
+    ASSERT_TRUE(first_result.is_error() && joined_result.is_error());
+    ASSERT_EQ(first_result.error().code(), ErrorCode::notready);
+    ASSERT_EQ(joined_result.error().message(), first_result.error().message());
+    auto stats = co_await td::actor::ask(pool.get(), &SharedAdmissionTestPool::diagnostics);
+    ASSERT_TRUE(stats.find("shard_shared_active:0") != std::string::npos);
+    ASSERT_TRUE(stats.find("shard_shared_waiters:0") != std::string::npos);
+    co_return {};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, SharedAdmissionValidStateIsProjectedAndCachedOnce) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto requests = std::make_shared<SharedAdmissionManagerRequests>();
+    auto manager = td::actor::create_actor<SharedAdmissionTestManager>("shared-admission-manager", requests);
+    auto pool = td::actor::create_actor<SharedAdmissionTestPool>("shared-admission-pool", manager.get(), true);
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    co_await td::actor::ask(pool.get(), &SharedAdmissionTestPool::initialize_cache, mc);
+    auto first = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(5));
+    auto joined = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(8));
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(requests->requests.size(), 1u);
+    requests->requests[0].promise.set_value(td::make_ref<SharedAdmissionTestState>(shard));
+    auto first_view = co_await std::move(first);
+    auto joined_view = co_await std::move(joined);
+    ASSERT_TRUE(first_view == joined_view);
+    ASSERT_EQ(first_view->block_id, shard);
+    ASSERT_EQ(first_view->gen_utime, 100u);
+    auto stats = co_await td::actor::ask(pool.get(), &SharedAdmissionTestPool::cache_diagnostics);
+    ASSERT_TRUE(stats.find("shard_manager_waits:1") != std::string::npos);
+    ASSERT_TRUE(stats.find("shard_cache_fills:1") != std::string::npos);
+    ASSERT_TRUE(stats.find("shard_cache_fill_races:0") != std::string::npos);
+    co_return {};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, SharedAdmissionSuccessNeverOutlivesShortCallerDeadline) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto requests = std::make_shared<SharedAdmissionManagerRequests>();
+    auto manager = td::actor::create_actor<SharedAdmissionTestManager>("shared-admission-manager", requests);
+    auto pool = td::actor::create_actor<SharedAdmissionTestPool>("shared-admission-pool", manager.get(), true);
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    auto first = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(5));
+    auto joined = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(1));
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(requests->requests.size(), 1u);
+    requests->requests[0].promise.set_value(td::make_ref<SharedAdmissionTestState>(shard));
+    // The success is queued, but its delivery and the timeout now race on the
+    // pool actor. Only the first caller still owns usable admission time.
+    scheduler.advance_time(2);
+    co_await scheduler.wait_sync_work();
+    ASSERT_TRUE((co_await std::move(first).wrap()).is_ok());
+    ASSERT_TRUE((co_await std::move(joined).wrap()).is_error());
+    co_return {};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, DisabledSharedAdmissionRetainsIndependentManagerRequests) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto requests = std::make_shared<SharedAdmissionManagerRequests>();
+    auto manager = td::actor::create_actor<SharedAdmissionTestManager>("shared-admission-manager", requests);
+    auto pool = td::actor::create_actor<SharedAdmissionTestPool>("shared-admission-pool", manager.get(), false);
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    auto first = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(5));
+    auto second = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(8));
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(requests->requests.size(), 2u);
+    for (auto &request : requests->requests) {
+      request.promise.set_error(td::Status::Error(ErrorCode::notready, "test unavailable"));
+    }
+    ASSERT_TRUE((co_await std::move(first).wrap()).is_error());
+    ASSERT_TRUE((co_await std::move(second).wrap()).is_error());
+    auto stats = co_await td::actor::ask(pool.get(), &SharedAdmissionTestPool::diagnostics);
+    ASSERT_TRUE(stats.find("shard_sharing_enabled:0") != std::string::npos);
+    ASSERT_TRUE(stats.find("shard_shared_dispatches:0") != std::string::npos);
+    co_return {};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, SharedAdmissionLaterCallerRetriesOnceWithinOriginalDeadline) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto requests = std::make_shared<SharedAdmissionManagerRequests>();
+    auto manager = td::actor::create_actor<SharedAdmissionTestManager>("shared-admission-manager", requests);
+    auto pool = td::actor::create_actor<SharedAdmissionTestPool>("shared-admission-pool", manager.get(), true);
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    auto short_deadline = td::Timestamp::in(1);
+    auto later_deadline = td::Timestamp::in(8);
+    auto first = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, short_deadline);
+    auto joined = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, later_deadline);
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(requests->requests.size(), 1u);
+    ASSERT_EQ(requests->requests[0].deadline.get(), short_deadline.get());
+    scheduler.advance_time(2);
+    co_await scheduler.wait_sync_work();
+    ASSERT_TRUE(first.await_ready());
+    auto first_result = co_await std::move(first).wrap();
+    ASSERT_TRUE(first_result.is_error());
+    ASSERT_TRUE(!joined.await_ready());
+    ASSERT_EQ(requests->requests.size(), 2u);
+    ASSERT_EQ(requests->requests[1].deadline.get(), later_deadline.get());
+    // A late response to the abandoned first manager wait cannot complete or
+    // erase the second caller's new request.
+    requests->requests[0].promise.set_error(td::Status::Error(ErrorCode::notready, "late first response"));
+    co_await scheduler.wait_sync_work();
+    ASSERT_TRUE(!joined.await_ready());
+    requests->requests[1].promise.set_error(td::Status::Error(ErrorCode::notready, "fallback unavailable"));
+    auto joined_result = co_await std::move(joined).wrap();
+    ASSERT_TRUE(joined_result.is_error());
+    ASSERT_EQ(joined_result.error().message(), "fallback unavailable");
+    ASSERT_EQ(requests->requests.size(), 2u);
+    co_return {};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, SharedAdmissionActorShutdownCancelsPendingFetchSafely) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto requests = std::make_shared<SharedAdmissionManagerRequests>();
+    auto manager = td::actor::create_actor<SharedAdmissionTestManager>("shared-admission-manager", requests);
+    auto pool = td::actor::create_actor<SharedAdmissionTestPool>("shared-admission-pool", manager.get(), true);
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    auto first = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(5));
+    auto joined = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(8));
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(requests->requests.size(), 1u);
+    td::actor::send_closure(pool.get(), &SharedAdmissionTestPool::shutdown);
+    co_await scheduler.wait_sync_work();
+    requests->requests[0].promise.set_error(td::Status::Error(ErrorCode::notready, "after shutdown"));
+    co_await scheduler.wait_sync_work();
+    ASSERT_TRUE((co_await std::move(first).wrap()).is_error());
+    ASSERT_TRUE((co_await std::move(joined).wrap()).is_error());
+    scheduler.advance_time(10);
+    co_await scheduler.wait_sync_work();
+    co_return {};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, SharedAdmissionViewsRequireExactMasterchainAndShardIdentity) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto pool = ExtMessagePoolTestAccess::make_pool();
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto mc_fork = ExtMessagePoolTestAccess::masterchain_state(42, 1)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    auto shard_fork = ExtMessagePoolTestAccess::shard_top(9, 1);
+    auto deadline = td::Timestamp::in(5);
+    auto first = ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard, deadline);
+    auto joined = ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard, deadline);
+    auto other_mc = ExtMessagePoolTestAccess::queue_admission_view(pool, mc_fork, shard, deadline);
+    auto other_shard = ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard_fork, deadline);
+    ASSERT_TRUE(first && first.value().dispatch);
+    ASSERT_TRUE(joined && !joined.value().dispatch);
+    ASSERT_TRUE(other_mc && other_mc.value().dispatch);
+    ASSERT_TRUE(other_shard && other_shard.value().dispatch);
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_entries(pool), 3u);
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_waiters(pool), 4u);
+    auto view = ExtMessagePoolTestAccess::admission_view(shard, 77);
+    ExtMessagePoolTestAccess::complete_shared_admission_view(pool, mc, shard, view);
+    auto first_view = co_await std::move(first.value().waiter);
+    auto joined_view = co_await std::move(joined.value().waiter);
+    ASSERT_TRUE(first_view == view && joined_view == view);
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_entries(pool), 2u);
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_waiters(pool), 2u);
+    ExtMessagePoolTestAccess::complete_shared_admission_view(pool, mc_fork, shard,
+                                                            td::Status::Error(ErrorCode::notready, "old fork"));
+    ExtMessagePoolTestAccess::complete_shared_admission_view(pool, mc, shard_fork,
+                                                            td::Status::Error("invalid root"));
+    ASSERT_TRUE((co_await std::move(other_mc.value().waiter).wrap()).is_error());
+    ASSERT_TRUE((co_await std::move(other_shard.value().waiter).wrap()).is_error());
+    auto stats = ExtMessagePoolTestAccess::shared_admission_stats(pool);
+    ASSERT_TRUE(stats.find("shard_shared_dispatches:3") != std::string::npos);
+    ASSERT_TRUE(stats.find("shard_shared_joins:1") != std::string::npos);
+    ASSERT_TRUE(stats.find("shard_shared_completions:3") != std::string::npos);
+    ASSERT_TRUE(stats.find("shard_shared_errors:2") != std::string::npos);
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_entries(pool), 0u);
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_waiters(pool), 0u);
+    co_return {};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, SharedAdmissionCallerTimeoutDoesNotCancelOtherWaiters) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto pool = ExtMessagePoolTestAccess::make_pool();
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    auto first_deadline = td::Timestamp::in(10);
+    auto first = ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard, first_deadline);
+    auto short_deadline = td::Timestamp::in(1);
+    auto joined = ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard, short_deadline);
+    auto short_wait = td::actor::await_with_timeout(std::move(joined.value().waiter), short_deadline).start();
+    co_await scheduler.wait_sync_work();
+    scheduler.advance_time(2);
+    co_await scheduler.wait_sync_work();
+    ASSERT_TRUE(short_wait.await_ready());
+    auto timed_out = co_await std::move(short_wait).wrap();
+    ASSERT_TRUE(timed_out.is_error());
+    ASSERT_EQ(timed_out.error().code(), td::actor::AWAIT_TIMEOUT_CODE);
+    ASSERT_TRUE(!first.value().waiter.await_ready());
+    auto view = ExtMessagePoolTestAccess::admission_view(shard, 77);
+    ExtMessagePoolTestAccess::complete_shared_admission_view(pool, mc, shard, view);
+    ASSERT_TRUE((co_await std::move(first.value().waiter)) == view);
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_waiters(pool), 0u);
+    co_return {};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, SharedAdmissionCreatorAbandonmentDoesNotCancelJoinedWaiter) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto pool = ExtMessagePoolTestAccess::make_pool();
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    auto first = ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard, td::Timestamp::in(5));
+    auto joined = ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard, td::Timestamp::in(8));
+    first.value().waiter.detach_silent();
+    auto view = ExtMessagePoolTestAccess::admission_view(shard, 77);
+    ExtMessagePoolTestAccess::complete_shared_admission_view(pool, mc, shard, view);
+    ASSERT_TRUE((co_await std::move(joined.value().waiter)) == view);
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_entries(pool), 0u);
+    co_return {};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, SharedAdmissionOldGenerationCompletesWithoutPopulatingNewCache) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto pool = ExtMessagePoolTestAccess::make_pool();
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto next_mc = ExtMessagePoolTestAccess::masterchain_state(43)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    ExtMessagePoolTestAccess::reset_admission_generation(pool, mc);
+    auto first = ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard, td::Timestamp::in(5));
+    ExtMessagePoolTestAccess::reset_admission_generation(pool, next_mc);
+    auto next = ExtMessagePoolTestAccess::queue_admission_view(pool, next_mc, shard, td::Timestamp::in(5));
+    ASSERT_TRUE(next.value().dispatch);
+    auto old_view = ExtMessagePoolTestAccess::admission_view(shard, 77);
+    auto stored = ExtMessagePoolTestAccess::store_admission_view(pool, mc, old_view);
+    ASSERT_TRUE(stored.is_ok());
+    ExtMessagePoolTestAccess::complete_shared_admission_view(pool, mc, shard, stored.move_as_ok());
+    ASSERT_TRUE((co_await std::move(first.value().waiter)) == old_view);
+    ASSERT_TRUE(!ExtMessagePoolTestAccess::lookup_admission_view(pool, next_mc, shard));
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_entries(pool), 1u);
+    ExtMessagePoolTestAccess::complete_shared_admission_view(pool, next_mc, shard, old_view);
+    ASSERT_TRUE((co_await std::move(next.value().waiter)) == old_view);
+    co_return {};
+  });
+}
+
+TEST(ExtMessagePoolScheduler, SharedAdmissionLimitsFallBackWithoutEvictingLiveWaiters) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto pool = ExtMessagePoolTestAccess::make_pool();
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    auto deadline = td::Timestamp::in(5);
+    for (unsigned i = 0; i < 256; ++i) {
+      auto request = ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard, deadline);
+      ASSERT_TRUE(request);
+      ASSERT_EQ(request.value().dispatch, i == 0);
+    }
+    ASSERT_TRUE(!ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard, deadline));
+    for (unsigned i = 1; i < 64; ++i) {
+      ASSERT_TRUE(ExtMessagePoolTestAccess::queue_admission_view(
+          pool, mc, ExtMessagePoolTestAccess::shard_top(9 + i), deadline));
+    }
+    ASSERT_TRUE(!ExtMessagePoolTestAccess::queue_admission_view(
+        pool, mc, ExtMessagePoolTestAccess::shard_top(100), deadline));
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_entries(pool), 64u);
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_waiters(pool), 319u);
+    auto stats = ExtMessagePoolTestAccess::shared_admission_stats(pool);
+    ASSERT_TRUE(stats.find("shard_shared_table_full:1") != std::string::npos);
+    ASSERT_TRUE(stats.find("shard_shared_waiters_full:1") != std::string::npos);
+    // Expired work is not joined or replaced; its completion still owns its
+    // entry and each later request falls back under its own deadline.
+    scheduler.advance_time(6);
+    ASSERT_TRUE(!ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard, td::Timestamp::in(5)));
+    for (unsigned i = 0; i < 64; ++i) {
+      ExtMessagePoolTestAccess::complete_shared_admission_view(
+          pool, mc, ExtMessagePoolTestAccess::shard_top(9 + i), td::Status::Error(ErrorCode::timeout, "deadline"));
+    }
+    auto retry = ExtMessagePoolTestAccess::queue_admission_view(pool, mc, shard, td::Timestamp::in(5));
+    ASSERT_TRUE(retry && retry.value().dispatch);
+    ExtMessagePoolTestAccess::complete_shared_admission_view(pool, mc, shard,
+                                                            td::Status::Error(ErrorCode::notready, "retry"));
+    ASSERT_TRUE((co_await std::move(retry.value().waiter).wrap()).is_error());
+    ASSERT_EQ(ExtMessagePoolTestAccess::shared_admission_waiters(pool), 0u);
+    co_return {};
+  });
 }
 
 TEST(ExtMessagePoolScheduler, NativeAdmissionPinsFreshLocallyAppliedMasterchainState) {

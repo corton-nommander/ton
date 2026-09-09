@@ -43,6 +43,10 @@ void ExtMessagePool::start_up() {
     CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
     native_config_cache_enabled_ = td::Slice(value) == "1";
   }
+  if (const char* value = std::getenv("TON_NATIVE_ADMISSION_SHARD_SHARING")) {
+    CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
+    native_admission_shard_sharing_enabled_ = td::Slice(value) == "1";
+  }
   auto parse_bounded_env = [](const char* name, unsigned long fallback, unsigned long maximum) {
     const char* value = std::getenv(name);
     if (!value) {
@@ -77,6 +81,7 @@ void ExtMessagePool::start_up() {
   }
   LOG(WARNING) << "native mempool configuration: signature_workers=" << workers
                << " admission_config_cache=" << native_config_cache_enabled_
+               << " admission_shard_sharing=" << native_admission_shard_sharing_enabled_
                << " collator_queue_limit=" << native_collator_queue_limit_
                << " max_retention_s=" << native_mempool_max_ttl_
                << " generic_retention_s=" << MempoolMsg::GENERIC_MEMPOOL_TTL_SECONDS;
@@ -421,6 +426,129 @@ td::Result<ExtMessagePool::NativeAdmissionShardViewPtr> ExtMessagePool::store_na
   native_batch_shard_cache_peak_entries_ =
       std::max<td::uint64>(native_batch_shard_cache_peak_entries_, native_admission_shard_cache_.shard_views.size());
   return view;
+}
+
+td::optional<ExtMessagePool::NativeAdmissionShardRequest> ExtMessagePool::queue_native_admission_shard_view(
+    const NativeAdmissionShardRequestKey &key, td::Timestamp deadline) {
+  if (!deadline || deadline.is_in_past()) {
+    return {};
+  }
+  auto it = native_admission_shard_waits_.find(key);
+  bool dispatch = it == native_admission_shard_waits_.end();
+  if (dispatch) {
+    if (native_admission_shard_waits_.size() >= MAX_NATIVE_ADMISSION_SHARED_SHARDS) {
+      ++native_batch_shard_shared_table_full_;
+      return {};
+    }
+    it = native_admission_shard_waits_.emplace(key, NativeAdmissionShardWait{.deadline = deadline, .waiters = {}}).first;
+    ++native_batch_shard_shared_dispatches_;
+    native_batch_shard_shared_peak_entries_ =
+        std::max<td::uint64>(native_batch_shard_shared_peak_entries_, native_admission_shard_waits_.size());
+  } else {
+    if (it->second.deadline.is_in_past()) {
+      ++native_batch_shard_shared_deadline_fallbacks_;
+      return {};
+    }
+    if (it->second.waiters.size() >= MAX_NATIVE_ADMISSION_SHARED_WAITERS_PER_SHARD) {
+      ++native_batch_shard_shared_waiters_full_;
+      return {};
+    }
+    ++native_batch_shard_shared_joins_;
+  }
+  auto [waiter, promise] = td::actor::StartedTask<NativeAdmissionShardViewPtr>::make_bridge();
+  it->second.waiters.emplace_back(std::move(promise));
+  ++native_admission_shard_waiter_count_;
+  native_batch_shard_shared_peak_waiters_ =
+      std::max<td::uint64>(native_batch_shard_shared_peak_waiters_, native_admission_shard_waiter_count_);
+  return NativeAdmissionShardRequest{.waiter = std::move(waiter), .dispatch = dispatch};
+}
+
+void ExtMessagePool::complete_native_admission_shared_shard_view(
+    const NativeAdmissionShardRequestKey &key, td::Result<NativeAdmissionShardViewPtr> result) {
+  auto it = native_admission_shard_waits_.find(key);
+  CHECK(it != native_admission_shard_waits_.end());
+  auto waiters = std::move(it->second.waiters);
+  native_admission_shard_waits_.erase(it);
+  native_admission_shard_waiter_count_ -= waiters.size();
+  ++native_batch_shard_shared_completions_;
+  if (result.is_error()) {
+    ++native_batch_shard_shared_errors_;
+  }
+  // Erase before publishing. A resumed caller can start another request for
+  // this exact key, and no old completion may remove its pending entry.
+  for (auto &waiter : waiters) {
+    waiter.set_result(result.clone());
+  }
+}
+
+td::actor::Task<ExtMessagePool::NativeAdmissionShardViewPtr> ExtMessagePool::fetch_native_admission_shard_view(
+    BlockIdExt masterchain_block_id, BlockIdExt shard_block_id, td::Timestamp deadline) {
+  ++native_batch_shard_manager_waits_;
+  auto state_result = co_await td::actor::await_with_timeout(
+                          td::actor::ask(manager_, &ValidatorManager::wait_block_state_short,
+                                         shard_block_id, 0, deadline, false), deadline)
+                          .wrap();
+  if (state_result.is_error()) {
+    auto error = state_result.move_as_error();
+    record_native_admission_manager_wait_error(error);
+    co_return error;
+  }
+  if (native_admission_manager_wait_finished_after_deadline(deadline)) {
+    co_return td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
+  }
+  auto view_result = make_native_admission_shard_view(shard_block_id, state_result.move_as_ok());
+  if (view_result.is_error()) {
+    ++native_batch_shard_miss_errors_;
+    co_return view_result.move_as_error();
+  }
+  auto stored_view = store_native_admission_shard_view(masterchain_block_id, view_result.move_as_ok());
+  if (stored_view.is_error()) {
+    ++native_batch_shard_miss_errors_;
+  }
+  co_return stored_view;
+}
+
+td::actor::Task<> ExtMessagePool::fetch_native_admission_shared_shard_view(
+    NativeAdmissionShardRequestKey key, td::Timestamp deadline) {
+  auto result = co_await fetch_native_admission_shard_view(key.first, key.second, deadline).wrap();
+  complete_native_admission_shared_shard_view(key, std::move(result));
+  co_return {};
+}
+
+td::actor::Task<ExtMessagePool::NativeAdmissionShardViewPtr> ExtMessagePool::wait_native_admission_shard_view(
+    BlockIdExt masterchain_block_id, BlockIdExt shard_block_id, td::Timestamp deadline) {
+  if (native_admission_shard_sharing_enabled_) {
+    const NativeAdmissionShardRequestKey key{masterchain_block_id, shard_block_id};
+    auto request = queue_native_admission_shard_view(key, deadline);
+    if (request) {
+      if (request.value().dispatch) {
+        // Independent of any one caller: abandoning/timing out its bridge
+        // never cancels another waiter or extends the original manager wait.
+        fetch_native_admission_shared_shard_view(key, deadline).start().detach_silent();
+      }
+      auto result = co_await td::actor::await_with_timeout(std::move(request.value().waiter), deadline).wrap();
+      if (result.is_ok()) {
+        // The shared read can complete before this caller's deadline but be
+        // delivered after it. Do not let that caller consume accounts then.
+        if (deadline.is_in_past()) {
+          ++native_batch_shard_shared_timeouts_;
+          co_return td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
+        }
+        co_return result;
+      }
+      if (result.error().code() != ErrorCode::timeout && result.error().code() != td::actor::AWAIT_TIMEOUT_CODE) {
+        co_return result.move_as_error();
+      }
+      ++native_batch_shard_shared_timeouts_;
+      if (deadline.is_in_past()) {
+        co_return result.move_as_error();
+      }
+      // The creator's earlier deadline expired. A later caller still owns its
+      // original remaining budget; fall back once without joining again.
+      ++native_batch_shard_shared_deadline_fallbacks_;
+    }
+  }
+  co_return co_await fetch_native_admission_shard_view(masterchain_block_id, shard_block_id, deadline);
 }
 
 void ExtMessagePool::record_native_admission_manager_wait_error(const td::Status &error) {
@@ -1102,39 +1230,14 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
           }
           auto shard_view = lookup_native_admission_shard_view(mc_block_id, shard_block_id);
           if (!shard_view) {
-            ++native_batch_shard_manager_waits_;
             const double shard_wait_started_at = td::Time::now();
-            auto state_result = co_await td::actor::await_with_timeout(
-                                    td::actor::ask(manager_, &ValidatorManager::wait_block_state_short,
-                                                   shard_block_id, 0, deadline, false),
-                                    deadline)
-                                    .wrap();
+            auto view_result = co_await wait_native_admission_shard_view(mc_block_id, shard_block_id, deadline).wrap();
             native_batch_telemetry_.shard_wait.observe(td::Time::now() - shard_wait_started_at);
-            if (state_result.is_error()) {
-              auto error = state_result.move_as_error();
-              record_native_admission_manager_wait_error(error);
-              reject_shard(std::move(error));
-              continue;
-            }
-            // The state read can win the timeout race at the deadline. Stop
-            // before validating, caching, or changing canonical watermarks.
-            if (native_admission_manager_wait_finished_after_deadline(deadline)) {
-              reject_shard(td::Status::Error(ErrorCode::timeout, "external message admission deadline expired"));
-              continue;
-            }
-            auto view_result = make_native_admission_shard_view(shard_block_id, state_result.move_as_ok());
             if (view_result.is_error()) {
-              ++native_batch_shard_miss_errors_;
               reject_shard(view_result.move_as_error());
               continue;
             }
-            auto stored_view = store_native_admission_shard_view(mc_block_id, view_result.move_as_ok());
-            if (stored_view.is_error()) {
-              ++native_batch_shard_miss_errors_;
-              reject_shard(stored_view.move_as_error());
-              continue;
-            }
-            shard_view = stored_view.move_as_ok();
+            shard_view = view_result.move_as_ok();
           }
           native_batch_last_pinned_shard_seqno_ = shard_view->block_id.seqno();
           if (mc_state->get_unix_time() >= shard_view->gen_utime) {
@@ -1403,6 +1506,21 @@ std::string ExtMessagePool::native_batch_telemetry_string(char separator) const 
   emit("config_cache_hits", native_config_cache_hits_);
   emit("config_cache_misses", native_config_cache_misses_);
   emit("config_errors", native_config_errors_);
+  emit("shard_sharing_enabled", native_admission_shard_sharing_enabled_ ? 1 : 0);
+  emit("shard_shared_dispatches", native_batch_shard_shared_dispatches_);
+  emit("shard_shared_joins", native_batch_shard_shared_joins_);
+  emit("shard_shared_completions", native_batch_shard_shared_completions_);
+  emit("shard_shared_errors", native_batch_shard_shared_errors_);
+  emit("shard_shared_active", native_admission_shard_waits_.size());
+  emit("shard_shared_waiters", native_admission_shard_waiter_count_);
+  emit("shard_shared_peak_entries", native_batch_shard_shared_peak_entries_);
+  emit("shard_shared_peak_waiters", native_batch_shard_shared_peak_waiters_);
+  emit("shard_shared_table_limit", MAX_NATIVE_ADMISSION_SHARED_SHARDS);
+  emit("shard_shared_waiters_per_key_limit", MAX_NATIVE_ADMISSION_SHARED_WAITERS_PER_SHARD);
+  emit("shard_shared_table_full", native_batch_shard_shared_table_full_);
+  emit("shard_shared_waiters_full", native_batch_shard_shared_waiters_full_);
+  emit("shard_shared_deadline_fallbacks", native_batch_shard_shared_deadline_fallbacks_);
+  emit("shard_shared_timeouts", native_batch_shard_shared_timeouts_);
   for (std::size_t i = 0; i < telemetry.cause_names.size(); ++i) {
     emit(telemetry.cause_names[i], telemetry.not_ready[i]);
   }

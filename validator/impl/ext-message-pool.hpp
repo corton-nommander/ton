@@ -322,6 +322,13 @@ class ExtMessagePool : public td::actor::Actor {
   td::uint64 native_batch_shard_manager_wait_timeouts_{0}, native_batch_shard_manager_wait_notready_{0};
   td::uint64 native_batch_shard_manager_wait_other_errors_{0};
   td::uint64 native_batch_shard_manager_wait_late_results_{0};
+  // Experimental pool-local sharing: caller deadlines remain independent.
+  bool native_admission_shard_sharing_enabled_{false};
+  td::uint64 native_batch_shard_shared_dispatches_{0}, native_batch_shard_shared_joins_{0};
+  td::uint64 native_batch_shard_shared_completions_{0}, native_batch_shard_shared_errors_{0};
+  td::uint64 native_batch_shard_shared_peak_entries_{0}, native_batch_shard_shared_peak_waiters_{0};
+  td::uint64 native_batch_shard_shared_table_full_{0}, native_batch_shard_shared_waiters_full_{0};
+  td::uint64 native_batch_shard_shared_deadline_fallbacks_{0}, native_batch_shard_shared_timeouts_{0};
   td::uint64 native_batch_accepted_{0}, native_batch_rejected_{0};
   td::uint64 native_batch_mc_state_pins_{0}, native_batch_ignored_mc_state_updates_{0};
   td::uint64 native_batch_last_pinned_mc_seqno_{0}, native_batch_last_pinned_shard_seqno_{0};
@@ -363,6 +370,22 @@ class ExtMessagePool : public td::actor::Actor {
     td::optional<BlockIdExt> masterchain_block_id;
     std::map<BlockIdExt, NativeAdmissionShardViewPtr> shard_views;
   } native_admission_shard_cache_;
+
+  using NativeAdmissionShardRequestKey = std::pair<BlockIdExt, BlockIdExt>;
+  struct NativeAdmissionShardWait {
+    td::Timestamp deadline;
+    std::vector<td::Promise<NativeAdmissionShardViewPtr>> waiters;
+  };
+  struct NativeAdmissionShardRequest {
+    td::actor::StartedTask<NativeAdmissionShardViewPtr> waiter;
+    bool dispatch{false};
+  };
+  // Retain old generations only until their original fetch deadline. Never
+  // clear pending promises when a new applied masterchain state arrives.
+  static constexpr std::size_t MAX_NATIVE_ADMISSION_SHARED_SHARDS = 64;
+  static constexpr std::size_t MAX_NATIVE_ADMISSION_SHARED_WAITERS_PER_SHARD = 256;
+  std::map<NativeAdmissionShardRequestKey, NativeAdmissionShardWait> native_admission_shard_waits_;
+  std::size_t native_admission_shard_waiter_count_{0};
 
   struct NativeAdmissionSnapshot {
     td::Ref<MasterchainState> state;
@@ -842,6 +865,16 @@ class ExtMessagePool : public td::actor::Actor {
       const BlockIdExt &shard_block_id, td::Ref<ShardState> state);
   td::Result<NativeAdmissionShardViewPtr> store_native_admission_shard_view(
       const BlockIdExt &masterchain_block_id, NativeAdmissionShardViewPtr view);
+  td::optional<NativeAdmissionShardRequest> queue_native_admission_shard_view(
+      const NativeAdmissionShardRequestKey &key, td::Timestamp deadline);
+  void complete_native_admission_shared_shard_view(const NativeAdmissionShardRequestKey &key,
+                                                   td::Result<NativeAdmissionShardViewPtr> result);
+  td::actor::Task<NativeAdmissionShardViewPtr> fetch_native_admission_shard_view(
+      BlockIdExt masterchain_block_id, BlockIdExt shard_block_id, td::Timestamp deadline);
+  td::actor::Task<> fetch_native_admission_shared_shard_view(NativeAdmissionShardRequestKey key,
+                                                            td::Timestamp deadline);
+  td::actor::Task<NativeAdmissionShardViewPtr> wait_native_admission_shard_view(
+      BlockIdExt masterchain_block_id, BlockIdExt shard_block_id, td::Timestamp deadline);
   void record_native_admission_manager_wait_error(const td::Status &error);
   bool native_admission_manager_wait_finished_after_deadline(td::Timestamp deadline);
   void register_pending_native_reconciliation_targets();

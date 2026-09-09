@@ -1,0 +1,1670 @@
+{
+  "matrix_points": 216,
+  "repetitions": 15,
+  "points": [
+    {
+      "version": 5,
+      "workload": "repeated_output",
+      "logical_updates": 64,
+      "parents": 4,
+      "boc_bytes": 985,
+      "median_us": {
+        "boc_decode_only": 8.301,
+        "strict_full_unpack": 36.692,
+        "strict_parent_projection": 29.412,
+        "flatten_entries_only": 4.69,
+        "derive_accounts_only": 2.31,
+        "rebuild_parent_hashes_only": 17.521,
+        "full_unpack_and_parent_hashes": 54.273,
+        "boc_and_full_metadata": 62.114,
+        "boc_and_parent_projection": 36.192
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 8.46913333333,
+          "min_us": 7.89,
+          "max_us": 9.42
+        },
+        "strict_full_unpack": {
+          "mean_us": 38.9028,
+          "min_us": 36.192,
+          "max_us": 51.433
+        },
+        "strict_parent_projection": {
+          "mean_us": 29.4475333333,
+          "min_us": 29.262,
+          "max_us": 29.771
+        },
+        "flatten_entries_only": {
+          "mean_us": 4.34226666667,
+          "min_us": 2.921,
+          "max_us": 5.431
+        },
+        "derive_accounts_only": {
+          "mean_us": 2.34013333333,
+          "min_us": 2.26,
+          "max_us": 2.66
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 17.5336,
+          "min_us": 17.471,
+          "max_us": 17.661
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 55.4776666667,
+          "min_us": 53.563,
+          "max_us": 66.103
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 63.2260666667,
+          "min_us": 61.454,
+          "max_us": 77.304
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 36.2179333333,
+          "min_us": 36.022,
+          "max_us": 36.732
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 41.73294265383005,
+      "decoded_cell_metadata_time_reduction_percent": 45.80730750096733,
+      "strict_unpack_time_reduction_percent": 19.840837239725285
+    },
+    {
+      "version": 5,
+      "workload": "repeated_output",
+      "logical_updates": 256,
+      "parents": 16,
+      "boc_bytes": 3673,
+      "median_us": {
+        "boc_decode_only": 25.552,
+        "strict_full_unpack": 150.018,
+        "strict_parent_projection": 119.097,
+        "flatten_entries_only": 11.54,
+        "derive_accounts_only": 19.962,
+        "rebuild_parent_hashes_only": 68.714,
+        "full_unpack_and_parent_hashes": 221.512,
+        "boc_and_full_metadata": 331.578,
+        "boc_and_parent_projection": 152.069
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 25.7313333333,
+          "min_us": 25.241,
+          "max_us": 28.251
+        },
+        "strict_full_unpack": {
+          "mean_us": 155.163666667,
+          "min_us": 146.498,
+          "max_us": 184.49
+        },
+        "strict_parent_projection": {
+          "mean_us": 120.240466667,
+          "min_us": 118.726,
+          "max_us": 125.537
+        },
+        "flatten_entries_only": {
+          "mean_us": 11.6833333333,
+          "min_us": 11.321,
+          "max_us": 12.721
+        },
+        "derive_accounts_only": {
+          "mean_us": 18.4616666667,
+          "min_us": 14.661,
+          "max_us": 21.761
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 70.1031333333,
+          "min_us": 68.604,
+          "max_us": 77.004
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 229.144933333,
+          "min_us": 215.351,
+          "max_us": 279.085
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 316.530333333,
+          "min_us": 242.933,
+          "max_us": 361.969
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 157.746466667,
+          "min_us": 144.427,
+          "max_us": 195.081
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 54.13778960003377,
+      "decoded_cell_metadata_time_reduction_percent": 46.23451551157499,
+      "strict_unpack_time_reduction_percent": 20.611526616805985
+    },
+    {
+      "version": 5,
+      "workload": "repeated_output",
+      "logical_updates": 1024,
+      "parents": 64,
+      "boc_bytes": 15068,
+      "median_us": {
+        "boc_decode_only": 110.905,
+        "strict_full_unpack": 763.241,
+        "strict_parent_projection": 482.916,
+        "flatten_entries_only": 94.095,
+        "derive_accounts_only": 99.056,
+        "rebuild_parent_hashes_only": 278.825,
+        "full_unpack_and_parent_hashes": 969.292,
+        "boc_and_full_metadata": 1064.828,
+        "boc_and_parent_projection": 600.532
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 114.5034,
+          "min_us": 107.056,
+          "max_us": 143.007
+        },
+        "strict_full_unpack": {
+          "mean_us": 772.105333333,
+          "min_us": 679.566,
+          "max_us": 872.016
+        },
+        "strict_parent_projection": {
+          "mean_us": 486.4934,
+          "min_us": 472.946,
+          "max_us": 519.107
+        },
+        "flatten_entries_only": {
+          "mean_us": 97.0092,
+          "min_us": 92.675,
+          "max_us": 107.966
+        },
+        "derive_accounts_only": {
+          "mean_us": 104.742933333,
+          "min_us": 93.435,
+          "max_us": 140.407
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 284.0052,
+          "min_us": 278.255,
+          "max_us": 322.527
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 957.001333333,
+          "min_us": 898.528,
+          "max_us": 1030.375
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 1090.60846667,
+          "min_us": 1037.156,
+          "max_us": 1311.291
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 604.595733333,
+          "min_us": 574.94,
+          "max_us": 636.495
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 43.60291051700368,
+      "decoded_cell_metadata_time_reduction_percent": 50.1784807880391,
+      "strict_unpack_time_reduction_percent": 36.728241800427384
+    },
+    {
+      "version": 5,
+      "workload": "repeated_output",
+      "logical_updates": 4096,
+      "parents": 256,
+      "boc_bytes": 61602,
+      "median_us": {
+        "boc_decode_only": 454.254,
+        "strict_full_unpack": 3147.749,
+        "strict_parent_projection": 1932.034,
+        "flatten_entries_only": 176.279,
+        "derive_accounts_only": 572.61,
+        "rebuild_parent_hashes_only": 1138.021,
+        "full_unpack_and_parent_hashes": 3880.458,
+        "boc_and_full_metadata": 4268.168,
+        "boc_and_parent_projection": 2375.057
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 459.0666,
+          "min_us": 425.263,
+          "max_us": 496.817
+        },
+        "strict_full_unpack": {
+          "mean_us": 3136.89073333,
+          "min_us": 2799.29,
+          "max_us": 3489.957
+        },
+        "strict_parent_projection": {
+          "mean_us": 1927.8806,
+          "min_us": 1883.051,
+          "max_us": 2021.908
+        },
+        "flatten_entries_only": {
+          "mean_us": 182.775733333,
+          "min_us": 172.789,
+          "max_us": 209.931
+        },
+        "derive_accounts_only": {
+          "mean_us": 577.732266667,
+          "min_us": 563.93,
+          "max_us": 594.452
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 1134.61213333,
+          "min_us": 1100.199,
+          "max_us": 1196.514
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 3943.3026,
+          "min_us": 3758.051,
+          "max_us": 4629.318
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 4311.10686667,
+          "min_us": 4208.616,
+          "max_us": 4591.726
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 2388.27593333,
+          "min_us": 2340.195,
+          "max_us": 2583.748
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 44.35418193473172,
+      "decoded_cell_metadata_time_reduction_percent": 50.211186411500904,
+      "strict_unpack_time_reduction_percent": 38.62172619227263
+    },
+    {
+      "version": 5,
+      "workload": "repeated_output",
+      "logical_updates": 16384,
+      "parents": 1024,
+      "boc_bytes": 246126,
+      "median_us": {
+        "boc_decode_only": 1755.024,
+        "strict_full_unpack": 14155.957,
+        "strict_parent_projection": 8563.338,
+        "flatten_entries_only": 709.988,
+        "derive_accounts_only": 3163.639,
+        "rebuild_parent_hashes_only": 4437.097,
+        "full_unpack_and_parent_hashes": 17864.126,
+        "boc_and_full_metadata": 18863.647,
+        "boc_and_parent_projection": 9450.575
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 1764.86373333,
+          "min_us": 1721.112,
+          "max_us": 1858.5
+        },
+        "strict_full_unpack": {
+          "mean_us": 14130.2176667,
+          "min_us": 12885.319,
+          "max_us": 15841.427
+        },
+        "strict_parent_projection": {
+          "mean_us": 8751.77133333,
+          "min_us": 8263.112,
+          "max_us": 9799.594
+        },
+        "flatten_entries_only": {
+          "mean_us": 713.4968,
+          "min_us": 698.687,
+          "max_us": 734.819
+        },
+        "derive_accounts_only": {
+          "mean_us": 3283.5256,
+          "min_us": 3123.537,
+          "max_us": 4091.559
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 4441.65486667,
+          "min_us": 4398.676,
+          "max_us": 4563.904
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 18015.5761333,
+          "min_us": 17156.408,
+          "max_us": 19436.57
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 19117.3375333,
+          "min_us": 17898.486,
+          "max_us": 22401.876
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 9469.17006667,
+          "min_us": 9241.923,
+          "max_us": 9734.55
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 49.90059451388164,
+      "decoded_cell_metadata_time_reduction_percent": 52.064052839752705,
+      "strict_unpack_time_reduction_percent": 39.50717708453057
+    },
+    {
+      "version": 5,
+      "workload": "repeated_output",
+      "logical_updates": 65536,
+      "parents": 4096,
+      "boc_bytes": 984222,
+      "median_us": {
+        "boc_decode_only": 7502.431,
+        "strict_full_unpack": 74774.593,
+        "strict_parent_projection": 41231.662,
+        "flatten_entries_only": 8042.307,
+        "derive_accounts_only": 18996.88,
+        "rebuild_parent_hashes_only": 19216.99,
+        "full_unpack_and_parent_hashes": 89408.696,
+        "boc_and_full_metadata": 96359.726,
+        "boc_and_parent_projection": 43830.163
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 7595.30606667,
+          "min_us": 7247.477,
+          "max_us": 7952.395
+        },
+        "strict_full_unpack": {
+          "mean_us": 75943.1742,
+          "min_us": 69882.573,
+          "max_us": 86269.175
+        },
+        "strict_parent_projection": {
+          "mean_us": 41318.2201333,
+          "min_us": 38502.867,
+          "max_us": 44287.107
+        },
+        "flatten_entries_only": {
+          "mean_us": 8161.132,
+          "min_us": 7250.846,
+          "max_us": 9526.446
+        },
+        "derive_accounts_only": {
+          "mean_us": 19071.6647333,
+          "min_us": 18772.379,
+          "max_us": 19491.806
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 20336.5025333,
+          "min_us": 17603.774,
+          "max_us": 26330.301
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 89345.4484,
+          "min_us": 82497.918,
+          "max_us": 98529.469
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 97726.1014,
+          "min_us": 91072.175,
+          "max_us": 107666.453
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 43885.0788667,
+          "min_us": 42200.318,
+          "max_us": 46416.72
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 54.514022798279846,
+      "decoded_cell_metadata_time_reduction_percent": 53.884058436552976,
+      "strict_unpack_time_reduction_percent": 44.858727616210494
+    },
+    {
+      "version": 5,
+      "workload": "distinct_outputs",
+      "logical_updates": 64,
+      "parents": 4,
+      "boc_bytes": 4101,
+      "median_us": {
+        "boc_decode_only": 16.45,
+        "strict_full_unpack": 41.903,
+        "strict_parent_projection": 28.441,
+        "flatten_entries_only": 3.051,
+        "derive_accounts_only": 8.741,
+        "rebuild_parent_hashes_only": 16.951,
+        "full_unpack_and_parent_hashes": 58.943,
+        "boc_and_full_metadata": 77.395,
+        "boc_and_parent_projection": 45.462
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 17.4422666667,
+          "min_us": 16.311,
+          "max_us": 26.551
+        },
+        "strict_full_unpack": {
+          "mean_us": 42.3268666667,
+          "min_us": 41.152,
+          "max_us": 45.452
+        },
+        "strict_parent_projection": {
+          "mean_us": 29.6388666667,
+          "min_us": 28.351,
+          "max_us": 45.723
+        },
+        "flatten_entries_only": {
+          "mean_us": 3.12946666667,
+          "min_us": 2.95,
+          "max_us": 3.76
+        },
+        "derive_accounts_only": {
+          "mean_us": 8.8338,
+          "min_us": 8.18,
+          "max_us": 9.99
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 16.9635333333,
+          "min_us": 16.901,
+          "max_us": 17.041
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 61.7979333333,
+          "min_us": 57.413,
+          "max_us": 77.044
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 79.8969333333,
+          "min_us": 76.824,
+          "max_us": 90.685
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 46.1764,
+          "min_us": 44.822,
+          "max_us": 51.813
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 41.25977130305575,
+      "decoded_cell_metadata_time_reduction_percent": 51.74829920431603,
+      "strict_unpack_time_reduction_percent": 32.12657804930434
+    },
+    {
+      "version": 5,
+      "workload": "distinct_outputs",
+      "logical_updates": 256,
+      "parents": 16,
+      "boc_bytes": 16428,
+      "median_us": {
+        "boc_decode_only": 69.114,
+        "strict_full_unpack": 178.46,
+        "strict_parent_projection": 118.156,
+        "flatten_entries_only": 11.481,
+        "derive_accounts_only": 46.643,
+        "rebuild_parent_hashes_only": 68.573,
+        "full_unpack_and_parent_hashes": 248.673,
+        "boc_and_full_metadata": 319.167,
+        "boc_and_parent_projection": 188.24
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 69.4236666667,
+          "min_us": 68.713,
+          "max_us": 74.564
+        },
+        "strict_full_unpack": {
+          "mean_us": 182.670266667,
+          "min_us": 176.639,
+          "max_us": 205.591
+        },
+        "strict_parent_projection": {
+          "mean_us": 120.013666667,
+          "min_us": 117.516,
+          "max_us": 128.606
+        },
+        "flatten_entries_only": {
+          "mean_us": 11.5446,
+          "min_us": 11.301,
+          "max_us": 12.51
+        },
+        "derive_accounts_only": {
+          "mean_us": 47.2391333333,
+          "min_us": 45.712,
+          "max_us": 54.133
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 70.7530666667,
+          "min_us": 68.414,
+          "max_us": 82.414
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 250.359266667,
+          "min_us": 245.893,
+          "max_us": 264.684
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 324.438466667,
+          "min_us": 316.016,
+          "max_us": 348.629
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 189.542666667,
+          "min_us": 185.88,
+          "max_us": 199.3
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 41.0214715180454,
+      "decoded_cell_metadata_time_reduction_percent": 52.485392463194636,
+      "strict_unpack_time_reduction_percent": 33.79132578729127
+    },
+    {
+      "version": 5,
+      "workload": "distinct_outputs",
+      "logical_updates": 1024,
+      "parents": 64,
+      "boc_bytes": 66526,
+      "median_us": {
+        "boc_decode_only": 276.215,
+        "strict_full_unpack": 758.85,
+        "strict_parent_projection": 474.735,
+        "flatten_entries_only": 43.752,
+        "derive_accounts_only": 235.803,
+        "rebuild_parent_hashes_only": 274.915,
+        "full_unpack_and_parent_hashes": 1029.804,
+        "boc_and_full_metadata": 1320.379,
+        "boc_and_parent_projection": 751.789
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 278.784733333,
+          "min_us": 272.214,
+          "max_us": 295.525
+        },
+        "strict_full_unpack": {
+          "mean_us": 761.6528,
+          "min_us": 752.39,
+          "max_us": 784.331
+        },
+        "strict_parent_projection": {
+          "mean_us": 476.603133333,
+          "min_us": 467.674,
+          "max_us": 496.047
+        },
+        "flatten_entries_only": {
+          "mean_us": 44.0843333333,
+          "min_us": 43.303,
+          "max_us": 46.702
+        },
+        "derive_accounts_only": {
+          "mean_us": 235.5244,
+          "min_us": 231.632,
+          "max_us": 242.583
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 276.1912,
+          "min_us": 272.215,
+          "max_us": 287.725
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 1032.58646667,
+          "min_us": 1022.184,
+          "max_us": 1057.716
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 1332.96093333,
+          "min_us": 1299.299,
+          "max_us": 1442.346
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 765.404266667,
+          "min_us": 740.119,
+          "max_us": 836.204
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 43.06263580381086,
+      "decoded_cell_metadata_time_reduction_percent": 53.90045095960008,
+      "strict_unpack_time_reduction_percent": 37.44020557422415
+    },
+    {
+      "version": 5,
+      "workload": "distinct_outputs",
+      "logical_updates": 4096,
+      "parents": 256,
+      "boc_bytes": 265890,
+      "median_us": {
+        "boc_decode_only": 1124.849,
+        "strict_full_unpack": 3285.043,
+        "strict_parent_projection": 1879.57,
+        "flatten_entries_only": 177.299,
+        "derive_accounts_only": 1196.593,
+        "rebuild_parent_hashes_only": 1110.119,
+        "full_unpack_and_parent_hashes": 4390.691,
+        "boc_and_full_metadata": 5488.67,
+        "boc_and_parent_projection": 3035.41
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 1133.19973333,
+          "min_us": 1113.459,
+          "max_us": 1173.862
+        },
+        "strict_full_unpack": {
+          "mean_us": 3351.37053333,
+          "min_us": 3257.011,
+          "max_us": 3614.58
+        },
+        "strict_parent_projection": {
+          "mean_us": 1892.221,
+          "min_us": 1869.229,
+          "max_us": 2039.217
+        },
+        "flatten_entries_only": {
+          "mean_us": 193.694866667,
+          "min_us": 172.769,
+          "max_us": 265.474
+        },
+        "derive_accounts_only": {
+          "mean_us": 1199.65986667,
+          "min_us": 1180.973,
+          "max_us": 1258.076
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 1119.53366667,
+          "min_us": 1087.888,
+          "max_us": 1264.487
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 4411.14773333,
+          "min_us": 4352.05,
+          "max_us": 4513.958
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 5545.79486667,
+          "min_us": 5437.056,
+          "max_us": 5818.546
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 3048.84526667,
+          "min_us": 2984.137,
+          "max_us": 3212.899
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 44.69680268626097,
+      "decoded_cell_metadata_time_reduction_percent": 57.19193174832845,
+      "strict_unpack_time_reduction_percent": 42.78400617587046
+    },
+    {
+      "version": 5,
+      "workload": "distinct_outputs",
+      "logical_updates": 16384,
+      "parents": 1024,
+      "boc_bytes": 1063278,
+      "median_us": {
+        "boc_decode_only": 4506.268,
+        "strict_full_unpack": 16362.802,
+        "strict_parent_projection": 11115.485,
+        "flatten_entries_only": 1221.274,
+        "derive_accounts_only": 7591.679,
+        "rebuild_parent_hashes_only": 5191.233,
+        "full_unpack_and_parent_hashes": 27869.875,
+        "boc_and_full_metadata": 31142.977,
+        "boc_and_parent_projection": 13174.421
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 4493.59273333,
+          "min_us": 4442.114,
+          "max_us": 4526.929
+        },
+        "strict_full_unpack": {
+          "mean_us": 16205.137,
+          "min_us": 15435.373,
+          "max_us": 16911.691
+        },
+        "strict_parent_projection": {
+          "mean_us": 10724.5656667,
+          "min_us": 7561.728,
+          "max_us": 14342.236
+        },
+        "flatten_entries_only": {
+          "mean_us": 1241.31146667,
+          "min_us": 883.667,
+          "max_us": 1936.173
+        },
+        "derive_accounts_only": {
+          "mean_us": 7656.94533333,
+          "min_us": 6802.827,
+          "max_us": 9321.75
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 5341.99886667,
+          "min_us": 4713.998,
+          "max_us": 6418.017
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 27742.8227333,
+          "min_us": 24696.048,
+          "max_us": 31205.551
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 29875.1699333,
+          "min_us": 24806.632,
+          "max_us": 32653.417
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 13385.5551333,
+          "min_us": 12372.649,
+          "max_us": 16249.312
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 57.6969761111791,
+      "decoded_cell_metadata_time_reduction_percent": 60.11648778474966,
+      "strict_unpack_time_reduction_percent": 32.06857236309526
+    },
+    {
+      "version": 5,
+      "workload": "distinct_outputs",
+      "logical_updates": 65536,
+      "parents": 4096,
+      "boc_bytes": 4326561,
+      "median_us": {
+        "boc_decode_only": 22636.188,
+        "strict_full_unpack": 87004.758,
+        "strict_parent_projection": 39202.58,
+        "flatten_entries_only": 7856.53,
+        "derive_accounts_only": 32133.256,
+        "rebuild_parent_hashes_only": 18833.523,
+        "full_unpack_and_parent_hashes": 101072.164,
+        "boc_and_full_metadata": 128078.527,
+        "boc_and_parent_projection": 64120.715
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 22648.2412,
+          "min_us": 20732.857,
+          "max_us": 25866.697
+        },
+        "strict_full_unpack": {
+          "mean_us": 87434.1639333,
+          "min_us": 80271.855,
+          "max_us": 97745.872
+        },
+        "strict_parent_projection": {
+          "mean_us": 39406.8103333,
+          "min_us": 36969.182,
+          "max_us": 44093.705
+        },
+        "flatten_entries_only": {
+          "mean_us": 8249.23606667,
+          "min_us": 7120.181,
+          "max_us": 10418.994
+        },
+        "derive_accounts_only": {
+          "mean_us": 32214.7918,
+          "min_us": 30665.861,
+          "max_us": 35711.624
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 19803.7901333,
+          "min_us": 18499.166,
+          "max_us": 27393.689
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 104304.825133,
+          "min_us": 97115.209,
+          "max_us": 123793.066
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 130959.7514,
+          "min_us": 118909.159,
+          "max_us": 158701.852
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 66158.6397333,
+          "min_us": 62207.926,
+          "max_us": 82935.218
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 49.93640503064187,
+      "decoded_cell_metadata_time_reduction_percent": 61.213277277807165,
+      "strict_unpack_time_reduction_percent": 54.94202742337379
+    },
+    {
+      "version": 6,
+      "workload": "repeated_output",
+      "logical_updates": 64,
+      "parents": 4,
+      "boc_bytes": 985,
+      "median_us": {
+        "boc_decode_only": 6.251,
+        "strict_full_unpack": 35.782,
+        "strict_parent_projection": 28.471,
+        "flatten_entries_only": 3,
+        "derive_accounts_only": 2.31,
+        "rebuild_parent_hashes_only": 16.991,
+        "full_unpack_and_parent_hashes": 52.743,
+        "boc_and_full_metadata": 59.993,
+        "boc_and_parent_projection": 34.982
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 6.285,
+          "min_us": 6.24,
+          "max_us": 6.45
+        },
+        "strict_full_unpack": {
+          "mean_us": 36.5458666667,
+          "min_us": 34.971,
+          "max_us": 47.252
+        },
+        "strict_parent_projection": {
+          "mean_us": 28.4974666667,
+          "min_us": 28.372,
+          "max_us": 28.742
+        },
+        "flatten_entries_only": {
+          "mean_us": 3.40006666667,
+          "min_us": 2.94,
+          "max_us": 8.26
+        },
+        "derive_accounts_only": {
+          "mean_us": 2.33613333333,
+          "min_us": 2.24,
+          "max_us": 2.56
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 17.0002,
+          "min_us": 16.961,
+          "max_us": 17.041
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 53.8294,
+          "min_us": 51.992,
+          "max_us": 59.813
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 60.8798,
+          "min_us": 59.643,
+          "max_us": 65.554
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 35.0031333333,
+          "min_us": 34.781,
+          "max_us": 35.292
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 41.68986381744537,
+      "decoded_cell_metadata_time_reduction_percent": 46.0193769789356,
+      "strict_unpack_time_reduction_percent": 20.432060812699117
+    },
+    {
+      "version": 6,
+      "workload": "repeated_output",
+      "logical_updates": 256,
+      "parents": 16,
+      "boc_bytes": 3673,
+      "median_us": {
+        "boc_decode_only": 24.882,
+        "strict_full_unpack": 149.737,
+        "strict_parent_projection": 118.466,
+        "flatten_entries_only": 11.37,
+        "derive_accounts_only": 14.831,
+        "rebuild_parent_hashes_only": 68.084,
+        "full_unpack_and_parent_hashes": 215.081,
+        "boc_and_full_metadata": 242.502,
+        "boc_and_parent_projection": 144.228
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 24.9192666667,
+          "min_us": 24.781,
+          "max_us": 25.361
+        },
+        "strict_full_unpack": {
+          "mean_us": 149.919133333,
+          "min_us": 143.857,
+          "max_us": 165.359
+        },
+        "strict_parent_projection": {
+          "mean_us": 119.7208,
+          "min_us": 117.446,
+          "max_us": 128.127
+        },
+        "flatten_entries_only": {
+          "mean_us": 11.5139333333,
+          "min_us": 11.24,
+          "max_us": 12.241
+        },
+        "derive_accounts_only": {
+          "mean_us": 14.8781333333,
+          "min_us": 14.471,
+          "max_us": 15.771
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 68.4768666667,
+          "min_us": 67.984,
+          "max_us": 73.373
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 216.4752,
+          "min_us": 213.501,
+          "max_us": 223.602
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 253.913866667,
+          "min_us": 240.763,
+          "max_us": 305.386
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 150.6678,
+          "min_us": 143.128,
+          "max_us": 185.439
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 40.525026597718785,
+      "decoded_cell_metadata_time_reduction_percent": 44.92028584579762,
+      "strict_unpack_time_reduction_percent": 20.88394985875235
+    },
+    {
+      "version": 6,
+      "workload": "repeated_output",
+      "logical_updates": 1024,
+      "parents": 64,
+      "boc_bytes": 15068,
+      "median_us": {
+        "boc_decode_only": 107.236,
+        "strict_full_unpack": 621.532,
+        "strict_parent_projection": 479.615,
+        "flatten_entries_only": 44.282,
+        "derive_accounts_only": 95.315,
+        "rebuild_parent_hashes_only": 275.994,
+        "full_unpack_and_parent_hashes": 903.907,
+        "boc_and_full_metadata": 1005.952,
+        "boc_and_parent_projection": 588.941
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 107.996266667,
+          "min_us": 106.016,
+          "max_us": 114.416
+        },
+        "strict_full_unpack": {
+          "mean_us": 644.487333333,
+          "min_us": 610.302,
+          "max_us": 793.621
+        },
+        "strict_parent_projection": {
+          "mean_us": 479.757466667,
+          "min_us": 465.954,
+          "max_us": 503.216
+        },
+        "flatten_entries_only": {
+          "mean_us": 46.4150666667,
+          "min_us": 43.762,
+          "max_us": 56.593
+        },
+        "derive_accounts_only": {
+          "mean_us": 99.3098,
+          "min_us": 92.545,
+          "max_us": 134.787
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 280.407866667,
+          "min_us": 273.884,
+          "max_us": 314.546
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 908.587666667,
+          "min_us": 892.606,
+          "max_us": 957.369
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 1034.50346667,
+          "min_us": 996.292,
+          "max_us": 1217.773
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 616.858533333,
+          "min_us": 573.07,
+          "max_us": 822.503
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 41.454363627688,
+      "decoded_cell_metadata_time_reduction_percent": 46.9397847344915,
+      "strict_unpack_time_reduction_percent": 22.83341807018786
+    },
+    {
+      "version": 6,
+      "workload": "repeated_output",
+      "logical_updates": 4096,
+      "parents": 256,
+      "boc_bytes": 61602,
+      "median_us": {
+        "boc_decode_only": 430.402,
+        "strict_full_unpack": 2673.359,
+        "strict_parent_projection": 1899.168,
+        "flatten_entries_only": 174.509,
+        "derive_accounts_only": 566.279,
+        "rebuild_parent_hashes_only": 1111.427,
+        "full_unpack_and_parent_hashes": 3762.314,
+        "boc_and_full_metadata": 4257.59,
+        "boc_and_parent_projection": 2355.551
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 430.759,
+          "min_us": 424.482,
+          "max_us": 438.602
+        },
+        "strict_full_unpack": {
+          "mean_us": 2701.01166667,
+          "min_us": 2645.967,
+          "max_us": 2836.987
+        },
+        "strict_parent_projection": {
+          "mean_us": 1900.60026667,
+          "min_us": 1884.947,
+          "max_us": 1910.789
+        },
+        "flatten_entries_only": {
+          "mean_us": 178.2732,
+          "min_us": 173.218,
+          "max_us": 200.801
+        },
+        "derive_accounts_only": {
+          "mean_us": 573.220933333,
+          "min_us": 559.358,
+          "max_us": 627.562
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 1128.8616,
+          "min_us": 1099.037,
+          "max_us": 1293.707
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 3782.32053333,
+          "min_us": 3736.353,
+          "max_us": 3855.55
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 4265.32346667,
+          "min_us": 4159.595,
+          "max_us": 4392.717
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 2365.14873333,
+          "min_us": 2293.029,
+          "max_us": 2508.88
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 44.674076179246946,
+      "decoded_cell_metadata_time_reduction_percent": 49.521278659888566,
+      "strict_unpack_time_reduction_percent": 28.95948505232556
+    },
+    {
+      "version": 6,
+      "workload": "repeated_output",
+      "logical_updates": 16384,
+      "parents": 1024,
+      "boc_bytes": 246126,
+      "median_us": {
+        "boc_decode_only": 1726.109,
+        "strict_full_unpack": 13453.154,
+        "strict_parent_projection": 7828.374,
+        "flatten_entries_only": 709.176,
+        "derive_accounts_only": 3134.702,
+        "rebuild_parent_hashes_only": 4451.569,
+        "full_unpack_and_parent_hashes": 16949.085,
+        "boc_and_full_metadata": 18210.598,
+        "boc_and_parent_projection": 10041.557
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 1732.78806667,
+          "min_us": 1707.768,
+          "max_us": 1800.643
+        },
+        "strict_full_unpack": {
+          "mean_us": 13733.098,
+          "min_us": 12624.831,
+          "max_us": 15902.17
+        },
+        "strict_parent_projection": {
+          "mean_us": 7857.79613333,
+          "min_us": 7580.711,
+          "max_us": 8425.475
+        },
+        "flatten_entries_only": {
+          "mean_us": 732.529133333,
+          "min_us": 701.487,
+          "max_us": 897.916
+        },
+        "derive_accounts_only": {
+          "mean_us": 3170.94293333,
+          "min_us": 3102.02,
+          "max_us": 3483.82
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 4623.58593333,
+          "min_us": 4401.067,
+          "max_us": 5802.389
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 18140.8919333,
+          "min_us": 16374.255,
+          "max_us": 26442.915
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 18947.4406,
+          "min_us": 17784.656,
+          "max_us": 24035.538
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 10378.9158667,
+          "min_us": 9461.327,
+          "max_us": 13182.019
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 44.85871908215206,
+      "decoded_cell_metadata_time_reduction_percent": 53.812409342451225,
+      "strict_unpack_time_reduction_percent": 41.81012125483734
+    },
+    {
+      "version": 6,
+      "workload": "repeated_output",
+      "logical_updates": 65536,
+      "parents": 4096,
+      "boc_bytes": 984222,
+      "median_us": {
+        "boc_decode_only": 7337.228,
+        "strict_full_unpack": 76169.006,
+        "strict_parent_projection": 40214.213,
+        "flatten_entries_only": 8615.042,
+        "derive_accounts_only": 19392.254,
+        "rebuild_parent_hashes_only": 19140.64,
+        "full_unpack_and_parent_hashes": 91094.666,
+        "boc_and_full_metadata": 93411.052,
+        "boc_and_parent_projection": 44169.669
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 7329.49093333,
+          "min_us": 7079.255,
+          "max_us": 7487.456
+        },
+        "strict_full_unpack": {
+          "mean_us": 76121.3579333,
+          "min_us": 67401.485,
+          "max_us": 84858.192
+        },
+        "strict_parent_projection": {
+          "mean_us": 40448.2415333,
+          "min_us": 38405.97,
+          "max_us": 45064.293
+        },
+        "flatten_entries_only": {
+          "mean_us": 8701.26646667,
+          "min_us": 7431.682,
+          "max_us": 9987.022
+        },
+        "derive_accounts_only": {
+          "mean_us": 19475.9539333,
+          "min_us": 19146.573,
+          "max_us": 20297.211
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 19424.2680667,
+          "min_us": 18815.514,
+          "max_us": 22317.984
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 92189.2092,
+          "min_us": 88087.063,
+          "max_us": 100082.166
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 94560.9862,
+          "min_us": 88955.339,
+          "max_us": 105814.509
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 44356.1162,
+          "min_us": 42235.011,
+          "max_us": 46398.823
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 52.714729087945614,
+      "decoded_cell_metadata_time_reduction_percent": 55.8544810955232,
+      "strict_unpack_time_reduction_percent": 47.203967713586806
+    },
+    {
+      "version": 6,
+      "workload": "distinct_outputs",
+      "logical_updates": 64,
+      "parents": 4,
+      "boc_bytes": 4101,
+      "median_us": {
+        "boc_decode_only": 16.661,
+        "strict_full_unpack": 42.552,
+        "strict_parent_projection": 29.092,
+        "flatten_entries_only": 3.1,
+        "derive_accounts_only": 8.66,
+        "rebuild_parent_hashes_only": 17.351,
+        "full_unpack_and_parent_hashes": 59.333,
+        "boc_and_full_metadata": 78.914,
+        "boc_and_parent_projection": 45.953
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 16.6848,
+          "min_us": 16.55,
+          "max_us": 17.06
+        },
+        "strict_full_unpack": {
+          "mean_us": 43.3822,
+          "min_us": 41.673,
+          "max_us": 51.193
+        },
+        "strict_parent_projection": {
+          "mean_us": 29.4434666667,
+          "min_us": 28.951,
+          "max_us": 34.242
+        },
+        "flatten_entries_only": {
+          "mean_us": 3.1588,
+          "min_us": 2.98,
+          "max_us": 3.61
+        },
+        "derive_accounts_only": {
+          "mean_us": 8.8518,
+          "min_us": 8.251,
+          "max_us": 10.651
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 17.4988666667,
+          "min_us": 17.19,
+          "max_us": 19.341
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 59.9450666667,
+          "min_us": 58.543,
+          "max_us": 64.723
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 79.0006666667,
+          "min_us": 77.324,
+          "max_us": 82.594
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 46.7984,
+          "min_us": 45.792,
+          "max_us": 51.342
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 41.76825404871125,
+      "decoded_cell_metadata_time_reduction_percent": 50.96826386665094,
+      "strict_unpack_time_reduction_percent": 31.6318856927994
+    },
+    {
+      "version": 6,
+      "workload": "distinct_outputs",
+      "logical_updates": 256,
+      "parents": 16,
+      "boc_bytes": 16428,
+      "median_us": {
+        "boc_decode_only": 70.353,
+        "strict_full_unpack": 181.489,
+        "strict_parent_projection": 120.096,
+        "flatten_entries_only": 11.79,
+        "derive_accounts_only": 47.212,
+        "rebuild_parent_hashes_only": 69.564,
+        "full_unpack_and_parent_hashes": 252.493,
+        "boc_and_full_metadata": 322.046,
+        "boc_and_parent_projection": 191.51
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 71.1942666667,
+          "min_us": 69.964,
+          "max_us": 77.594
+        },
+        "strict_full_unpack": {
+          "mean_us": 183.263333333,
+          "min_us": 180.38,
+          "max_us": 190.85
+        },
+        "strict_parent_projection": {
+          "mean_us": 120.915466667,
+          "min_us": 119.446,
+          "max_us": 126.886
+        },
+        "flatten_entries_only": {
+          "mean_us": 12.5533333333,
+          "min_us": 11.691,
+          "max_us": 19.001
+        },
+        "derive_accounts_only": {
+          "mean_us": 47.9598,
+          "min_us": 46.412,
+          "max_us": 53.833
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 71.9276666667,
+          "min_us": 69.274,
+          "max_us": 80.774
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 254.676266667,
+          "min_us": 249.943,
+          "max_us": 261.494
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 323.1684,
+          "min_us": 319.796,
+          "max_us": 328.017
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 192.7078,
+          "min_us": 188.04,
+          "max_us": 198.99
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 40.53333995764581,
+      "decoded_cell_metadata_time_reduction_percent": 52.43590911431208,
+      "strict_unpack_time_reduction_percent": 33.82739449773815
+    },
+    {
+      "version": 6,
+      "workload": "distinct_outputs",
+      "logical_updates": 1024,
+      "parents": 64,
+      "boc_bytes": 66526,
+      "median_us": {
+        "boc_decode_only": 281.414,
+        "strict_full_unpack": 766.078,
+        "strict_parent_projection": 627.262,
+        "flatten_entries_only": 68.453,
+        "derive_accounts_only": 237.902,
+        "rebuild_parent_hashes_only": 277.074,
+        "full_unpack_and_parent_hashes": 1043.013,
+        "boc_and_full_metadata": 1333.967,
+        "boc_and_parent_projection": 776.34
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 281.934333333,
+          "min_us": 278.864,
+          "max_us": 289.855
+        },
+        "strict_full_unpack": {
+          "mean_us": 768.6604,
+          "min_us": 760.499,
+          "max_us": 804.871
+        },
+        "strict_parent_projection": {
+          "mean_us": 580.8062,
+          "min_us": 475.614,
+          "max_us": 718.246
+        },
+        "flatten_entries_only": {
+          "mean_us": 69.0988666667,
+          "min_us": 66.763,
+          "max_us": 76.994
+        },
+        "derive_accounts_only": {
+          "mean_us": 241.558933333,
+          "min_us": 232.352,
+          "max_us": 281.814
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 278.626133333,
+          "min_us": 273.774,
+          "max_us": 294.925
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 1050.67273333,
+          "min_us": 1037.292,
+          "max_us": 1099.216
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 1351.65473333,
+          "min_us": 1312.387,
+          "max_us": 1503.197
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 793.813,
+          "min_us": 746.938,
+          "max_us": 896.745
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 41.80215852416139,
+      "decoded_cell_metadata_time_reduction_percent": 39.86057700143718,
+      "strict_unpack_time_reduction_percent": 18.120348058552793
+    },
+    {
+      "version": 6,
+      "workload": "distinct_outputs",
+      "logical_updates": 4096,
+      "parents": 256,
+      "boc_bytes": 265890,
+      "median_us": {
+        "boc_decode_only": 1156.339,
+        "strict_full_unpack": 3417.143,
+        "strict_parent_projection": 1901.796,
+        "flatten_entries_only": 174.419,
+        "derive_accounts_only": 1206.751,
+        "rebuild_parent_hashes_only": 1113.497,
+        "full_unpack_and_parent_hashes": 4407.144,
+        "boc_and_full_metadata": 5569.913,
+        "boc_and_parent_projection": 3085.136
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 1195.1348,
+          "min_us": 1120.717,
+          "max_us": 1434.362
+        },
+        "strict_full_unpack": {
+          "mean_us": 3443.72173333,
+          "min_us": 3273.907,
+          "max_us": 3782.673
+        },
+        "strict_parent_projection": {
+          "mean_us": 1983.7242,
+          "min_us": 1887.595,
+          "max_us": 2503.167
+        },
+        "flatten_entries_only": {
+          "mean_us": 175.874333333,
+          "min_us": 173.029,
+          "max_us": 181.139
+        },
+        "derive_accounts_only": {
+          "mean_us": 1209.0728,
+          "min_us": 1201.381,
+          "max_us": 1218.222
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 1121.249,
+          "min_us": 1105.647,
+          "max_us": 1218.412
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 4524.50666667,
+          "min_us": 4358.541,
+          "max_us": 5300.43
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 5604.8736,
+          "min_us": 5475.288,
+          "max_us": 6091.82
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 3123.37273333,
+          "min_us": 2996.482,
+          "max_us": 3346.54
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 44.610696791852945,
+      "decoded_cell_metadata_time_reduction_percent": 56.84742772189881,
+      "strict_unpack_time_reduction_percent": 44.34543710930446
+    },
+    {
+      "version": 6,
+      "workload": "distinct_outputs",
+      "logical_updates": 16384,
+      "parents": 1024,
+      "boc_bytes": 1063278,
+      "median_us": {
+        "boc_decode_only": 4604.094,
+        "strict_full_unpack": 16693.268,
+        "strict_parent_projection": 7654.459,
+        "flatten_entries_only": 702.566,
+        "derive_accounts_only": 6267.678,
+        "rebuild_parent_hashes_only": 4425.895,
+        "full_unpack_and_parent_hashes": 20514.851,
+        "boc_and_full_metadata": 24818.899,
+        "boc_and_parent_projection": 12043.84
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 4613.0192,
+          "min_us": 4500.239,
+          "max_us": 4794.914
+        },
+        "strict_full_unpack": {
+          "mean_us": 16651.7162667,
+          "min_us": 15328.709,
+          "max_us": 17682.369
+        },
+        "strict_parent_projection": {
+          "mean_us": 7718.04626667,
+          "min_us": 7579.714,
+          "max_us": 8168.735
+        },
+        "flatten_entries_only": {
+          "mean_us": 709.9134,
+          "min_us": 692.745,
+          "max_us": 761.479
+        },
+        "derive_accounts_only": {
+          "mean_us": 6494.80886667,
+          "min_us": 6185.954,
+          "max_us": 7816.666
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 4441.80206667,
+          "min_us": 4387.453,
+          "max_us": 4589.473
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 21135.9024,
+          "min_us": 19946.222,
+          "max_us": 22677.891
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 24955.6122667,
+          "min_us": 24044.65,
+          "max_us": 26340.776
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 12066.2024667,
+          "min_us": 11916.274,
+          "max_us": 12469.591
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 51.473109262421346,
+      "decoded_cell_metadata_time_reduction_percent": 62.688205729595595,
+      "strict_unpack_time_reduction_percent": 54.1464319628727
+    },
+    {
+      "version": 6,
+      "workload": "distinct_outputs",
+      "logical_updates": 65536,
+      "parents": 4096,
+      "boc_bytes": 4326561,
+      "median_us": {
+        "boc_decode_only": 21569.703,
+        "strict_full_unpack": 85032.378,
+        "strict_parent_projection": 38864.931,
+        "flatten_entries_only": 8681.118,
+        "derive_accounts_only": 33421.373,
+        "rebuild_parent_hashes_only": 18993.987,
+        "full_unpack_and_parent_hashes": 105342.585,
+        "boc_and_full_metadata": 124418.222,
+        "boc_and_parent_projection": 64486.874
+      },
+      "stage_spread_us": {
+        "boc_decode_only": {
+          "mean_us": 21601.3393333,
+          "min_us": 19945.59,
+          "max_us": 24486.75
+        },
+        "strict_full_unpack": {
+          "mean_us": 85083.7003333,
+          "min_us": 78957.561,
+          "max_us": 91290.515
+        },
+        "strict_parent_projection": {
+          "mean_us": 39281.6612667,
+          "min_us": 37141.704,
+          "max_us": 45472.044
+        },
+        "flatten_entries_only": {
+          "mean_us": 8869.31753333,
+          "min_us": 7669.496,
+          "max_us": 11505.36
+        },
+        "derive_accounts_only": {
+          "mean_us": 33973.7609333,
+          "min_us": 31817.453,
+          "max_us": 36854.767
+        },
+        "rebuild_parent_hashes_only": {
+          "mean_us": 18981.0292,
+          "min_us": 18262.549,
+          "max_us": 19832.309
+        },
+        "full_unpack_and_parent_hashes": {
+          "mean_us": 106120.3356,
+          "min_us": 98037.278,
+          "max_us": 114022.071
+        },
+        "boc_and_full_metadata": {
+          "mean_us": 125835.375267,
+          "min_us": 118883.775,
+          "max_us": 137683.552
+        },
+        "boc_and_parent_projection": {
+          "mean_us": 64280.4575333,
+          "min_us": 60324.605,
+          "max_us": 69880.256
+        }
+      },
+      "batch_boc_metadata_time_reduction_percent": 48.16926896769188,
+      "decoded_cell_metadata_time_reduction_percent": 63.106154078144186,
+      "strict_unpack_time_reduction_percent": 54.29396200115679
+    }
+  ],
+  "schema": "native-parent-metadata-micro-summary-v1",
+  "provenance": {
+    "raw_path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/candidate-metadata-cycles-20260909/microbenchmark.jsonl",
+    "raw_sha256": "195ead6e47413ca2e0906f419ee98fc810d939218feeaa949ca1f4e35ddbf2b4",
+    "raw_bytes": 67247,
+    "binary_path": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/test/bench-native-parent-metadata",
+    "binary_sha256": "de681f5eea95063dc8732dca1a9cd01c4ddc5135e9dbda3169a7ddd4c0ffb996",
+    "completed_exit_code_confirmed_by_operator": 0,
+    "benchmark_command_confirmed_by_operator": [
+      "build/test/bench-native-parent-metadata",
+      "--repetitions",
+      "15"
+    ],
+    "analysis_git_head": "7b73cdb157a1f5e621e420e1e5c913726b267cf5",
+    "source_sha256_at_analysis": {
+      "crypto/block/transaction.cpp": "0673e007c5b539ccf0cf922bcf9a93e6287bf7d62321fc814607b116f2b61896",
+      "crypto/block/transaction.h": "b84953b3cfb8d7ec305c216157e394fc469855a948b5536cf45c93e5192dcc60",
+      "validator/consensus/utils.cpp": "2842ed5546a2fef25dfa9d160e30880ad1f0329fa2f634d40c62f67d8bb4c039",
+      "validator/consensus/utils.h": "6429fa0531592f1b67a8220847d206022e7fc1dd290808be12cd82cf6f0055e5",
+      "test/bench-native-parent-metadata.cpp": "c19a40b3ea5b34b3362ac16ccc08ee7f682dddf1d2ba44a3a683ef90e2f86278",
+      "test/native-parent-metadata-fixtures.h": "5a404134c46a3b16585862671ae80d7a9cc88906292ae1ec7c745516222a4260"
+    },
+    "source_provenance_caveat": "Hashes describe source at analysis; frozen binary hash identifies what was measured."
+  },
+  "caveats": [
+    "Warm-cache wall-time microbenchmark on one desktop; no validator TPS or capacity claim.",
+    "BOC stages deserialize a native batch BOC, not the complete candidate Block wrapper.",
+    "Stage costs overlap and must not be summed as exclusive CPU attribution.",
+    "Repeated-output workload models same output repeated sixteen times per parent; distinct-output workload has higher fanout.",
+    "Neither metadata decoder verifies Ed25519 signatures; both retain canonical wire and field checks.",
+    "Medians are descriptive repetitions, not statistical significance or confidence intervals."
+  ]
+}

@@ -97,7 +97,27 @@ batch-BOC microbenchmark, including object destruction; it excludes the complete
 candidate Block wrapper, cryptographic authentication and the rest of the
 validator. These reductions are not TPS percentages. Source and binary hashes,
 all stage records and comparison details are saved with the microbenchmark
-evidence; full-run performance must be measured separately.
+[evidence](benchmarks/results/native-candidate-metadata-micro-20260909.json);
+full-run performance must be measured separately.
+
+## Frozen runtime
+
+The runtime was built from source commit
+`7b73cdb157a1f5e621e420e1e5c913726b267cf5` with Release clang++ 22 and native CPU
+tuning. The validator reports that exact revision. The local image wrappers
+retain a copied, hashed userspace runtime; they are not portable published images.
+
+- TON base: `mylocalton-ton:admission-local-7b73cdb1`,
+  `sha256:3ebc57f991013c8ef5a42c2199a141feed73947bbdbb3ea80f3915aff62cab5e`.
+- Genesis: `mylocalton-genesis:admission-local-7b73cdb1`,
+  `sha256:80bce954af67215b66a05e1ffc3a1a893775180773ad77b717b672e5ce80b6c1`.
+- Generator: `mylocalton-client:admission-local-7b73cdb1`,
+  `sha256:e2932e7731c6d5f0c546942dcb7a6e7ed1c50ecf7e0bde408c57a17e2cc9e4b8`.
+
+The experimental `env.cpu` keeps overlay signature reuse on in both arms and
+changes only metadata projection from 0 to 1. `.env.desktop` retains the previous
+winning images until this comparison supports a new selection. The existing
+four-lane database is preserved and the generator remains stopped during startup.
 
 Raw artifacts are retained under
 `build/benchmarks/candidate-metadata-cycles-20260909/`.

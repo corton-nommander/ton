@@ -1,10 +1,24 @@
 # Strict candidate metadata projection — 9 September 2026
 
-Status: implementation, correctness checks and microbenchmark complete; matched
-TPS measurements are running. The user approved
-this next CPU target after the completed
-[admission/signing cycle](native-admission-cycles-2026-09-09.md). No TPS gain is
-assigned to this candidate before matched measurements complete.
+Status: implementation, correctness checks, microbenchmark and four 600-second
+measurements complete. The desktop preset selects the projection, retaining
+local overlay reuse and the existing load parameters. Production defaults stay
+off; the new local images have not been published.
+
+| Setting | Canonical TPS, first run | Canonical TPS, repeat | Mean |
+| --- | ---: | ---: | ---: |
+| Full metadata decoding (0) | 59,784.97 | 60,618.60 | 60,201.79 |
+| Parent projection (1) | 61,380.86 | 62,537.54 | 61,959.20 |
+
+The observed mean gain is **2.92%**; both candidates exceeded both controls.
+All four runs passed all 59 proof, drain, completion and identity checks. Mean
+sampled validator CPU was 4.59% lower, with substantial variation between
+controls. Rebuildable-cache cleanup preceded the final control; this limits
+causal interpretation and is disclosed below. The result supports a bounded
+desktop selection, not a maximum-capacity or production throughput claim.
+The [saved evaluation](benchmarks/results/native-candidate-metadata-evaluation-20260909.json)
+contains the numeric screen, arm checks and maintenance evidence. This follows
+the separately completed [admission/signing cycle](native-admission-cycles-2026-09-09.md).
 
 ## Change and validation boundary
 
@@ -115,8 +129,8 @@ retain a copied, hashed userspace runtime; they are not portable published image
   `sha256:e2932e7731c6d5f0c546942dcb7a6e7ed1c50ecf7e0bde408c57a17e2cc9e4b8`.
 
 The experimental `env.cpu` keeps overlay signature reuse on in both arms and
-changes only metadata projection from 0 to 1. `.env.desktop` retains the previous
-winning images until this comparison supports a new selection. The existing
+changes only metadata projection from 0 to 1. `.env.desktop` now retains these
+images with metadata projection enabled, as selected below. The existing
 four-lane database is preserved and the generator remains stopped during startup.
 
 ## Control measurement
@@ -162,10 +176,9 @@ controlled observation, without a maximum-capacity claim.
 
 The [candidate record](benchmarks/results/native-candidate-metadata-20260909-02-metadata-projection.json)
 is saved, with the full comparison in `01-vs-02.json` under the raw artifact
-root. This first gain meets the threshold for repeating the candidate and then
-the control; it is not yet a repeatable promotion result. Genesis is explicitly
-recreated before the same-flag candidate repeat, preserving the database and
-all frozen images.
+root. This first gain triggered a candidate repeat and then another control; on its
+own it did not establish repeat consistency. Genesis was explicitly recreated
+before the same-flag candidate repeat, preserving the database and frozen images.
 
 ## Candidate repeat
 
@@ -186,8 +199,91 @@ and offered cohorts have different boundaries; a small canonical/offered
 rate difference does not imply unproved or duplicated transfers.
 
 The [repeat record](benchmarks/results/native-candidate-metadata-20260909-03-metadata-repeat.json)
-is saved. Both candidate runs exceed control 01; the final metadata-off control
-is still required before applying the declared desktop selection screen.
+is saved. Both candidate runs exceed control 01; the completed final control
+and desktop selection follow.
+
+## Final control and interpretation
+
+`04-metadata-control-repeat` completed at **60,618.60 canonical TPS**, with
+60,505.68 offered/admitted TPS. It passed all 59 checks, full cohort drain and
+final catch-up, with zero hash/follower errors and exhausted retries. The
+[final control record](benchmarks/results/native-candidate-metadata-20260909-04-metadata-control-repeat.json)
+is retained alongside all earlier records.
+
+The controls differ by 833.63 TPS (1.38% of their mean); the candidates differ
+by 1,156.67 TPS (1.87%). The mean candidate advantage is 1,757.41 TPS, or 2.92%,
+and even the weaker candidate exceeds the stronger control by 1.26%. All three
+predeclared numeric selection criteria pass. This is descriptive evidence from
+two observations per setting, not a statistical significance result.
+
+The consistent interior CPU sampling gives control values 9.3273 / 8.5409 and
+candidate values 8.3295 / 8.7190 CPU equivalents: means **8.9341→8.5243 (−4.59%)**.
+Mean rate-normalized CPU estimates are **148.45→137.56 µs/transfer (−7.34%)**.
+These are not integrated CPU measurements or native-execution timings. The
+control CPU range is 8.80% of its mean, and candidate 03 used more sampled CPU
+than control 04; the mean saving is not a uniform reduction across all pairs.
+Admission residence/backlog and dynamic block packing also varied. Metadata
+projection does not establish that admission retries or delivery delays are fixed.
+
+All configurations and immutable image identities match except for the intended
+metadata flag; the VM remains 64 GiB / 24 vCPUs. The fourth arm required extra
+preparation because host free disk fell to about 34 GiB. Before its controller
+and client readiness/warmup began, unused Docker build cache was reclaimed
+(31.39 GB reported), Docker's documented free-block reclamation command was run,
+and approximately 11.3 GB of pip download cache was purged. Installed packages,
+images and database volumes were preserved. Docker reclamation returned success
+with unchanged genesis/Session Stats identities but did not increase host free
+space here; pip cache cleanup raised it to about 45 GiB. No maintenance overlapped
+load, and about 17 GiB remained after the last measured arm.
+
+The [Docker Linux FAQ](https://docs.docker.com/desktop/troubleshoot-and-support/faqs/linuxfaqs/)
+documents the reclamation command. Exact commands, completion timestamps, file
+hashes, allocated-block measurements and before/after identities are embedded
+in the saved evaluation. Its preparation-record timestamp is documentation time;
+individual log completion times establish that maintenance preceded the final
+control. Strict configuration fingerprints do not capture disk/cache/I/O state.
+Consequently the four runs demonstrate **observed repeat consistency with
+asymmetric maintenance**, not an uninterrupted identical-host experiment proving
+that the flag alone caused the entire gain. No independent ≥5% offered overdrive
+was present, so maximum capacity remains unestablished.
+
+## Retained desktop configuration and next step
+
+MyLocalTonDocker commit `91e4f70` selects the tested existing local images:
+
+```dotenv
+TON_BRANCH=admission-local-7b73cdb1
+TON_IMAGE=mylocalton-ton
+MLT_IMAGE=mylocalton-genesis
+NATIVE_LOAD_IMAGE=mylocalton-client:admission-local-7b73cdb1
+TON_NATIVE_CANDIDATE_METADATA_PROJECTION=1
+TON_OVERLAY_LOCAL_SIGNATURE_REUSE=1
+TON_NATIVE_ADMISSION_CONFIG_CACHE=1
+TON_NATIVE_RECONCILIATION_PROFILE=1
+TON_KEYRING_PREPARED_SIGNING=0
+TON_NATIVE_ADMISSION_SHARD_SHARING=0
+TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0
+```
+
+All-profile Compose resolution equals the tested candidate configuration. The
+four-lane database, quotas, source count, initial/maximum windows, 10 connections
+and 20 ms coalescing are retained. Earlier winning images remain available;
+there is no database reset. C++/Compose fallback and physical-server defaults
+remain zero. These CPU-specific images and local commits are not a published
+Server A release. On production, use a built revision containing the feature
+and test it against its same-image control before changing the deployment preset.
+
+For two remote generators, use the
+[disjoint-source procedure](native-remote-client-guide.md#two-remote-generators-against-one-genesis).
+A second sender can increase unique offers and network traffic, including a
+second whole-chain proof download. It only increases canonical TPS if the first
+sender was limiting useful supply and the validator has remaining capacity.
+Compare combined unique offers/admissions against one whole-chain canonical
+count over a common window; never add the two followers' canonical TPS figures.
+If offers increase while canonical TPS stays flat and RTT/backlog/retries rise,
+profile the selected binary on A. Prioritize serialized admission/reconciliation
+work if it still dominates, then measured collation/finalization and persistence
+costs. More connections or a lane-owned redesign should follow that evidence.
 
 Raw artifacts are retained under
 `build/benchmarks/candidate-metadata-cycles-20260909/`.

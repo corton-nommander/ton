@@ -659,10 +659,13 @@ logical native transfers/s; the small differences between settings are not a
 repeatable gain or a production-server capacity claim. Do not change an existing
 production eight-lane database to the desktop topology.
 
-The tracked `.env.desktop` now retains the September 9 winner, source `be235e03`,
-using existing local images `mylocalton-genesis:admission-local-be235e03` and
-`mylocalton-client:admission-local-be235e03`. Its runtime differs from the September
-8 image; absolute rates across those builds are not a controlled comparison.
+The tracked `.env.desktop` now retains the September 9 metadata selection, source
+`7b73cdb1`, using existing local images `mylocalton-genesis:admission-local-7b73cdb1`
+and `mylocalton-client:admission-local-7b73cdb1`. Metadata projection and local
+overlay reuse are enabled. The [metadata report](native-candidate-metadata-cycles-2026-09-09.md)
+records the four 600-second observations: 60,201.79→61,959.20 mean canonical TPS
+(+2.92%), with maintenance before the final control disclosed. Its runtime differs
+from the September 8 image; absolute rates across those builds are not a controlled comparison.
 Docker Desktop must retain the tested **64 GiB** VM allocation on this 128 GB
 workstation; its previous 99,840 MiB allocation caused host OOM. Four lanes and
 all load/resource settings remain as measured. These are local CPU-specific

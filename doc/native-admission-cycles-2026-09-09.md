@@ -12,9 +12,11 @@ results, the narrow duration reassessment and the resource-environment change
 are recorded below. This is the best supported configuration in the final matched
 comparison, not a ranking against older images or proof of maximum capacity.
 
-The user subsequently approved the next candidate metadata decoding experiment;
-its implementation and separate measurements are recorded in
-[the metadata cycle](native-candidate-metadata-cycles-2026-09-09.md).
+The subsequent [metadata cycle](native-candidate-metadata-cycles-2026-09-09.md)
+is now complete and supersedes the desktop image pins below: source `7b73cdb1`,
+metadata projection 1, overlay reuse 1. Its observed mean TPS is 60,201.79→61,959.20
+(+2.92%); asymmetric maintenance before its final control is disclosed separately.
+The historical signing-cycle results below remain unchanged.
 
 ## Comparison conditions
 
@@ -571,12 +573,11 @@ rewrite is therefore deferred. Sharing and refresh reduce redundant work but
 showed no TPS gain; prepared signing has no clean positive comparison and remains
 off after its host-memory-confounded screen.
 
-The next bounded target is candidate metadata extraction: the separate CPU
-profile attributes 11.32% of sampled user CPU to native message decoding during
-state resolution. A metadata-only decoder could avoid expanding full transfers
-and unused account structures, while retaining malformed-input checks, exact
-parent hashes and branch isolation. This is a proposed next experiment, not
-implemented or assigned a predicted TPS gain. The serialized external-message
+Candidate metadata extraction has now been implemented and measured in the
+[follow-up report](native-candidate-metadata-cycles-2026-09-09.md). Its strict
+parent projection avoids flattened execution entries and derived account sets,
+while preserving malformed-input checks, parent hashes and branch isolation.
+That report records the selected desktop preset and its measurement limits. The serialized external-message
 pool also consumes about 0.85 sampled core and needs queue/long-turn attribution
 on the physical servers. Matching Server A/B profiles and a production A/B test
 remain outstanding before considering the separately gated lane-owned redesign.

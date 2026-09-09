@@ -1,0 +1,775 @@
+{
+  "schema": "native-candidate-metadata-evaluation-v1",
+  "source_revision": "7b73cdb157a1f5e621e420e1e5c913726b267cf5",
+  "order": [
+    "A1",
+    "B1",
+    "B2",
+    "A2"
+  ],
+  "raw_aggregate_path": "build/benchmarks/candidate-metadata-cycles-20260909/metadata-ABBA.json",
+  "raw_aggregate_sha256": "83594378d44c7511bbd920ed8bc3c329818f1e2bf724e48707e85825ce04e74a",
+  "arms": [
+    {
+      "arm": "01-metadata-control",
+      "status": "finished",
+      "proof_drain_identity_checks": {
+        "controller_exit_zero": true,
+        "wrapper_exit_zero": true,
+        "not_interrupted": true,
+        "run_complete": true,
+        "validator_unchanged": true,
+        "strict_reuse_valid": true,
+        "strict_validator_identity_equal": true,
+        "strict_generator_image_equal": true,
+        "strict_generator_container_equal": true,
+        "final_report": true,
+        "benchmark_result_valid": true,
+        "chain_correctness_valid": true,
+        "canonical_result_valid": true,
+        "final_follower_catchup": true,
+        "zero_follower_errors": true,
+        "zero_hash_conflicts": true,
+        "zero_drained_backlog": true,
+        "no_drain_timeout": true,
+        "no_retry_exhaustion": true,
+        "validator_cleanup_valid": true,
+        "lane_balance_valid": true,
+        "signed_run_quantum_valid": true,
+        "run_batching_valid": true,
+        "strict_reuse_required": true,
+        "acceptance_strict_reuse_valid": true,
+        "final_generator_exit_zero": true,
+        "runtime_genesis_healthy": true,
+        "runtime_generator_exited_zero": true,
+        "runtime_generator_never_restarted": true,
+        "runtime_observer_running": true,
+        "runtime_no_oom": true,
+        "validator_identity_image_linked": true,
+        "validator_identity_container_linked": true,
+        "validator_identity_start_linked": true,
+        "validator_identity_restarts_linked": true,
+        "generator_identity_image_linked": true,
+        "strict_process_identity_present": true,
+        "all_runtime_images_immutable": true,
+        "ordinary_tps_purpose": true,
+        "controller_not_diagnostic": true,
+        "full_600_second_target": true,
+        "full_measurement_completed": true,
+        "valid_canonical_bucket_duration": true,
+        "finite_positive_canonical_tps": true,
+        "no_fatal_follower_errors": true,
+        "no_exhausted_follower_retries": true,
+        "resource_fields_present": true,
+        "effective_load_fields_present": true,
+        "recorded_harness_identity_present": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_CONFIG_CACHE": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_SHARD_SHARING": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH": true,
+        "controller_effective_environment_flag:TON_NATIVE_RECONCILIATION_PROFILE": true,
+        "controller_effective_environment_flag:TON_KEYRING_PREPARED_SIGNING": true,
+        "controller_effective_environment_flag:TON_OVERLAY_LOCAL_SIGNATURE_REUSE": true,
+        "controller_effective_environment_flag:TON_NATIVE_CANDIDATE_METADATA_PROJECTION": true,
+        "controller_effective_environment_flag:TON_NATIVE_VALIDATION_SIGNATURE_THREADS": true,
+        "environment_evidence_consistent": true,
+        "comparison_environment_record_valid_if_present": true
+      },
+      "valid_observed_run": true,
+      "errors": [],
+      "failed_validity_checks": [],
+      "offered_over_canonical": 1.0006063682125517,
+      "capacity_claim_allowed": false,
+      "record": "native-candidate-metadata-20260909-01-metadata-control.json",
+      "canonical_tps": 59784.974958263774,
+      "offered_tps": 59821.22666666667,
+      "canonical_transfers": 35811200,
+      "bucket_seconds": 599,
+      "sampled_genesis_cpu": {
+        "samples": 18,
+        "mean_cpu_equivalents": 9.327305555555556,
+        "min_cpu_equivalents": 7.6334,
+        "max_cpu_equivalents": 11.0218,
+        "cpu_us_per_canonical_transfer_rate_normalized_estimate": 156.01420862126312,
+        "canonical_transfers_per_sampled_cpu_second_estimate": 6409.672611470788
+      }
+    },
+    {
+      "arm": "02-metadata-projection",
+      "status": "finished",
+      "proof_drain_identity_checks": {
+        "controller_exit_zero": true,
+        "wrapper_exit_zero": true,
+        "not_interrupted": true,
+        "run_complete": true,
+        "validator_unchanged": true,
+        "strict_reuse_valid": true,
+        "strict_validator_identity_equal": true,
+        "strict_generator_image_equal": true,
+        "strict_generator_container_equal": true,
+        "final_report": true,
+        "benchmark_result_valid": true,
+        "chain_correctness_valid": true,
+        "canonical_result_valid": true,
+        "final_follower_catchup": true,
+        "zero_follower_errors": true,
+        "zero_hash_conflicts": true,
+        "zero_drained_backlog": true,
+        "no_drain_timeout": true,
+        "no_retry_exhaustion": true,
+        "validator_cleanup_valid": true,
+        "lane_balance_valid": true,
+        "signed_run_quantum_valid": true,
+        "run_batching_valid": true,
+        "strict_reuse_required": true,
+        "acceptance_strict_reuse_valid": true,
+        "final_generator_exit_zero": true,
+        "runtime_genesis_healthy": true,
+        "runtime_generator_exited_zero": true,
+        "runtime_generator_never_restarted": true,
+        "runtime_observer_running": true,
+        "runtime_no_oom": true,
+        "validator_identity_image_linked": true,
+        "validator_identity_container_linked": true,
+        "validator_identity_start_linked": true,
+        "validator_identity_restarts_linked": true,
+        "generator_identity_image_linked": true,
+        "strict_process_identity_present": true,
+        "all_runtime_images_immutable": true,
+        "ordinary_tps_purpose": true,
+        "controller_not_diagnostic": true,
+        "full_600_second_target": true,
+        "full_measurement_completed": true,
+        "valid_canonical_bucket_duration": true,
+        "finite_positive_canonical_tps": true,
+        "no_fatal_follower_errors": true,
+        "no_exhausted_follower_retries": true,
+        "resource_fields_present": true,
+        "effective_load_fields_present": true,
+        "recorded_harness_identity_present": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_CONFIG_CACHE": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_SHARD_SHARING": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH": true,
+        "controller_effective_environment_flag:TON_NATIVE_RECONCILIATION_PROFILE": true,
+        "controller_effective_environment_flag:TON_KEYRING_PREPARED_SIGNING": true,
+        "controller_effective_environment_flag:TON_OVERLAY_LOCAL_SIGNATURE_REUSE": true,
+        "controller_effective_environment_flag:TON_NATIVE_CANDIDATE_METADATA_PROJECTION": true,
+        "controller_effective_environment_flag:TON_NATIVE_VALIDATION_SIGNATURE_THREADS": true,
+        "environment_evidence_consistent": true,
+        "comparison_environment_record_valid_if_present": true
+      },
+      "valid_observed_run": true,
+      "errors": [],
+      "failed_validity_checks": [],
+      "offered_over_canonical": 1.0044572834464633,
+      "capacity_claim_allowed": false,
+      "record": "native-candidate-metadata-20260909-02-metadata-projection.json",
+      "canonical_tps": 61380.86143572621,
+      "offered_tps": 61654.45333333333,
+      "canonical_transfers": 36767136,
+      "bucket_seconds": 599,
+      "sampled_genesis_cpu": {
+        "samples": 19,
+        "mean_cpu_equivalents": 8.329468421052631,
+        "min_cpu_equivalents": 6.3626,
+        "max_cpu_equivalents": 9.9396,
+        "cpu_us_per_canonical_transfer_rate_normalized_estimate": 135.70139333698785,
+        "canonical_transfers_per_sampled_cpu_second_estimate": 7369.121093080421
+      }
+    },
+    {
+      "arm": "03-metadata-repeat",
+      "status": "finished",
+      "proof_drain_identity_checks": {
+        "controller_exit_zero": true,
+        "wrapper_exit_zero": true,
+        "not_interrupted": true,
+        "run_complete": true,
+        "validator_unchanged": true,
+        "strict_reuse_valid": true,
+        "strict_validator_identity_equal": true,
+        "strict_generator_image_equal": true,
+        "strict_generator_container_equal": true,
+        "final_report": true,
+        "benchmark_result_valid": true,
+        "chain_correctness_valid": true,
+        "canonical_result_valid": true,
+        "final_follower_catchup": true,
+        "zero_follower_errors": true,
+        "zero_hash_conflicts": true,
+        "zero_drained_backlog": true,
+        "no_drain_timeout": true,
+        "no_retry_exhaustion": true,
+        "validator_cleanup_valid": true,
+        "lane_balance_valid": true,
+        "signed_run_quantum_valid": true,
+        "run_batching_valid": true,
+        "strict_reuse_required": true,
+        "acceptance_strict_reuse_valid": true,
+        "final_generator_exit_zero": true,
+        "runtime_genesis_healthy": true,
+        "runtime_generator_exited_zero": true,
+        "runtime_generator_never_restarted": true,
+        "runtime_observer_running": true,
+        "runtime_no_oom": true,
+        "validator_identity_image_linked": true,
+        "validator_identity_container_linked": true,
+        "validator_identity_start_linked": true,
+        "validator_identity_restarts_linked": true,
+        "generator_identity_image_linked": true,
+        "strict_process_identity_present": true,
+        "all_runtime_images_immutable": true,
+        "ordinary_tps_purpose": true,
+        "controller_not_diagnostic": true,
+        "full_600_second_target": true,
+        "full_measurement_completed": true,
+        "valid_canonical_bucket_duration": true,
+        "finite_positive_canonical_tps": true,
+        "no_fatal_follower_errors": true,
+        "no_exhausted_follower_retries": true,
+        "resource_fields_present": true,
+        "effective_load_fields_present": true,
+        "recorded_harness_identity_present": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_CONFIG_CACHE": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_SHARD_SHARING": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH": true,
+        "controller_effective_environment_flag:TON_NATIVE_RECONCILIATION_PROFILE": true,
+        "controller_effective_environment_flag:TON_KEYRING_PREPARED_SIGNING": true,
+        "controller_effective_environment_flag:TON_OVERLAY_LOCAL_SIGNATURE_REUSE": true,
+        "controller_effective_environment_flag:TON_NATIVE_CANDIDATE_METADATA_PROJECTION": true,
+        "controller_effective_environment_flag:TON_NATIVE_VALIDATION_SIGNATURE_THREADS": true,
+        "environment_evidence_consistent": true,
+        "comparison_environment_record_valid_if_present": true
+      },
+      "valid_observed_run": true,
+      "errors": [],
+      "failed_validity_checks": [],
+      "offered_over_canonical": 0.999787819806152,
+      "capacity_claim_allowed": false,
+      "record": "native-candidate-metadata-20260909-03-metadata-repeat.json",
+      "canonical_tps": 62537.53589315526,
+      "offered_tps": 62524.26666666667,
+      "canonical_transfers": 37459984,
+      "bucket_seconds": 599,
+      "sampled_genesis_cpu": {
+        "samples": 18,
+        "mean_cpu_equivalents": 8.719033333333334,
+        "min_cpu_equivalents": 7.7321,
+        "max_cpu_equivalents": 11.1221,
+        "cpu_us_per_canonical_transfer_rate_normalized_estimate": 139.42080078482326,
+        "canonical_transfers_per_sampled_cpu_second_estimate": 7172.530887577972
+      }
+    },
+    {
+      "arm": "04-metadata-control-repeat",
+      "status": "finished",
+      "proof_drain_identity_checks": {
+        "controller_exit_zero": true,
+        "wrapper_exit_zero": true,
+        "not_interrupted": true,
+        "run_complete": true,
+        "validator_unchanged": true,
+        "strict_reuse_valid": true,
+        "strict_validator_identity_equal": true,
+        "strict_generator_image_equal": true,
+        "strict_generator_container_equal": true,
+        "final_report": true,
+        "benchmark_result_valid": true,
+        "chain_correctness_valid": true,
+        "canonical_result_valid": true,
+        "final_follower_catchup": true,
+        "zero_follower_errors": true,
+        "zero_hash_conflicts": true,
+        "zero_drained_backlog": true,
+        "no_drain_timeout": true,
+        "no_retry_exhaustion": true,
+        "validator_cleanup_valid": true,
+        "lane_balance_valid": true,
+        "signed_run_quantum_valid": true,
+        "run_batching_valid": true,
+        "strict_reuse_required": true,
+        "acceptance_strict_reuse_valid": true,
+        "final_generator_exit_zero": true,
+        "runtime_genesis_healthy": true,
+        "runtime_generator_exited_zero": true,
+        "runtime_generator_never_restarted": true,
+        "runtime_observer_running": true,
+        "runtime_no_oom": true,
+        "validator_identity_image_linked": true,
+        "validator_identity_container_linked": true,
+        "validator_identity_start_linked": true,
+        "validator_identity_restarts_linked": true,
+        "generator_identity_image_linked": true,
+        "strict_process_identity_present": true,
+        "all_runtime_images_immutable": true,
+        "ordinary_tps_purpose": true,
+        "controller_not_diagnostic": true,
+        "full_600_second_target": true,
+        "full_measurement_completed": true,
+        "valid_canonical_bucket_duration": true,
+        "finite_positive_canonical_tps": true,
+        "no_fatal_follower_errors": true,
+        "no_exhausted_follower_retries": true,
+        "resource_fields_present": true,
+        "effective_load_fields_present": true,
+        "recorded_harness_identity_present": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_CONFIG_CACHE": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_SHARD_SHARING": true,
+        "controller_effective_environment_flag:TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH": true,
+        "controller_effective_environment_flag:TON_NATIVE_RECONCILIATION_PROFILE": true,
+        "controller_effective_environment_flag:TON_KEYRING_PREPARED_SIGNING": true,
+        "controller_effective_environment_flag:TON_OVERLAY_LOCAL_SIGNATURE_REUSE": true,
+        "controller_effective_environment_flag:TON_NATIVE_CANDIDATE_METADATA_PROJECTION": true,
+        "controller_effective_environment_flag:TON_NATIVE_VALIDATION_SIGNATURE_THREADS": true,
+        "environment_evidence_consistent": true,
+        "comparison_environment_record_valid_if_present": true
+      },
+      "valid_observed_run": true,
+      "errors": [],
+      "failed_validity_checks": [],
+      "offered_over_canonical": 0.9981371339410393,
+      "capacity_claim_allowed": false,
+      "record": "native-candidate-metadata-20260909-04-metadata-control-repeat.json",
+      "canonical_tps": 60618.60434056761,
+      "offered_tps": 60505.68,
+      "canonical_transfers": 36310544,
+      "bucket_seconds": 599,
+      "sampled_genesis_cpu": {
+        "samples": 18,
+        "mean_cpu_equivalents": 8.540877777777778,
+        "min_cpu_equivalents": 6.757899999999999,
+        "max_cpu_equivalents": 10.4153,
+        "cpu_us_per_canonical_transfer_rate_normalized_estimate": 140.8953220003779,
+        "canonical_transfers_per_sampled_cpu_second_estimate": 7097.467721443001
+      }
+    }
+  ],
+  "aggregation": {
+    "ready": true,
+    "valid": true,
+    "checks": {
+      "four_distinct_arms": true,
+      "chronological_nonoverlapping_ABBA_windows": true,
+      "all_recorded_environments_present_and_valid": true,
+      "all_cross_mode_frames_valid": true,
+      "both_repeat_frames_valid": true,
+      "all_canonical_rates_finite_positive": true
+    },
+    "failed_checks": [],
+    "aggregate_metrics": {
+      "canonical_tps": {
+        "control": {
+          "values": [
+            59784.974958263774,
+            60618.60434056761
+          ],
+          "mean": 60201.78964941569,
+          "minimum": 59784.974958263774,
+          "maximum": 60618.60434056761,
+          "range": 833.6293823038359,
+          "range_percent_of_mean": 1.3847252501270566,
+          "second_vs_first_percent": 1.3943794120275133
+        },
+        "candidate": {
+          "values": [
+            61380.86143572621,
+            62537.53589315526
+          ],
+          "mean": 61959.19866444074,
+          "minimum": 61380.86143572621,
+          "maximum": 62537.53589315526,
+          "range": 1156.6744574290497,
+          "range_percent_of_mean": 1.8668325000350297,
+          "second_vs_first_percent": 1.8844220012132595
+        },
+        "mean_change_percent": 2.9191972950626477
+      },
+      "paired_improvements_percent": {
+        "leading_A1_to_B1": 2.669377178089527,
+        "trailing_A2_reference_to_earlier_B2": 3.165581876162471
+      },
+      "all_cross_pair_improvements_percent": {
+        "A1_to_B1": 2.669377178089527,
+        "A1_to_B2": 4.604101510142078,
+        "A2_to_B1": 1.2574639476621519,
+        "A2_to_B2": 3.165581876162471
+      },
+      "sampled_cpu": {
+        "genesis": {
+          "usable": true,
+          "individual_sampled_cpu_equivalents": [
+            9.327305555555556,
+            8.329468421052631,
+            8.719033333333334,
+            8.540877777777778
+          ],
+          "mean_cpu_equivalents": {
+            "control": {
+              "values": [
+                9.327305555555556,
+                8.540877777777778
+              ],
+              "mean": 8.934091666666667,
+              "minimum": 8.540877777777778,
+              "maximum": 9.327305555555556,
+              "range": 0.786427777777778,
+              "range_percent_of_mean": 8.802548788613406,
+              "second_vs_first_percent": -8.43145722088373
+            },
+            "candidate": {
+              "values": [
+                8.329468421052631,
+                8.719033333333334
+              ],
+              "mean": 8.524250877192983,
+              "minimum": 8.329468421052631,
+              "maximum": 8.719033333333334,
+              "range": 0.38956491228070256,
+              "range_percent_of_mean": 4.570077979790588,
+              "second_vs_first_percent": 4.67694806665071
+            },
+            "change_percent": -4.5873806175820935
+          },
+          "rate_normalized_cpu_us_per_transfer": {
+            "individual": [
+              156.01420862126312,
+              135.70139333698785,
+              139.42080078482326,
+              140.8953220003779
+            ],
+            "control": {
+              "values": [
+                156.01420862126312,
+                140.8953220003779
+              ],
+              "mean": 148.4547653108205,
+              "minimum": 140.8953220003779,
+              "maximum": 156.01420862126312,
+              "range": 15.118886620885235,
+              "range_percent_of_mean": 10.184170638935534,
+              "second_vs_first_percent": -9.690711348982017
+            },
+            "candidate": {
+              "values": [
+                135.70139333698785,
+                139.42080078482326
+              ],
+              "mean": 137.56109706090555,
+              "minimum": 135.70139333698785,
+              "maximum": 139.42080078482326,
+              "range": 3.719407447835408,
+              "range_percent_of_mean": 2.7038221759663856,
+              "second_vs_first_percent": 2.740876387760438
+            },
+            "mean_change_percent": -7.33803878043714
+          }
+        },
+        "native-load-generator": {
+          "usable": true,
+          "individual_sampled_cpu_equivalents": [
+            0.8162555555555555,
+            0.9186684210526316,
+            0.764,
+            0.8087555555555556
+          ],
+          "mean_cpu_equivalents": {
+            "control": {
+              "values": [
+                0.8162555555555555,
+                0.8087555555555556
+              ],
+              "mean": 0.8125055555555556,
+              "minimum": 0.8087555555555556,
+              "maximum": 0.8162555555555555,
+              "range": 0.007499999999999951,
+              "range_percent_of_mean": 0.9230706114829923,
+              "second_vs_first_percent": -0.9188298871540712
+            },
+            "candidate": {
+              "values": [
+                0.9186684210526316,
+                0.764
+              ],
+              "mean": 0.8413342105263157,
+              "minimum": 0.764,
+              "maximum": 0.9186684210526316,
+              "range": 0.15466842105263157,
+              "range_percent_of_mean": 18.383707582255003,
+              "second_vs_first_percent": -16.83615301322853
+            },
+            "change_percent": 3.548117889612268
+          },
+          "rate_normalized_cpu_us_per_transfer": {
+            "individual": [
+              13.653188884421013,
+              14.966691564187276,
+              12.216662986294923,
+              13.34170531231308
+            ],
+            "control": {
+              "values": [
+                13.653188884421013,
+                13.34170531231308
+              ],
+              "mean": 13.497447098367047,
+              "minimum": 13.34170531231308,
+              "maximum": 13.653188884421013,
+              "range": 0.3114835721079334,
+              "range_percent_of_mean": 2.307722118396874,
+              "second_vs_first_percent": -2.2813979557797848
+            },
+            "candidate": {
+              "values": [
+                14.966691564187276,
+                12.216662986294923
+              ],
+              "mean": 13.5916772752411,
+              "minimum": 12.216662986294923,
+              "maximum": 14.966691564187276,
+              "range": 2.750028577892353,
+              "range_percent_of_mean": 20.233180366207385,
+              "second_vs_first_percent": -18.374325188024176
+            },
+            "mean_change_percent": 0.6981333298609727
+          }
+        },
+        "session-stats": {
+          "usable": true,
+          "individual_sampled_cpu_equivalents": [
+            0.9385666666666667,
+            0.9514473684210526,
+            0.9016222222222222,
+            1.0142444444444445
+          ],
+          "mean_cpu_equivalents": {
+            "control": {
+              "values": [
+                0.9385666666666667,
+                1.0142444444444445
+              ],
+              "mean": 0.9764055555555555,
+              "minimum": 0.9385666666666667,
+              "maximum": 1.0142444444444445,
+              "range": 0.07567777777777784,
+              "range_percent_of_mean": 7.750650060027432,
+              "second_vs_first_percent": 8.063122254975097
+            },
+            "candidate": {
+              "values": [
+                0.9514473684210526,
+                0.9016222222222222
+              ],
+              "mean": 0.9265347953216374,
+              "minimum": 0.9016222222222222,
+              "maximum": 0.9514473684210526,
+              "range": 0.04982514619883038,
+              "range_percent_of_mean": 5.377579606336757,
+              "second_vs_first_percent": -5.2367737672674775
+            },
+            "change_percent": -5.1075866938858905
+          },
+          "rate_normalized_cpu_us_per_transfer": {
+            "individual": [
+              15.69903922050457,
+              15.50071709921084,
+              14.417296897700519,
+              16.73157037311868
+            ],
+            "control": {
+              "values": [
+                15.69903922050457,
+                16.73157037311868
+              ],
+              "mean": 16.215304796811623,
+              "minimum": 15.69903922050457,
+              "maximum": 16.73157037311868,
+              "range": 1.0325311526141085,
+              "range_percent_of_mean": 6.367633328835932,
+              "second_vs_first_percent": 6.5770340344491585
+            },
+            "candidate": {
+              "values": [
+                15.50071709921084,
+                14.417296897700519
+              ],
+              "mean": 14.95900699845568,
+              "minimum": 14.417296897700519,
+              "maximum": 15.50071709921084,
+              "range": 1.0834202015103216,
+              "range_percent_of_mean": 7.242594388933507,
+              "second_vs_first_percent": -6.989484386922196
+            },
+            "mean_change_percent": -7.747605204454533
+          }
+        }
+      }
+    },
+    "promotion_screen": {
+      "criteria": {
+        "all_candidates_above_both_controls": true,
+        "mean_gain_at_least_two_percent": true,
+        "mean_gain_exceeds_full_control_repeat_range": true
+      },
+      "meets_suggested_evidence_threshold": true,
+      "semantics": "Manual-review screen only: every B exceeds both As; mean B gain >=2%; gain exceeds the full control range."
+    },
+    "capacity_claim_allowed": false,
+    "maximum_capacity_established": false,
+    "automatic_default_change": false,
+    "offered_over_canonical_by_arm": {
+      "A1": 1.0006063682125517,
+      "B1": 1.0044572834464633,
+      "B2": 0.999787819806152,
+      "A2": 0.9981371339410393
+    },
+    "all_arms_existing_capacity_gates_met": false
+  },
+  "asymmetric_preparation_before_final_control": {
+    "preparation": {
+      "unix_s": 1788956227.241123,
+      "host_available_bytes": 47649058816,
+      "completed_before_04_load": true,
+      "build_cache_prune_command": [
+        "docker",
+        "builder",
+        "prune",
+        "--all",
+        "--force"
+      ],
+      "build_cache_reported_reclaimed": "31.39GB",
+      "docker_reclaim_record": "disk-reclaim-before-04.json",
+      "pip_cache_command": [
+        "python3",
+        "-m",
+        "pip",
+        "cache",
+        "purge"
+      ],
+      "pip_cache_files_removed": 2712,
+      "pip_cache_pre_purge_reported_bytes_approx": 11326800000,
+      "installed_packages_modified": false,
+      "runtime_images_and_chain_volumes_preserved": true,
+      "caveat": "Rebuildable caches were removed before final control because host free disk dropped to34GiB; Docker-supportedtrimexit0 didnotreclaimhostblocks. No measuredarm overlappedmaintenance. Hostfreecapacity varies acrossarms; noformalstatisticalsignificanceclaim."
+    },
+    "docker_reclamation": {
+      "command": [
+        "docker",
+        "run",
+        "--rm",
+        "--privileged",
+        "--pid=host",
+        "--network=none",
+        "docker/desktop-reclaim-space"
+      ],
+      "official_source": "https://docs.docker.com/desktop/troubleshoot-and-support/faqs/linuxfaqs/",
+      "exit_code": 0,
+      "before": {
+        "unix_s": 1788956076.253082,
+        "host_available_bytes": 36333629440,
+        "docker_raw_allocated_bytes": 849760591872,
+        "containers": [
+          {
+            "Name": "/genesis",
+            "Id": "124f0366f4005c402ee7ed68b682262fede2fea22a363f7f2b2665df429ce459",
+            "Image": "sha256:80bce954af67215b66a05e1ffc3a1a893775180773ad77b717b672e5ce80b6c1",
+            "RestartCount": 0,
+            "started_at": "2026-09-09T12:07:13.521774947Z",
+            "health": "healthy"
+          },
+          {
+            "Name": "/session-stats",
+            "Id": "a138e55dfb19ff6d0d324e6d7a74a754d2f00b63e3a22179cb04f3672058eead",
+            "Image": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67",
+            "RestartCount": 0,
+            "started_at": "2026-09-09T08:28:01.689543148Z",
+            "health": "healthy"
+          }
+        ]
+      },
+      "after": {
+        "unix_s": 1788956083.2765186,
+        "host_available_bytes": 36332453888,
+        "docker_raw_allocated_bytes": 849761415168,
+        "containers": [
+          {
+            "Name": "/genesis",
+            "Id": "124f0366f4005c402ee7ed68b682262fede2fea22a363f7f2b2665df429ce459",
+            "Image": "sha256:80bce954af67215b66a05e1ffc3a1a893775180773ad77b717b672e5ce80b6c1",
+            "RestartCount": 0,
+            "started_at": "2026-09-09T12:07:13.521774947Z",
+            "health": "healthy"
+          },
+          {
+            "Name": "/session-stats",
+            "Id": "a138e55dfb19ff6d0d324e6d7a74a754d2f00b63e3a22179cb04f3672058eead",
+            "Image": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67",
+            "RestartCount": 0,
+            "started_at": "2026-09-09T08:28:01.689543148Z",
+            "health": "healthy"
+          }
+        ]
+      },
+      "containers_unchanged": true
+    },
+    "logs": {
+      "build-cache-reclaim-before-04.log": {
+        "path": "build/benchmarks/candidate-metadata-cycles-20260909/build-cache-reclaim-before-04.log",
+        "completion_unix_s": 1788955894.2643905,
+        "sha256": "45a69b95557522db8808413cac7bfaff4f44ac93ddd639c336d4cdb395fa5169"
+      },
+      "disk-reclaim-before-04.log": {
+        "path": "build/benchmarks/candidate-metadata-cycles-20260909/disk-reclaim-before-04.log",
+        "completion_unix_s": 1788956079.1378844,
+        "sha256": "2345c218e5e51603c6300493736f237db83ac542dfaa11211eaa57ad72af90d8"
+      },
+      "pip-download-cache-reclaim-before-04.log": {
+        "path": "build/benchmarks/candidate-metadata-cycles-20260909/pip-download-cache-reclaim-before-04.log",
+        "completion_unix_s": 1788956184.2523777,
+        "sha256": "742efcb711ffa703a97059305f34b7f373671c8cfac11793c24da516316416ff"
+      }
+    },
+    "final_control_created_unix_s": 1788956199.2921014,
+    "all_maintenance_logs_completed_before_control_created": true
+  },
+  "manual_decision": {
+    "desktop_projection": 1,
+    "desktop_overlay_reuse": 1,
+    "selected_source_revision": "7b73cdb157a1f5e621e420e1e5c913726b267cf5",
+    "companion_commit": "91e4f70",
+    "global_and_physical_defaults": 0,
+    "selection_basis": "All numeric screen criteria pass; both candidate observations exceed both controls, backed by strict parser tests and decoder microbenchmark. Bounded desktop selection with disclosed maintenance, not a causal or capacity claim.",
+    "configuration": {
+      "matches_tested_candidate_configuration": true,
+      "all_profiles_resolved": true,
+      "genesis_image": "mylocalton-genesis:admission-local-7b73cdb1",
+      "load_image": "mylocalton-client:admission-local-7b73cdb1",
+      "metadata_projection": "1",
+      "desktop_env_sha256": "c40c39eef59a2e963a9cfb4762fd801863210945bc58b8f752dc22184514c424"
+    }
+  },
+  "interpretation_limits": [
+    "Pool counters count physical RPC input slots/attempts; NTRN logical children and canonical transfers are different units.",
+    "Refresh successes require a completed batch with at least one accepted unique native input; successes, exhaustion and deadlines overlap.",
+    "Accepted refresh inputs are deduplicated within one batch only and include repeated exact-hash idempotent RPC retries, not necessarily new insertions.",
+    "Attempts, accepted inputs and signature reuses update before batch completion; interior boundaries can contain carry-in/out and abandoned partial work.",
+    "Signature reuses count avoided dispatches even when later rejected. Verification timing samples are per pass, including reused-signature prechecks.",
+    "Stage times are overlapping wall residence and preemption/waiting, not exclusive CPU. The block signature executor does not count pool verifier dispatches.",
+    "Per-canonical-transfer stage values are rate-normalized estimates: interior stage wall/s divided by full-window proof-checked canonical TPS, not an exact matched cohort.",
+    "One pair does not establish repeatability or peak capacity. Offered load must independently exceed canonical throughput by five percent for capacity eligibility.",
+    "CPU equivalents are arithmetic means of interior Docker CPU percentage samples divided by 100, not integrated CPU seconds or exclusive function CPU.",
+    "Docker CPU sampling follows getstats. Only records at least 25 seconds before measurement end are used, matching the capture command timeout; exact CPU averaging windows were not saved.",
+    "CPU per canonical transfer is a rate-normalized estimate using full-window proof-checked TPS and interior sampled CPU equivalents.",
+    "Overlay before/after captures include readiness, warmup and drain; their matched counter increases are incomplete observable lower bounds, never TPS-window totals.",
+    "Changing one named flag isolates configuration, not all time-dependent conditions; one sequential pair does not establish repeatability or maximum capacity.",
+    "The historical wrapper omitted TON_KEYRING_PREPARED_SIGNING and TON_OVERLAY_LOCAL_SIGNATURE_REUSE from its environment whitelist. Only these missing fields may be recovered from the saved Docker controller identity, with successful unchanged-container, strict before/after identity and immutable image linkage. Field provenance is explicit; conflicting or absent evidence fails validation.",
+    "Two legacy arms lacking comparison-environment.json may be compared with unverified VM resource equality. New arms require matching recorded Docker VM memory/CPU and physical host memory; missing evidence on only one side or malformed evidence fails comparison.",
+    "An explicit duration reassessment may resolve only a reproduced sole floating-point duration rejection after a successful wrapper. Original controller exit remains recorded, and only the certificate-proven postprocessing source revision change may differ across arms.",
+    "Two observations per mode provide descriptive repeat variation, not a confidence interval, p-value or statistical significance.",
+    "A/B/B/A brackets some time drift, but does not remove changing cache/database age, host pressure or carryover effects.",
+    "Every measured interval and all four individual results are retained; no outlier is discarded and no failed arm is replaced by a partial interval.",
+    "CPU cost per transfer averages each arm's sampled CPU-equivalent/TPS rate estimate; it is not integrated CPU time.",
+    "The promotion screen is evidence for manual review only. It does not change a global default or establish maximum capacity.",
+    "Unused Docker build cache and pip download cache were purged and Docker free-block reclamation was attempted before A2. No load overlapped maintenance, but disk/cache/I/O state is not encoded in strict configuration fingerprints. This is observed repeat consistency, not an uninterrupted identical-host causal ABBA.",
+    "Mean sampled CPU estimates have substantial between-control variation; candidate B2 used more sampled raw CPU than control A2. Do not describe CPU reduction as uniform across all pairs.",
+    "Native CPU-specific local images and local commits have not been published or deployed to production."
+  ]
+}

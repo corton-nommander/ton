@@ -200,7 +200,8 @@ exercise one successful refresh, exhausted refresh, original deadline, signed
 expiry, changed signing domain/nonce/balance/mode/lane/limits, duplicate wire
 encoding and disabled controls. They do not establish a production TPS gain.
 
-The Release validator-engine build and focused tests passed: 8 admission telemetry/cache tests,
+For the preceding September 8 cache/profile implementation, the Release
+validator-engine build and focused tests passed: 8 admission telemetry/cache tests,
 69 pool scheduler tests (including malformed configuration not entering the cache), and 35
 native-state tests including serial/parallel valid, invalid-domain and null-parent signatures.
 MyLocalTonDocker passed 67 remote-client integration tests, 7 profiler tests and the full benchmark

@@ -136,3 +136,38 @@ Isolated implementation commits are `7bcf9b99` (bounded batch refresh), `09c625a
 subsequent refresh comparison will use a newly frozen image set with sharing off
 and reconciliation stage profiling on in both arms. Its results must be compared
 to that image's own refresh-off control.
+
+
+## Refresh control collector failure (retained)
+
+`04-refresh-off` used fixed revision `f5978d11` with sharing/refresh off and
+reconciliation timing on. Its generator completed 600 measured seconds at
+58,435.82 canonical logical TPS with zero final backlog, hash conflicts, fatal
+follower failures or exhausted source retries. The wrapper nevertheless exited 3:
+its old substring parser selected `total.ext_msg_native_reconciliation_diagnostics`
+instead of the exact `total.ext_msg_native_reconciliation` key. It consequently
+reported missing cleanup telemetry.
+
+The original raw before/after captures contain the correct key. A separate
+exact-key recheck through the unchanged cleanup acceptance function passes:
+`pending_sources=0`, pending native accounts/messages/logical messages all zero.
+The failed original assessment is preserved; this arm is excluded from promotion
+comparisons. MyLocal commit `5829f7a` fixes exact first-field matching and tests
+prefix collisions, whitespace, absent/repeated samples. The reporting suite and
+14 profiler tests pass. A fresh control will run with the corrected collector;
+no validator or generator image change is needed.
+
+Its additive measurements remain useful diagnostics: 4,772 captured basechain
+candidates have fully reconciling first-epoch wait partitions. Of 353.54 aggregate
+seconds entered before installation, 163.75 seconds precede the first epoch and
+189.79 follow it. Pre-epoch overlap is 34.32 ms/candidate; it includes dispatch and
+early installation work, not exclusively mailbox latency. Later completed-epoch
+wait adds 48.93 seconds. This motivates CPU stacks and bounded scheduling review,
+not removal of all external waits.
+
+The 540-second interior reconciliation profile shows 81.93% unchanged account
+observations, but only 0.0208 unpack wall seconds per elapsed second (1.14 µs/read).
+Application/reservation work is 0.1358 s/s and dictionary lookup 0.0540 s/s.
+Manager waiting is asynchronous wall time, 0.3470 s/s. Unchanged account facts
+are not an exact-content cache hit rate, and decode-cache overhead may offset
+its small potential saving; that cache remains deferred pending CPU stacks.

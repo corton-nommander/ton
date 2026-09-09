@@ -40,6 +40,10 @@
 
 namespace ton::validator {
 void ExtMessagePool::start_up() {
+  if (const char* value = std::getenv("TON_NATIVE_RECONCILIATION_PROFILE")) {
+    CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
+    native_reconciliation_profile_enabled_ = td::Slice(value) == "1";
+  }
   if (const char* value = std::getenv("TON_NATIVE_ADMISSION_CONFIG_CACHE")) {
     CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
     native_config_cache_enabled_ = td::Slice(value) == "1";
@@ -2896,7 +2900,9 @@ void ExtMessagePool::reconcile_native_external_messages(td::Ref<MasterchainState
 }
 
 void ExtMessagePool::register_pending_native_reconciliation_targets() {
+  const double started = native_reconciliation_profile_enabled_ ? td::Time::now() : 0;
   for (auto it = locally_accepted_native_nonces_.begin(); it != locally_accepted_native_nonces_.end();) {
+    ++native_reconciliation_telemetry_.register_tracked_visits;
     auto account_it = native_accounts_.find(it->first);
     if (account_it == native_accounts_.end() || account_it->second.messages.empty()) {
       it = locally_accepted_native_nonces_.erase(it);
@@ -2905,6 +2911,7 @@ void ExtMessagePool::register_pending_native_reconciliation_targets() {
     }
   }
   for (const auto &[address, account] : native_accounts_) {
+    ++native_reconciliation_telemetry_.register_source_visits;
     if (account.messages.empty()) {
       continue;
     }
@@ -2917,6 +2924,9 @@ void ExtMessagePool::register_pending_native_reconciliation_targets() {
     if (!inserted) {
       it->second = std::max(it->second, max_pending_nonce.value());
     }
+  }
+  if (native_reconciliation_profile_enabled_) {
+    native_reconciliation_telemetry_.registration.observe(td::Time::now() - started);
   }
 }
 
@@ -2947,7 +2957,9 @@ td::actor::Task<> ExtMessagePool::run_native_reconciliation() {
     }
     ++native_reconciliation_runs_;
     auto result = co_await reconcile_native_snapshot(std::move(state), std::move(sources)).wrap();
+    ++native_reconciliation_telemetry_.snapshot_finishes;
     if (result.is_error()) {
+      ++native_reconciliation_telemetry_.snapshot_errors;
       ++native_reconciliation_failures_;
       LOG(WARNING) << "Native applied-state reconciliation was incomplete: " << result.error();
     }
@@ -2961,9 +2973,11 @@ td::actor::Task<> ExtMessagePool::run_native_reconciliation() {
 
 td::actor::Task<> ExtMessagePool::reconcile_native_snapshot(td::Ref<MasterchainState> state,
                                                              std::vector<NativeAddress> sources) {
+  const double grouping_started = native_reconciliation_profile_enabled_ ? td::Time::now() : 0;
   std::map<BlockIdExt, std::vector<NativeAddress>> shard_sources;
   td::Status first_error;
   for (const auto &address : sources) {
+    ++native_reconciliation_telemetry_.group_source_visits;
     auto shard = state->get_shard_from_config(extract_addr_prefix(address.first, address.second).as_leaf_shard(),
                                               false);
     if (shard.is_null()) {
@@ -2974,6 +2988,10 @@ td::actor::Task<> ExtMessagePool::reconcile_native_snapshot(td::Ref<MasterchainS
       continue;
     }
     shard_sources[shard->top_block_id()].push_back(address);
+  }
+  native_reconciliation_telemetry_.group_shards += shard_sources.size();
+  if (native_reconciliation_profile_enabled_) {
+    native_reconciliation_telemetry_.grouping.observe(td::Time::now() - grouping_started);
   }
 
   std::set<NativeAddress> changed_sources;
@@ -2990,11 +3008,15 @@ td::actor::Task<> ExtMessagePool::reconcile_native_snapshot(td::Ref<MasterchainS
     }
     bool shard_complete = true;
     ++native_reconciliation_state_fetches_;
+    const double manager_wait_started = native_reconciliation_profile_enabled_ ? td::Time::now() : 0;
     auto state_result =
         co_await td::actor::await_with_timeout(
                      td::actor::ask(manager_, &ValidatorManager::get_block_state_for_litequery, shard_block_id),
                      td::Timestamp::in(30.0))
             .wrap();
+    if (native_reconciliation_profile_enabled_) {
+      native_reconciliation_telemetry_.manager_wait.observe(td::Time::now() - manager_wait_started);
+    }
     if (state_result.is_error()) {
       shard_complete = false;
       if (first_error.is_ok()) {
@@ -3024,9 +3046,23 @@ td::actor::Task<> ExtMessagePool::reconcile_native_snapshot(td::Ref<MasterchainS
                                      block::tlb::aug_ShardAccounts};
     for (const auto &address : addresses) {
       ++native_reconciliation_account_lookups_;
+      ++native_reconciliation_telemetry_.account_lookups;
       block::Account account;
+      const double lookup_started = native_reconciliation_profile_enabled_ ? td::Time::now() : 0;
       auto shard_account = accounts.lookup(address.second);
-      if (!account.unpack(shard_account, state_info.gen_utime, false)) {
+      if (native_reconciliation_profile_enabled_) {
+        native_reconciliation_telemetry_.lookup.observe(td::Time::now() - lookup_started);
+      }
+      if (shard_account.is_null()) {
+        ++native_reconciliation_telemetry_.account_empty;
+      }
+      const double unpack_started = native_reconciliation_profile_enabled_ ? td::Time::now() : 0;
+      const bool unpacked = account.unpack(shard_account, state_info.gen_utime, false);
+      if (native_reconciliation_profile_enabled_) {
+        native_reconciliation_telemetry_.unpack.observe(td::Time::now() - unpack_started);
+      }
+      if (!unpacked) {
+        ++native_reconciliation_telemetry_.account_unpack_failures;
         shard_complete = false;
         if (first_error.is_ok()) {
           first_error = td::Status::Error("cannot unpack tracked native account from applied shard state");
@@ -3035,6 +3071,7 @@ td::actor::Task<> ExtMessagePool::reconcile_native_snapshot(td::Ref<MasterchainS
       }
       account.block_lt = state_info.gen_lt;
       if (account.status != block::Account::acc_uninit || !account.is_native) {
+        ++native_reconciliation_telemetry_.account_kind_failures;
         shard_complete = false;
         if (first_error.is_ok()) {
           first_error = td::Status::Error("tracked native source is no longer a balance-only account");
@@ -3043,14 +3080,15 @@ td::actor::Task<> ExtMessagePool::reconcile_native_snapshot(td::Ref<MasterchainS
       }
       auto balance = account.native_balance_uint64();
       if (!balance) {
+        ++native_reconciliation_telemetry_.account_balance_failures;
         shard_complete = false;
         if (first_error.is_ok()) {
           first_error = td::Status::Error("tracked native source balance is not uint64 grams");
         }
         continue;
       }
-      auto applied = apply_canonical_native_account_state(address, account.native_nonce, balance.value(),
-                                                          state_info.gen_utime, state_info.gen_lt);
+      auto applied = apply_reconciled_native_account_state(address, account.native_nonce, balance.value(),
+                                                           state_info.gen_utime, state_info.gen_lt);
       if (applied.is_error()) {
         shard_complete = false;
         if (first_error.is_ok()) {
@@ -3067,7 +3105,11 @@ td::actor::Task<> ExtMessagePool::reconcile_native_snapshot(td::Ref<MasterchainS
     }
   }
   if (!changed_sources.empty()) {
+    const double wake_started = native_reconciliation_profile_enabled_ ? td::Time::now() : 0;
     wake_native_callbacks(&changed_sources);
+    if (native_reconciliation_profile_enabled_) {
+      native_reconciliation_telemetry_.wake.observe(td::Time::now() - wake_started);
+    }
   }
   if (first_error.is_error()) {
     co_return std::move(first_error);
@@ -3198,13 +3240,53 @@ td::uint64 ExtMessagePool::prune_expired_native_suffix(const NativeAddress &addr
   return pruned;
 }
 
+td::Result<bool> ExtMessagePool::apply_reconciled_native_account_state(const NativeAddress &address,
+                                                                      td::uint64 native_nonce,
+                                                                      td::uint64 balance, UnixTime utime,
+                                                                      LogicalTime lt) {
+  // Admission also applies canonical account observations, but must not enter
+  // the counters used to attribute the applied-state reconciliation walk.
+  const double started = native_reconciliation_profile_enabled_ ? td::Time::now() : 0;
+  auto result = apply_canonical_native_account_state(address, native_nonce, balance, utime, lt,
+                                                    &native_reconciliation_telemetry_);
+  if (native_reconciliation_profile_enabled_) {
+    native_reconciliation_telemetry_.apply.observe(td::Time::now() - started);
+  }
+  return result;
+}
+
 td::Result<bool> ExtMessagePool::apply_canonical_native_account_state(const NativeAddress &address,
                                                                        td::uint64 native_nonce,
                                                                        td::uint64 balance, UnixTime utime,
-                                                                       LogicalTime lt) {
+                                                                       LogicalTime lt,
+                                                                       NativeReconciliationTelemetry *telemetry) {
   auto &watermark = native_nonce_watermarks_[address];
   const auto previous_nonce = watermark.observed_next_nonce;
   const auto previous_revision = watermark.revision;
+  if (telemetry) {
+    ++telemetry->apply_calls;
+    if (watermark.observed_balance && lt < watermark.observed_lt) {
+      ++telemetry->apply_errors;
+      ++telemetry->apply_stale_lt;
+    } else {
+      // These exclusive outcomes describe observed account facts. An unchanged
+      // account can still expire or rebase pending reservations below.
+      if (!watermark.observed_balance) {
+        ++telemetry->apply_first_observation;
+      } else {
+        const auto previous_balance = watermark.observed_balance.value();
+        if (native_nonce > previous_nonce) {
+          ++telemetry->apply_nonce_advanced;
+        } else if (balance != previous_balance) {
+          ++telemetry->apply_balance_only_changed;
+        } else {
+          ++telemetry->apply_unchanged;
+        }
+        telemetry->apply_balance_increased += balance > previous_balance;
+        telemetry->apply_balance_decreased += balance < previous_balance;
+      }
+    }
+  }
   if (!watermark.observe_account_state(native_nonce, balance, lt)) {
     return td::Status::Error(ErrorCode::notready,
                              "native account state predates the latest observed canonical state");
@@ -3215,6 +3297,9 @@ td::Result<bool> ExtMessagePool::apply_canonical_native_account_state(const Nati
   NativeMessageProcessResult processed;
   auto account_it = native_accounts_.find(address);
   if (account_it != native_accounts_.end()) {
+    if (telemetry) {
+      telemetry->pending_reservations_before_apply_sum += account_it->second.messages.size();
+    }
     processed = account_it->second.process_messages(canonical_nonce, utime);
   }
   auto purged = erase_processed_native_messages(std::move(processed));
@@ -3235,6 +3320,9 @@ td::Result<bool> ExtMessagePool::apply_canonical_native_account_state(const Nati
   if (account_it != native_accounts_.end()) {
     td::uint64 prefix_amount = 0;
     for (auto &[nonce, message] : account_it->second.messages) {
+      if (telemetry) {
+        ++telemetry->reservation_prefix_entries;
+      }
       auto required = message.required_amount();
       if (tail_reason == TailReason::none && !message.committed &&
           message.account_revision != watermark.revision) {
@@ -3321,7 +3409,59 @@ td::Result<bool> ExtMessagePool::apply_canonical_native_account_state(const Nati
   if (canonical_nonce > previous_nonce) {
     ++native_reconciliation_sources_advanced_;
   }
-  return watermark.revision != previous_revision || purged != 0 || rebased != 0 || tail_pruned != 0;
+  const bool changed = watermark.revision != previous_revision || purged != 0 || rebased != 0 || tail_pruned != 0;
+  if (telemetry) {
+    telemetry->messages_purged += purged;
+    telemetry->reservation_rebases += rebased;
+    telemetry->tail_prunes += tail_pruned;
+    telemetry->apply_effects += changed;
+  }
+  return changed;
+}
+
+std::string ExtMessagePool::native_reconciliation_telemetry_string() const {
+  td::StringBuilder out;
+  auto emit = [&](const char *name, auto value) { out << ' ' << name << ':' << value; };
+  const auto &t = native_reconciliation_telemetry_;
+  emit("profile_enabled", native_reconciliation_profile_enabled_ ? 1 : 0);
+  emit("snapshot_finishes", t.snapshot_finishes);
+  emit("snapshot_errors", t.snapshot_errors);
+  emit("register_source_visits", t.register_source_visits);
+  emit("register_tracked_visits", t.register_tracked_visits);
+  emit("group_source_visits", t.group_source_visits);
+  emit("group_shards", t.group_shards);
+  emit("account_lookups", t.account_lookups);
+  emit("account_empty", t.account_empty);
+  emit("account_unpack_failures", t.account_unpack_failures);
+  emit("account_kind_failures", t.account_kind_failures);
+  emit("account_balance_failures", t.account_balance_failures);
+  emit("apply_calls", t.apply_calls);
+  emit("apply_errors", t.apply_errors);
+  emit("apply_stale_lt", t.apply_stale_lt);
+  emit("apply_first_observation", t.apply_first_observation);
+  emit("apply_nonce_advanced", t.apply_nonce_advanced);
+  emit("apply_balance_only_changed", t.apply_balance_only_changed);
+  emit("apply_unchanged", t.apply_unchanged);
+  emit("apply_effects", t.apply_effects);
+  emit("apply_balance_increased", t.apply_balance_increased);
+  emit("apply_balance_decreased", t.apply_balance_decreased);
+  emit("pending_reservations_before_apply_sum", t.pending_reservations_before_apply_sum);
+  emit("reservation_prefix_entries", t.reservation_prefix_entries);
+  emit("messages_purged", t.messages_purged);
+  emit("reservation_rebases", t.reservation_rebases);
+  emit("tail_prunes", t.tail_prunes);
+  auto timing = [&](const char *name, const NativeAdmissionWallTime &value) {
+    out << ' ' << name << "_samples:" << value.samples << ' ' << name << "_sum_s:" << value.sum_seconds
+        << ' ' << name << "_max_s:" << value.max_seconds;
+  };
+  timing("registration", t.registration);
+  timing("grouping", t.grouping);
+  timing("manager_wait", t.manager_wait);
+  timing("lookup", t.lookup);
+  timing("unpack", t.unpack);
+  timing("apply", t.apply);
+  timing("wake", t.wake);
+  return out.as_cslice().str();
 }
 
 void ExtMessagePool::erase_external_messages(std::vector<ExtMessage::Hash> to_delete) {
@@ -3594,6 +3734,7 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                 << native_exact_retry_preserved_stale_revision_
                 << " last_mc_seqno:" << native_reconciliation_last_mc_seqno_
                 << " last_shard_seqno:" << native_reconciliation_last_shard_seqno_);
+  vec.emplace_back("total.ext_msg_native_reconciliation_diagnostics", native_reconciliation_telemetry_string());
   vec.emplace_back(
       "total.ext_msg_native_scheduler",
       PSTRING() << "installs:" << native_queue_counters_.installs

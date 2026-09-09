@@ -672,6 +672,33 @@ class ExtMessagePoolTestAccess {
     return result.ok();
   }
 
+  static td::Result<bool> reconcile_account_with_telemetry(ExtMessagePool &pool, NativeAddress source,
+                                                          td::uint64 native_nonce, td::uint64 balance,
+                                                          UnixTime utime, LogicalTime lt) {
+    return pool.apply_reconciled_native_account_state(source, native_nonce, balance, utime, lt);
+  }
+
+  static const NativeReconciliationTelemetry &reconciliation_telemetry(const ExtMessagePool &pool) {
+    return pool.native_reconciliation_telemetry_;
+  }
+
+  static td::uint64 historical_sources_advanced(const ExtMessagePool &pool) {
+    return pool.native_reconciliation_sources_advanced_;
+  }
+
+  static void set_reconciliation_profile(ExtMessagePool &pool, bool enabled) {
+    pool.native_reconciliation_profile_enabled_ = enabled;
+  }
+
+  static std::string reconciliation_diagnostics(ExtMessagePool &pool) {
+    for (auto &[key, value] : pool.prepare_stats()) {
+      if (key == "total.ext_msg_native_reconciliation_diagnostics") {
+        return value;
+      }
+    }
+    return {};
+  }
+
   static bool callback_has_delivery(const ExtMessagePool &pool, const ExtMessage::Hash &hash) {
     return pool.callbacks_.size() == 1 && pool.callbacks_.front()->delivered_native.contains(hash) &&
            pool.callbacks_.front()->pending_native.size() == 1 &&
@@ -1929,6 +1956,113 @@ TEST(ExtMessagePoolScheduler, ExactRetryRequiresMatchingCommittedReservationHash
   ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, hash));
   ASSERT_EQ(ExtMessagePoolTestAccess::reservation_nonces(pool, source), (std::vector<td::uint64>{3}));
   ASSERT_EQ(ExtMessagePoolTestAccess::exact_retry_preserved_stale_revision(pool), 0u);
+}
+
+TEST(ExtMessagePoolScheduler, ReconciliationTelemetrySeparatesCanonicalFactsFromAdmissionProgress) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  const auto source = ExtMessagePoolTestAccess::source(91);
+  auto apply = [&](td::uint64 nonce, td::uint64 balance, LogicalTime lt) {
+    return ExtMessagePoolTestAccess::reconcile_account_with_telemetry(pool, source, nonce, balance, 100, lt);
+  };
+  ASSERT_TRUE(apply(0, 100, 10).ok());
+  ASSERT_TRUE(!apply(0, 100, 20).ok());
+  ASSERT_TRUE(apply(1, 90, 30).ok());
+  ASSERT_TRUE(apply(1, 110, 40).ok());
+  const auto revision = ExtMessagePoolTestAccess::watermark_revision(pool, source);
+  ASSERT_TRUE(apply(1, 0, 35).is_error());
+  ASSERT_EQ(ExtMessagePoolTestAccess::watermark_revision(pool, source), revision);
+  // A lower input nonce never moves the watermark backwards. With unchanged
+  // balance the effective observed account facts remain unchanged.
+  ASSERT_TRUE(!apply(0, 110, 50).ok());
+  ASSERT_EQ(ExtMessagePoolTestAccess::first_unconsumed_nonce(pool, source).value(), 1u);
+
+  const auto &t = ExtMessagePoolTestAccess::reconciliation_telemetry(pool);
+  ASSERT_EQ(t.apply_calls, 6u);
+  ASSERT_EQ(t.apply_first_observation, 1u);
+  ASSERT_EQ(t.apply_nonce_advanced, 1u);
+  ASSERT_EQ(t.apply_balance_only_changed, 1u);
+  ASSERT_EQ(t.apply_unchanged, 2u);
+  ASSERT_EQ(t.apply_errors, 1u);
+  ASSERT_EQ(t.apply_stale_lt, 1u);
+  ASSERT_EQ(t.apply_balance_increased, 1u);
+  ASSERT_EQ(t.apply_balance_decreased, 1u);
+  ASSERT_EQ(t.apply_effects, 3u);
+  ASSERT_EQ(t.apply.samples, 0u);
+
+  // This is the same apply entry point called by admission. Its historical
+  // progress increments must not contaminate reconciliation-only denominators.
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reconcile_account(pool, source, 2, 100, 100, 60));
+  ASSERT_EQ(ExtMessagePoolTestAccess::historical_sources_advanced(pool), 2u);
+  ASSERT_EQ(t.apply_calls, 6u);
+  ASSERT_EQ(t.apply_nonce_advanced, 1u);
+}
+
+TEST(ExtMessagePoolScheduler, ReconciliationTelemetryCountsActualPrefixWorkAndPruning) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  const auto source = ExtMessagePoolTestAccess::source(92);
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reconcile_account(pool, source, 0, 100, 100, 100));
+  auto keep = ExtMessagePoolTestAccess::add(pool, source, 0, 0, true, true, 30);
+  auto unaffordable = ExtMessagePoolTestAccess::add(pool, source, 1, 0, true, true, 20);
+  auto tail = ExtMessagePoolTestAccess::add(pool, source, 2, 0, true, true, 1);
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::reconcile_account_with_telemetry(pool, source, 0, 100, 101, 101).ok());
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reconcile_account_with_telemetry(pool, source, 0, 40, 102, 102).ok());
+  ASSERT_TRUE(ExtMessagePoolTestAccess::contains(pool, keep));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, unaffordable));
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, tail));
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reconcile_account_with_telemetry(pool, source, 1, 10, 103, 103).ok());
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reservation_nonces(pool, source).empty());
+  const auto &t = ExtMessagePoolTestAccess::reconciliation_telemetry(pool);
+  ASSERT_EQ(t.apply_calls, 3u);
+  ASSERT_EQ(t.apply_unchanged, 1u);
+  ASSERT_EQ(t.apply_balance_only_changed, 1u);
+  ASSERT_EQ(t.apply_nonce_advanced, 1u);
+  ASSERT_EQ(t.pending_reservations_before_apply_sum, 7u);
+  ASSERT_EQ(t.reservation_prefix_entries, 6u);
+  ASSERT_EQ(t.messages_purged, 1u);
+  ASSERT_EQ(t.reservation_rebases, 1u);
+  ASSERT_EQ(t.tail_prunes, 2u);
+  ASSERT_EQ(t.apply_effects, 2u);
+}
+
+TEST(ExtMessagePoolScheduler, ReconciliationUnchangedAccountCanStillExpirePendingWork) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  const auto source = ExtMessagePoolTestAccess::source(93);
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reconcile_account(pool, source, 0, 100, 100, 100));
+  auto hash = ExtMessagePoolTestAccess::add(pool, source, 0);
+  ExtMessagePoolTestAccess::set_valid_until(pool, source, 0, 101);
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reconcile_account_with_telemetry(pool, source, 0, 100, 102, 102).ok());
+  ASSERT_TRUE(!ExtMessagePoolTestAccess::contains(pool, hash));
+  const auto &t = ExtMessagePoolTestAccess::reconciliation_telemetry(pool);
+  ASSERT_EQ(t.apply_unchanged, 1u);
+  ASSERT_EQ(t.apply_effects, 1u);
+  ASSERT_EQ(t.pending_reservations_before_apply_sum, 1u);
+  ASSERT_EQ(t.reservation_prefix_entries, 0u);
+  ASSERT_EQ(t.messages_purged, 1u);
+}
+
+TEST(ExtMessagePoolScheduler, ReconciliationRegistrationAttributionAndTimingAreOptIn) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  const auto source = ExtMessagePoolTestAccess::source(94);
+  ExtMessagePoolTestAccess::add(pool, source, 0);
+  ExtMessagePoolTestAccess::add(pool, ExtMessagePoolTestAccess::source(95), 0);
+  ExtMessagePoolTestAccess::register_pending_reconciliation_targets(pool);
+  ExtMessagePoolTestAccess::register_pending_reconciliation_targets(pool);
+  const auto &t = ExtMessagePoolTestAccess::reconciliation_telemetry(pool);
+  ASSERT_EQ(t.register_source_visits, 4u);
+  ASSERT_EQ(t.register_tracked_visits, 2u);
+  ASSERT_EQ(t.registration.samples, 0u);
+
+  ExtMessagePoolTestAccess::set_reconciliation_profile(pool, true);
+  ExtMessagePoolTestAccess::register_pending_reconciliation_targets(pool);
+  ASSERT_TRUE(ExtMessagePoolTestAccess::reconcile_account_with_telemetry(pool, source, 0, 100, 100, 100).ok());
+  ASSERT_EQ(t.register_source_visits, 6u);
+  ASSERT_EQ(t.register_tracked_visits, 4u);
+  ASSERT_EQ(t.registration.samples, 1u);
+  ASSERT_EQ(t.apply.samples, 1u);
+  const auto stats = ExtMessagePoolTestAccess::reconciliation_diagnostics(pool);
+  ASSERT_TRUE(stats.find(" profile_enabled:1") != std::string::npos);
+  ASSERT_TRUE(stats.find(" register_source_visits:6") != std::string::npos);
+  ASSERT_TRUE(stats.find(" apply_samples:1") != std::string::npos);
 }
 
 TEST(ExtMessagePoolScheduler, CanonicalBalancePrunesFirstUnaffordableReservationAndTail) {

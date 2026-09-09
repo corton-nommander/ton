@@ -33,6 +33,7 @@
 #include "external-message.hpp"
 #include "native-admission-telemetry.h"
 #include "native-admission-config-cache.h"
+#include "native-reconciliation-telemetry.h"
 
 namespace ton::validator {
 
@@ -340,6 +341,8 @@ class ExtMessagePool : public td::actor::Actor {
   td::uint64 native_batch_max_mc_shard_utime_lag_s_{0};
   td::uint64 native_batch_watermark_lag_rejections_{0}, native_batch_max_watermark_nonce_lag_{0};
   td::uint64 native_reconciliation_tracked_candidates_{0}, native_reconciliation_tracked_messages_{0};
+  bool native_reconciliation_profile_enabled_{false};
+  NativeReconciliationTelemetry native_reconciliation_telemetry_;
   td::uint64 native_reconciliation_runs_{0}, native_reconciliation_state_fetches_{0};
   td::uint64 native_reconciliation_account_lookups_{0}, native_reconciliation_sources_advanced_{0};
   td::uint64 native_reconciliation_messages_purged_{0}, native_reconciliation_failures_{0};
@@ -896,7 +899,11 @@ class ExtMessagePool : public td::actor::Actor {
   bool should_skip_native_reconciliation_state(const NativeShardTopFingerprint &fingerprint);
   void record_successful_native_reconciliation_state(NativeShardTopFingerprint fingerprint);
   td::Result<bool> apply_canonical_native_account_state(const NativeAddress &address, td::uint64 native_nonce,
-                                                        td::uint64 balance, UnixTime utime, LogicalTime lt);
+                                                        td::uint64 balance, UnixTime utime, LogicalTime lt,
+                                                        NativeReconciliationTelemetry *telemetry = nullptr);
+  td::Result<bool> apply_reconciled_native_account_state(const NativeAddress &address, td::uint64 native_nonce,
+                                                         td::uint64 balance, UnixTime utime, LogicalTime lt);
+  std::string native_reconciliation_telemetry_string() const;
   td::uint64 erase_processed_native_messages(NativeMessageProcessResult processed);
   td::uint64 prune_expired_native_suffix(const NativeAddress &address, td::uint64 from_nonce,
                                          td::Slice reason);

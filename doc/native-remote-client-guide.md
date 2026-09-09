@@ -459,6 +459,26 @@ Source references: `lite-client/native-load-generator.cpp:3725` (outputs), `cryp
 
 ## Admission profiling after the eight-lane plateau
 
+The [September 9 admission plan](native-bottleneck-action-plan-2026-09-09.md) is
+approved and under local evaluation. `TON_NATIVE_ADMISSION_SHARD_SHARING=0|1`
+controls bounded sharing of exact-state admission requests in candidate builds;
+it defaults to 0 until measured promotion. The companion Compose configuration
+also reserves `TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0|1` for the subsequent
+bounded-refresh experiment; exposing that environment variable alone does not
+establish that a running image implements it. Verify the candidate revision and
+its diagnostic counters before claiming either feature is active. A `master`
+image does not acquire local changes without a successful publication.
+
+Updated profiler output includes shard-fetch/cache-fill and canonical
+reconciliation deltas. Existing recordings without the optional reconciliation
+group remain readable. Current gauges and sequence numbers are excluded from
+counter subtraction. Candidate `external_delivery_*` fields distinguish actual
+queue awaits from nonblocking probes; see
+[delivery diagnostic semantics](native-collator-delivery-diagnostics.md). Existing
+Session Stats revision `97c4f771` can ingest these fields without a dashboard update.
+Keep the existing eight-lane production database and prepare test images once
+before an A/B comparison; local evaluation is not production promotion.
+
 The admission profiling update adds exact-state configuration caching, stage and retry-cause counters,
 and block-signature executor measurements. MyLocalTonDocker's
 `benchmark/remote/admission-test-guide.md` contains the full A/B procedure and parameter table.

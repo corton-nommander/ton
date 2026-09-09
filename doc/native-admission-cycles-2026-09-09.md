@@ -196,3 +196,46 @@ These candidate timings are diagnostic wall times, not canonical CPU attribution
 The next arm changes only snapshot refresh to one, with the same restart policy
 and prebuilt images. Compact control evidence is saved in
 `doc/benchmarks/results/native-admission-20260909-05-refresh-off.json`.
+
+## Refresh decision
+
+| Same-image arm | Refresh | Offered/admitted TPS | Canonical TPS | Proof/drain and strict cleanup |
+| --- | --- | ---: | ---: | --- |
+| `05-refresh-off` | Off | 58,661.49 | 58,962.64 | Pass |
+| `06-refresh-on` | One bounded retry | 57,836.21 | 57,904.05 | Pass |
+
+Refresh remains default-off. The candidate observed **1.80% lower canonical TPS**;
+this single pair establishes no repeatable gain or definite small regression.
+Neither candidate produced a promising TPS screen requiring promotion repeats.
+All raw results are retained. No independent five-percent offered overdrive was
+present, so these are completed throughput observations, not capacity limits.
+
+Whole-run not-ready client responses fell 584,332 → 2,490 (**99.57% fewer**).
+The matched interior rejection fraction fell 16.5746% → 0.0683% of completed
+physical inputs. All three later account-change rejection counters stayed zero;
+canonical-watermark lag contributed 4/10 responses in the interior off/on windows.
+Thus the reduction was not displaced into those later rejection categories.
+Both runs had zero final backlog, hash conflicts, fatal follower errors and
+retry exhaustion; transient timeouts were 113/114.
+
+The additional pass still incurs work: masterchain pins per completed batch
+increased 1.000 → 1.162, shard-state requests 3.408 → 3.915 and manager asks
+0.287 → 0.374. Mean admission residence increased 101.67 → 113.05 ms. Verification
+wall time per completed batch increased 85.87 → 92.36 ms even though its mean per
+pass fell; refresh creates extra passes, including signature-reused ones. These
+are overlapping wall-stage observations, not exclusive CPU or causal allocation.
+
+The candidate recorded 28,516 refresh attempts, 28,394 successful completed
+batches, 112 exhausted refreshes, 24 deadline events and 341,383 signature-evidence
+reuses in its interior window. These populations overlap; refresh accepted-input
+counts include exact-hash idempotence and are not new canonical transfers. Sample
+boundaries also carry active batches. The full counter definitions and matched
+normalizations are retained in
+`doc/benchmarks/results/native-admission-20260909-refresh-comparison.json`.
+
+Mean sampled validator/client CPU was 10.24/0.88 off and 10.17/0.86 on. Session
+Stats varied 0.69 → 1.02 CPU equivalents; unrelated desktop work and evolving chain
+state remain sources of variation. The implementation is available for explicit
+retry-focused trials, but lower retry counts alone do not justify default promotion.
+The next capture profiles the refresh-off control under a separate short load;
+its throughput is excluded from comparison to these unprofiled 600-second arms.

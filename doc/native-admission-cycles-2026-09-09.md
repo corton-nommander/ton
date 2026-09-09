@@ -267,3 +267,35 @@ signature verification; all other broadcast checks remain. Correctness tests and
 one frozen image will precede independent 600-second screens. Reconciliation
 yields, another native signature cache and thread-pool changes are deferred while
 these stronger measured opportunities are evaluated.
+
+## Signing candidate control
+
+Both profile-led implementations passed focused checks: six prepared-key tests
+and eight local-broadcast tests, plus independent source review. Commits
+`d921af3d` and `be235e03` isolate the two changes. The local receipt binds independent
+copies of the exact Ed25519 request and successful 64-byte signature; mutable
+shared buffer aliases and incoming-message identity claims cannot authorize reuse.
+
+The signing comparison uses frozen revision
+`be235e037826a36e4f57125d15c73aa0513973af`, with genesis image
+`sha256:d0067d546b6bb2c9aeab62a29e30b0264dc97cd1a5a2fe02f947ac102f057758`
+and generator image
+`sha256:380a0cccbca243c2ba1dc0f14ed0f9b5a6df3fafaf45ead06b596e2195f3f842`.
+Sharing/refresh remain off, configuration caching and reconciliation timing on.
+The established four-lane, 10-connection, 600-second, 20-ms workload is unchanged.
+Both signing candidates remain default-off until evaluated.
+
+`08-cpu-control` passed proof/drain, cleanup and strict identities at **57,899.38
+canonical logical TPS**, with 57,948.51 offered/admitted TPS. Final backlog,
+canonical conflicts, fatal follower errors and exhausted retries were zero;
+whole-run transient timeouts were 88 and not-ready responses 609,501. Mean sampled
+CPU equivalents were validator 9.98, client 0.94 and Session Stats 0.88. This is a
+same-image baseline for the signing experiments, not a cross-version regression
+measurement or independently overdriven capacity claim.
+
+Before/after overlay captures occur outside the measured window. Thirteen matched
+endpoints recorded an observable lower bound of 6,119,652 cryptographic checks and
+zero receipt hits with reuse disabled. Ten overlays retired and ten appeared;
+the analyzer therefore does not claim complete interval totals. New-generation
+lifetime counters and coverage are saved separately in the compact control result.
+The next arm enables only prepared-key signing.

@@ -167,5 +167,27 @@ the control; it is not yet a repeatable promotion result. Genesis is explicitly
 recreated before the same-flag candidate repeat, preserving the database and
 all frozen images.
 
+## Candidate repeat
+
+`03-metadata-repeat` passed all 59 arm checks and the full controller/wrapper at
+**62,537.54 canonical TPS**, with 62,524.27 offered/admitted TPS. Its 37,459,984
+canonical transfers occupy 599 fully contained block-time seconds. Both cohorts
+fully drained, final catch-up completed, and hash/follower errors and exhausted
+retries remained zero. The same-mode comparison finds identical configuration,
+images and recorded resources to candidate 02.
+
+Interior sampled CPU equivalents were validator **8.7190**, generator **0.7640**
+and Session Stats **0.9016**. Whole-run counters include 89 timeouts and 484,260
+not-ready responses. Native packing averaged 13,499.09 transfers/block; RTT
+p50/p95/p99 buckets were 200/500/1,000 ms. Sampled canonical backlog peaked at
+1,396,464 and finished at zero. Offered/canonical ratio was 0.99979, so there is
+still no independently overdriven capacity claim. Canonical block-time buckets
+and offered cohorts have different boundaries; a small canonical/offered
+rate difference does not imply unproved or duplicated transfers.
+
+The [repeat record](benchmarks/results/native-candidate-metadata-20260909-03-metadata-repeat.json)
+is saved. Both candidate runs exceed control 01; the final metadata-off control
+is still required before applying the declared desktop selection screen.
+
 Raw artifacts are retained under
 `build/benchmarks/candidate-metadata-cycles-20260909/`.

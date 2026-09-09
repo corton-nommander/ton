@@ -461,9 +461,14 @@ Source references: `lite-client/native-load-generator.cpp:3725` (outputs), `cryp
 
 The [September 9 admission plan](native-bottleneck-action-plan-2026-09-09.md) is
 approved and under local evaluation. The [current experiment report](native-admission-cycles-2026-09-09.md)
-records the fixed images and completed measurements. Request sharing remains
-default-off: its first valid comparison reduced manager requests by 94.7% but
-observed 59,219 canonical transfers/s versus the 59,834 control.
+records the fixed images and completed measurements. Both admission candidates
+remain default-off. Request sharing reduced manager requests by 94.7% but observed
+59,219 canonical transfers/s versus its 59,834 control. Separately, one bounded
+snapshot refresh reduced whole-run not-ready responses by 99.57%, while observing
+57,904 canonical transfers/s versus its same-image 58,963 control. Both pairs
+completed proof/drain and strict image checks. These are single-pair desktop
+observations with no demonstrated TPS gain or independent offered-load margin;
+they do not justify changing A's production defaults.
 
 Local candidate flags are:
 

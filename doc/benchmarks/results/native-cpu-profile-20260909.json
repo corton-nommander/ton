@@ -1,0 +1,192 @@
+{
+  "purpose": "Separate diagnostic only; excluded from TPS comparisons",
+  "capture_valid": true,
+  "original_capture_exit_code": 0,
+  "original_report_exit_code": 141,
+  "original_report_failure": "addr2line configuration failed; report recovered offline with --no-inline; no recapture",
+  "recovered_reports_valid": true,
+  "samples": 53293,
+  "lost_samples": 0,
+  "sampled_user_cpu_seconds": 549.412352454,
+  "sample_span_seconds": 60.02899800000159,
+  "unknown_leaf_percent": 9.946897341114218,
+  "thread_root_reached_percent": 75.9799598446325,
+  "short_stack_samples_le2": 1247,
+  "fork_events": 4731,
+  "exit_events": 4731,
+  "exclusive_symbols": [
+    {
+      "name": "fe_mul",
+      "period_ns": 80969069412,
+      "percent": 14.737395155086034
+    },
+    {
+      "name": "[unknown]",
+      "period_ns": 54649482678,
+      "percent": 9.946897341114218
+    },
+    {
+      "name": "fe_sq",
+      "period_ns": 39515462574,
+      "percent": 7.192314187604376
+    },
+    {
+      "name": "vm::DataCell::create(td::Slice, int, td::detail::SpanImpl<td::Ref<vm::Cell>, td::Ref<vm::Cell> const>, bool, std::function<bool (unsigned int, vm::detail::LevelMask const&, vm::CellHash&)>)",
+      "period_ns": 25329896046,
+      "percent": 4.6103615859493745
+    },
+    {
+      "name": "sha256_block_data_order_shaext",
+      "period_ns": 21195875568,
+      "percent": 3.857917550147299
+    },
+    {
+      "name": "vm::DataCell::~DataCell()",
+      "period_ns": 18216494226,
+      "percent": 3.3156324470380727
+    },
+    {
+      "name": "vm::CellSlice::prefetch_ref(unsigned int) const",
+      "period_ns": 17175257148,
+      "percent": 3.1261141238061283
+    },
+    {
+      "name": "vm::DataCell::DataCell(int, unsigned long, vm::CellTraits::SpecialType, vm::detail::LevelMask, bool, bool)",
+      "period_ns": 12268040820,
+      "percent": 2.2329386598615204
+    }
+  ],
+  "overlapping_component_percent": {
+    "ed25519_verify": 19.858142720432326,
+    "overlay_signature_check": 14.273919651736627,
+    "state_resolver": 12.457546019177002,
+    "candidate_native_message_decode": 11.322312498827237,
+    "overlay_broadcast_fec": 9.950650179198018,
+    "pool_actor_excluding_signature_actors": 9.333308314412776,
+    "keyring_sign": 9.18694762914454,
+    "ed25519_sign": 9.036834105792506,
+    "boc_deserialize": 8.198074794063011,
+    "native_admission_signature_verifier": 6.331037847372075,
+    "collator": 5.87694443923217,
+    "cell_database": 4.587844557446569,
+    "validate_query": 4.263224063197793,
+    "rocksdb": 3.4788809036834105,
+    "pool_reconcile_snapshot": 2.3811757641716547,
+    "litequery": 0.9175689114893137,
+    "pool_register_targets": 0.25894582778226033,
+    "native_block_signature_helper": 0.015011352335203497,
+    "thread_create_or_join": 0.0018764190419004372
+  },
+  "disjoint_crypto_percent": {
+    "overlay_peer_verify": 14.183851537725404,
+    "keyring_sign": 8.980541534535492,
+    "native_admission_verify": 5.571088135402398,
+    "other_verify": 0.10320304730452405,
+    "other_sign": 0.05629257125701312
+  },
+  "crypto_subpaths_percent": {
+    "local_fec_signature_recheck": 8.762876925675041,
+    "local_simple_signature_recheck": 5.511042726061584,
+    "signing_key_import": 4.533428405231456,
+    "signing_operation": 4.407708329424127
+  },
+  "resource_context": {
+    "scope": "Separate profiled diagnostic; enclosing snapshots, not TPS comparison",
+    "snapshot_duration_s": 62.86306971600425,
+    "record_duration_s": 60,
+    "cpu_delta": {
+      "usage_usec": 638045159,
+      "user_usec": 587155131,
+      "system_usec": 50890028,
+      "nr_periods": 628,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "mean_genesis_cpu_cores": 10.149761408128638,
+    "mean_user_cpu_cores": 9.340223658382955,
+    "mean_system_cpu_cores": 0.8095377497456819,
+    "cpu_quota_cores": 16,
+    "proc_io_delta": {
+      "rchar": 18421337061,
+      "wchar": 3468120263,
+      "syscr": 887642,
+      "syscw": 238082,
+      "read_bytes": 0,
+      "write_bytes": 3519430656,
+      "cancelled_write_bytes": 77824
+    },
+    "cgroup_io_delta": {
+      "rbytes": 0,
+      "wbytes": 3518816256,
+      "rios": 0,
+      "wios": 20157,
+      "dbytes": 0,
+      "dios": 0
+    },
+    "cgroup_storage_write_MB_per_s": 55.975889690034464,
+    "cgroup_storage_read_MB_per_s": 0.0,
+    "cgroup_storage_writes_per_s": 320.64931113073294,
+    "memory_event_deltas": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0
+    },
+    "memory_current_before_bytes": 24118038528,
+    "memory_current_after_bytes": 26417381376,
+    "whole_vm_pressure": {
+      "cpu": {
+        "some": {
+          "delta_usec": 1089823,
+          "window_fraction": 0.01733645851091079
+        },
+        "full": {
+          "delta_usec": 0,
+          "window_fraction": 0.0
+        }
+      },
+      "io": {
+        "some": {
+          "delta_usec": 2353282,
+          "window_fraction": 0.037435047487044376
+        },
+        "full": {
+          "delta_usec": 2094856,
+          "window_fraction": 0.03332411238369215
+        }
+      },
+      "memory": {
+        "some": {
+          "delta_usec": 0,
+          "window_fraction": 0.0
+        },
+        "full": {
+          "delta_usec": 0,
+          "window_fraction": 0.0
+        }
+      }
+    }
+  },
+  "interpretation": [
+    "Locally signed overlay broadcasts are subsequently reverified; 14.274% inclusive sampled CPU is attributed to the local callback verification path.",
+    "Repeated private-key construction/public derivation consumes 4.533% sampled user CPU; prepared-key reuse is a bounded candidate.",
+    "Candidate-native-message decoding is 11.322%; investigate exact-identity decoded-data reuse.",
+    "The ExtMessagePool excluding signature actors accounts for 9.333% sampled CPU, about 0.85 core. Its serialized long turns can still limit latency despite spare aggregate CPU.",
+    "Reconciliation walk is 2.381% plus registration 0.259%; bounded yields target latency, not a large direct CPU reduction.",
+    "Signature helper thread churn is real, but 97 Hz sampling underrepresents short-lived threads; no reliable TPS gain follows from the tiny sampled helper share."
+  ],
+  "limits": [
+    "Groups overlap and must not be added together.",
+    "Missing/truncated callers undercount context attribution; exclusive instruction pointers remain useful.",
+    "97 Hz per-task sampling can underrepresent very short-lived signature helper threads.",
+    "No kernel stacks were sampled; cgroup system CPU is separate.",
+    "Shared groups overlap and no percentage is a measured TPS improvement.",
+    "Snapshot CPU/I/O window encloses capture (62.863s versus approximately60s), and system CPU was not sampled.",
+    "Whole-VM pressure includes other containers and the profiler.",
+    "About9.95% of instruction-pointer samples lack a named leaf, mostly stripped shared libraries; partial callchains undercount caller attribution."
+  ]
+}

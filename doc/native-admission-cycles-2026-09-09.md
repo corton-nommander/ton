@@ -239,3 +239,31 @@ state remain sources of variation. The implementation is available for explicit
 retry-focused trials, but lower retry counts alone do not justify default promotion.
 The next capture profiles the refresh-off control under a separate short load;
 its throughput is excluded from comparison to these unprofiled 600-second arms.
+
+## Separate CPU profile and next isolated candidates
+
+The separate `07-cpu-diagnostic` ran 180 measured seconds with the same frozen
+refresh-off runtime. Proof/drain, cleanup and image checks passed, but its TPS
+is excluded from comparisons because the interval contains CPU profiling. The
+60-second raw capture succeeded with stable process identity and zero lost
+samples. Initial source-line reporting failed; offline symbol-only regeneration
+succeeded without another capture. Original failure and recovery provenance are
+retained. See [the CPU report](native-cpu-profile-2026-09-09.md).
+
+The strongest new opportunities are **14.27% sampled user CPU in verification
+immediately following local broadcast signing** and **4.53% in repeated keyring
+private-key import/public-key derivation**. Actual signing separately accounts
+for 4.41%; native admission verification is 5.57% and already uses a positive
+signature cache. Candidate metadata decoding accounts for 11.32%, ahead of the
+2.38% reconciliation walk. Context percentages overlap and are not TPS forecasts.
+There was no validator CPU-quota throttling or memory pressure. Disk write volume
+alone does not establish I/O saturation.
+
+The next bounded step-4 experiments are independent, default-off flags:
+`TON_KEYRING_PREPARED_SIGNING` reuses an immutable prepared key inside its keyring
+owner; `TON_OVERLAY_LOCAL_SIGNATURE_REUSE` reuses cryptographic evidence bound to
+the exact successful local signing request/result. Incoming messages retain
+signature verification; all other broadcast checks remain. Correctness tests and
+one frozen image will precede independent 600-second screens. Reconciliation
+yields, another native signature cache and thread-pool changes are deferred while
+these stronger measured opportunities are evaluated.

@@ -5505,17 +5505,25 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
               // Sample the epoch at actual wait entry: it can change while
               // this actor evaluates the refill policy. Do not use this
               // telemetry-only sample to alter the chosen deadline.
-              const bool pending_at_wait = ext_msg_queue_state_ && ext_msg_queue_state_->producer_pending();
-              td::Timer delivery_wait_timer;
+              const auto producer_at_wait = ext_msg_queue_state_ ? ext_msg_queue_state_->producer_progress()
+                                                                 : ExtMsgQueueState::ProducerProgress{};
+              const double delivery_wait_started_at = td::Time::now();
               maybe = co_await pop_external_message_batch(batch_capacity - batch.size(), true, wait_until).wrap();
+              const double delivery_wait_finished_at = td::Time::now();
               using DeliveryOutcome = CollationStats::NativeDeliveryStats::Outcome;
               const auto delivery_outcome =
                   maybe.is_error()
                       ? (maybe.error().code() == td::actor::AWAIT_TIMEOUT_CODE ? DeliveryOutcome::timeout
                                                                              : DeliveryOutcome::error)
                       : (maybe.ok().messages.empty() ? DeliveryOutcome::marker : DeliveryOutcome::work);
-              stats_.native_delivery.record_wait(wait_kind, pending_at_wait, delivery_wait_timer.elapsed(),
-                                                 delivery_outcome);
+              stats_.native_delivery.record_wait(wait_kind, producer_at_wait.pending,
+                                                 delivery_wait_finished_at - delivery_wait_started_at,
+                                                 delivery_outcome, producer_at_wait.epoch != 0);
+              if (wait_kind == ExternalWaitKind::native_first_work && producer_at_wait.epoch == 0) {
+                stats_.native_delivery.record_uninstalled_wait_overlap(
+                    delivery_wait_started_at, delivery_wait_finished_at,
+                    ext_msg_queue_state_ ? ext_msg_queue_state_->first_producer_epoch_at() : 0.0);
+              }
             }
           }
         } else if (params_.wait_externals_until || saw_item) {

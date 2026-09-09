@@ -18,6 +18,7 @@
 */
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <memory>
@@ -29,6 +30,7 @@
 #include "crypto/vm/db/DynamicBagOfCellsDb.h"
 #include "impl/out-msg-queue-proof.hpp"
 #include "td/actor/BackpressureQueue.h"
+#include "td/utils/Time.h"
 #include "validator-session/validator-session-types.h"
 #include "validator/validator.h"
 
@@ -191,9 +193,87 @@ struct CollationStats {
       double seconds{0};
       td::uint64 calls{0}, work_wakes{0};
     };
+    struct InstallOverlap {
+      double pre_epoch_seconds{0}, post_epoch_seconds{0};
+      td::uint64 calls{0}, epoch_unobserved{0};
+    };
 
-    void record_wait(ExternalWaitStats::Kind kind, bool producer_pending, double seconds, Outcome outcome) {
-      auto& bucket = waits_[wait_index(kind)][producer_pending ? 1 : 0];
+    void record_wait(ExternalWaitStats::Kind kind, bool producer_pending, double seconds, Outcome outcome,
+                     bool producer_installed = true) {
+      CHECK(producer_installed || !producer_pending);
+      record_bucket(waits_[wait_index(kind)][producer_pending ? 1 : 0], seconds, outcome);
+      if (kind == ExternalWaitStats::Kind::native_first_work && !producer_pending) {
+        // These two subsets reconcile to the existing no_producer bucket;
+        // they do not add further wall time to that bucket or legacy totals.
+        record_bucket(first_work_idle_[producer_installed ? 1 : 0], seconds, outcome);
+      }
+    }
+
+    void record_probe(bool published_before, double seconds, bool returned_work) {
+      auto& bucket = probes_[published_before ? 1 : 0];
+      bucket.seconds += seconds;
+      ++bucket.calls;
+      bucket.work_wakes += returned_work;
+    }
+
+    void record_uninstalled_wait_overlap(double started_at, double finished_at, double first_epoch_at) {
+      CHECK(finished_at >= started_at);
+      // The first epoch can open between the entry sample and timer start,
+      // or after the await returns but before this observation. Clamp both
+      // races to the actual measured interval. An unobserved installation
+      // charges the entire bounded await to the pre-epoch side.
+      const auto split = first_epoch_at > 0 ? std::clamp(first_epoch_at, started_at, finished_at) : finished_at;
+      install_overlap_.pre_epoch_seconds += split - started_at;
+      install_overlap_.post_epoch_seconds += finished_at - split;
+      ++install_overlap_.calls;
+      install_overlap_.epoch_unobserved += first_epoch_at <= 0;
+    }
+
+    const WaitBucket& wait(ExternalWaitStats::Kind kind, bool producer_pending) const {
+      return waits_[wait_index(kind)][producer_pending ? 1 : 0];
+    }
+    const ProbeBucket& probe(bool published_before) const {
+      return probes_[published_before ? 1 : 0];
+    }
+    const WaitBucket& first_work_no_producer(bool producer_installed) const {
+      return first_work_idle_[producer_installed ? 1 : 0];
+    }
+    const InstallOverlap& install_overlap() const {
+      return install_overlap_;
+    }
+
+    std::string to_str() const {
+      std::string result;
+      constexpr std::array<const char*, 3> kinds{"first_work", "fragment_refill", "post_commit_idle"};
+      constexpr std::array<const char*, 2> pending_names{"no_producer", "producer_pending"};
+      for (std::size_t i = 0; i < waits_.size(); ++i) {
+        for (std::size_t j = 0; j < waits_[i].size(); ++j) {
+          const auto& bucket = waits_[i][j];
+          const auto prefix = PSTRING() << " external_delivery_" << kinds[i] << "_" << pending_names[j];
+          append_wait_bucket(result, prefix, bucket);
+        }
+      }
+      for (std::size_t i = 0; i < first_work_idle_.size(); ++i) {
+        const auto prefix = PSTRING() << " external_delivery_first_work_no_producer_"
+                                      << (i ? "completed" : "uninstalled");
+        append_wait_bucket(result, prefix, first_work_idle_[i]);
+      }
+      constexpr auto install_prefix = " external_delivery_first_work_no_producer_uninstalled_";
+      result += PSTRING() << install_prefix << "pre_epoch_s=" << install_overlap_.pre_epoch_seconds
+                          << install_prefix << "post_epoch_s=" << install_overlap_.post_epoch_seconds
+                          << install_prefix << "split_calls=" << install_overlap_.calls
+                          << install_prefix << "epoch_unobserved=" << install_overlap_.epoch_unobserved;
+      for (std::size_t i = 0; i < probes_.size(); ++i) {
+        const auto& bucket = probes_[i];
+        const auto prefix = PSTRING() << " external_delivery_probe_" << (i ? "published" : "unconfirmed");
+        result += PSTRING() << prefix << "_s=" << bucket.seconds << prefix << "_calls=" << bucket.calls
+                            << prefix << "_work_wakes=" << bucket.work_wakes;
+      }
+      return result;
+    }
+
+   private:
+    static void record_bucket(WaitBucket& bucket, double seconds, Outcome outcome) {
       bucket.seconds += seconds;
       ++bucket.calls;
       switch (outcome) {
@@ -211,45 +291,12 @@ struct CollationStats {
           break;
       }
     }
-
-    void record_probe(bool published_before, double seconds, bool returned_work) {
-      auto& bucket = probes_[published_before ? 1 : 0];
-      bucket.seconds += seconds;
-      ++bucket.calls;
-      bucket.work_wakes += returned_work;
+    static void append_wait_bucket(std::string& result, const std::string& prefix, const WaitBucket& bucket) {
+      result += PSTRING() << prefix << "_s=" << bucket.seconds << prefix << "_calls=" << bucket.calls
+                          << prefix << "_work_wakes=" << bucket.work_wakes
+                          << prefix << "_marker_wakes=" << bucket.marker_wakes
+                          << prefix << "_timeouts=" << bucket.timeouts << prefix << "_errors=" << bucket.errors;
     }
-
-    const WaitBucket& wait(ExternalWaitStats::Kind kind, bool producer_pending) const {
-      return waits_[wait_index(kind)][producer_pending ? 1 : 0];
-    }
-    const ProbeBucket& probe(bool published_before) const {
-      return probes_[published_before ? 1 : 0];
-    }
-
-    std::string to_str() const {
-      std::string result;
-      constexpr std::array<const char*, 3> kinds{"first_work", "fragment_refill", "post_commit_idle"};
-      constexpr std::array<const char*, 2> pending_names{"no_producer", "producer_pending"};
-      for (std::size_t i = 0; i < waits_.size(); ++i) {
-        for (std::size_t j = 0; j < waits_[i].size(); ++j) {
-          const auto& bucket = waits_[i][j];
-          const auto prefix = PSTRING() << " external_delivery_" << kinds[i] << "_" << pending_names[j];
-          result += PSTRING() << prefix << "_s=" << bucket.seconds << prefix << "_calls=" << bucket.calls
-                              << prefix << "_work_wakes=" << bucket.work_wakes
-                              << prefix << "_marker_wakes=" << bucket.marker_wakes
-                              << prefix << "_timeouts=" << bucket.timeouts << prefix << "_errors=" << bucket.errors;
-        }
-      }
-      for (std::size_t i = 0; i < probes_.size(); ++i) {
-        const auto& bucket = probes_[i];
-        const auto prefix = PSTRING() << " external_delivery_probe_" << (i ? "published" : "unconfirmed");
-        result += PSTRING() << prefix << "_s=" << bucket.seconds << prefix << "_calls=" << bucket.calls
-                            << prefix << "_work_wakes=" << bucket.work_wakes;
-      }
-      return result;
-    }
-
-   private:
     static std::size_t wait_index(ExternalWaitStats::Kind kind) {
       switch (kind) {
         case ExternalWaitStats::Kind::native_first_work:
@@ -264,6 +311,8 @@ struct CollationStats {
     }
     std::array<std::array<WaitBucket, 2>, 3> waits_{};
     std::array<ProbeBucket, 2> probes_{};
+    std::array<WaitBucket, 2> first_work_idle_{};
+    InstallOverlap install_overlap_{};
   };
 
   // Logical-entry reasons are mutually exclusive and reconcile exactly to
@@ -849,8 +898,22 @@ struct ExtMsgQueueEntry {
 };
 
 struct ExtMsgQueueState {
+  struct ProducerProgress {
+    td::uint64 epoch{0};
+    bool pending{false};
+  };
   td::uint64 begin_producer_epoch() {
+    // Epochs are opened only by the serialized pool producer. The immutable
+    // first timestamp is published with the first release increment; readers
+    // must acquire a nonzero epoch before reading it. Reopening never changes
+    // it, and there is no extra clock read per message or subsequent epoch.
+    if (producer_epoch_.load(std::memory_order_relaxed) == 0) {
+      first_producer_epoch_at_ = td::Time::now();
+    }
     return producer_epoch_.fetch_add(1, std::memory_order_release) + 1;
+  }
+  double first_producer_epoch_at() const {
+    return producer_epoch() != 0 ? first_producer_epoch_at_ : 0.0;
   }
   td::uint64 producer_epoch() const {
     return producer_epoch_.load(std::memory_order_acquire);
@@ -861,8 +924,16 @@ struct ExtMsgQueueState {
                                   current, epoch, std::memory_order_release, std::memory_order_relaxed)) {
     }
   }
+  ProducerProgress producer_progress() const {
+    // Keep the same acquire order as the pending check. One sample supplies
+    // both fields so a concurrently opened epoch cannot turn an epoch-zero
+    // sample into an apparent completed epoch via a second independent read.
+    const auto completed = observed_completion_epoch_.load(std::memory_order_acquire);
+    const auto epoch = producer_epoch();
+    return {.epoch = epoch, .pending = completed < epoch};
+  }
   bool producer_pending() const {
-    return observed_completion_epoch_.load(std::memory_order_acquire) < producer_epoch();
+    return producer_progress().pending;
   }
   void attach_telemetry(std::shared_ptr<ExtMsgQueueTelemetry> telemetry) {
     std::atomic_store_explicit(&telemetry_, std::move(telemetry), std::memory_order_release);
@@ -1054,6 +1125,7 @@ struct ExtMsgQueueState {
   }
 
   std::atomic<td::uint64> producer_epoch_{0};
+  double first_producer_epoch_at_{0};
   std::atomic<td::uint64> observed_completion_epoch_{0};
   std::mutex accounting_mutex_;
   td::uint64 native_selected_{0};

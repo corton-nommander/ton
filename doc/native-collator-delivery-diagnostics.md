@@ -27,6 +27,57 @@ decision. It includes coroutine/actor scheduling and queue-delivery time, so
 it is not a measurement of CPU service time. A producer state sampled at entry
 is not a measurement of how that state changes during the wait.
 
+For **first-work waits only**, the `no_producer` bucket also has two disjoint
+subsets with the same six suffixes:
+
+- `external_delivery_first_work_no_producer_uninstalled_*`: the callback's
+  producer epoch was zero. The pool had not begun installing this callback's
+  first producer epoch at the sampled instant. This includes a callback still
+  in the Collator → Manager → Pool dispatch path or the beginning of pool
+  installation before its epoch opens.
+- `external_delivery_first_work_no_producer_completed_*`: the epoch was
+  nonzero and its completion had already been observed. The callback was
+  installed, but no unfinished producer epoch was observed. New committed
+  ingress, canonical reconciliation or reactivation may reopen one later.
+
+The two subsets sum to the existing first-work/no-producer bucket for every
+field. They do not change its meaning or add time to any legacy total. Epoch
+and pending status come from one sample using the existing two acquire loads;
+no extra queue lock or per-message timing is introduced. `uninstalled` measures
+the **entire ensuing await** entered before installation, not isolated mailbox
+latency: selection, publication and later eligible ingress can happen during
+that wait. Likewise `completed` does not prove global admission starvation,
+because eligibility depends on this callback's exact branch and nonce floors.
+
+For an `uninstalled` first-work entry, four additional fields isolate the
+actual await's overlap with the **first epoch opening**:
+
+- `external_delivery_first_work_no_producer_uninstalled_pre_epoch_s`: await
+  time before that first epoch opens, bounded to the measured interval.
+- `external_delivery_first_work_no_producer_uninstalled_post_epoch_s`: the
+  remainder of that same await after the first epoch opens.
+- `external_delivery_first_work_no_producer_uninstalled_split_calls`: number
+  of split awaits; this matches the existing `uninstalled_calls` count.
+- `external_delivery_first_work_no_producer_uninstalled_epoch_unobserved`:
+  awaits whose first epoch was still unobserved at return, including timeout
+  or cancellation before installation. Their entire duration is pre-epoch.
+
+The two durations sum to `uninstalled_s`. The immutable monotonic timestamp is
+written once by the serialized pool producer, before release-publishing its
+first epoch. Readers acquire a nonzero epoch before reading the timestamp.
+Reopening later epochs never resets it. This adds one clock read per callback
+lifetime, no per-message clock read or queue lock.
+
+The split point is `clamp(first_epoch_time, await_start, await_end)`; if the
+epoch is unobserved it is `await_end`. This handles installation between the
+entry sample and timer start, or between await return and timestamp observation,
+without negative or out-of-interval durations. The timestamp marks the existing
+first-epoch opening near the **start** of `install_collator_queue`, after initial
+sorting/wrapping and before synchronous prefill. Thus pre-epoch time includes
+dispatch and early installation work; post-epoch time can include prefill,
+pump scheduling and eligible ingress. It is not an installation-complete
+timestamp, and elapsed time before the first-work await is not measured here.
+
 ## Already-published work
 
 Every nonblocking work-driven native probe records `_s`, `_calls` and

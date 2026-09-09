@@ -460,8 +460,9 @@ Source references: `lite-client/native-load-generator.cpp:3725` (outputs), `cryp
 ## Admission profiling after the eight-lane plateau
 
 The [September 9 admission plan](native-bottleneck-action-plan-2026-09-09.md) is
-approved and under local evaluation. The [current experiment report](native-admission-cycles-2026-09-09.md)
-records the fixed images and completed measurements. Both admission candidates
+approved and under local evaluation. Its request-sharing and snapshot-refresh
+screens are complete; the [current experiment report](native-admission-cycles-2026-09-09.md)
+records their fixed images and measurements. Both admission candidates
 remain default-off. Request sharing reduced manager requests by 94.7% but observed
 59,219 canonical transfers/s versus its 59,834 control. Separately, one bounded
 snapshot refresh reduced whole-run not-ready responses by 99.57%, while observing
@@ -477,8 +478,8 @@ Local candidate flags are:
 - `TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0|1`: at most one batch snapshot
   refresh within the original deadline. It rechecks mutable admission conditions
   and reuses only matching immutable signature evidence. Single-message admission
-  keeps its existing strict snapshot rejection. Default 0; local validation and
-  separate measurements are required before promotion.
+  keeps its existing strict snapshot rejection. Default 0; local correctness
+  tests passed, but the completed desktop screen found no TPS gain.
 - `TON_NATIVE_RECONCILIATION_PROFILE=0|1`: optional stage clocks for canonical
   reconciliation, default 0. Enable it before starting both diagnostic arms;
   always-on outcome counters distinguish unchanged accounts from necessary
@@ -491,7 +492,8 @@ image implements the feature. Check its revision and diagnostic counters; a
 published `master` image does not acquire local changes automatically.
 
 Updated profiler output includes shard requests/cache fills and optional
-[reconciliation-local attribution](native-reconciliation-diagnostics.md).
+[reconciliation-local attribution](native-reconciliation-diagnostics.md),
+implemented and measured in the completed refresh comparison.
 Older recordings remain readable; current gauges and sequence numbers are
 excluded from counter subtraction. Candidate `external_delivery_*` fields
 separate published probes, producer state, first-epoch dispatch and subsequent
@@ -508,8 +510,8 @@ compare settings on the same topology first. Sixteen lanes remain deferred.
 
 Prepare the new published TON image and derived wrappers once on A using
 `bash start-native-genesis.sh --env-file .env`, then export with `--no-build-image` and import
-that new bundle on B. Stop/drain the existing test before upgrading. Both cache-off and cache-on
-controls must reuse this prebuilt image; do not pull/build between paired measurements.
+that new bundle on B. Stop/drain the existing test before upgrading. Both arms of
+each comparison must reuse this prebuilt image; do not pull/build between paired measurements.
 
 A now accepts `TON_NATIVE_ADMISSION_CONFIG_CACHE=0|1` (default 1) and
 `TON_NATIVE_VALIDATION_SIGNATURE_THREADS=1..64` (physical preset 8; fewer than 64 signed

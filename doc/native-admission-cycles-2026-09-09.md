@@ -54,8 +54,8 @@ intervals fully inside the measured window.
 Sharing remains default-off: the candidate observed **1.03% lower canonical TPS**
 than its control. Both are valid completed observations, not overdriven capacity
 claims. This single pair cannot resolve small effects or prove a regression, but
-it supplies no basis for promotion. Snapshot refresh will be screened separately
-with sharing off.
+it supplies no basis for promotion. Snapshot refresh was subsequently screened
+separately with sharing off; its completed comparison appears below.
 
 In approximately matched 570-second interior profiles, actual manager requests
 fell from 62,779 to 3,325 (**94.7% fewer**), with 57,693 shared joins. Duplicate
@@ -104,8 +104,9 @@ an exclusive OS CPU profile.
 Canonical reconciliation performed 10,476,301 account lookups in the interior
 interval. Its existing `sources_advanced` counter also includes admission paths;
 it cannot establish the fraction of redundant reconciliation reads. Additional
-reconciliation-local outcome and stage attribution is being prepared before
-selecting an account-read optimization.
+reconciliation-local outcome and stage attribution was subsequently implemented
+and measured in the refresh arms below. These initial control counters alone
+cannot select an account-read optimization.
 
 Block-signature validation created about 68.3 helper threads/s. Measured launch
 and join wall-time sums were 19.49 and 9.39 seconds over the interior interval;
@@ -133,9 +134,9 @@ not establish a throughput gain or justify a default change.
 
 Isolated implementation commits are `7bcf9b99` (bounded batch refresh), `09c625a6`
 (reconciliation attribution) and `c2843fe4` (first-epoch delivery timing). The
-subsequent refresh comparison will use a newly frozen image set with sharing off
-and reconciliation stage profiling on in both arms. Its results must be compared
-to that image's own refresh-off control.
+subsequent refresh comparison used a newly frozen image set with sharing off
+and reconciliation stage profiling on in both arms. The completed comparison
+below uses that image's own refresh-off control.
 
 
 ## Refresh control collector failure (retained)
@@ -154,8 +155,8 @@ exact-key recheck through the unchanged cleanup acceptance function passes:
 The failed original assessment is preserved; this arm is excluded from promotion
 comparisons. MyLocal commit `5829f7a` fixes exact first-field matching and tests
 prefix collisions, whitespace, absent/repeated samples. The reporting suite and
-14 profiler tests pass. A fresh control will run with the corrected collector;
-no validator or generator image change is needed.
+14 profiler tests pass. The fresh `05-refresh-off` control subsequently passed
+with the corrected collector and unchanged validator/generator images.
 
 Its additive measurements remain useful diagnostics: 4,772 captured basechain
 candidates have fully reconciling first-epoch wait partitions. Of 353.54 aggregate
@@ -170,7 +171,8 @@ observations, but only 0.0208 unpack wall seconds per elapsed second (1.14 µs/r
 Application/reservation work is 0.1358 s/s and dictionary lookup 0.0540 s/s.
 Manager waiting is asynchronous wall time, 0.3470 s/s. Unchanged account facts
 are not an exact-content cache hit rate, and decode-cache overhead may offset
-its small potential saving; that cache remains deferred pending CPU stacks.
+its small potential saving. That cache remains deferred; the later CPU profile
+below identifies larger opportunities outside reconciliation.
 
 ## Fresh refresh control
 
@@ -193,8 +195,8 @@ partitions reconcile across 4,621 diagnostic candidates: external wait 111.93
 ms/candidate, of which first-epoch pre-installation overlap accounts for 31.55
 ms/candidate. All 1,928 already-published probes returned work, averaging 0.72 ms.
 These candidate timings are diagnostic wall times, not canonical CPU attribution.
-The next arm changes only snapshot refresh to one, with the same restart policy
-and prebuilt images. Compact control evidence is saved in
+The subsequent `06-refresh-on` arm changed only snapshot refresh to one, with
+the same restart policy and prebuilt images. Compact control evidence is saved in
 `doc/benchmarks/results/native-admission-20260909-05-refresh-off.json`.
 
 ## Refresh decision
@@ -237,8 +239,9 @@ Mean sampled validator/client CPU was 10.24/0.88 off and 10.17/0.86 on. Session
 Stats varied 0.69 → 1.02 CPU equivalents; unrelated desktop work and evolving chain
 state remain sources of variation. The implementation is available for explicit
 retry-focused trials, but lower retry counts alone do not justify default promotion.
-The next capture profiles the refresh-off control under a separate short load;
-its throughput is excluded from comparison to these unprofiled 600-second arms.
+The subsequent `07-cpu-diagnostic` capture profiled the refresh-off control under
+a separate short load; its throughput is excluded from comparison to these
+unprofiled 600-second arms.
 
 ## Separate CPU profile and next isolated candidates
 
@@ -263,9 +266,10 @@ The next bounded step-4 experiments are independent, default-off flags:
 `TON_KEYRING_PREPARED_SIGNING` reuses an immutable prepared key inside its keyring
 owner; `TON_OVERLAY_LOCAL_SIGNATURE_REUSE` reuses cryptographic evidence bound to
 the exact successful local signing request/result. Incoming messages retain
-signature verification; all other broadcast checks remain. Correctness tests and
-one frozen image will precede independent 600-second screens. Reconciliation
-yields, another native signature cache and thread-pool changes are deferred while
+signature verification; all other broadcast checks remain. Correctness tests
+passed and the shared image set was frozen before independent 600-second
+screening began, as recorded below. Reconciliation yields, another native
+signature cache and thread-pool changes are deferred while
 these stronger measured opportunities are evaluated.
 
 ## Signing candidate control
@@ -298,4 +302,32 @@ endpoints recorded an observable lower bound of 6,119,652 cryptographic checks a
 zero receipt hits with reuse disabled. Ten overlays retired and ten appeared;
 the analyzer therefore does not claim complete interval totals. New-generation
 lifetime counters and coverage are saved separately in the compact control result.
-The next arm enables only prepared-key signing.
+The subsequent arm enabled only prepared-key signing.
+
+
+## Prepared-key signing screen
+
+`09-prepared-signing` completed its 600-second measurement at **54,043.91
+canonical logical TPS**, with 54,097.20 offered/admitted TPS: **6.66% below**
+`08-cpu-control`. Proof checking, complete drain, canonical cleanup and unchanged
+container identities passed; final backlog, hash/follower errors and exhausted
+retries were zero. Transient timeouts increased 88 → 1,479, with maximum admission
+RTT increasing 4.07 → 10.00 seconds. Mean sampled validator/client CPU was
+9.86/0.94 equivalents, versus 9.98/0.94 in the control.
+
+This single screen supplies no basis to enable prepared-key signing by default.
+It does not isolate the cause of the lower rate: evolving chain state, scheduling
+and desktop variation remain possible influences. The next screen changes only
+local broadcast signature reuse relative to the original control; a repeated
+control will check drift. Both candidates remain off in normal presets.
+
+The comparison helper initially rejected the two new runtime flag identities
+because the benchmark wrapper's environment whitelist omitted them. The separate
+controller saved both flags from Docker inspection, the same container/image IDs,
+and a successful unchanged-identity check after each complete run. Raw captures
+and the initial failed comparison are retained. The corrected offline comparison uses that
+cross-checked controller evidence with explicit per-field provenance and passes
+all comparison gates: the sole runtime difference is prepared signing 0 → 1.
+Eleven helper tests cover absent/conflicting flags and container-identity mismatches.
+No raw wrapper fields were rewritten. The tests still lack independently offered 5%
+overdrive and therefore report observed throughput, not a proven capacity limit.

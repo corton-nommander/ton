@@ -46,6 +46,11 @@ RUN --mount=type=cache,id=corton-ton-ccache,target=/root/.cache/ccache,sharing=l
         ninja -j "${NINJA_JOBS}" ${TON_BUILD_TARGETS} && \
         ccache --show-stats
 
+# Both architecture publishers use this builder. Native correctness must pass
+# in the same portable toolchain before any final image can be assembled/pushed.
+# There is intentionally no build argument that disables the publication gate.
+RUN bash /ton/docker/run-native-publication-tests.sh --build-dir /ton/build --jobs "${NINJA_JOBS}"
+
 FROM ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \

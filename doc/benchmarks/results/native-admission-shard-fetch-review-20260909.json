@@ -1,0 +1,66 @@
+{
+  "schema": "native-admission-shard-fetch-review-v1",
+  "scope": "Read-only reanalysis of completed September 8 desktop tests. Interior measured samples, no new load. Fetches are pool-to-manager requests; manager already coalesces underlying state loads. Fill races are not duplicate disk reads or a predicted TPS gain.",
+  "results": [
+    {
+      "arm": "02-cache-off",
+      "source": "build/benchmarks/desktop-admission-20260908/02-cache-off/diagnostics.json",
+      "samples": 19,
+      "start_unix_s": 1788877782.640733,
+      "end_unix_s": 1788878360.420085,
+      "delta": {
+        "shard_fetches": 65704,
+        "shard_cache_fills": 3888,
+        "shard_cache_fill_races": 60730,
+        "shard_cache_stale_generation_fill_skips": 1124,
+        "shard_manager_wait_errors": 0
+      },
+      "cache_fill_races_per_fetch": 0.9242968464629246
+    },
+    {
+      "arm": "03-cache-on",
+      "source": "build/benchmarks/desktop-admission-20260908/03-cache-on/diagnostics.json",
+      "samples": 19,
+      "start_unix_s": 1788878810.8516448,
+      "end_unix_s": 1788879388.792574,
+      "delta": {
+        "shard_fetches": 56456,
+        "shard_cache_fills": 3299,
+        "shard_cache_fill_races": 52971,
+        "shard_cache_stale_generation_fill_skips": 179,
+        "shard_manager_wait_errors": 1
+      },
+      "cache_fill_races_per_fetch": 0.9382705115488168
+    },
+    {
+      "arm": "04-smaller-window",
+      "source": "build/benchmarks/desktop-admission-20260908/04-smaller-window/diagnostics.json",
+      "samples": 19,
+      "start_unix_s": 1788879771.810405,
+      "end_unix_s": 1788880349.7916226,
+      "delta": {
+        "shard_fetches": 49133,
+        "shard_cache_fills": 3255,
+        "shard_cache_fill_races": 45837,
+        "shard_cache_stale_generation_fill_skips": 43,
+        "shard_manager_wait_errors": 0
+      },
+      "cache_fill_races_per_fetch": 0.932916776911648
+    },
+    {
+      "arm": "05-intermediate-window",
+      "source": "build/benchmarks/desktop-admission-20260908/05-intermediate-window/diagnostics.json",
+      "samples": 19,
+      "start_unix_s": 1788880688.1249557,
+      "end_unix_s": 1788881268.2288628,
+      "delta": {
+        "shard_fetches": 53341,
+        "shard_cache_fills": 2840,
+        "shard_cache_fill_races": 50433,
+        "shard_cache_stale_generation_fill_skips": 29,
+        "shard_manager_wait_errors": 0
+      },
+      "cache_fill_races_per_fetch": 0.9454828368422039
+    }
+  ]
+}

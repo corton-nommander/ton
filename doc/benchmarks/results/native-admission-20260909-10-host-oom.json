@@ -1,0 +1,132 @@
+{
+  "schema": "native-benchmark-interrupted-host-oom-v1",
+  "arm": "10-local-signature-reuse",
+  "status": "invalid_incomplete_wrapper",
+  "valid_run": false,
+  "accepted_measurement": null,
+  "tps_comparison_eligible": false,
+  "capacity_claim_allowed": false,
+  "classification": "generator_completed_before_host_vm_oom_wrapper_incomplete",
+  "failure": {
+    "scope": "desktop_host_global_oom",
+    "kernel_oom_time_utc": "2026-09-09T08:26:03+00:00",
+    "killed_process": "qemu-system-x86",
+    "killed_pid": 444533,
+    "systemd_unit": "docker-desktop.service",
+    "systemd_result": "oom-kill",
+    "time_after_last_generator_report_s": 44.42470455169678,
+    "generator_phase_at_last_saved_report": "finished",
+    "wrapper_phase_at_death": "post-run collection; wrapper log later records Session Stats tail wait and unavailable Docker API",
+    "container_oom_killed_state": null
+  },
+  "invalid_reasons": [
+    "host_global_oom_killed_docker_vm_during_wrapper_finalization",
+    "wrapper_final_report_missing",
+    "controller_final_report_missing",
+    "postrun_runtime_capture_unavailable",
+    "final_overlay_capture_unavailable"
+  ],
+  "last_generator_report": {
+    "source": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/10-local-signature-reuse/sweep/01-10-connections/native-load-generator.log",
+    "line": 635,
+    "report_count": 630,
+    "non_json_log_lines": 3,
+    "derived_report_time_utc": "2026-09-09T08:25:18.575295+00:00",
+    "derived_report_time_semantics": "load_start_unix_s plus generator elapsed_s, not a separately captured wall-clock timestamp",
+    "reported": {
+      "final": true,
+      "phase": "finished",
+      "elapsed_s": 666.0691547950046,
+      "measure_elapsed_s": 600,
+      "measure_start_unix_s": 1788941712.5061407,
+      "measure_end_unix_s": 1788942312.5061407,
+      "offered": 37567024,
+      "steady_offered": 33417712,
+      "canonical_hash_matched": 37567024,
+      "canonical_chain_measure_transfers": 33309120,
+      "canonical_backlog": 0,
+      "canonical_total_backlog_after_drain": 0,
+      "canonical_backlog_after_drain": 0,
+      "canonical_follower_final_catchup_complete": true,
+      "canonical_follower_errors": 0,
+      "canonical_follower_fatal_errors": 0,
+      "canonical_follower_retry_exhausted": 0,
+      "canonical_hash_conflicts": 0,
+      "benchmark_result_valid": true,
+      "canonical_result_valid": true,
+      "chain_correctness_valid": true,
+      "drain_timed_out": false,
+      "retry_exhausted": 0,
+      "run_incomplete_reasons": []
+    }
+  },
+  "proof_and_drain_evidence": {
+    "final_generator_report_available": true,
+    "final_generator_correctness_reported": true,
+    "final_contiguous_catchup_reported": true,
+    "zero_final_backlog_reported": true,
+    "final_drain_timeout_reported": false,
+    "final_wrapper_acceptance_available": false
+  },
+  "strict_image_reuse_evidence": {
+    "source": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/10-local-signature-reuse/sweep/01-10-connections/strict-image-reuse.json",
+    "valid": true,
+    "required": true,
+    "validator_unchanged": true,
+    "generator_image_unchanged": true,
+    "scope": "captured before subsequent host VM death; cannot establish successful later wrapper completion"
+  },
+  "missing_final_artifacts": [
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/10-local-signature-reuse/execution.json",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/10-local-signature-reuse/sweep/01-10-connections/generator-summary.json",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/10-local-signature-reuse/sweep/01-10-connections/benchmark-summary.json",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/10-local-signature-reuse/sweep/01-10-connections/container-runtime.json",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/admission-cycles-20260909/10-local-signature-reuse/overlay-stats-after.txt"
+  ],
+  "journal_evidence": {
+    "host-kernel-oom.txt": {
+      "command": [
+        "journalctl",
+        "--utc",
+        "-k",
+        "--since",
+        "2026-09-09 08:24:30 UTC",
+        "--until",
+        "2026-09-09 08:28:00 UTC",
+        "--no-pager",
+        "--output",
+        "short-iso"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "selected_lines": 5,
+      "filter": "GpuWatchdog invoked oom|oom-kill:|Out of memory: Killed process|oom_reaper: reaped process|qemu-system-x86"
+    },
+    "docker-desktop-oom.txt": {
+      "command": [
+        "journalctl",
+        "--utc",
+        "--user",
+        "-u",
+        "docker-desktop.service",
+        "--since",
+        "2026-09-09 08:24:30 UTC",
+        "--until",
+        "2026-09-09 08:28:00 UTC",
+        "--no-pager",
+        "--output",
+        "short-iso"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "selected_lines": 3,
+      "filter": "oom-kill|killed by the OOM|main process exited|Main process exited|monitor exited"
+    }
+  },
+  "limitations": [
+    "The complete final generator report and zero drain are preserved; they are not missing simply because wrapper summaries were not written.",
+    "No throughput result is accepted or compared from this arm, and no missing wrapper outputs are manufactured.",
+    "The kernel proves a host global OOM killed the Docker VM; it does not show a native validator container cgroup OOM.",
+    "No Docker service, process, setting, container or original benchmark capture was changed by this analysis."
+  ]
+}

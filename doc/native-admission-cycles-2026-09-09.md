@@ -356,3 +356,29 @@ whole-window transfer deficit, solely as an illustrative scale comparison.
 The reported TPS still includes every measured second; no pause was deleted or
 used to manufacture an adjusted result. Detailed evidence is retained in
 [the stall analysis](benchmarks/results/native-admission-20260909-prepared-stalls.json).
+
+
+## Local-signature arm interrupted during final collection
+
+`10-local-signature-reuse` is **excluded from promotion comparisons**. Its generator
+finished the full 600-second measurement and proof-checked drain at approximately
+08:25:18.575 UTC, with zero final backlog or follower errors. At 08:26:03, about
+44.4 seconds later, the host kernel's global OOM killer terminated Docker Desktop's
+QEMU process. The wrapper therefore did not finish its complete final collection
+and acceptance checks. No accepted TPS or capacity result is assigned to this arm.
+The [failure record](benchmarks/results/native-admission-20260909-10-host-oom.json)
+retains the successful generator evidence separately from failed wrapper completion.
+
+Docker Desktop was restored with **MemoryMiB 65,536 instead of 99,840**. Only that
+setting changed, with a private backup of its previous settings. Existing volumes
+and containers were preserved; the application services running before the OOM
+were restored, and the load generator remained stopped. This is a new benchmark
+resource environment: subsequent controls must not be ranked directly against the
+previous 99,840 MiB VM arms. New arm metadata records VM memory/CPU and host total
+memory explicitly. A new control will use the same frozen `be235e03` images,
+10 connections, four lanes, 600 seconds and 20 ms coalescing.
+
+The runtime environment collector now captures both signing flags directly.
+Its three projection tests and the benchmark reporting suite pass, including
+18 canonical reporting tests and 14 profiler tests. Earlier raw captures remain
+unchanged.

@@ -178,15 +178,35 @@ The `total.ext_msg_batch_diagnostics` key adds:
 | `snapshot_refresh_enabled` | Effective switch for this process. |
 | `snapshot_refresh_attempts` | Batches that took their one allowed refresh. |
 | `snapshot_refresh_successes` | Completed refreshed batches with at least one accepted unique native input afterward; this is not an all-input success count. |
-| `snapshot_refresh_accepted_messages` | Unique native inputs accepted after a refresh, including exact-hash idempotent admission; duplicate wire slots and logical children are not expanded. |
-| `snapshot_refresh_exhausted` | Batches rejected after their refreshed snapshot also changed. |
+| `snapshot_refresh_accepted_messages` | Native inputs accepted after a refresh, deduplicated within that batch, including exact-hash idempotent admission; duplicate wire slots and logical children are not expanded. |
+| `snapshot_refresh_exhausted` | Batches whose second snapshot change rejected remaining unresolved inputs. |
 | `snapshot_refresh_deadlines` | Batches with a timeout during the refreshed stages, or found expired at the post-verification refresh decision; counted at most once per batch. |
 | `snapshot_refresh_signature_reuses` | Inputs whose exact request-local signature proof avoided another verifier dispatch. |
 
-Verification wall-time samples include second-pass mutable prechecks even when
-all signatures are reused. These counters do not establish canonical inclusion
-or a TPS gain. Keep the switch off until controlled production-size measurements
-show a repeatable benefit; ordinary client retries remain necessary for requests
+These counters are not an exclusive partition of refresh attempts. A batch can
+accept an exact-hash retry during its second pass, then reject remaining inputs
+because the snapshot changed again; it can count as both successful and exhausted.
+A deadline can also be detected at the first post-verification decision before
+any refresh attempt. Do not calculate failed refreshes by summing exhausted and
+deadline counts or subtracting successes from attempts.
+
+Acceptance here does not establish a new mempool insertion or unique canonical
+throughput. The same input retried in another RPC can be counted again through
+exact-hash idempotence. Accepted-input and signature-reuse counters update while
+the batch runs, so an abandoned batch can retain partial increments without a
+completed success or delivered RPC result. Interior measurement boundaries can
+also include successes from attempts begun before the window and attempts that
+finish afterward. Retain active/aborted-batch evidence or compare settled
+endpoints before treating the success/attempt ratio as a completion fraction.
+
+Verification wall-time samples are per pass and include second-pass mutable
+prechecks even when all signatures are reused. A lower mean can therefore reflect
+additional reused-pass samples; compare total stage wall time per completed batch
+and per proof-observed canonical transfer as well. Signature reuse counts avoided
+dispatches even when a later admission guard rejects the input, and does not
+measure the total admission-verifier CPU work. These counters do not establish
+canonical inclusion or a TPS gain. Keep the switch off until controlled
+production-size measurements show a repeatable benefit; ordinary client retries remain necessary for requests
 that exhaust the one refresh or their original deadline.
 
 ## Local validation for this implementation

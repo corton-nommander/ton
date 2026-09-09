@@ -444,3 +444,23 @@ The [candidate record](benchmarks/results/native-admission-20260909-12-memory64-
 is retained. Repeat the candidate and then the control, with a restart before each
 arm and strict reuse of the existing images, to complete A/B/B/A before selecting
 settings.
+
+
+## Local-signature repeat
+
+`13-memory64-local-repeat` passed full collection, proof/drain, cleanup and image
+continuity at **60,094.40 canonical logical TPS**, with 60,061.73 offered/admitted
+TPS. Its canonical result is **0.18% above** the first candidate's 59,984.77 TPS.
+Final backlog, hash/follower errors and exhausted retries stayed zero; transient
+timeouts were 106 and not-ready responses 595,733. The coarse p50/p95/p99 RTT
+buckets again stayed 200/500/1,000 ms.
+
+Mean sampled validator/client/Session Stats CPU was 9.17/0.74/0.98 equivalents.
+Eight matched overlay endpoints recorded an observable lower bound of 6,397,711
+receipt hits, zero mismatches and 127 remaining crypto checks; fifteen endpoints
+retired and fifteen appeared. Full interval totals remain unproven.
+
+The [repeat result](benchmarks/results/native-admission-20260909-13-memory64-local-repeat.json)
+is retained. The final arm returns local-signature reuse to zero under the same
+64 GiB VM environment, images, restart policy and 600-second/20-ms workload.
+A desktop preset change still waits for that final control.

@@ -1,8 +1,16 @@
 # Native admission experiments — 9 September 2026
 
-Status: in progress. The user approved the measured steps in
+Status: desktop implementation, profiling and comparison cycles complete. The user approved the measured steps in
 [native-bottleneck-action-plan-2026-09-09.md](native-bottleneck-action-plan-2026-09-09.md).
 No production deployment or production throughput improvement is claimed here.
+
+The final matched A/B/B/A comparison selected local overlay signature reuse for
+the desktop preset: **57,673.19 → 60,039.59 canonical logical TPS (+4.10%)**,
+with **9.39% lower sampled validator CPU**. Both candidate runs beat both controls.
+Request sharing, snapshot refresh and prepared-key signing remain off. Full
+results, the narrow duration reassessment and the resource-environment change
+are recorded below. This is the best supported configuration in the final matched
+comparison, not a ranking against older images or proof of maximum capacity.
 
 ## Comparison conditions
 
@@ -287,7 +295,7 @@ and generator image
 `sha256:380a0cccbca243c2ba1dc0f14ed0f9b5a6df3fafaf45ead06b596e2195f3f842`.
 Sharing/refresh remain off, configuration caching and reconciliation timing on.
 The established four-lane, 10-connection, 600-second, 20-ms workload is unchanged.
-Both signing candidates remain default-off until evaluated.
+Both signing candidates were default-off at the start of this comparison.
 
 `08-cpu-control` passed proof/drain, cleanup and strict identities at **57,899.38
 canonical logical TPS**, with 57,948.51 offered/admitted TPS. Final backlog,
@@ -317,9 +325,10 @@ RTT increasing 4.07 → 10.00 seconds. Mean sampled validator/client CPU was
 
 This single screen supplies no basis to enable prepared-key signing by default.
 It does not isolate the cause of the lower rate: evolving chain state, scheduling
-and desktop variation remain possible influences. The next screen changes only
-local broadcast signature reuse relative to the original control; a repeated
-control will check drift. Both candidates remain off in normal presets.
+and desktop variation remain possible influences. The next screen changed only
+local broadcast signature reuse relative to the original control. Both candidates
+remained off in normal presets at this stage; the later OOM required a fresh
+comparison environment before selecting one.
 
 The comparison helper initially rejected the two new runtime flag identities
 because the benchmark wrapper's environment whitelist omitted them. The separate
@@ -375,7 +384,7 @@ and containers were preserved; the application services running before the OOM
 were restored, and the load generator remained stopped. This is a new benchmark
 resource environment: subsequent controls must not be ranked directly against the
 previous 99,840 MiB VM arms. New arm metadata records VM memory/CPU and host total
-memory explicitly. A new control will use the same frozen `be235e03` images,
+memory explicitly. The new control used the same frozen `be235e03` images,
 10 connections, four lanes, 600 seconds and 20 ms coalescing.
 
 The runtime environment collector now captures both signing flags directly.
@@ -414,7 +423,7 @@ The 4,088 captured collation candidates averaged 120.32 ms external wait. All 1,
 probes with confirmed published work returned work, averaging 0.94 ms; the first
 epoch wait partitions reconcile. These remain diagnostic candidate wall times,
 not exclusive CPU measurements or independently canonical-filtered block metrics.
-The next arm isolates local-signature reuse against this control in the same
+The next arm isolated local-signature reuse against this control in the same
 recorded 64 GiB VM environment.
 
 
@@ -441,9 +450,9 @@ totals. The counter evidence confirms that the intended local rechecks were avoi
 Incoming verification and other broadcast validation paths remain unchanged.
 
 The [candidate record](benchmarks/results/native-admission-20260909-12-memory64-local-reuse.json)
-is retained. Repeat the candidate and then the control, with a restart before each
-arm and strict reuse of the existing images, to complete A/B/B/A before selecting
-settings.
+is retained. The candidate and then the control were repeated with a restart
+before each arm and strict reuse of the existing images, completing A/B/B/A
+before selecting settings.
 
 
 ## Local-signature repeat
@@ -461,6 +470,103 @@ receipt hits, zero mismatches and 127 remaining crypto checks; fifteen endpoints
 retired and fifteen appeared. Full interval totals remain unproven.
 
 The [repeat result](benchmarks/results/native-admission-20260909-13-memory64-local-repeat.json)
-is retained. The final arm returns local-signature reuse to zero under the same
+is retained. The final arm returned local-signature reuse to zero under the same
 64 GiB VM environment, images, restart policy and 600-second/20-ms workload.
-A desktop preset change still waits for that final control.
+The desktop preset was selected only after that final control completed.
+
+
+## Final control, A/B/B/A and desktop selection
+
+`14-memory64-control-repeat` completed at **57,909.02 canonical logical TPS**,
+with 57,910.64 offered/admitted TPS. Full controller/wrapper collection, immutable
+image checks, proof/catch-up, complete drain and validator cleanup passed. Final
+backlog, hash/follower errors and exhausted retries were zero; there were 63
+transient timeouts and 630,257 not-ready responses over the whole run. The
+[final control record](benchmarks/results/native-admission-20260909-14-memory64-control-repeat.json)
+is retained alongside the other arms.
+
+| Order | Local signature reuse | Canonical logical TPS | Offered/admitted TPS |
+| --- | --- | ---: | ---: |
+| A1: 11 | 0 | 57,437.36 | 57,447.49 |
+| B1: 12 | 1 | 59,984.77 | 60,082.16 |
+| B2: 13 | 1 | 60,094.40 | 60,061.73 |
+| A2: 14 | 0 | 57,909.02 | 57,910.64 |
+| Control mean | 0 | **57,673.19** | |
+| Candidate mean | 1 | **60,039.59** | |
+
+The [aggregate evidence](benchmarks/results/native-admission-20260909-overlay-ABBA.json)
+checks chronological, non-overlapping A/B/B/A windows, all four cross-mode
+comparisons and both same-mode repeats. Images, workloads, resource settings and
+recorded host/VM environments match; only the reuse flag differs, plus the
+explicitly certified duration-only postprocessing correction for arm 11. Its
+original controller exit 3 remains preserved. Every arm completes 600 measured
+seconds with 20 ms coalescing, all cohorts proven and no final backlog.
+
+Mean canonical TPS improves **4.103%**. Both candidates exceed both controls;
+individual cross-pair gains range from **3.585% to 4.626%**. The full control
+range is 0.818% of its mean, and the candidate range is 0.183%. This passes the
+predeclared desktop selection screen: both candidates above both controls, mean
+gain at least 2%, and gain greater than the full control repeat range. Four
+observations do not establish formal statistical significance.
+
+Using the aggregate's consistent measured-interior sampling policy, mean
+validator CPU equivalents fall **10.3185 → 9.3491 (−9.39%)**. Dividing sampled
+CPU by canonical throughput estimates **178.90 → 155.72 CPU microseconds per
+transfer (−12.96%)**; this is not a direct native-execution timer. Earlier per-arm
+CPU means use slightly different sample boundaries and are preserved as recorded.
+Admission p50/p95/p99 RTT buckets remain 200/500/1,000 ms in all four arms.
+
+The evidence supports avoiding redundant verification immediately after an exact
+local keyring signing callback. Incoming network verification and the remaining
+broadcast checks are preserved; see [the feature contract](overlay-local-signature-reuse.md).
+Candidate endpoint counters show millions of receipt hits and zero mismatches,
+but rotations and warmup/drain coverage make those lower bounds rather than full
+measured-window totals.
+
+MyLocalTonDocker commit `4521217` persists the tested `.env.desktop` configuration:
+
+```dotenv
+TON_BRANCH=admission-local-be235e03
+TON_IMAGE=mylocalton-ton
+MLT_IMAGE=mylocalton-genesis
+NATIVE_LOAD_IMAGE=mylocalton-client:admission-local-be235e03
+TON_KEYRING_PREPARED_SIGNING=0
+TON_NATIVE_ADMISSION_SHARD_SHARING=0
+TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0
+TON_NATIVE_RECONCILIATION_PROFILE=1
+TON_OVERLAY_LOCAL_SIGNATURE_REUSE=1
+```
+
+The resolved Compose configuration equals the tested final-control configuration
+except for the promoted overlay flag. The genesis/client IDs remain
+`sha256:d0067d546b6bb2c9aeab62a29e30b0264dc97cd1a5a2fe02f947ac102f057758`
+and `sha256:380a0cccbca243c2ba1dc0f14ed0f9b5a6df3fafaf45ead06b596e2195f3f842`.
+The source is `be235e037826a36e4f57125d15c73aa0513973af`; later commits save
+results and harness corrections without rebuilding these binaries. Docker Desktop
+retains its corrected 64 GiB allocation. No database reset or image rebuild is
+needed to select the winner.
+
+Physical-server and C++/Compose fallback defaults remain off. These CPU-specific
+local images have not been published. Deploying on Server A requires a published
+image containing the feature and a matched test on its existing eight-lane chain.
+Unique offered/canonical ratios in the desktop arms are approximately 1.0, below
+the required independent 5% overdrive: this remains a repeatable throughput
+improvement, without establishing an upper capacity limit or a 200k TPS forecast.
+
+## Remaining work selected by evidence
+
+Already-published work reaches the desktop collator in about 0.7–0.9 ms; the
+100+ ms external-wait total includes other pipeline and packing stages. A delivery
+rewrite is therefore deferred. Sharing and refresh reduce redundant work but
+showed no TPS gain; prepared signing has no clean positive comparison and remains
+off after its host-memory-confounded screen.
+
+The next bounded target is candidate metadata extraction: the separate CPU
+profile attributes 11.32% of sampled user CPU to native message decoding during
+state resolution. A metadata-only decoder could avoid expanding full transfers
+and unused account structures, while retaining malformed-input checks, exact
+parent hashes and branch isolation. This is a proposed next experiment, not
+implemented or assigned a predicted TPS gain. The serialized external-message
+pool also consumes about 0.85 sampled core and needs queue/long-turn attribution
+on the physical servers. Matching Server A/B profiles and a production A/B test
+remain outstanding before considering the separately gated lane-owned redesign.

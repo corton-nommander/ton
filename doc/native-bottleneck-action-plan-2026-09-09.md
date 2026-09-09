@@ -1,8 +1,40 @@
 # Native throughput bottlenecks and proposed actions — 9 September 2026
 
-Status: steps 1–4 approved by the user on September 9; implementation and isolated
-desktop measurements are in progress. The conditional architectural redesign still
-requires a separate decision. The evidence below predates these new experiments.
+Status: steps 1–4 were approved on September 9. Desktop implementation, focused
+tests, profiling and isolated comparison cycles are complete; the matching
+physical-host baseline and production comparison remain outstanding. The
+conditional architectural redesign still requires a separate decision. The
+original diagnosis and proposed sequence below are retained as historical context;
+the completed experiments revise their priority.
+
+## Outcome of the approved desktop work
+
+The [completed report](native-admission-cycles-2026-09-09.md) records each result
+and retained failure. Request sharing reduced manager requests by 94.7%, and
+one bounded snapshot refresh reduced not-ready responses by 99.57%, but their
+separate screens showed no TPS improvement. Both remain off. Delivery telemetry
+found known-published work returning in about 0.7–0.9 ms; the larger external-work
+wait is not evidence for a queue-publication rewrite. That conditional change is
+deferred rather than implemented without a measured target.
+
+The CPU profile instead identified redundant verification after local overlay
+signing. Its isolated A/B/B/A test averaged **57,673 → 60,040 canonical logical
+TPS (+4.10%)**, with **9.39% lower sampled validator CPU**, full proof/drain and
+matching images/resources. Both candidates beat both controls. The desktop
+preset enables only this optimization; production/global defaults remain off.
+Prepared signing also remains off after a memory-pressure-confounded screen.
+The Docker Desktop VM was reduced to 64 GiB following host OOM; the final four
+arms all use that new environment and cannot be ranked directly against the old
+VM's arms. Offered load remains insufficient to establish maximum capacity.
+
+Next, profile the physical validator and client alongside a matching 600-second
+production comparison. Candidate metadata decoding (11.32% of sampled desktop
+user CPU) is the next bounded code target, preserving complete format validation,
+parent hashes and exact-branch semantics. The shared external-message pool
+(about 0.85 sampled core) needs queue/long-turn attribution before deciding on
+lane-owned admission. Reconciliation decoding, helper-thread creation and storage
+have no evidence supporting an immediate rewrite. These are next experiments,
+not implemented changes or predicted percentage gains.
 
 The recommendation remains to improve admission and useful-work delivery before
 rewriting native execution. External-work wait is the largest measured collation

@@ -460,9 +460,16 @@ Source references: `lite-client/native-load-generator.cpp:3725` (outputs), `cryp
 ## Admission profiling after the eight-lane plateau
 
 The [September 9 admission plan](native-bottleneck-action-plan-2026-09-09.md) is
-approved and under local evaluation. Its request-sharing and snapshot-refresh
-screens are complete; the [current experiment report](native-admission-cycles-2026-09-09.md)
-records their fixed images and measurements. Both admission candidates
+approved; desktop implementation and comparison cycles are complete. The
+[experiment report](native-admission-cycles-2026-09-09.md) records fixed images,
+measurements and retained failures. The final local-overlay-signature A/B/B/A
+averaged **57,673 → 60,040 canonical logical transfers/s (+4.10%)**, with
+**9.39% lower sampled validator CPU**. Both candidates beat both controls and
+passed full proof/drain. Only `.env.desktop` enables that measured winner;
+production defaults remain unchanged and the local images are not published.
+Offered load did not establish maximum capacity.
+
+Both admission candidates
 remain default-off. Request sharing reduced manager requests by 94.7% but observed
 59,219 canonical transfers/s versus its 59,834 control. Separately, one bounded
 snapshot refresh reduced whole-run not-ready responses by 99.57%, while observing
@@ -473,6 +480,13 @@ they do not justify changing A's production defaults.
 
 Local candidate flags are:
 
+- `TON_OVERLAY_LOCAL_SIGNATURE_REUSE=0|1`: reuse exact, independently copied
+  evidence from a successful local keyring signing callback. Incoming broadcast
+  signatures still undergo ordinary verification. Global/physical default 0;
+  tested desktop preset 1. See [the feature contract](overlay-local-signature-reuse.md).
+- `TON_KEYRING_PREPARED_SIGNING=0|1`: reuse a successfully prepared immutable
+  Ed25519 signing key with a fresh signing context for each request. Default 0;
+  no clean positive throughput comparison supports promotion.
 - `TON_NATIVE_ADMISSION_SHARD_SHARING=0|1`: bounded sharing of simultaneous
   exact-state admission shard-view requests, with independent caller deadlines.
 - `TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0|1`: at most one batch snapshot
@@ -553,8 +567,8 @@ gates. Full commands and artifact semantics are in the companion guide.
 
 ## Desktop reference measurements (2026-09-08)
 
-The desktop `.env.desktop` now selects a fresh four-lane reference, 10 connections,
-600 measured seconds and 20 ms coalescing, using the verified revision image.
+The September 8 desktop measurements used a fresh four-lane reference,
+10 connections, 600 measured seconds and 20 ms coalescing with fixed images.
 [The completed desktop report](native-desktop-admission-benchmark-2026-09-08.md)
 records the four strict-image-reuse tests, bootstrap workaround, canonical results
 and the capacity-reporting correction. The highest observed result was 61,950
@@ -562,7 +576,30 @@ logical native transfers/s; the small differences between settings are not a
 repeatable gain or a production-server capacity claim. Do not change an existing
 production eight-lane database to the desktop topology.
 
-On the already healthy, settled four-lane desktop chain with images prepared once:
+The tracked `.env.desktop` now retains the September 9 winner, source `be235e03`,
+using existing local images `mylocalton-genesis:admission-local-be235e03` and
+`mylocalton-client:admission-local-be235e03`. Its runtime differs from the September
+8 image; absolute rates across those builds are not a controlled comparison.
+Docker Desktop must retain the tested **64 GiB** VM allocation on this 128 GB
+workstation; its previous 99,840 MiB allocation caused host OOM. Four lanes and
+all load/resource settings remain as measured. These are local CPU-specific
+artifacts, not tags to pull on Server A.
+
+On this desktop, start the selected configuration with strict image reuse:
+
+```sh
+cd /home/neodix/gitProjects/MyLocalTonDocker
+docker compose --env-file .env.desktop \
+  up -d --no-deps --no-build --pull never genesis
+```
+
+This preserves the existing database. Wait for genesis to become healthy and
+settled before measuring. Do not use `start-native-genesis.sh` with these local
+tags: it always pulls a registry base and rebuilds wrappers. The production
+launcher remains appropriate for published Server A images, after their feature
+revision has been verified.
+
+On the healthy, settled four-lane desktop chain, run:
 
 ```sh
 python3 benchmark/run-native-connections-sweep.py \

@@ -43,3 +43,19 @@ increment reuse or crypto checks. Certificate verification is included in
 failures, wrong keys and unsupported signing kinds, control mode, ban ordering,
 real keyring callbacks and delivery for both broadcast forms, and remote
 simple/full/short FEC validation despite zero peer IDs and local identities.
+
+## Desktop measurement and default scope
+
+The September 9 A/B/B/A test used the same `be235e03` images, four lanes,
+10 connections, 600 measured seconds and 20 ms coalescing per arm. Controls
+averaged 57,673.19 canonical logical TPS; reuse averaged 60,039.59 (**+4.10%**).
+Both candidates exceeded both controls, with **9.39% lower sampled validator
+CPU** on average. Proof/catch-up, complete drain and image checks passed.
+See [the report](native-admission-cycles-2026-09-09.md) for all arms, the
+duration reassessment and retained failures.
+
+Only the tested MyLocalTonDocker `.env.desktop` now enables reuse. The C++ and
+Compose fallback, and `.env.physical`, remain off. Prepared-key signing, admission
+sharing and snapshot refresh remain off in the desktop winner. These local
+images are not published production images. The test establishes a repeatable
+observed improvement; offered load did not establish maximum capacity.

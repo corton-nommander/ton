@@ -171,3 +171,28 @@ Application/reservation work is 0.1358 s/s and dictionary lookup 0.0540 s/s.
 Manager waiting is asynchronous wall time, 0.3470 s/s. Unchanged account facts
 are not an exact-content cache hit rate, and decode-cache overhead may offset
 its small potential saving; that cache remains deferred pending CPU stacks.
+
+## Fresh refresh control
+
+`05-refresh-off` completed with the corrected collector: **58,962.64 canonical
+logical TPS**, 58,661.49 offered/admitted TPS, 600 measured seconds and 599 complete
+block-time buckets. Generator proof/drain and wrapper cleanup/strict identity
+checks all passed, with zero final backlog, hash conflicts, fatal follower errors
+or exhausted source retries. There were 113 transient timeouts and 584,332
+not-ready responses over the whole run. Offered and canonical rates use different
+cohorts/time buckets; their small difference is not an accounting failure. There
+is no independent five-percent overdrive and no capacity claim.
+
+This pair uses frozen source `f5978d11b52f649ce8d464ce050440963306555b`:
+- Genesis: `sha256:cc1d01ad8654c17b61f2ef995c188ad065724f8c5bae2e56520a78ed6b9f6549`.
+- Generator: `sha256:38a859d7d8552f99e6961d301fac728d369984bd1f222a63efd7eda3f7e3fed9`.
+
+Sharing is off and reconciliation timing is on in both refresh arms. Mean sampled
+CPU equivalents were validator 10.24, client 0.88 and session-stats 0.69. Delivery
+partitions reconcile across 4,621 diagnostic candidates: external wait 111.93
+ms/candidate, of which first-epoch pre-installation overlap accounts for 31.55
+ms/candidate. All 1,928 already-published probes returned work, averaging 0.72 ms.
+These candidate timings are diagnostic wall times, not canonical CPU attribution.
+The next arm changes only snapshot refresh to one, with the same restart policy
+and prebuilt images. Compact control evidence is saved in
+`doc/benchmarks/results/native-admission-20260909-05-refresh-off.json`.

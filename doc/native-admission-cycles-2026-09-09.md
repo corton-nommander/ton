@@ -416,3 +416,31 @@ epoch wait partitions reconcile. These remain diagnostic candidate wall times,
 not exclusive CPU measurements or independently canonical-filtered block metrics.
 The next arm isolates local-signature reuse against this control in the same
 recorded 64 GiB VM environment.
+
+
+## First complete local-signature comparison
+
+`12-memory64-local-reuse` passed its full controller, proof/drain, validator cleanup
+and image checks at **59,984.77 canonical logical TPS**, versus **57,437.36** for
+control 11: **+4.44%**. Offered/admitted throughput was 60,082.16. Both arms use the
+same recorded 64 GiB VM, images, topology, load and resource limits. The comparison
+accepts only the local-signature flag change and the separately verified duration
+postprocessing correction described above.
+
+Matched interior CPU samples were validator 10.07 → 9.48 equivalents (**−5.88%**),
+client 0.83 → 0.80 and Session Stats 0.97 → 0.85. Final backlog, proof/hash errors
+and exhausted retries stayed zero. Transient timeouts were 92 → 57; the coarse
+p50/p95/p99 admission RTT buckets stayed 200/500/1,000 ms. This single screen is
+promising, but it is not yet a repeatable promotion or an independently overdriven
+capacity result.
+
+Eight matched overlay endpoints recorded at least **6,345,284 receipt hits**, zero
+receipt mismatches and 136 remaining crypto checks. Fifteen endpoints retired and
+fifteen appeared, so these are observable lower bounds, not complete interval
+totals. The counter evidence confirms that the intended local rechecks were avoided.
+Incoming verification and other broadcast validation paths remain unchanged.
+
+The [candidate record](benchmarks/results/native-admission-20260909-12-memory64-local-reuse.json)
+is retained. Repeat the candidate and then the control, with a restart before each
+arm and strict reuse of the existing images, to complete A/B/B/A before selecting
+settings.

@@ -395,8 +395,9 @@ Compare equal combined source/connection/credit budgets when isolating the effec
 of distributing generation; increase total budgets separately only if their
 counters show a limit. If more unique offers increase RTT, backlog and retries
 without increasing canonical TPS, reduce excess load and optimize A's measured
-admission, decoding, execution or persistence bottleneck. If canonical TPS rises,
-the previous single generator or its supply path was limiting the observed rate.
+admission, decoding, execution or persistence bottleneck. A repeatable canonical TPS increase under matched combined budgets supports a
+supply-path limitation. If combined credits or workload also increased, the
+result does not isolate the effect of distributing senders across servers.
 Higher network use alone is not evidence of improvement.
 
 ### Update an already imported runner on B

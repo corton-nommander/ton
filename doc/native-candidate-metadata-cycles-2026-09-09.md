@@ -47,8 +47,9 @@ workchain handling, sort/dedup, opaque/non-native handling, exact-parent nonce
 floors and fork isolation. No cross-candidate cache or canonical-watermark change
 is included.
 
-`TON_NATIVE_CANDIDATE_METADATA_PROJECTION=1` selects the new path at process
-startup; only literal `1` enables it, and the default is 0. An explicit internal
+`TON_NATIVE_CANDIDATE_METADATA_PROJECTION=1` selects the new path when the
+normal extractor first reads the process environment; that choice is cached.
+Only literal `1` enables it, and the default is 0. An explicit internal
 mode allows deterministic differential tests without manipulating process state.
 Compose, runtime capture and the validator profiler record the flag.
 
@@ -89,7 +90,7 @@ Independent parser and caller reviews found no validation mismatch. The new
 empty/duplicate/short parents, maximum logical and parent counts, malformed
 headers/trees/signature cells, nonce overflow, trailing data and equivalent but
 noncanonical encodings. The 11-test consensus metadata suite passes with the
-startup flag both off and on, preserving parent identity, deduplication, nonce
+process flag both off and on, preserving parent identity, deduplication, nonce
 floor results, opaque/non-native handling and terminal-nonce failure behavior.
 The existing 18 native-state tests and state-resolver policy checks also pass.
 The first test compilation found fixture/helper naming errors; those were fixed
@@ -272,6 +273,14 @@ there is no database reset. C++/Compose fallback and physical-server defaults
 remain zero. These CPU-specific images and local commits are not a published
 Server A release. On production, use a built revision containing the feature
 and test it against its same-image control before changing the deployment preset.
+
+The retained runtime was verified at 12:41 UTC: genesis and Session Stats were
+healthy, masterchain sequence numbers advanced from 62,071 to
+62,121, and the generator remained stopped after exit 0. Container
+identities and frozen image IDs stayed unchanged during that check. Physical
+Compose resolution still reports metadata projection 0. The saved evaluation
+includes this runtime record. About 16.0 GiB of host disk space remains; arrange
+additional free space before another full load cycle.
 
 For two remote generators, use the
 [disjoint-source procedure](native-remote-client-guide.md#two-remote-generators-against-one-genesis).

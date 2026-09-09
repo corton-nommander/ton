@@ -771,5 +771,120 @@
     "Unused Docker build cache and pip download cache were purged and Docker free-block reclamation was attempted before A2. No load overlapped maintenance, but disk/cache/I/O state is not encoded in strict configuration fingerprints. This is observed repeat consistency, not an uninterrupted identical-host causal ABBA.",
     "Mean sampled CPU estimates have substantial between-control variation; candidate B2 used more sampled raw CPU than control A2. Do not describe CPU reduction as uniform across all pairs.",
     "Native CPU-specific local images and local commits have not been published or deployed to production."
-  ]
+  ],
+  "retained_desktop_runtime": {
+    "before": {
+      "unix_s": 1788957652.967812,
+      "containers": {
+        "genesis": {
+          "id": "37bff07adf537db057924d189b859ecc58009cd3e4c1258c1ecf55e9a71b1077",
+          "image": "sha256:80bce954af67215b66a05e1ffc3a1a893775180773ad77b717b672e5ce80b6c1",
+          "started_at": "2026-09-09T12:34:53.02270943Z",
+          "restart_count": 0,
+          "running": true,
+          "health": "healthy",
+          "exit_code": 0,
+          "oom_killed": false,
+          "flags": {
+            "TON_NATIVE_CANDIDATE_METADATA_PROJECTION": "1",
+            "TON_OVERLAY_LOCAL_SIGNATURE_REUSE": "1",
+            "TON_NATIVE_ADMISSION_CONFIG_CACHE": "1",
+            "TON_NATIVE_RECONCILIATION_PROFILE": "1",
+            "TON_KEYRING_PREPARED_SIGNING": "0",
+            "TON_NATIVE_ADMISSION_SHARD_SHARING": "0",
+            "TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH": "0",
+            "SPAM_RUN": "0",
+            "NATIVE_SPAM_RUN": "0"
+          }
+        },
+        "native-load-generator": {
+          "id": "f0cfc3287783eb6018e76d0137c91ad3c048bdc4459de7cc8fc8a3055ebb4f8f",
+          "image": "sha256:e2932e7731c6d5f0c546942dcb7a6e7ed1c50ecf7e0bde408c57a17e2cc9e4b8",
+          "started_at": "2026-09-09T12:16:49.138239107Z",
+          "restart_count": 0,
+          "running": false,
+          "health": null,
+          "exit_code": 0,
+          "oom_killed": false,
+          "flags": {}
+        },
+        "session-stats": {
+          "id": "a138e55dfb19ff6d0d324e6d7a74a754d2f00b63e3a22179cb04f3672058eead",
+          "image": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67",
+          "started_at": "2026-09-09T08:28:01.689543148Z",
+          "restart_count": 0,
+          "running": true,
+          "health": "healthy",
+          "exit_code": 0,
+          "oom_killed": false,
+          "flags": {}
+        }
+      },
+      "masterchain_seqno": 62071,
+      "healthcheck_started_at": "2026-09-09T12:40:43.080674174Z",
+      "host_available_bytes": 17172119552
+    },
+    "after": {
+      "unix_s": 1788957673.0037112,
+      "containers": {
+        "genesis": {
+          "id": "37bff07adf537db057924d189b859ecc58009cd3e4c1258c1ecf55e9a71b1077",
+          "image": "sha256:80bce954af67215b66a05e1ffc3a1a893775180773ad77b717b672e5ce80b6c1",
+          "started_at": "2026-09-09T12:34:53.02270943Z",
+          "restart_count": 0,
+          "running": true,
+          "health": "healthy",
+          "exit_code": 0,
+          "oom_killed": false,
+          "flags": {
+            "TON_NATIVE_CANDIDATE_METADATA_PROJECTION": "1",
+            "TON_OVERLAY_LOCAL_SIGNATURE_REUSE": "1",
+            "TON_NATIVE_ADMISSION_CONFIG_CACHE": "1",
+            "TON_NATIVE_RECONCILIATION_PROFILE": "1",
+            "TON_KEYRING_PREPARED_SIGNING": "0",
+            "TON_NATIVE_ADMISSION_SHARD_SHARING": "0",
+            "TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH": "0",
+            "SPAM_RUN": "0",
+            "NATIVE_SPAM_RUN": "0"
+          }
+        },
+        "native-load-generator": {
+          "id": "f0cfc3287783eb6018e76d0137c91ad3c048bdc4459de7cc8fc8a3055ebb4f8f",
+          "image": "sha256:e2932e7731c6d5f0c546942dcb7a6e7ed1c50ecf7e0bde408c57a17e2cc9e4b8",
+          "started_at": "2026-09-09T12:16:49.138239107Z",
+          "restart_count": 0,
+          "running": false,
+          "health": null,
+          "exit_code": 0,
+          "oom_killed": false,
+          "flags": {}
+        },
+        "session-stats": {
+          "id": "a138e55dfb19ff6d0d324e6d7a74a754d2f00b63e3a22179cb04f3672058eead",
+          "image": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67",
+          "started_at": "2026-09-09T08:28:01.689543148Z",
+          "restart_count": 0,
+          "running": true,
+          "health": "healthy",
+          "exit_code": 0,
+          "oom_killed": false,
+          "flags": {}
+        }
+      },
+      "masterchain_seqno": 62121,
+      "healthcheck_started_at": "2026-09-09T12:40:58.164297057Z",
+      "host_available_bytes": 17171226624
+    },
+    "checks": {
+      "genesis_healthy": true,
+      "stats_healthy": true,
+      "load_stopped_cleanly": true,
+      "masterchain_advancing": true,
+      "identities_unchanged": true,
+      "selected_flags": true,
+      "frozen_genesis_image": true,
+      "frozen_load_image": true
+    },
+    "valid": true
+  }
 }

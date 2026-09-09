@@ -38,6 +38,7 @@ need repeated controls before promotion.
 | Arm | Sharing | Offered/admitted logical TPS | Canonical logical TPS | Proof/drain | Capacity claim |
 | --- | --- | ---: | ---: | --- | --- |
 | `02-sharing-off` | Off | 59,834.48 | 59,833.64 | Complete | No independent overdrive |
+| `03-sharing-on` | On | 59,244.64 | 59,218.56 | Complete | No independent overdrive |
 
 `01-sharing-off` failed image preflight before any generator or traffic started;
 its setup artifacts are retained and it is not a performance measurement.
@@ -47,6 +48,30 @@ proof-follower errors or exhausted source retries. There were 75 transient clien
 timeouts and 746,868 not-ready admission responses over the complete run. These
 whole-run counts include warmup and drain; the stage data below uses only sampled
 intervals fully inside the measured window.
+
+## Sharing decision
+
+Sharing remains default-off: the candidate observed **1.03% lower canonical TPS**
+than its control. Both are valid completed observations, not overdriven capacity
+claims. This single pair cannot resolve small effects or prove a regression, but
+it supplies no basis for promotion. Snapshot refresh will be screened separately
+with sharing off.
+
+In approximately matched 570-second interior profiles, actual manager requests
+fell from 62,779 to 3,325 (**94.7% fewer**), with 57,693 shared joins. Duplicate
+cache fills fell from 58,518 to 31. No sharing-table or waiter cap was reached.
+There were 93 bounded later-deadline fallbacks; these preserve caller deadlines.
+The substantial request saving did not improve throughput or batch wall latency:
+mean residence increased from 110.0 to 129.8 ms and snapshot-change rejection
+from 19.96% to 22.32% of completed inputs. Mean block packing increased from
+6,281 to 7,890 logical transfers. These associations do not isolate the cause
+of the changed timing; request count alone is not a throughput proxy.
+
+Full-run transient timeouts were 75/109 and not-ready responses 746,868/798,351
+for off/on; neither arm exhausted a source retry or retained final backlog.
+Mean sampled validator CPU was 9.95/10.04 equivalents. Both fixed images and
+validator identities passed the harness checks. Checked-in compact evidence is
+in `doc/benchmarks/results/native-admission-20260909-0{2,3}-sharing-*.json`.
 
 ## Control diagnostics
 

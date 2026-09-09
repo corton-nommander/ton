@@ -54,5 +54,5 @@ target_include_directories(test-ext-message-pool-scheduler PRIVATE ${CMAKE_SOURC
                                                                    ${CMAKE_SOURCE_DIR}/tl
                                                                    ${CMAKE_SOURCE_DIR}/tl/generate
                                                                    ${CMAKE_SOURCE_DIR}/third-party/rocksdb/include)
-target_link_libraries(test-ext-message-pool-scheduler PRIVATE td-test-main tdutils ton_validator)
+target_link_libraries(test-ext-message-pool-scheduler PRIVATE td-test-main tdutils ton_validator validator)
 ton_test(test-ext-message-pool-scheduler)

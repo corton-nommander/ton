@@ -7,6 +7,7 @@
 #include "validator/consensus/manager-facade.h"
 #include "validator/impl/ext-message-pool.hpp"
 #include "validator/impl/shard.hpp"
+#include "validator/impl/applied-ext-message-cleanup.hpp"
 #include "validator/manager.hpp"
 
 namespace ton::validator {
@@ -1322,8 +1323,14 @@ class SharedAdmissionTestState final : public ShardStateQ {
 
 class SharedAdmissionTestPool final : public ExtMessagePool {
  public:
-  SharedAdmissionTestPool(td::actor::ActorId<ValidatorManager> manager, bool enabled)
-      : ExtMessagePool({}, manager), enabled_(enabled) {
+  SharedAdmissionTestPool(td::actor::ActorId<ValidatorManager> manager, bool enabled,
+                          std::shared_ptr<bool> destroyed = {})
+      : ExtMessagePool({}, manager), enabled_(enabled), destroyed_(std::move(destroyed)) {
+  }
+  ~SharedAdmissionTestPool() override {
+    if (destroyed_) {
+      *destroyed_ = true;
+    }
   }
   void start_up() override {
     ExtMessagePoolTestAccess::enable_shared_admission(*this, enabled_);
@@ -1347,6 +1354,7 @@ class SharedAdmissionTestPool final : public ExtMessagePool {
 
  private:
   bool enabled_;
+  std::shared_ptr<bool> destroyed_;
 };
 
 }  // namespace
@@ -1450,6 +1458,27 @@ TEST(ExtMessagePoolScheduler, DisabledSharedAdmissionRetainsIndependentManagerRe
   });
 }
 
+TEST(ExtMessagePoolScheduler, SharedAdmissionEarlyManagerTimeoutDoesNotStartExtraRequests) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto requests = std::make_shared<SharedAdmissionManagerRequests>();
+    auto manager = td::actor::create_actor<SharedAdmissionTestManager>("shared-admission-manager", requests);
+    auto pool = td::actor::create_actor<SharedAdmissionTestPool>("shared-admission-pool", manager.get(), true);
+    auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
+    auto shard = ExtMessagePoolTestAccess::shard_top(9);
+    auto first = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(5));
+    auto joined = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(8));
+    co_await scheduler.wait_sync_work();
+    requests->requests[0].promise.set_error(td::Status::Error(ErrorCode::timeout, "early manager timeout"));
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(requests->requests.size(), 1u);
+    ASSERT_TRUE(first.await_ready() && joined.await_ready());
+    ASSERT_TRUE((co_await std::move(first).wrap()).is_error());
+    ASSERT_TRUE((co_await std::move(joined).wrap()).is_error());
+    co_return {};
+  });
+}
+
 TEST(ExtMessagePoolScheduler, SharedAdmissionLaterCallerRetriesOnceWithinOriginalDeadline) {
   td::actor::TestScheduler scheduler;
   scheduler.run([&]() -> td::actor::Task<> {
@@ -1492,7 +1521,8 @@ TEST(ExtMessagePoolScheduler, SharedAdmissionActorShutdownCancelsPendingFetchSaf
   scheduler.run([&]() -> td::actor::Task<> {
     auto requests = std::make_shared<SharedAdmissionManagerRequests>();
     auto manager = td::actor::create_actor<SharedAdmissionTestManager>("shared-admission-manager", requests);
-    auto pool = td::actor::create_actor<SharedAdmissionTestPool>("shared-admission-pool", manager.get(), true);
+    auto destroyed = std::make_shared<bool>(false);
+    auto pool = td::actor::create_actor<SharedAdmissionTestPool>("shared-admission-pool", manager.get(), true, destroyed);
     auto mc = ExtMessagePoolTestAccess::masterchain_state(42)->get_block_id();
     auto shard = ExtMessagePoolTestAccess::shard_top(9);
     auto first = td::actor::ask(pool.get(), &SharedAdmissionTestPool::get, mc, shard, td::Timestamp::in(5));
@@ -1503,10 +1533,16 @@ TEST(ExtMessagePoolScheduler, SharedAdmissionActorShutdownCancelsPendingFetchSaf
     co_await scheduler.wait_sync_work();
     requests->requests[0].promise.set_error(td::Status::Error(ErrorCode::notready, "after shutdown"));
     co_await scheduler.wait_sync_work();
-    ASSERT_TRUE((co_await std::move(first).wrap()).is_error());
-    ASSERT_TRUE((co_await std::move(joined).wrap()).is_error());
+    // Stopped actors cannot run the fanout continuation. The independent
+    // original caller timers must still release both requests safely.
     scheduler.advance_time(10);
     co_await scheduler.wait_sync_work();
+    ASSERT_TRUE(first.await_ready() && joined.await_ready());
+    ASSERT_TRUE((co_await std::move(first).wrap()).is_error());
+    ASSERT_TRUE((co_await std::move(joined).wrap()).is_error());
+    pool.reset();
+    co_await scheduler.wait_sync_work();
+    ASSERT_TRUE(*destroyed);
     co_return {};
   });
 }

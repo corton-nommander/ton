@@ -460,7 +460,8 @@ td::optional<ExtMessagePool::NativeAdmissionShardRequest> ExtMessagePool::queue_
   ++native_admission_shard_waiter_count_;
   native_batch_shard_shared_peak_waiters_ =
       std::max<td::uint64>(native_batch_shard_shared_peak_waiters_, native_admission_shard_waiter_count_);
-  return NativeAdmissionShardRequest{.waiter = std::move(waiter), .dispatch = dispatch};
+  return NativeAdmissionShardRequest{
+      .waiter = std::move(waiter), .dispatch = dispatch, .shared_deadline = it->second.deadline};
 }
 
 void ExtMessagePool::complete_native_admission_shared_shard_view(
@@ -540,7 +541,8 @@ td::actor::Task<ExtMessagePool::NativeAdmissionShardViewPtr> ExtMessagePool::wai
         co_return result.move_as_error();
       }
       ++native_batch_shard_shared_timeouts_;
-      if (deadline.is_in_past()) {
+      if (deadline.is_in_past() || !request.value().shared_deadline.is_in_past() ||
+          deadline.get() <= request.value().shared_deadline.get()) {
         co_return result.move_as_error();
       }
       // The creator's earlier deadline expired. A later caller still owns its

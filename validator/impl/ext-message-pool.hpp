@@ -379,6 +379,7 @@ class ExtMessagePool : public td::actor::Actor {
   struct NativeAdmissionShardRequest {
     td::actor::StartedTask<NativeAdmissionShardViewPtr> waiter;
     bool dispatch{false};
+    td::Timestamp shared_deadline;
   };
   // Retain old generations only until their original fetch deadline. Never
   // clear pending promises when a new applied masterchain state arrives.

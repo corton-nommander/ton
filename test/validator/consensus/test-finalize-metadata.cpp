@@ -1,4 +1,6 @@
 #include <limits>
+#include <cstdlib>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -8,6 +10,7 @@
 #include "td/actor/BusRuntime.h"
 #include "td/actor/coro_utils.h"
 #include "td/utils/tests.h"
+#include "test/native-parent-metadata-fixtures.h"
 #include "validator/consensus/bus.h"
 #include "validator/consensus/simplex/state-resolver-policy.h"
 #include "validator/consensus/utils.h"
@@ -44,6 +47,15 @@ BlockCandidate make_candidate(td::Ref<vm::Cell> extra) {
 
 BlockCandidate make_opaque_candidate() {
   return make_candidate(vm::CellBuilder{}.finalize_novm());
+}
+
+BlockCandidate make_custom_candidate(td::Ref<vm::Cell> custom) {
+  auto empty = make_empty_hashmap();
+  vm::CellBuilder extra;
+  CHECK(extra.store_long_bool(0x4a33f6fd, 32) && extra.store_ref_bool(empty) && extra.store_ref_bool(empty) &&
+        extra.store_ref_bool(empty) && extra.store_bits_bool(Bits256::zero()) &&
+        extra.store_bits_bool(Bits256::zero()) && extra.store_bool_bool(true) && extra.store_ref_bool(custom));
+  return make_candidate(extra.finalize());
 }
 
 block::NativeTransfer make_native_transfer() {
@@ -285,6 +297,105 @@ TEST(FinalizeMetadataHandoff, V5RunTracksOneAtomicParentInterval) {
   auto hashes = get_candidate_native_external_hashes(candidate).move_as_ok();
   ASSERT_EQ(hashes.size(), 1u);
   ASSERT_TRUE(hashes[0] == parent_hash);
+}
+
+TEST(FinalizeMetadataHandoff, ParentProjectionMatchesFullMetadataAcrossWireVersions) {
+  for (td::uint8 version = 1; version <= 6; ++version) {
+    block::NativeTransferBatch batch;
+    batch.version = version;
+    for (bool empty : {true, false}) {
+      if (!empty) {
+        if (version <= 4) {
+          batch.entries = {{native_metadata_test::scalar(20, 4), 101, 102},
+                           {native_metadata_test::scalar(40, 1), 103, 104},
+                           {native_metadata_test::scalar(40, 1), 103, 104}};
+        } else {
+          batch.runs = {native_metadata_test::run(1, 20, 4), native_metadata_test::run(2, 40, 1),
+                        native_metadata_test::run(16, 42, 1), native_metadata_test::run(2, 40, 1)};
+        }
+      }
+      auto candidate = make_custom_candidate(native_metadata_test::serialize(batch));
+      const auto full = get_candidate_native_external_messages(candidate, NativeCandidateMetadataMode::FullBatch).move_as_ok();
+      const auto projected = get_candidate_native_external_messages(candidate, NativeCandidateMetadataMode::ParentProjection).move_as_ok();
+      ASSERT_EQ(full.size(), empty ? 0u : version <= 4 ? 2u : 3u);
+      assert_metadata_equal(projected, full);
+      for (std::size_t index = 0; index < full.size(); ++index) {
+        if (index) ASSERT_TRUE(projected[index - 1].hash < projected[index].hash);
+      }
+      const auto full_floors = get_native_source_nonce_floors(full).move_as_ok();
+      const auto projected_floors = get_native_source_nonce_floors(projected).move_as_ok();
+      ASSERT_EQ(full_floors.size(), projected_floors.size());
+      ASSERT_EQ(full_floors.size(), empty ? 0u : 2u);
+      for (std::size_t index = 0; index < full_floors.size(); ++index) {
+        ASSERT_EQ(full_floors[index].workchain, projected_floors[index].workchain);
+        ASSERT_EQ(full_floors[index].source, projected_floors[index].source);
+        ASSERT_EQ(full_floors[index].next_nonce, projected_floors[index].next_nonce);
+      }
+      if (!empty) {
+        ASSERT_EQ(projected_floors[0].source, native_metadata_test::address(1));
+        ASSERT_EQ(projected_floors[0].next_nonce, version <= 4 ? 41u : 58u);
+        ASSERT_EQ(projected_floors[1].source, native_metadata_test::address(4));
+        ASSERT_EQ(projected_floors[1].next_nonce, 21u);
+      }
+    }
+  }
+}
+
+TEST(FinalizeMetadataHandoff, ParentProjectionKeepsParentIdentityThroughBocContainerFlags) {
+  auto batch = native_metadata_test::direct_batch(6, 32);
+  auto candidate = make_custom_candidate(native_metadata_test::serialize(batch));
+  const auto expected = get_candidate_native_external_messages(candidate, NativeCandidateMetadataMode::FullBatch).move_as_ok();
+  auto root = vm::std_boc_deserialize(candidate.data).move_as_ok();
+  for (int mode : {0, 1, 2, 3, 31}) {
+    candidate.data = vm::std_boc_serialize(root, mode).move_as_ok();
+    candidate.id.file_hash = td::sha256_bits256(candidate.data);
+    const auto actual = get_candidate_native_external_messages(candidate, NativeCandidateMetadataMode::ParentProjection).move_as_ok();
+    ASSERT_EQ(actual.size(), 2u);
+    assert_metadata_equal(actual, expected);
+  }
+}
+
+TEST(FinalizeMetadataHandoff, MetadataModesKeepOpaqueNonNativeAndMasterchainHandling) {
+  auto opaque = make_opaque_candidate();
+  vm::CellBuilder other;
+  ASSERT_TRUE(other.store_ulong_rchk_bool(0x12345678, 32));
+  auto non_native = make_custom_candidate(other.finalize());
+  auto masterchain = make_native_run_candidate(make_native_transfer_run());
+  masterchain.id.id.workchain = masterchainId;
+  // Masterchain short-circuit must continue to precede native BOC parsing.
+  masterchain.data = td::BufferSlice("invalid BOC");
+  for (auto mode : {NativeCandidateMetadataMode::FullBatch, NativeCandidateMetadataMode::ParentProjection}) {
+    ASSERT_TRUE(get_candidate_native_external_messages(opaque, mode).move_as_ok().empty());
+    ASSERT_TRUE(get_candidate_native_external_messages(non_native, mode).move_as_ok().empty());
+    ASSERT_TRUE(get_candidate_native_external_messages(masterchain, mode).move_as_ok().empty());
+  }
+}
+
+TEST(FinalizeMetadataHandoff, MetadataModesRejectMalformedNativeBatchAndUnrepresentableFloor) {
+  auto parent = native_metadata_test::run(2);
+  auto malformed = make_custom_candidate(native_metadata_test::header(6, 0, 3, {}, native_metadata_test::serialize(parent)));
+  auto terminal = native_metadata_test::direct_batch(6, 16);
+  terminal.runs[0].first_nonce = std::numeric_limits<td::uint64>::max() - 15;
+  auto terminal_candidate = make_custom_candidate(native_metadata_test::serialize(terminal));
+  for (auto mode : {NativeCandidateMetadataMode::FullBatch, NativeCandidateMetadataMode::ParentProjection}) {
+    ASSERT_TRUE(get_candidate_native_external_messages(malformed, mode).is_error());
+    auto interval = get_candidate_native_external_messages(terminal_candidate, mode).move_as_ok();
+    ASSERT_EQ(interval.size(), 1u);
+    ASSERT_EQ(interval[0].nonce, terminal.runs[0].first_nonce);
+    ASSERT_EQ(interval[0].logical_count, 16u);
+    ASSERT_TRUE(get_native_source_nonce_floors(interval).is_error());
+  }
+}
+
+TEST(FinalizeMetadataHandoff, StartupWrapperMatchesExplicitConfiguredMode) {
+  const char* value = std::getenv("TON_NATIVE_CANDIDATE_METADATA_PROJECTION");
+  const auto mode = value && std::string_view(value) == "1" ? NativeCandidateMetadataMode::ParentProjection
+                                                          : NativeCandidateMetadataMode::FullBatch;
+  auto candidate = make_custom_candidate(native_metadata_test::serialize(native_metadata_test::direct_batch(6, 32)));
+  const auto expected = get_candidate_native_external_messages(candidate, mode).move_as_ok();
+  const auto actual = get_candidate_native_external_messages(candidate).move_as_ok();
+  ASSERT_EQ(actual.size(), expected.size());
+  assert_metadata_equal(actual, expected);
 }
 
 TEST(FinalizeMetadataHandoff, ProjectsSortedUniqueExclusiveNonceFloors) {

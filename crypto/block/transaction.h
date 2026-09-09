@@ -190,6 +190,16 @@ struct NativeTransferBatchEntry {
 };
 
 struct NativeTransferBatch {
+  // One physical external authorization. A direct NTRN parent covers the
+  // complete contiguous logical interval; its children have no independent
+  // external-message identity.
+  struct ExternalMessageMetadata {
+    ton::Bits256 hash;
+    ton::StdSmcAddress source;
+    td::uint64 nonce{0};
+    td::uint32 logical_count{1};
+  };
+
   static constexpr td::uint32 magic = 0x4e545842;           // "NTXB"
   static constexpr td::uint32 accounts_chunk_magic = 0x4e414343;  // "NACC"
   static constexpr td::uint32 transfers_chunk_magic = 0x4e545843; // "NTXC"
@@ -279,6 +289,17 @@ struct NativeTransferBatch {
       const std::vector<NativeTransferRun>& runs);
   bool store(vm::CellBuilder& cb) const;
   static td::Result<NativeTransferBatch> unpack(Ref<vm::Cell> cell);
+  // Preserve unpack's strict field/tree/canonical-format checks, but omit the
+  // derived execution entries and account table for direct runs. Return wire
+  // traversal order without deduplication. Like unpack, this does not verify
+  // cryptographic signatures or validate against mutable account state.
+  static td::Result<std::vector<ExternalMessageMetadata>> unpack_external_metadata(Ref<vm::Cell> cell);
+
+ private:
+  // A projection-only batch is private implementation scratch and must never
+  // escape as a full execution object through the public unpack API.
+  static td::Result<NativeTransferBatch> unpack_impl(Ref<vm::Cell> cell,
+                                                    std::vector<ExternalMessageMetadata>* external_metadata);
 };
 
 struct StoragePhaseConfig {

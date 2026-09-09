@@ -1,6 +1,15 @@
 add_library(td-test-main test-td-main.cpp)
 target_link_libraries(td-test-main PRIVATE tdutils)
 
+add_executable(test-native-parent-metadata test-native-parent-metadata.cpp)
+target_include_directories(test-native-parent-metadata PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test-native-parent-metadata PRIVATE td-test-main ton_crypto)
+ton_test(test-native-parent-metadata)
+
+add_executable(bench-native-parent-metadata EXCLUDE_FROM_ALL bench-native-parent-metadata.cpp)
+target_include_directories(bench-native-parent-metadata PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(bench-native-parent-metadata PRIVATE ton_crypto)
+
 add_executable(test-overlay-traffic-yield-policy test-overlay-traffic-yield-policy.cpp)
 target_include_directories(test-overlay-traffic-yield-policy PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(test-overlay-traffic-yield-policy PRIVATE td-test-main tdutils)

@@ -282,7 +282,7 @@ cd "$HOME/native-remote-client"
 bash run-remote-load.sh --connections 10 50 100 --duration 600
 ```
 
-Omitting `--connections` uses the same 10/50/100 sequence. The updated runner defaults to **at least 600 measured seconds per count**, even when an older installed `remote-load.env` still says 180. Longer environment durations remain effective; an explicit `--duration` selects the requested duration, including a shorter diagnostic run. For a later independent single-count run:
+Omitting `--connections` now selects one 10-connection arm. The updated runner defaults to **at least 600 measured seconds per count**, even when an older installed `remote-load.env` still says 180. Longer environment durations remain effective; an explicit `--duration` selects the requested duration, including a shorter diagnostic run. For a later independent single-count run:
 
 ```sh
 bash run-remote-load.sh --connections 10 --duration 600
@@ -315,6 +315,75 @@ tail -n 5 generator.log
 Exit 2 can indicate unsettled drain; exit 3 can indicate canonical follower/proof/correctness failure. Use the final record and stderr to identify the actual reason. Exit 137 alone does not prove OOM; inspect `State.OOMKilled`. CPU and memory limits are explicit knobs for B, not established explanations for an unexplained exit.
 
 Use `canonical_chain_measure_avg_tps` in `generator-final.json` for block-time canonical throughput and `steady_mempool_accept_avg_tps` for admission. The runner's summary distinguishes `generator_capacity_eligible` from `observation_only`. It does not collect A's independent validator process/resource/pool-cleanup evidence, so neither label certifies the full local harness's strict capacity acceptance. Preserve A-side evidence separately and ensure offered load exceeds canonical TPS before making a capacity claim.
+
+### Two remote generators against one genesis
+
+One liteserver can accept persistent connections from both B and C. A second
+generator can increase offered load and bandwidth, but canonical TPS increases
+only if the first generator was constraining supply and A has remaining capacity.
+The earlier plateau across connection counts does not establish a network limit.
+Each generator also downloads and verifies the chain independently, so a second
+observer adds liteserver block/proof work even if accepted TPS stays unchanged.
+
+Stop and completely drain the old full-range generator before preparing this
+test. Never use its same source keys concurrently on B and C: the client-data
+lock is local to each installation, and auto-nonce does not coordinate writers
+across hosts. The existing 24,576 funded sources can be split into two disjoint
+groups; no genesis reset or lane change is needed. On an eight-lane chain, each
+12,288-source group contains 1,536 sources per lane. The exporter detects the
+actual manifest depth.
+
+From A's MyLocalTonDocker checkout, export the two groups using the same already
+prepared generator image. Keep that image unchanged between exports; use new
+output directory names if these already exist:
+
+```sh
+bash benchmark/remote/export-native-client.sh \
+  --non-interactive --server-ip 2.59.170.242 --container genesis \
+  --sources 12288 --source-offset 0 --no-build-image \
+  --output "$HOME/native-client-B"
+
+bash benchmark/remote/export-native-client.sh \
+  --non-interactive --server-ip 2.59.170.242 --container genesis \
+  --sources 12288 --source-offset 12288 --no-build-image \
+  --output "$HOME/native-client-C"
+```
+
+The commands use A's deployment `.env`; add `--env-file PATH` if it differs.
+Each bundle includes the image pinned by immutable ID. Copy B's bundle only to
+B and C's only to C, then import each into a new client directory using the
+normal importer. Source offsets are export options, not remote-runner arguments.
+On each client, after import:
+
+```sh
+cd "$HOME/native-remote-client"
+bash run-remote-load.sh --connections 10 --duration 900 --warmup 60 \
+  --submit-coalesce-ms 20
+```
+
+Start both close together with synchronized host clocks. Readiness and warmup
+are independent; there is no synchronized measurement-start barrier. Confirm
+at least 600 seconds of overlapping measured load in the final timestamps and
+analyze that common interval on A. A 900-second run provides room for startup
+skew, but does not guarantee the overlap.
+
+**Do not add the two canonical TPS readings.** Both followers count the same
+whole-chain transfers; their source-cohort proof accounting is separate. Use one
+canonical chain measurement for the common window and sum only distinct offered
+or admitted logical transfers over that same window. Retry attempts are not new
+offered transfers. Separate per-client capacity labels compare that client's own
+offer rate with whole-chain TPS and may correctly remain `observation_only`.
+Complete proof/drain checks on both clients and retain A's matching profile.
+
+Treat combined client credits as an explicit test setting: two default clients
+double the initial/maximum aggregate congestion windows to 65,536/131,072.
+Compare equal combined source/connection/credit budgets when isolating the effect
+of distributing generation; increase total budgets separately only if their
+counters show a limit. If more unique offers increase RTT, backlog and retries
+without increasing canonical TPS, reduce excess load and optimize A's measured
+admission, decoding, execution or persistence bottleneck. If canonical TPS rises,
+the previous single generator or its supply path was limiting the observed rate.
+Higher network use alone is not evidence of improvement.
 
 ### Update an already imported runner on B
 

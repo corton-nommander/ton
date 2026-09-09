@@ -96,6 +96,16 @@ td::Result<double> get_candidate_gen_utime_exact(const BlockCandidate& candidate
 
 td::Result<std::vector<TrackedNativeExternalMessage>> get_candidate_native_external_messages(
     const BlockCandidate& candidate) {
+  static const bool project_parents = [] {
+    const char* value = std::getenv("TON_NATIVE_CANDIDATE_METADATA_PROJECTION");
+    return value && std::string_view{value} == "1";
+  }();
+  return get_candidate_native_external_messages(candidate, project_parents ? NativeCandidateMetadataMode::ParentProjection
+                                                                         : NativeCandidateMetadataMode::FullBatch);
+}
+
+td::Result<std::vector<TrackedNativeExternalMessage>> get_candidate_native_external_messages(
+    const BlockCandidate& candidate, NativeCandidateMetadataMode mode) {
   std::vector<TrackedNativeExternalMessage> messages;
   if (candidate.id.is_masterchain()) {
     return messages;
@@ -124,32 +134,44 @@ td::Result<std::vector<TrackedNativeExternalMessage>> get_candidate_native_exter
     return messages;
   }
 
-  TRY_RESULT(batch, block::NativeTransferBatch::unpack(std::move(custom)));
-  if (block::NativeTransferBatch::is_direct_run_version(batch.version)) {
-    messages.reserve(batch.runs.size());
-    // `entries` is a derived execution view for v5/v6. Its copied signature
-    // bytes are not an NTFX authorization, so its synthetic external hashes
-    // must never become mempool identity. Track one atomic nonce interval per
-    // canonical NTRN parent instead.
-    for (const auto& run : batch.runs) {
-      TRY_RESULT(parent_hash, run.external_hash());
-      if (run.outputs.empty() || run.outputs.size() > std::numeric_limits<td::uint32>::max()) {
-        return td::Status::Error("invalid native transfer run logical count in candidate metadata");
-      }
-      messages.push_back(TrackedNativeExternalMessage{.hash = parent_hash,
+  if (mode == NativeCandidateMetadataMode::ParentProjection) {
+    TRY_RESULT(metadata, block::NativeTransferBatch::unpack_external_metadata(std::move(custom)));
+    messages.reserve(metadata.size());
+    for (const auto& parent : metadata) {
+      messages.push_back(TrackedNativeExternalMessage{.hash = parent.hash,
                                                        .workchain = basechainId,
-                                                       .source = run.src,
-                                                       .nonce = run.first_nonce,
-                                                       .logical_count = static_cast<td::uint32>(run.outputs.size())});
+                                                       .source = parent.source,
+                                                       .nonce = parent.nonce,
+                                                       .logical_count = parent.logical_count});
     }
   } else {
-    messages.reserve(batch.entries.size());
-    for (const auto& entry : batch.entries) {
-      TRY_RESULT(hash, entry.transfer.external_hash());
-      messages.push_back(TrackedNativeExternalMessage{.hash = hash,
-                                                        .workchain = basechainId,
-                                                        .source = entry.transfer.src,
-                                                        .nonce = entry.transfer.nonce});
+    TRY_RESULT(batch, block::NativeTransferBatch::unpack(std::move(custom)));
+    if (block::NativeTransferBatch::is_direct_run_version(batch.version)) {
+      messages.reserve(batch.runs.size());
+      // `entries` is a derived execution view for v5/v6. Its copied signature
+      // bytes are not an NTFX authorization, so its synthetic external hashes
+      // must never become mempool identity. Track one atomic nonce interval per
+      // canonical NTRN parent instead.
+      for (const auto& run : batch.runs) {
+        TRY_RESULT(parent_hash, run.external_hash());
+        if (run.outputs.empty() || run.outputs.size() > std::numeric_limits<td::uint32>::max()) {
+          return td::Status::Error("invalid native transfer run logical count in candidate metadata");
+        }
+        messages.push_back(TrackedNativeExternalMessage{.hash = parent_hash,
+                                                         .workchain = basechainId,
+                                                         .source = run.src,
+                                                         .nonce = run.first_nonce,
+                                                         .logical_count = static_cast<td::uint32>(run.outputs.size())});
+      }
+    } else {
+      messages.reserve(batch.entries.size());
+      for (const auto& entry : batch.entries) {
+        TRY_RESULT(hash, entry.transfer.external_hash());
+        messages.push_back(TrackedNativeExternalMessage{.hash = hash,
+                                                          .workchain = basechainId,
+                                                          .source = entry.transfer.src,
+                                                          .nonce = entry.transfer.nonce});
+      }
     }
   }
   std::sort(messages.begin(), messages.end(), [](const auto& lhs, const auto& rhs) {

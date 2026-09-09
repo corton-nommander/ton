@@ -38,6 +38,14 @@ td::Result<std::vector<Bits256>> get_candidate_native_external_hashes(const Bloc
 td::Result<std::vector<TrackedNativeExternalMessage>> get_candidate_native_external_messages(
     const BlockCandidate& candidate);
 
+// Both modes perform the same strict wire/canonical validation. Projection
+// omits execution-only materialization and returns the checked parent identity.
+// The explicit mode supports differential checks without changing process state;
+// normal callers select it once through TON_NATIVE_CANDIDATE_METADATA_PROJECTION.
+enum class NativeCandidateMetadataMode { FullBatch, ParentProjection };
+td::Result<std::vector<TrackedNativeExternalMessage>> get_candidate_native_external_messages(
+    const BlockCandidate& candidate, NativeCandidateMetadataMode mode);
+
 // Projects already-decoded candidate metadata to exclusive source nonce
 // boundaries. Zero-length intervals and intervals whose exclusive end cannot
 // be represented are rejected. The result is sorted and unique by

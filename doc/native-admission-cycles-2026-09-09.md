@@ -12,6 +12,10 @@ results, the narrow duration reassessment and the resource-environment change
 are recorded below. This is the best supported configuration in the final matched
 comparison, not a ranking against older images or proof of maximum capacity.
 
+The user subsequently approved the next candidate metadata decoding experiment;
+its implementation and separate measurements are recorded in
+[the metadata cycle](native-candidate-metadata-cycles-2026-09-09.md).
+
 ## Comparison conditions
 
 The desktop reference has four fixed payment lanes, 24,576 sources, 10 persistent

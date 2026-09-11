@@ -705,7 +705,7 @@ void Collator::after_get_mc_state(td::Result<std::pair<Ref<MasterchainState>, Bl
   if (!preprocess_prev_mc_state()) {
     return;
   }
-  if (mc_block_id_.seqno()) {
+  if (mc_block_id_.seqno() && mc_block_reference_.is_null()) {
     // load most recent masterchain block itself
     // NB. it is needed only for creating a correct ExtBlkRef reference to it, which requires start_lt and end_lt
     LOG(DEBUG) << "sending wait_block_data() query #-1 for " << mc_block_id_ << " to Manager";
@@ -720,6 +720,30 @@ void Collator::after_get_mc_state(td::Result<std::pair<Ref<MasterchainState>, Bl
         });
   }
   check_pending();
+}
+
+void Collator::after_get_mc_context(td::Result<CollationMasterchainContext> result, td::PerfLogAction token) {
+  if (result.is_error()) {
+    after_get_mc_state(result.move_as_error(), std::move(token));
+    return;
+  }
+  auto context = result.move_as_ok();
+  if (context.queued_at != 0) {
+    LOG(WARNING) << "collation_prerequisite_timing block=" << context.block_id
+                 << " manager_queue_s=" << context.manager_queue_s
+                 << " state_async_wait_s=" << context.state_wait_s
+                 << " state_resume_queue_s=" << context.state_resume_queue_s
+                 << " selection_service_s=" << context.selection_service_s
+                 << " block_async_wait_s=" << context.block_wait_s
+                 << " reference_service_s=" << context.reference_service_s
+                 << " collator_resume_queue_s=" << td::Time::now() - context.replied_at;
+  }
+  prev_mc_block = std::move(context.block);
+  if (prev_mc_block.not_null()) {
+    mc_block_root = prev_mc_block->root_cell();
+  }
+  mc_block_reference_ = std::move(context.reference);
+  after_get_mc_state(std::make_pair(std::move(context.state), context.block_id), std::move(token));
 }
 
 /**
@@ -776,7 +800,12 @@ void Collator::request_top_masterchain_state(BlockIdExt prev_mc_ref) {
   CHECK(!is_masterchain());
   LOG(DEBUG) << "sending get_top_masterchain_state_block() to Manager";
   ++pending;
-  auto token = perf_log_.start_action("get_top_masterchain_state_block");
+  static const bool bundle_context = [] {
+    const auto* value = std::getenv("TON_COLLATION_MASTERCHAIN_CONTEXT");
+    return value && std::string_view(value) == "1";
+  }();
+  auto token = perf_log_.start_action(bundle_context && !params_.is_hardfork ? "get_collation_masterchain_context"
+                                                                            : "get_top_masterchain_state_block");
   if (params_.is_hardfork) {
     td::actor::send_closure_later(
         manager, &ValidatorManager::get_shard_state_from_db_short, params_.min_masterchain_block_id,
@@ -798,6 +827,18 @@ void Collator::request_top_masterchain_state(BlockIdExt prev_mc_ref) {
   BlockIdExt min_block_id = params_.min_masterchain_block_id;
   if (prev_mc_ref.is_masterchain() && prev_mc_ref.seqno() > min_block_id.seqno()) {
     min_block_id = prev_mc_ref;
+  }
+  if (bundle_context) {
+    static const bool profile_context = [] {
+      const auto* value = std::getenv("TON_COLLATION_PREREQUISITE_PROFILE");
+      return value && std::string_view(value) == "1";
+    }();
+    td::actor::send_closure_later(manager, &ValidatorManager::get_collation_masterchain_context,
+        min_block_id, priority(), timeout_, profile_context ? td::Time::now() : 0,
+        [self = get_self(), token = std::move(token)](td::Result<CollationMasterchainContext> result) mutable {
+          td::actor::send_closure_later(self, &Collator::after_get_mc_context, std::move(result), std::move(token));
+        });
+    return;
   }
   td::actor::send_closure_later(
       manager, &ValidatorManager::wait_block_state_short, min_block_id, priority(), timeout_, false,
@@ -5120,7 +5161,7 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
     {
       td::ScopedRealCpuTimer checkpoint_timer{stats_.work_time.native_stat_checkpoint_rebuild};
       if (!native_pre_storage_stat_) {
-        native_pre_storage_stat_.emplace(block_limit_status_->st_stat);
+        native_pre_storage_stat_ = std::make_shared<const vm::NewCellStorageStat>(block_limit_status_->st_stat);
         ++stats_.native_stat_checkpoint_base_snapshots;
       }
       trial_limit_status.emplace(block_limit_status_->limits, block_limit_status_->cur_lt);
@@ -5131,7 +5172,11 @@ td::actor::Task<bool> Collator::process_native_fast_path_external_messages() {
       trial.extra_out_msgs = block_limit_status_->extra_out_msgs;
       trial.collated_data_size_estimate = block_limit_status_->collated_data_size_estimate;
       trial.public_library_diff = block_limit_status_->public_library_diff;
-      trial.st_stat = *native_pre_storage_stat_;
+      static const bool proof_overlay = [] {
+        const auto* value = std::getenv("TON_NATIVE_CHECKPOINT_PROOF_OVERLAY");
+        return value && std::string_view(value) == "1";
+      }();
+      trial.st_stat = proof_overlay ? vm::NewCellStorageStat::fork(native_pre_storage_stat_) : *native_pre_storage_stat_;
       if (!run_native_stage("storage-proof rebuild", [&] {
             trial.st_stat.add_proof(staged_account_dict.get_root_cell(), block_limit_status_->limits.usage_tree);
           })) {
@@ -7987,6 +8032,9 @@ bool Collator::create_shard_state() {
  * @returns True if the reference is successfully stored, false otherwise.
  */
 bool Collator::store_master_ref(vm::CellBuilder& cb) {
+  if (mc_block_reference_.not_null()) {
+    return cb.append_cellslice_bool(vm::load_cell_slice(mc_block_reference_));
+  }
   return mc_block_root.not_null() && store_ext_blk_ref_to(cb, mc_block_id_, mc_block_root);
 }
 

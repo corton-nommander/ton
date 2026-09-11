@@ -100,6 +100,8 @@ run_test td finalize-metadata-off test/validator/consensus/test-finalize-metadat
   env TON_NATIVE_CANDIDATE_METADATA_PROJECTION=0
 run_test td finalize-metadata-on test/validator/consensus/test-finalize-metadata \
   env TON_NATIVE_CANDIDATE_METADATA_PROJECTION=1
+run_test td candidate-payload-reuse test/validator/consensus/test-finalize-metadata \
+  env TON_IMMUTABLE_CANDIDATE_PAYLOAD_REUSE=1
 run_test td overlay-local-signature test/test-overlay-local-signature env
 run_test td keyring-prepared-signing test/test-keyring-prepared-signing env
 run_test td admission-batch test/validator/test-native-admission-batch env

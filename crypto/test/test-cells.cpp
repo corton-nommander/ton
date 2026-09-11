@@ -20,6 +20,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
@@ -44,6 +45,7 @@
 #include "block/transaction.h"
 #include "crypto/Ed25519.h"
 #include "td/utils/crypto.h"
+#include "common/checksum.h"
 #include "td/utils/misc.h"
 #include "td/utils/tests.h"
 #include "vm/boc.h"
@@ -1651,6 +1653,89 @@ TEST(NativeStateEngine, repeated_shard_accounts_checkpoint_rollback_preserves_la
   vm::NewCellStorageStat cumulative_stat = accepted_stat;
   cumulative_stat.add_proof(committed.get_root_cell(), usage_tree.get());
   ASSERT_TRUE(cumulative_stat.get_total_stat().cells > replacement_stat.get_total_stat().cells);
+}
+
+TEST(NativeStateEngine, immutable_storage_trial_matches_copy_and_survives_base_owner) {
+  auto tree = std::make_shared<vm::CellUsageTree>();
+  auto leaf = [](unsigned value) {
+    vm::CellBuilder builder;
+    CHECK(builder.store_long_bool(value, 32));
+    return builder.finalize();
+  };
+  auto shared = leaf(1);
+  auto external = vm::UsageCell::create(leaf(2), tree->root_ptr());
+  vm::CellBuilder builder;
+  CHECK(builder.store_ref_bool(shared) && builder.store_ref_bool(external));
+  auto original = builder.finalize();
+  vm::NewCellStorageStat baseline;
+  baseline.add_cell_and_proof(original, tree.get());
+  auto base = std::make_shared<const vm::NewCellStorageStat>(baseline);
+  auto accepted = vm::NewCellStorageStat::fork(base);
+  for (unsigned i = 0; i < 256; ++i) {
+    vm::CellBuilder trial_builder;
+    CHECK(trial_builder.store_ref_bool(shared) && trial_builder.store_ref_bool(shared) &&
+          trial_builder.store_ref_bool(external) && trial_builder.store_ref_bool(leaf(i)));
+    auto root = trial_builder.finalize();
+    auto expected = baseline;
+    expected.add_cell_and_proof(root, tree.get());
+    auto trial = vm::NewCellStorageStat::fork(base);
+    trial.add_cell_and_proof(root, tree.get());
+    ASSERT_EQ(trial.get_stat(), expected.get_stat());
+    ASSERT_EQ(trial.get_proof_stat(), expected.get_proof_stat());
+    ASSERT_EQ(trial.tentative_add_cell(original), expected.tentative_add_cell(original));
+    ASSERT_EQ(trial.tentative_add_proof(root, tree.get()), expected.tentative_add_proof(root, tree.get()));
+    // Rejected trials leave the accepted checkpoint unchanged; replacement
+    // trials always start at the immutable pre-native base, never the last root.
+    auto before = accepted.get_total_stat();
+    if (i % 2 == 0) {
+      accepted = std::move(trial);
+      ASSERT_EQ(accepted.get_total_stat(), expected.get_total_stat());
+    } else {
+      ASSERT_EQ(accepted.get_total_stat(), before);
+    }
+  }
+  auto before = accepted.get_total_stat();
+  base.reset();
+  accepted.add_proof(original, tree.get());
+  ASSERT_EQ(accepted.get_total_stat().cells, before.cells);
+  // Copies and nested tentative trials must see all ancestors too.
+  auto nested = vm::NewCellStorageStat::fork(std::make_shared<const vm::NewCellStorageStat>(accepted));
+  ASSERT_EQ(nested.tentative_add_proof(original, tree.get()).cells, 0u);
+}
+
+TEST(NativeStateEngine, immutable_checkpoint_benchmark) {
+  if (!std::getenv("TON_COLLATION_MICROBENCH")) return;
+  auto tree = std::make_shared<vm::CellUsageTree>();
+  auto make_dict = [](unsigned count, unsigned salt) {
+    vm::Dictionary dict{256};
+    for (unsigned i = 0; i < count; ++i) {
+      auto key = td::sha256_bits256(std::to_string(i));
+      vm::CellBuilder builder;
+      CHECK(builder.store_bits_bool(key) && builder.store_long_bool(i + salt, 64));
+      CHECK(dict.set(key.bits(), 256, builder.as_cellslice_ref()));
+    }
+    return dict;
+  };
+  auto accounts = make_dict(8192, 1);
+  for (unsigned base_cells : {0u, 64u, 4096u}) {
+    auto base_tree = make_dict(base_cells, 0);
+    vm::NewCellStorageStat original;
+    original.add_proof(base_tree.get_root_cell(), tree.get());
+    auto base = std::make_shared<const vm::NewCellStorageStat>(original);
+    auto expected = original;
+    expected.add_proof(accounts.get_root_cell(), tree.get());
+    for (bool overlay : {false, true}) {
+      auto start = std::chrono::steady_clock::now();
+      for (unsigned i = 0; i < 100; ++i) {
+        auto trial = overlay ? vm::NewCellStorageStat::fork(base) : original;
+        trial.add_proof(accounts.get_root_cell(), tree.get());
+        ASSERT_EQ(trial.get_total_stat(), expected.get_total_stat());
+      }
+      auto seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+      std::cout << "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=" << base_cells
+                << " overlay=" << overlay << " seconds=" << seconds << std::endl;
+    }
+  }
 }
 
 TEST(NativeStateEngine, native_signature_is_bound_to_zerostate_domain) {

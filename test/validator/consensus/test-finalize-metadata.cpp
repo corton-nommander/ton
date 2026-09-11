@@ -3,6 +3,11 @@
 #include <string_view>
 #include <type_traits>
 #include <vector>
+#include <thread>
+#include <chrono>
+#include <iostream>
+#include "validator-session/candidate-serializer.h"
+#include "validator/impl/collation-masterchain-reference.h"
 
 #include "block/signature-set.h"
 #include "block/transaction.h"
@@ -540,6 +545,136 @@ TEST(FinalizeMetadataHandoff, MovesValueOwnedMetadataOnlyAfterAccept) {
     runtime.start(std::move(bus));
   });
   scheduler.run();
+}
+
+// Independently build the existing complete wire envelope, including its
+// signature and parent. The cache must not alter even one byte.
+td::BufferSlice legacy_encoded_candidate(const Candidate& value) {
+  if (value.is_empty()) {
+    return create_serialize_tl_object<tl::empty>(value.id.slot, value.parent_id->to_tl(),
+        create_tl_block_id(std::get<BlockIdExt>(value.block)), value.signature.clone());
+  }
+  const auto& full = std::get<BlockCandidate>(value.block);
+  auto inner = create_tl_object<ton_api::validatorSession_candidate>(td::Bits256{}, full.id.seqno(),
+      full.id.root_hash, full.data.clone(), full.collated_data.clone());
+  return create_serialize_tl_object<tl::block>(value.id.slot, CandidateId::parent_id_to_tl(value.parent_id),
+      validatorsession::serialize_candidate(inner, true).move_as_ok(), value.signature.clone());
+}
+
+TEST(CandidatePayload, SealedBytesMatchLegacyAcrossConcurrentConsumers) {
+  std::vector<BlockCandidate> blocks;
+  blocks.push_back(make_opaque_candidate());
+  blocks.push_back(make_native_candidate(make_native_transfer()));
+  blocks.push_back(make_native_run_candidate(make_native_transfer_run()));
+  auto multi = make_opaque_candidate();
+  multi.collated_data = vm::std_boc_serialize_multi(
+      {vm::CellBuilder{}.finalize(), vm::CellBuilder{}.store_long(1, 1).finalize()}, 2).move_as_ok();
+  blocks.push_back(std::move(multi));
+  for (auto& block : blocks) {
+    auto input_alias = block.data.clone();
+    td::BufferSlice signature(std::string(64, 's'));
+    auto value = td::make_ref<Candidate>(CandidateId{9, Bits256::zero()}, CandidateId{8, Bits256::zero()},
+        PeerValidatorId{0}, std::move(block), signature.clone());
+    auto expected = legacy_encoded_candidate(*value);
+    input_alias.as_slice()[0] ^= 1;
+    signature.as_slice()[0] ^= 1;
+    std::vector<std::thread> consumers;
+    for (unsigned i = 0; i < 8; ++i) {
+      consumers.emplace_back([value, &expected] {
+        for (unsigned j = 0; j < 10; ++j) {
+          auto encoded = value->serialize();
+          ASSERT_EQ(encoded.as_slice(), expected.as_slice());
+          encoded.as_slice()[0] ^= 1;
+        }
+      });
+    }
+    for (auto& consumer : consumers) consumer.join();
+    ASSERT_EQ(value->serialize().as_slice(), expected.as_slice());
+  }
+  auto empty = td::make_ref<Candidate>(CandidateId{10, Bits256::zero()}, CandidateId{9, Bits256::zero()},
+      PeerValidatorId{0}, BlockIdExt{masterchainId, shardIdAll, 1, Bits256::zero(), Bits256::zero()},
+      td::BufferSlice(std::string(64, 'e')));
+  ASSERT_EQ(empty->serialize().as_slice(), legacy_encoded_candidate(*empty).as_slice());
+}
+
+TEST(CandidatePayload, RepeatedSerializationBenchmark) {
+  if (!std::getenv("TON_COLLATION_MICROBENCH")) return;
+  block::NativeTransferBatch batch;
+  batch.version = block::NativeTransferBatch::runs_version;
+  for (unsigned index = 0; index < 256; ++index) {
+    auto run = make_native_transfer_run();
+    run.src = td::sha256_bits256(std::to_string(index));
+    run.outputs.resize(16, run.outputs.front());
+    batch.runs.push_back(std::move(run));
+  }
+  vm::CellBuilder packed;
+  CHECK(batch.store(packed));
+  auto full = make_custom_candidate(packed.finalize());
+  size_t bytes = 0;
+  auto start = std::chrono::steady_clock::now();
+  for (unsigned iteration = 0; iteration < 100; ++iteration) {
+    auto value = td::make_ref<Candidate>(CandidateId{iteration + 1, Bits256::zero()},
+        CandidateId{iteration, Bits256::zero()}, PeerValidatorId{0}, full.clone(),
+        td::BufferSlice(std::string(64, 's')));
+    for (unsigned consumer = 0; consumer < 3; ++consumer) bytes += value->serialize().size();
+  }
+  auto seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+  std::cout << "candidate_payload_benchmark candidates=100 consumers=3 logical_per_candidate=4096 seconds="
+            << seconds << " bytes=" << bytes << std::endl;
+}
+
+TEST(CollationPrerequisite, ExactReferenceMatchesOriginalFields) {
+  block::gen::BlockInfo::Record info;
+  info.version = 0;
+  info.not_master = info.after_merge = info.before_split = info.after_split = false;
+  info.want_split = info.want_merge = info.key_block = info.vert_seqno_incr = false;
+  info.flags = 0;
+  info.seq_no = 7;
+  info.vert_seq_no = 0;
+  vm::CellBuilder shard;
+  CHECK((block::ShardId{ShardIdFull{masterchainId, shardIdAll}}.serialize(shard)));
+  info.shard = shard.as_cellslice_ref();
+  info.gen_utime = 123;
+  info.start_lt = 7000;
+  info.end_lt = 7999;
+  info.gen_validator_list_hash_short = info.gen_catchain_seqno = 0;
+  info.min_ref_mc_seqno = info.prev_key_block_seqno = 0;
+  vm::CellBuilder previous;
+  CHECK(previous.store_long_bool(6999, 64) && previous.store_long_bool(6, 32) &&
+        previous.store_bits_bool(Bits256::zero()) && previous.store_bits_bool(Bits256::zero()));
+  info.prev_ref = previous.finalize();
+  td::Ref<vm::Cell> header;
+  CHECK(block::gen::pack_cell(header, info));
+  auto dummy = vm::CellBuilder{}.finalize();
+  vm::CellBuilder builder;
+  CHECK(builder.store_long_bool(0x11ef55aa, 32) && builder.store_long_bool(-111, 32) &&
+        builder.store_ref_bool(header) && builder.store_ref_bool(dummy) &&
+        builder.store_ref_bool(dummy) && builder.store_ref_bool(dummy));
+  auto root = builder.finalize();
+  BlockIdExt id{masterchainId, shardIdAll, 7, root->get_hash().bits(), Bits256::zero()};
+  auto reference = make_collation_masterchain_reference(id, root).move_as_ok();
+  auto slice = vm::load_cell_slice(reference);
+  ASSERT_EQ(slice.fetch_ulong(64), 7999u);
+  ASSERT_EQ(slice.fetch_ulong(32), 7u);
+  ASSERT_EQ(slice.fetch_bits(256).to_hex(), id.root_hash.to_hex());
+  ASSERT_EQ(slice.fetch_bits(256).to_hex(), id.file_hash.to_hex());
+  ASSERT_TRUE(slice.empty_ext());
+  auto wrong = id;
+  wrong.id.seqno++;
+  ASSERT_TRUE(make_collation_masterchain_reference(wrong, root).is_error());
+  wrong = id;
+  wrong.root_hash = Bits256::zero();
+  ASSERT_TRUE(make_collation_masterchain_reference(wrong, root).is_error());
+  wrong = id;
+  wrong.id.workchain = basechainId;
+  ASSERT_TRUE(make_collation_masterchain_reference(wrong, root).is_error());
+}
+
+TEST(CollationPrerequisite, RejectsMismatchedOrMalformedReference) {
+  auto root = vm::CellBuilder{}.finalize();
+  BlockIdExt id{masterchainId, shardIdAll, 1, root->get_hash().bits(), Bits256::zero()};
+  ASSERT_TRUE(make_collation_masterchain_reference(id, root).is_error());
+  ASSERT_TRUE(make_collation_masterchain_reference(id, {}).is_error());
 }
 
 }  // namespace

@@ -467,6 +467,12 @@ class ValidatorManagerImpl : public ValidatorManager {
   void new_block(BlockHandle handle, td::Ref<ShardState> state, td::Promise<td::Unit> promise) override;
   void new_block_cont(BlockHandle handle, td::Ref<ShardState> state, td::Promise<td::Unit> promise);
   void get_top_masterchain_state(td::Promise<td::Ref<MasterchainState>> promise) override;
+  void get_collation_masterchain_context(BlockIdExt minimum, td::uint32 priority, td::Timestamp deadline,
+                                          double queued_at, td::Promise<CollationMasterchainContext> promise) override;
+  void got_collation_minimum_state(BlockIdExt minimum, td::uint32 priority, td::Timestamp deadline,
+                                    CollationMasterchainContext context, double ready_at,
+                                    td::Result<td::Ref<ShardState>> state,
+                                    td::Promise<CollationMasterchainContext> promise);
   void get_top_masterchain_block(td::Promise<BlockIdExt> promise) override;
   void get_top_masterchain_state_block(td::Promise<std::pair<td::Ref<MasterchainState>, BlockIdExt>> promise) override;
   void get_last_liteserver_state_block(td::Promise<std::pair<td::Ref<MasterchainState>, BlockIdExt>> promise) override;

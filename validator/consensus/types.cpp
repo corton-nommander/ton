@@ -11,6 +11,8 @@
 
 #include "bus.h"
 #include "checksum.h"
+#include <cstdlib>
+#include <string_view>
 
 namespace ton::validator::consensus {
 
@@ -217,6 +219,20 @@ CandidateHashData Candidate::hash_data() const {
 }
 
 td::BufferSlice Candidate::serialize() const {
+  static const bool reuse = [] {
+    const auto* value = std::getenv("TON_IMMUTABLE_CANDIDATE_PAYLOAD_REUSE");
+    return value && std::string_view(value) == "1";
+  }();
+  if (!reuse) {
+    return serialize_uncached();
+  }
+  std::call_once(encode_once_, [this] { encoded_ = serialize_uncached(); });
+  // Consumers get owned bytes; mutating a network/storage request cannot
+  // poison subsequent requests or race another reader of the cached payload.
+  return encoded_.copy();
+}
+
+td::BufferSlice Candidate::serialize_uncached() const {
   auto empty_fn = [&](const BlockIdExt& referenced_block) {
     return create_serialize_tl_object<tl::empty>(id.slot, parent_id->to_tl(), create_tl_block_id(referenced_block),
                                                  signature.clone());

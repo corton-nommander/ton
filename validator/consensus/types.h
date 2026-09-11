@@ -7,6 +7,7 @@
 #pragma once
 
 #include <variant>
+#include <mutex>
 
 #include "adnl/adnl-node-id.hpp"
 #include "keys/keys.hpp"
@@ -153,8 +154,8 @@ struct Candidate : td::CntObject {
       : id(id)
       , parent_id(std::move(parent_id))
       , leader(leader)
-      , block(std::move(block))
-      , signature(std::move(signature)) {
+      , block(seal_block(std::move(block)))
+      , signature(signature.copy()) {
     CHECK(std::holds_alternative<BlockCandidate>(this->block) || this->parent_id.has_value());
   }
 
@@ -163,11 +164,25 @@ struct Candidate : td::CntObject {
   td::BufferSlice serialize() const;
   bool is_empty() const;
 
-  CandidateId id;
-  ParentId parent_id;
-  PeerValidatorId leader;
-  std::variant<BlockIdExt, BlockCandidate> block;
-  td::BufferSlice signature;
+  const CandidateId id;
+  const ParentId parent_id;
+  const PeerValidatorId leader;
+  const std::variant<BlockIdExt, BlockCandidate> block;
+  const td::BufferSlice signature;
+
+ private:
+  static std::variant<BlockIdExt, BlockCandidate> seal_block(std::variant<BlockIdExt, BlockCandidate> block) {
+    if (auto* full = std::get_if<BlockCandidate>(&block)) {
+      // BufferSlice::clone shares mutable storage. Detach from the producer's
+      // working buffers before this object is published to multiple actors.
+      full->data = full->data.copy();
+      full->collated_data = full->collated_data.copy();
+    }
+    return block;
+  }
+  td::BufferSlice serialize_uncached() const;
+  mutable std::once_flag encode_once_;
+  mutable td::BufferSlice encoded_;
 };
 
 using CandidateRef = td::Ref<Candidate>;

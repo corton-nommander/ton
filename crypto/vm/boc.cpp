@@ -1200,6 +1200,11 @@ NewCellStorageStat::Stat NewCellStorageStat::tentative_add_proof(Ref<Cell> cell,
   return stat.get_proof_stat();
 }
 
+bool NewCellStorageStat::contains(const vm::Cell::Hash& hash, bool proof) const {
+  return (proof ? proof_seen_.count(hash) : seen_.count(hash)) != 0 ||
+         (base_ && base_->contains(hash, proof)) || (parent_ && parent_->contains(hash, proof));
+}
+
 void NewCellStorageStat::dfs(Ref<Cell> cell, bool need_stat, bool need_proof_stat) {
   if (cell.is_null()) {
     // FIXME: save error flag?
@@ -1207,7 +1212,8 @@ void NewCellStorageStat::dfs(Ref<Cell> cell, bool need_stat, bool need_proof_sta
   }
   if (need_stat) {
     stat_.internal_refs++;
-    if ((parent_ && parent_->seen_.count(cell->get_hash()) != 0) || !seen_.insert(cell->get_hash()).second) {
+    if ((parent_ && parent_->contains(cell->get_hash(), false)) ||
+        (base_ && base_->contains(cell->get_hash(), false)) || !seen_.insert(cell->get_hash()).second) {
       need_stat = false;
     } else {
       stat_.cells++;
@@ -1221,7 +1227,8 @@ void NewCellStorageStat::dfs(Ref<Cell> cell, bool need_stat, bool need_proof_sta
       need_proof_stat = false;
     } else {
       proof_stat_.internal_refs++;
-      if ((parent_ && parent_->proof_seen_.count(cell->get_hash()) != 0) ||
+      if ((parent_ && parent_->contains(cell->get_hash(), true)) ||
+          (base_ && base_->contains(cell->get_hash(), true)) ||
           !proof_seen_.insert(cell->get_hash()).second) {
         need_proof_stat = false;
       } else {

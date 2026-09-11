@@ -27,6 +27,7 @@
 #include "downloaders/wait-block-state-merge.hpp"
 #include "downloaders/wait-block-state.hpp"
 #include "impl/applied-ext-message-cleanup.hpp"
+#include "impl/collation-masterchain-reference.h"
 #include "interfaces/validator-full-id.h"
 #include "td/actor/MultiPromise.h"
 #include "td/actor/coro_utils.h"
@@ -1817,6 +1818,80 @@ void ValidatorManagerImpl::get_top_masterchain_state(td::Promise<td::Ref<Masterc
   } else {
     promise.set_result(last_masterchain_state_);
   }
+}
+
+void ValidatorManagerImpl::get_collation_masterchain_context(
+    BlockIdExt minimum, td::uint32 priority, td::Timestamp deadline, double queued_at,
+    td::Promise<CollationMasterchainContext> promise) {
+  if (!minimum.is_masterchain() || deadline.is_in_past()) {
+    promise.set_error(td::Status::Error("invalid or expired collation masterchain request"));
+    return;
+  }
+  CollationMasterchainContext context;
+  context.queued_at = queued_at;
+  const auto entered = queued_at != 0 ? td::Time::now() : 0;
+  context.manager_queue_s = entered - queued_at;
+  wait_block_state_short(minimum, priority, deadline, false,
+      [self = actor_id(this), minimum, priority, deadline, context = std::move(context), entered,
+       promise = std::move(promise)](td::Result<td::Ref<ShardState>> state) mutable {
+        const auto ready_at = entered != 0 ? td::Time::now() : 0;
+        context.state_wait_s = ready_at - entered;
+        td::actor::send_closure(self, &ValidatorManagerImpl::got_collation_minimum_state, minimum, priority, deadline,
+                               std::move(context), ready_at, std::move(state), std::move(promise));
+      });
+}
+
+void ValidatorManagerImpl::got_collation_minimum_state(
+    BlockIdExt minimum, td::uint32 priority, td::Timestamp deadline, CollationMasterchainContext context,
+    double ready_at, td::Result<td::Ref<ShardState>> result, td::Promise<CollationMasterchainContext> promise) {
+  const auto entered = context.queued_at != 0 ? td::Time::now() : 0;
+  context.state_resume_queue_s = entered - ready_at;
+  if (result.is_error()) {
+    promise.set_error(result.move_as_error());
+    return;
+  }
+  auto minimum_state = result.move_as_ok();
+  if (minimum_state->get_block_id() != minimum || last_masterchain_state_.is_null() || deadline.is_in_past()) {
+    promise.set_error(td::Status::Error("exact masterchain state unavailable before collation deadline"));
+    return;
+  }
+  // Preserve the previous selection policy, including ties and a minimum
+  // ahead of the manager's applied tip. Never mix identities from two states.
+  context.state = minimum_state->get_seqno() > last_masterchain_state_->get_seqno()
+                      ? td::Ref<MasterchainState>{std::move(minimum_state)} : last_masterchain_state_;
+  context.block_id = context.state->get_block_id();
+  const auto block_id = context.block_id;
+  const auto selected_at = entered != 0 ? td::Time::now() : 0;
+  context.selection_service_s = selected_at - entered;
+  if (!block_id.seqno()) {
+    context.replied_at = selected_at;
+    promise.set_result(std::move(context));
+    return;
+  }
+  wait_block_data_short(block_id, priority, deadline,
+      [context = std::move(context), selected_at, deadline,
+       promise = std::move(promise)](td::Result<td::Ref<BlockData>> result) mutable {
+        const auto returned_at = selected_at != 0 ? td::Time::now() : 0;
+        context.block_wait_s = returned_at - selected_at;
+        if (result.is_error()) {
+          promise.set_error(result.move_as_error());
+          return;
+        }
+        context.block = result.move_as_ok();
+        if (context.block.is_null() || context.block->block_id() != context.block_id || deadline.is_in_past()) {
+          promise.set_error(td::Status::Error("invalid or expired exact collation masterchain block"));
+          return;
+        }
+        auto reference = make_collation_masterchain_reference(context.block_id, context.block->root_cell());
+        if (reference.is_error()) {
+          promise.set_error(reference.move_as_error());
+          return;
+        }
+        context.reference = reference.move_as_ok();
+        context.replied_at = returned_at != 0 ? td::Time::now() : 0;
+        context.reference_service_s = context.replied_at - returned_at;
+        promise.set_result(std::move(context));
+      });
 }
 
 td::Ref<MasterchainState> ValidatorManagerImpl::do_get_last_liteserver_state() {

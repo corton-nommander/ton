@@ -94,6 +94,16 @@ class NewCellStorageStat {
   void add_cell_and_proof(Ref<Cell> cell, const CellUsageTree* usage_tree);
   Stat tentative_add_cell(Ref<Cell> cell) const;
   Stat tentative_add_proof(Ref<Cell> cell, const CellUsageTree* usage_tree) const;
+  // A replaceable trial: inherit immutable accounting without copying its
+  // hash sets. The owner keeps the base alive after the trial is committed.
+  static NewCellStorageStat fork(std::shared_ptr<const NewCellStorageStat> base) {
+    CHECK(base);
+    NewCellStorageStat result;
+    result.stat_ = base->stat_;
+    result.proof_stat_ = base->proof_stat_;
+    result.base_ = std::move(base);
+    return result;
+  }
   void set_zero() {
     stat_.set_zero();
     proof_stat_.set_zero();
@@ -106,6 +116,9 @@ class NewCellStorageStat {
   td::HashSet<vm::Cell::Hash> proof_seen_;
   Stat proof_stat_;
   const NewCellStorageStat* parent_{nullptr};
+  std::shared_ptr<const NewCellStorageStat> base_;
+
+  bool contains(const vm::Cell::Hash& hash, bool proof) const;
 
   void dfs(Ref<Cell> cell, bool need_stat, bool need_proof_stat);
 };

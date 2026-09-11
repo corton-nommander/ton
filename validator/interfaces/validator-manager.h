@@ -1160,8 +1160,29 @@ struct ExtMsgCallback {
 
 using ValidateCandidateResult = td::Variant<CandidateAccept, CandidateReject>;
 
+struct CollationMasterchainContext {
+  td::Ref<MasterchainState> state;
+  BlockIdExt block_id;
+  td::Ref<BlockData> block;
+  td::Ref<vm::Cell> reference;
+  // Monotonic timings. Waits include downstream scheduling and I/O, not just
+  // active processing. Zero disables timing collection for throughput arms.
+  double queued_at = 0;
+  double manager_queue_s = 0;
+  double state_wait_s = 0;
+  double state_resume_queue_s = 0;
+  double selection_service_s = 0;
+  double block_wait_s = 0;
+  double reference_service_s = 0;
+  double replied_at = 0;
+};
+
 class ValidatorManager : public ValidatorManagerInterface {
  public:
+  virtual void get_collation_masterchain_context(BlockIdExt minimum, td::uint32 priority, td::Timestamp deadline,
+                                                  double queued_at, td::Promise<CollationMasterchainContext> promise) {
+    promise.set_error(td::Status::Error("collation context is unavailable on this manager"));
+  }
   virtual void init_last_masterchain_state(td::Ref<MasterchainState> state) {
   }
   virtual void set_block_state(BlockHandle handle, td::Ref<ShardState> state, vm::StoreCellHint hint,

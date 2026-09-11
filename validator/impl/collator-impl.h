@@ -146,6 +146,7 @@ class Collator final : public td::actor::Actor {
   BlockIdExt mc_block_id_;
   Ref<vm::Cell> mc_state_root;
   Ref<vm::Cell> mc_block_root;
+  Ref<vm::Cell> mc_block_reference_;
   td::BitArray<256> rand_seed_ = td::Bits256::zero();
   std::unique_ptr<block::ConfigInfo> config_;
   std::unique_ptr<block::ShardConfig> shard_conf_;
@@ -265,7 +266,7 @@ class Collator final : public td::actor::Actor {
   std::set<td::Bits256> account_dict_estimator_added_accounts_;
   // Exact storage accounting for every native checkpoint is rebuilt from the
   // one candidate state which existed before the first native mutation.
-  std::optional<vm::NewCellStorageStat> native_pre_storage_stat_;
+  std::shared_ptr<const vm::NewCellStorageStat> native_pre_storage_stat_;
   unsigned account_dict_ops_{0};
 
   bool msg_metadata_enabled_ = false;
@@ -295,6 +296,7 @@ class Collator final : public td::actor::Actor {
   bool stale_collation_error(std::string err_msg);
   void check_pending();
   void after_get_mc_state(td::Result<std::pair<Ref<MasterchainState>, BlockIdExt>> res, td::PerfLogAction token);
+  void after_get_mc_context(td::Result<CollationMasterchainContext> res, td::PerfLogAction token);
   void after_get_shard_state(int idx, td::Result<Ref<ShardState>> res, td::PerfLogAction token);
   void request_top_masterchain_state(BlockIdExt prev_mc_ref);
   void after_get_block_data(int idx, td::Result<Ref<BlockData>> res, td::PerfLogAction token);

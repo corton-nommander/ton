@@ -1,0 +1,409 @@
+{
+  "schema": "native-collation-experiments-v1",
+  "source_revision": "ace223354f58d68cc4ef12c20627e068742eeaab",
+  "base_revision": "2df20b2dfd73891a1b16f8522c3c3a7b9eb4895f",
+  "companion_revision": "203165c",
+  "gate": {
+    "revision": "ace223354f58d68cc4ef12c20627e068742eeaab",
+    "attempt": "20260911T112329Z",
+    "gate_exit_code": 0,
+    "production_binary_sha256": {
+      "validator-engine": "5ae6d3c91a894f844b04a8f81932fc647f542864dfea31b3b794f54521042180",
+      "native-load-generator": "6677c243d27350a0646de355f7ba7754b955d2d25d10de557282984e8eabf851"
+    },
+    "gate_log_sha256": {
+      "build/native-publication-logs/actor-cpu-off.log": "4c87f59e69a73925d9d381de24757f52ba4ed0ea9df95dad59050fa4ecd1b48d",
+      "build/native-publication-logs/actor-cpu-on.log": "97a54cdbfdf537ef07b33fd86e32620eb55327636dc86545f527d83d4ea651bc",
+      "build/native-publication-logs/admission-batch.log": "8be7bb8ee8168f640c8faebb7940c811e86749088e8caac588602adad887f6c9",
+      "build/native-publication-logs/admission-locality.log": "6eda12c08e97f39f4f2cef262318e07f26c2e19dbf9d60ad2be800c10fa11a6b",
+      "build/native-publication-logs/admission-refresh-batch.log": "5b447a0878505c411b2ed03722765d191406150430ee1ac061e6908d611b8a4c",
+      "build/native-publication-logs/admission-refresh.log": "2d36e06cf757b9060c1470524d6d60f4cbc358ee560fb096b625f741d5e8bd4c",
+      "build/native-publication-logs/admission-signature-dispatch.log": "8d018ed38b7b95bafa4204df5d8ad08f6fa122c735824eaabfcc0ae075fc4b8f",
+      "build/native-publication-logs/augmented-dictionary.log": "b82abd475a5e3aff318153215b7d5e76f193bfa9f5b81d84a7a4c349322eee85",
+      "build/native-publication-logs/candidate-payload-reuse.log": "e7291f50148fe81e6296ef3f40503fe2b51103df61f5a35c3fe4917990636122",
+      "build/native-publication-logs/collator-external-wait.log": "0df28f36cc5f382c57fd46ecd8e31b28661d06409da32d7b2dc3b39298ebeee4",
+      "build/native-publication-logs/external-message-routing.log": "85fe9093979e5c20a17bb982325b3e1f5481f59c9291c31e58ae8026119f46af",
+      "build/native-publication-logs/external-pool-scheduler.log": "b2da017670d407223c17b55fce016e116d6951b0aecdfc8193f8b9e311868d76",
+      "build/native-publication-logs/finalize-metadata-off.log": "9477363cb017dcae92ea632cef5d5e10fb503229a729a6272a5c423d383f4078",
+      "build/native-publication-logs/finalize-metadata-on.log": "fcbd9b6eda2585eb779cbf087d90cd944bac5113fc2fa4095db3db3e3daa92b0",
+      "build/native-publication-logs/keyring-prepared-signing.log": "4d7bbe3263dfefbf01f80b0d9a94532387f1a3b97a841dbbfa25c8d6fd04273e",
+      "build/native-publication-logs/native-load-policy.log": "39cc7aa69adefc9bebd866979c2fabfa26dcefd346a0939c6cee6761235044fd",
+      "build/native-publication-logs/native-pool-owners.log": "986d2c171c02e39fa2300de372b12acce933ee4e15b17ca1ba3d9ae1e732141b",
+      "build/native-publication-logs/native-state.log": "2d00ac1f64f791de9ee716a0aa9fcd7db3430e4c5229ac8a07ce124b20abf928",
+      "build/native-publication-logs/native-work-scratch.log": "014dc7535284b3f1d8d6f7eaf9c881c28959f2e9f2141c302d04e036fa3a05eb",
+      "build/native-publication-logs/overlay-local-signature.log": "f9bfa1034feebf5992618a9164df658c4f4e4716fd64bcfe28b16b1179e1be41",
+      "build/native-publication-logs/parent-metadata.log": "f59a2dc00964f379e4ef48186a5d023c7455a12321ea6e26b0fc05f4c34bf36d",
+      "build/native-publication-logs/reconciliation-coalescing.log": "8611f03a0ed6d8cc4947339326e060ce99a688e4b07d69d98ca9a2886612a0bd",
+      "build/native-publication-logs/state-resolver-policy.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "production-build": {
+      "exit_code": 0,
+      "log": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-collation-cycles-20260911/production-build-20260911T112329Z.log",
+      "sha256": "1b66a8b7ca7995cf73612d84e79e6dc0487f00288b2fb5cf69f7ccf70940e355"
+    },
+    "native-publication-gate": {
+      "exit_code": 0,
+      "log": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-collation-cycles-20260911/native-publication-gate-20260911T112329Z.log",
+      "sha256": "defaa41c2d82575c6b7be8439aa3303bf54eee1b1a4adafa2245959d671a7012"
+    },
+    "validator_version_output": "validator-engine build information: [ Commit: ace223354f58d68cc4ef12c20627e068742eeaab, Date: 2026-09-11 15:23:19 +0400]",
+    "td_test_counts": {
+      "actor-cpu-off": 30,
+      "actor-cpu-on": 30,
+      "admission-batch": 8,
+      "admission-locality": 9,
+      "admission-refresh-batch": 8,
+      "admission-refresh": 8,
+      "admission-signature-dispatch": 9,
+      "augmented-dictionary": 10,
+      "candidate-payload-reuse": 15,
+      "collator-external-wait": 13,
+      "external-message-routing": 3,
+      "external-pool-scheduler": 85,
+      "finalize-metadata-off": 15,
+      "finalize-metadata-on": 15,
+      "keyring-prepared-signing": 6,
+      "native-load-policy": 65,
+      "native-pool-owners": 17,
+      "native-state": 20,
+      "native-work-scratch": 5,
+      "overlay-local-signature": 8,
+      "parent-metadata": 10,
+      "reconciliation-coalescing": 9
+    },
+    "td_total_passed": 398,
+    "gate_invocations": 16,
+    "standalone_state_resolver_assertions": true,
+    "gate_summary_sha256": "defaa41c2d82575c6b7be8439aa3303bf54eee1b1a4adafa2245959d671a7012"
+  },
+  "runtime": {
+    "revision": "ace223354f58d68cc4ef12c20627e068742eeaab",
+    "build_type": "Release",
+    "ton_arch": "native",
+    "portable": false,
+    "docker_context": "desktop-linux",
+    "verification_receipt_sha256": "a2dd7dc593b0fa63a8303c28f86b4e217f5082c588a340bc3b30ff3d025cc301",
+    "unpatched_binaries": {
+      "validator-engine": "5ae6d3c91a894f844b04a8f81932fc647f542864dfea31b3b794f54521042180",
+      "native-load-generator": "6677c243d27350a0646de355f7ba7754b955d2d25d10de557282984e8eabf851"
+    },
+    "files": {
+      "ld-linux-x86-64.so.2": "cd4df4f3c7b83673d61189bf2eaebd33ca4f2853ab9772b8a25e025ef99b1e81",
+      "libstdc++.so.6": "1fd75fe70354a416d75aef22bcae68c47bd25d20e2d0568c30b1a9838cf62f11",
+      "libgsl.so.27": "99a902f1c0df5c709ba20cb64f014eda51b978305c2923d9397f0b1b902eda18",
+      "libc.so.6": "8db37cf3f2169f59a0f07ef1fea308c35656668c64c8ff294e1860f4121eb161",
+      "libblas.so.3": "e748efcae5753fe4a652877fccdb5895ac6f7605668a2db878b19c914e78e3a8",
+      "libjemalloc.so.2": "567efa52ecf445d5966025e1dcfd6b927a986472d272be3742f74a4a373baf12",
+      "validator-engine": "986e2bc684c00b39e77721a299e18138f4d02ade1cbc471960357b588dab8bc4",
+      "native-load-generator": "52188bbb25cf673bca83fe7ef004a83a802790f9a02c989725e4a1045bf30809",
+      "libgcc_s.so.1": "d93224d2b0dab4247598be683adca02f5cf00586f99c187579cd7e92058fb7cb",
+      "libgslcblas.so.0": "cbaeb658d6d3fd2dc46695923083c0e8b5ceb5f9fb76b1f607a643e00cb2a1c5",
+      "libm.so.6": "e9c4b28d340e415b8137480ec442662f981e1399386c5931dae0e886e3639e91"
+    },
+    "complete": true,
+    "ton": {
+      "base": "mylocalton-ton:admission-local-7b73cdb1",
+      "base_id": "sha256:3ebc57f991013c8ef5a42c2199a141feed73947bbdbb3ea80f3915aff62cab5e",
+      "image": "mylocalton-ton:collation-local-ace22335",
+      "id": "sha256:dc66f66f99e7292e72a9e9c28f21aecc3b1acb9fddf6d60feb47adc77345acba"
+    },
+    "genesis": {
+      "base": "mylocalton-genesis:admission-local-7b73cdb1",
+      "base_id": "sha256:80bce954af67215b66a05e1ffc3a1a893775180773ad77b717b672e5ce80b6c1",
+      "image": "mylocalton-genesis:collation-local-ace22335",
+      "id": "sha256:31f7f3d88cae78c5515130cf701c0b6a406c84abbb57ad9f9011db12d6924a4d"
+    },
+    "client": {
+      "base": "mylocalton-client:admission-local-7b73cdb1",
+      "base_id": "sha256:e2932e7731c6d5f0c546942dcb7a6e7ed1c50ecf7e0bde408c57a17e2cc9e4b8",
+      "image": "mylocalton-client:collation-local-ace22335",
+      "id": "sha256:89990ae6565241b5f6bc64044c043048d77cef588c91ed772f38492c6808437d"
+    }
+  },
+  "component_comparisons": [
+    {
+      "component": "payload",
+      "base_accounts": null,
+      "baseline_seconds": [
+        0.0952882,
+        0.0889721,
+        0.0968189,
+        0.0855612,
+        0.0903869
+      ],
+      "candidate_seconds": [
+        0.0292028,
+        0.029999,
+        0.0304124,
+        0.0303115,
+        0.0305943
+      ],
+      "baseline_median_seconds": 0.0903869,
+      "candidate_median_seconds": 0.0303115,
+      "time_change_percent": -66.46471999814132
+    },
+    {
+      "component": "checkpoint",
+      "base_accounts": 0,
+      "baseline_seconds": [
+        0.231415,
+        0.242912,
+        0.228145,
+        0.229895,
+        0.23694
+      ],
+      "candidate_seconds": [
+        0.313679,
+        0.245707,
+        0.251722,
+        0.285548,
+        0.284862
+      ],
+      "baseline_median_seconds": 0.231415,
+      "candidate_median_seconds": 0.284862,
+      "time_change_percent": 23.09573709569388
+    },
+    {
+      "component": "checkpoint",
+      "base_accounts": 64,
+      "baseline_seconds": [
+        0.130181,
+        0.135177,
+        0.126123,
+        0.128247,
+        0.134764
+      ],
+      "candidate_seconds": [
+        0.153302,
+        0.171422,
+        0.146187,
+        0.149709,
+        0.150504
+      ],
+      "baseline_median_seconds": 0.130181,
+      "candidate_median_seconds": 0.150504,
+      "time_change_percent": 15.611341132730594
+    },
+    {
+      "component": "checkpoint",
+      "base_accounts": 4096,
+      "baseline_seconds": [
+        0.153891,
+        0.144313,
+        0.131307,
+        0.133558,
+        0.131256
+      ],
+      "candidate_seconds": [
+        0.165153,
+        0.163584,
+        0.149172,
+        0.150846,
+        0.149321
+      ],
+      "baseline_median_seconds": 0.133558,
+      "candidate_median_seconds": 0.150846,
+      "time_change_percent": 12.944189041465126
+    }
+  ],
+  "raw_microbenchmarks": [
+    {
+      "type": "payload",
+      "repeat": 0,
+      "reuse": 0,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/payload-0-0.log",
+      "sha256": "3b758ecc1de5b1e88b5b4611dc274d78b358cf51bb74ab024f9d4fbb467b1359",
+      "output": [
+        "candidate_payload_benchmark candidates=100 consumers=3 logical_per_candidate=4096 seconds=0.0952882 bytes=3474000"
+      ]
+    },
+    {
+      "type": "payload",
+      "repeat": 0,
+      "reuse": 1,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/payload-0-1.log",
+      "sha256": "3eb1514dbeacc9bd4fcb92f02461210c344db70f9911ff3e9dfebb4c3cc2cf14",
+      "output": [
+        "candidate_payload_benchmark candidates=100 consumers=3 logical_per_candidate=4096 seconds=0.0292028 bytes=3474000"
+      ]
+    },
+    {
+      "type": "checkpoint",
+      "repeat": 0,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/checkpoint-0.log",
+      "sha256": "14704599a66a31994892276b797b06fc800f11396f56b08e73b00936ba644156",
+      "output": [
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=0 overlay=0 seconds=0.231415",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=0 overlay=1 seconds=0.313679",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=64 overlay=0 seconds=0.130181",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=64 overlay=1 seconds=0.153302",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=4096 overlay=0 seconds=0.153891",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=4096 overlay=1 seconds=0.165153"
+      ]
+    },
+    {
+      "type": "payload",
+      "repeat": 1,
+      "reuse": 1,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/payload-1-1.log",
+      "sha256": "1733777fc0029cd297729a32a3809571d550782c9f4eba231f85804d0d028a48",
+      "output": [
+        "candidate_payload_benchmark candidates=100 consumers=3 logical_per_candidate=4096 seconds=0.029999 bytes=3474000"
+      ]
+    },
+    {
+      "type": "payload",
+      "repeat": 1,
+      "reuse": 0,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/payload-1-0.log",
+      "sha256": "53673b2da7e17150568f2ded66ac361616757c58ddeee0c232ae95a747b727a8",
+      "output": [
+        "candidate_payload_benchmark candidates=100 consumers=3 logical_per_candidate=4096 seconds=0.0889721 bytes=3474000"
+      ]
+    },
+    {
+      "type": "checkpoint",
+      "repeat": 1,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/checkpoint-1.log",
+      "sha256": "fd5f8728bc793a2a78673bb3027ee986dd867eca9491e668259d3a0cc56c7326",
+      "output": [
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=0 overlay=0 seconds=0.242912",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=0 overlay=1 seconds=0.245707",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=64 overlay=0 seconds=0.135177",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=64 overlay=1 seconds=0.171422",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=4096 overlay=0 seconds=0.144313",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=4096 overlay=1 seconds=0.163584"
+      ]
+    },
+    {
+      "type": "payload",
+      "repeat": 2,
+      "reuse": 0,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/payload-2-0.log",
+      "sha256": "40b357ea0d292cb2367a3f2f9e3da669456ace5847590a260054544ef3b62773",
+      "output": [
+        "candidate_payload_benchmark candidates=100 consumers=3 logical_per_candidate=4096 seconds=0.0968189 bytes=3474000"
+      ]
+    },
+    {
+      "type": "payload",
+      "repeat": 2,
+      "reuse": 1,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/payload-2-1.log",
+      "sha256": "73ff9e90b7f8fa195c3b1a257554dc9f374cbe25ad1431a2881afe74bf6e2709",
+      "output": [
+        "candidate_payload_benchmark candidates=100 consumers=3 logical_per_candidate=4096 seconds=0.0304124 bytes=3474000"
+      ]
+    },
+    {
+      "type": "checkpoint",
+      "repeat": 2,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/checkpoint-2.log",
+      "sha256": "d6857cee0acfc847efad193800290cf6617f04b0784f81c458735e8af27d1d35",
+      "output": [
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=0 overlay=0 seconds=0.228145",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=0 overlay=1 seconds=0.251722",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=64 overlay=0 seconds=0.126123",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=64 overlay=1 seconds=0.146187",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=4096 overlay=0 seconds=0.131307",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=4096 overlay=1 seconds=0.149172"
+      ]
+    },
+    {
+      "type": "payload",
+      "repeat": 3,
+      "reuse": 1,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/payload-3-1.log",
+      "sha256": "dcaa173c1358706da4d43b62525810ca46036d6677eec0bacaa4cc37d63372d9",
+      "output": [
+        "candidate_payload_benchmark candidates=100 consumers=3 logical_per_candidate=4096 seconds=0.0303115 bytes=3474000"
+      ]
+    },
+    {
+      "type": "payload",
+      "repeat": 3,
+      "reuse": 0,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/payload-3-0.log",
+      "sha256": "9b5793002f1e925f45e83911e05ac6bb0b6922c26f1b37158876d0f9f02f9cfe",
+      "output": [
+        "candidate_payload_benchmark candidates=100 consumers=3 logical_per_candidate=4096 seconds=0.0855612 bytes=3474000"
+      ]
+    },
+    {
+      "type": "checkpoint",
+      "repeat": 3,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/checkpoint-3.log",
+      "sha256": "e5dfd516646b811050ebb1dcceb8f4c5bc612a07ef2d8b5398015880654e9693",
+      "output": [
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=0 overlay=0 seconds=0.229895",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=0 overlay=1 seconds=0.285548",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=64 overlay=0 seconds=0.128247",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=64 overlay=1 seconds=0.149709",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=4096 overlay=0 seconds=0.133558",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=4096 overlay=1 seconds=0.150846"
+      ]
+    },
+    {
+      "type": "payload",
+      "repeat": 4,
+      "reuse": 0,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/payload-4-0.log",
+      "sha256": "eceba62410e3d8a72844c927d3803f7cbdf0e94eb4a525d8fcd3b8ba8d247e67",
+      "output": [
+        "candidate_payload_benchmark candidates=100 consumers=3 logical_per_candidate=4096 seconds=0.0903869 bytes=3474000"
+      ]
+    },
+    {
+      "type": "payload",
+      "repeat": 4,
+      "reuse": 1,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/payload-4-1.log",
+      "sha256": "202abf31ff14ca4d6382201d04b819be68f4debc741424fcc037cac22a57d156",
+      "output": [
+        "candidate_payload_benchmark candidates=100 consumers=3 logical_per_candidate=4096 seconds=0.0305943 bytes=3474000"
+      ]
+    },
+    {
+      "type": "checkpoint",
+      "repeat": 4,
+      "log": "/media/neodix/backup/native-collation-cycles-20260911/microbench/checkpoint-4.log",
+      "sha256": "0b0355ff6d0f1bc9a4ecd14029926b105154ea14302a75ea2c812070758a26ea",
+      "output": [
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=0 overlay=0 seconds=0.23694",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=0 overlay=1 seconds=0.284862",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=64 overlay=0 seconds=0.134764",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=64 overlay=1 seconds=0.150504",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=4096 overlay=0 seconds=0.131256",
+        "checkpoint_benchmark accounts=8192 checkpoints=100 base_accounts=4096 overlay=1 seconds=0.149321"
+      ]
+    }
+  ],
+  "tps": null,
+  "promoted": false,
+  "default_flags": {
+    "TON_COLLATION_MASTERCHAIN_CONTEXT": 0,
+    "TON_COLLATION_PREREQUISITE_PROFILE": 0,
+    "TON_NATIVE_CHECKPOINT_PROOF_OVERLAY": 0,
+    "TON_IMMUTABLE_CANDIDATE_PAYLOAD_REUSE": 0,
+    "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": 0
+  },
+  "limitations": [
+    "Synthetic component wall times, not transaction throughput or isolated CPU accounting.",
+    "Five process repeats; payload order alternated; checkpoint copy preceded overlay within each process.",
+    "Unrelated host/Docker services remained active; production compilation stopped before timed runs.",
+    "Candidate input detachment/read-only fields are common to both masks: compare against original image before promoting.",
+    "Checkpoint optimization removes base-set copies only; full account-root traversal remains.",
+    "Bundled prerequisite has not been exercised in a live chain: queue/service distribution is not yet measured."
+  ],
+  "benchmark_blocker": {
+    "reason": "root_disk_below_existing_start_guard",
+    "observed_available_bytes": 5021085696,
+    "required_start_bytes": 8589934592,
+    "stop_bytes": 5368709120,
+    "validator_started": false,
+    "load_started": false,
+    "database_preserved": true
+  },
+  "archived_gate_log_directory": "/media/neodix/backup/native-collation-cycles-20260911/publication-logs",
+  "archived_gate_logs_verified": true
+}

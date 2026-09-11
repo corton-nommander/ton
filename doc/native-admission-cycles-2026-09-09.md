@@ -1,5 +1,9 @@
 # Native admission experiments — 9 September 2026
 
+Follow-up: [11 September collation experiments](native-collation-experiments-2026-09-11.md)
+record the prerequisite bundle, proof-overlay and immutable-payload implementations,
+component measurements, correctness gate and disk-space blocker for the pending TPS runs.
+
 Status: desktop implementation, profiling and comparison cycles complete. The user approved the measured steps in
 [native-bottleneck-action-plan-2026-09-09.md](native-bottleneck-action-plan-2026-09-09.md).
 No production deployment or production throughput improvement is claimed here.

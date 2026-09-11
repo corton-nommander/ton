@@ -1,0 +1,157 @@
+{
+  "schema": "native-master-performance-reference-v1",
+  "selected_on": "2026-09-11",
+  "measured_source_revision": "7b73cdb157a1f5e621e420e1e5c913726b267cf5",
+  "master_before_reference_commit": "8c97aa23f1e2859651f4a85c6f6609016b42b0da",
+  "selection": "metadata projection with local overlay signature reuse",
+  "runtime_code_already_on_origin_master": true,
+  "runtime_changed_by_reference_commit": false,
+  "runs": [
+    {
+      "role": "control",
+      "evidence": "doc/benchmarks/results/native-candidate-metadata-20260909-01-metadata-control.json",
+      "sha256": "d910ce94e1e4eb63dd9bf29e54d69d0521908529868fd4832b0568ae393426d8",
+      "steady_offered_avg_tps": 59821.22666666667,
+      "steady_mempool_accept_avg_tps": 59821.22666666667,
+      "canonical_chain_measure_avg_tps": 59784.974958263774,
+      "measure_elapsed_s": 600,
+      "canonical_gen_utime_bucket_duration_s": 599,
+      "benchmark_result_valid": true,
+      "chain_capacity_valid": false
+    },
+    {
+      "role": "candidate",
+      "evidence": "doc/benchmarks/results/native-candidate-metadata-20260909-02-metadata-projection.json",
+      "sha256": "abdf4b63b91b8086e9fa37a7e2d5b32295cd1bd557b520f1ae7ee1f2c5e703cc",
+      "steady_offered_avg_tps": 61654.45333333333,
+      "steady_mempool_accept_avg_tps": 61654.45333333333,
+      "canonical_chain_measure_avg_tps": 61380.86143572621,
+      "measure_elapsed_s": 600,
+      "canonical_gen_utime_bucket_duration_s": 599,
+      "benchmark_result_valid": true,
+      "chain_capacity_valid": false
+    },
+    {
+      "role": "candidate_repeat",
+      "evidence": "doc/benchmarks/results/native-candidate-metadata-20260909-03-metadata-repeat.json",
+      "sha256": "c8a52a2d9e83a27886698f771d8db0f7b1a014082f83459a57c88c79c35c2398",
+      "steady_offered_avg_tps": 62524.26666666667,
+      "steady_mempool_accept_avg_tps": 62524.26666666667,
+      "canonical_chain_measure_avg_tps": 62537.53589315526,
+      "measure_elapsed_s": 600,
+      "canonical_gen_utime_bucket_duration_s": 599,
+      "benchmark_result_valid": true,
+      "chain_capacity_valid": false
+    },
+    {
+      "role": "control_repeat",
+      "evidence": "doc/benchmarks/results/native-candidate-metadata-20260909-04-metadata-control-repeat.json",
+      "sha256": "0a3eff548b42fabefae29007a763646daf8c6536e2a3ab1ebc0c9c799517224a",
+      "steady_offered_avg_tps": 60505.68,
+      "steady_mempool_accept_avg_tps": 60505.68,
+      "canonical_chain_measure_avg_tps": 60618.60434056761,
+      "measure_elapsed_s": 600,
+      "canonical_gen_utime_bucket_duration_s": 599,
+      "benchmark_result_valid": true,
+      "chain_capacity_valid": false
+    }
+  ],
+  "same_image_screen": {
+    "control_mean_canonical_tps": 60201.78964941569,
+    "candidate_mean_canonical_tps": 61959.19866444074,
+    "observed_gain_percent": 2.9191972950626477,
+    "both_candidates_above_both_controls": true,
+    "maximum_capacity_claim": false,
+    "caveats": [
+      "Cache/disk maintenance preceded final control.",
+      "Two observations per setting; not a statistical significance result.",
+      "No independent 5 percent offered-load overdrive.",
+      "Historical named-volume storage differs from later backup-bind experiments."
+    ]
+  },
+  "historical_reference": {
+    "runtime_flags": {
+      "TON_NATIVE_CANDIDATE_METADATA_PROJECTION": 1,
+      "TON_OVERLAY_LOCAL_SIGNATURE_REUSE": 1,
+      "TON_NATIVE_ADMISSION_CONFIG_CACHE": 1,
+      "TON_NATIVE_RECONCILIATION_PROFILE": 1,
+      "TON_KEYRING_PREPARED_SIGNING": 0,
+      "TON_NATIVE_ADMISSION_SHARD_SHARING": 0,
+      "TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH": 0,
+      "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": 0,
+      "TON_NATIVE_VALIDATION_SIGNATURE_THREADS": 8,
+      "TON_NATIVE_EXECUTOR_THREADS": 8
+    },
+    "load": {
+      "connections": 10,
+      "workers": 6,
+      "signers": 6,
+      "sources": 24576,
+      "logical_transfers_per_parent": 16,
+      "submit_batch_size": 64,
+      "submit_max_queries_per_client": 64,
+      "coalesce_ms": 20,
+      "initial_cwnd": 32768,
+      "max_cwnd": 65536,
+      "max_inflight": 262144,
+      "canonical_backlog_limit": 2097152,
+      "per_source_backlog_limit": 128,
+      "target_tps": 0,
+      "warmup_s": 60,
+      "measure_s": 600,
+      "drain_limit_s": 180
+    },
+    "environment": {
+      "lanes": 4,
+      "lane_depth": 2,
+      "validator_client_stats_cpu_quotas": [
+        16,
+        6,
+        1
+      ],
+      "docker_desktop_vcpus": 24,
+      "docker_desktop_nominal_memory_gib": 64,
+      "client_memory_gib": 8,
+      "database": "historical Docker named volume; do not reset or convert an existing chain to reproduce topology"
+    },
+    "preset_source": "MyLocalTonDocker commit 91e4f70e39ce0fa8a7a07ee846c9ed014d074982"
+  },
+  "later_experiments": {
+    "source_commit": "80816c32d3f23167a495d30c220a927439d68202",
+    "branch": "perf/native-dispatch-freshness-20260910",
+    "runtime_merged": false,
+    "measure_seconds": 600,
+    "initial_and_max_window": 16384,
+    "runs": [
+      {
+        "name": "05-control-window16384",
+        "owners": 1,
+        "canonical_tps": 55913.29549248748,
+        "source_path": "doc/benchmarks/results/native-owner-client-20260910-05-control-window16384.json",
+        "sha256": "14c5d1565be46f7ada604b0c9eed36232229c5b12e24d6557d4f1ffd66e0f56d"
+      },
+      {
+        "name": "06-owner4-window16384",
+        "owners": 4,
+        "canonical_tps": 46119.051752921536,
+        "source_path": "doc/benchmarks/results/native-owner-client-20260910-06-owner4-window16384.json",
+        "sha256": "a4c663d607f53e5b2e3e8a463efd967abae3f1285277d2bb561e3f7418ec39c2"
+      },
+      {
+        "name": "07-control-repeat-window16384",
+        "owners": 1,
+        "canonical_tps": 53300.247078464105,
+        "source_path": "doc/benchmarks/results/native-owner-client-20260910-07-control-repeat-window16384.json",
+        "sha256": "bffc9cf74f30f3eaf79bebf66c4c93902c34d7a64527e9135c579c36a8a5cf83"
+      }
+    ],
+    "stage_evidence_blob": "ba8c33b43efa9a412e3ba5f2d5dfd6322b3f68bf",
+    "stage_evidence_sha256": "881491f090ff0a7dd967f822e65290ff3ef0c84e2b8458c83a35a817950ba26b",
+    "stage_evidence_source_path": "doc/benchmarks/results/native-owner-client-20260910-stage-evidence.json",
+    "interpretation": "Four owners lost to both controls; changing host workload and overlapping stage timings limit causal attribution. This is evidence for profiling, not a comparison against the earlier 61k code on different storage."
+  },
+  "runtime_source_ancestry_validation": {
+    "measured_revision_is_ancestor_of_master": true,
+    "runtime_source_paths_unchanged": true
+  }
+}

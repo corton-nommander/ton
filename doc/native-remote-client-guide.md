@@ -1,5 +1,11 @@
 # One public validator and a remote native TPS generator
 
+The [September 11 master reference](native-master-reference-2026-09-11.md)
+identifies the already-merged metadata version that measured 61,654 and 62,524
+offered/admitted TPS, its historical settings and the next implementation
+priorities. Later owner experiments remain on their separate branch. A source
+checkout does not replace running or exported Docker images.
+
 The original measurements used sidechain result commit `4b2034a8` and MyLocalTonDocker `44ffe58`. The export/import and remote-run scripts below are now maintained in MyLocalTonDocker. Their offline integration checks use simulated Docker; they do not establish new remote throughput measurements.
 
 The existing `benchmark/run-native-connections-sweep.py --connections 10 50 100` is a **local Docker sweep**. It inspects a local `genesis`, shared volumes and process identity. Cloning it on server B does not enable remote mode; pointing `DOCKER_HOST` at A would run its generator on A. The underlying prebuilt generator already supports remote ADNL/TCP. Use the generator-only commands below on B. They retain proof-checked canonical counters but do not provide the local wrapper's full independent validator cleanup/resource acceptance report.
@@ -660,7 +666,7 @@ logical native transfers/s; the small differences between settings are not a
 repeatable gain or a production-server capacity claim. Do not change an existing
 production eight-lane database to the desktop topology.
 
-The tracked `.env.desktop` now retains the September 9 metadata selection, source
+The September 9 metadata selection was measured on source
 `7b73cdb1`, using existing local images `mylocalton-genesis:admission-local-7b73cdb1`
 and `mylocalton-client:admission-local-7b73cdb1`. Metadata projection and local
 overlay reuse are enabled. The [metadata report](native-candidate-metadata-cycles-2026-09-09.md)
@@ -669,10 +675,15 @@ records the four 600-second observations: 60,201.79→61,959.20 mean canonical T
 from the September 8 image; absolute rates across those builds are not a controlled comparison.
 Docker Desktop must retain the tested **64 GiB** VM allocation on this 128 GB
 workstation; its previous 99,840 MiB allocation caused host OOM. Four lanes and
-all load/resource settings remain as measured. These are local CPU-specific
+all load/resource settings belong to that historical comparison. These are local CPU-specific
 artifacts, not tags to pull on Server A.
 
-On this desktop, start the selected configuration with strict image reuse:
+The later companion preset at `9b086f8` instead selects local runtime `5e413ff0`
+and a 16,384 initial/maximum window after the owner experiments. It is not the
+historical 61k image. Inspect the actual `.env.desktop` and its immutable image
+IDs before comparing results; the reference record preserves earlier settings.
+
+On this desktop, start the currently configured preset with strict image reuse:
 
 ```sh
 cd /home/neodix/gitProjects/MyLocalTonDocker
@@ -686,13 +697,14 @@ tags: it always pulls a registry base and rebuilds wrappers. The production
 launcher remains appropriate for published Server A images, after their feature
 revision has been verified.
 
-On the healthy, settled four-lane desktop chain, run:
+For the current companion preset (`9b086f8`), on its healthy four-lane chain:
 
 ```sh
+export BENCHMARK_COMPOSE_PROJECT=mylocalton-dispatch-20260910
 python3 benchmark/run-native-connections-sweep.py \
   --env-file .env.desktop --connections 10 --lane-depth 2 \
   --duration 600 --warmup 60 --drain 180 --coalesce-ms 20 \
-  --initial-cwnd 32768 --max-cwnd 65536
+  --initial-cwnd 16384 --max-cwnd 16384
 ```
 
 A lower-latency comparison can use `--initial-cwnd 4096 --max-cwnd 8192`; it must

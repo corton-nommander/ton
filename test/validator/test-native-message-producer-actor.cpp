@@ -83,7 +83,7 @@ class NativeProducerActorTestAccess {
         std::vector<std::unique_ptr<ExtMsgCallback>> callbacks) {
       return NativeProducerActorTestAccess::install_with_queued_publication(*this, std::move(callbacks));
     }
-    td::uint64 publications() const {
+    td::uint64 publications() {
       return NativeProducerActorTestAccess::publications(*this);
     }
   };

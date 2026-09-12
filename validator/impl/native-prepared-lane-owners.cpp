@@ -142,7 +142,7 @@ void ExtMessagePool::apply_lane_masterchain_state(NativeAdmissionSnapshot snapsh
       !native_lane_owner_.coordination->topology_ready.load(std::memory_order_acquire)) { return; }
   CHECK(native_lane_topology_supported(snapshot));
   CHECK(snapshot.state->get_block_id() == snapshot.block_id &&
-        snapshot.state->root_cell()->get_hash() == snapshot.state_root);
+        RootHash{snapshot.state->root_cell()->get_hash().bits()} == snapshot.state_root);
   // Immutable config facts are shared, account/trie/reconciliation caches are local.
   native_config_cache_.store(snapshot.block_id, snapshot.state_root, snapshot);
   update_last_masterchain_state_local(snapshot.state);
@@ -262,7 +262,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::route_prepared
       ++native_lane_routed_batches_;
       native_lane_routed_messages_ += groups[owner].size();
       tasks.push_back(td::actor::ask(native_lane_owners_[owner], &ExtMessagePool::check_add_prepared_lane_batch,
-          std::move(groups[owner]), priority, add_to_mempool, deadline, snapshot.ok(), generation, dispatched).start());
+          std::move(groups[owner]), priority, add_to_mempool, deadline, snapshot.ok(), generation, dispatched));
     }
   }
   // No outer timeout: an earlier sibling may have committed within its absolute
@@ -320,7 +320,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_prep
   auto status = check_native_lane_fence(generation);
   if (status.is_ok() && (last_masterchain_state_.is_null() ||
       last_masterchain_state_->get_block_id() != snapshot.block_id ||
-      last_masterchain_state_->root_cell()->get_hash() != snapshot.state_root)) {
+      RootHash{last_masterchain_state_->root_cell()->get_hash().bits()} != snapshot.state_root)) {
     status = td::Status::Error(ErrorCode::notready, "native pool routed admission snapshot changed; retry");
   }
   for (const auto &item : prepared) {
@@ -355,7 +355,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_prepared_
   if (!result.checked_messages.empty()) { co_return std::move(result.checked_messages.front()); }
   auto [wait, allow] = td::actor::StartedTask<>::make_bridge();
   allow.set_value(td::Unit{});
-  co_return CheckResult{.message = std::move(message), .wait_allow_broadcast = std::move(wait), .should_broadcast = false};
+  co_return CheckResult{.message = std::move(message), .wait_allow_broadcast = std::move(wait), .should_broadcast = false, .msg_seqno = {}, .native_admission = {}};
 }
 
 void ExtMessagePool::install_lane_callback(std::shared_ptr<InstalledCallback> installed) {

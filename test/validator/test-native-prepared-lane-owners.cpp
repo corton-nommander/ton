@@ -290,7 +290,8 @@ class NativePreparedLaneOwnerTestAccess {
     auto [wait, allow] = td::actor::StartedTask<>::make_bridge();
     allow.set_value(td::Unit{});
     auto result = pool.finalize_checked_message(
-        ExtMessagePool::CheckResult{.message = message, .wait_allow_broadcast = std::move(wait)},
+        ExtMessagePool::CheckResult{.message = message, .wait_allow_broadcast = std::move(wait),
+                                   .should_broadcast = true, .msg_seqno = {}, .native_admission = {}},
         0, true, td::Timestamp::in(10));
     if (result.is_error()) { return result.move_as_error(); }
     return message->hash();
@@ -711,7 +712,7 @@ TEST(NativePreparedLaneOwners, ConflictingSourceParentsKeepHashOrderAcrossOutOfO
     auto result = co_await std::move(pending);
     ASSERT_TRUE(!result.statuses[0].accepted && result.statuses[1].accepted);
     ASSERT_EQ(result.checked_messages.size(), 1u);
-    ASSERT_TRUE(result.checked_messages[0].message->hash() == second->get_hash());
+    ASSERT_TRUE(result.checked_messages[0].message->hash() == RootHash{second->get_hash().bits()});
     co_await std::move(result.checked_messages[0].wait_allow_broadcast);
     co_return {};
   });

@@ -909,7 +909,6 @@ class ExtMessagePool : public td::actor::Actor {
     std::map<int, NativeProducerSourceCursor> unvisited_by_priority;
   };
 
-  struct InstalledCallback;
   void install_native_producer_callback(std::shared_ptr<InstalledCallback> callback);
   void probe_published_native_source(const std::shared_ptr<InstalledCallback> &callback,
                                      const NativeAddress &source, CallbackNativeSource &state,

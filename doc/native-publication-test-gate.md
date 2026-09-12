@@ -10,14 +10,20 @@ The gate builds only the named native test targets and runs:
 
 - Strict parent metadata decoding and consensus metadata extraction, with the
   metadata startup selector explicitly set to 0 and 1 in separate processes.
+- Immutable candidate payload reuse in a separate enabled process.
 - Local overlay signature receipts and prepared keyring signing.
 - Admission batches, refresh policy/integration, external-message scheduling,
   callback wait attribution, routing, execution scratch and state-resolver policy.
+- Persistent message-producer actors, exact-endpoint canonical journals, lane
+  scheduler placement, prepared lane admission owners and their shared quota and
+  generation coordination. These fixtures include disabled and enabled paths;
+  the gate does not change the published runtime's feature defaults.
 - `test-cells --filter NativeStateEngine` and native load-generator policy.
 
-Other `test-cells`/TVM tests and the general CTest suite are not invoked. Each
-executable has a 300-second deadline, followed by forced termination after ten
-seconds if necessary. The additional target build has a one-hour deadline.
+The gate builds 19 targets and runs 21 invocations. Other `test-cells`/TVM tests
+and the general CTest suite are not invoked. Each executable has a 300-second
+deadline, followed by forced termination after ten seconds if necessary. The
+additional target build has a one-hour deadline.
 Every TD test invocation must report at least one started and passed test, with
 matching counts and a final success summary; exit zero from an empty filter is
 a failure. The standalone state-resolver policy executable has unconditional

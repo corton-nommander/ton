@@ -41,6 +41,11 @@ targets=(
   test-native-admission-refresh
   test-native-admission-refresh-batch
   test-ext-message-pool-scheduler
+  test-native-message-producer-actor
+  test-native-canonical-journal
+  test-native-lane-scheduler
+  test-native-prepared-lane-owners
+  test-native-prepared-owner-coordination
   test-collator-external-wait-stats
   test-state-resolver-policy
   test-native-work-scratch
@@ -108,6 +113,11 @@ run_test td admission-batch test/validator/test-native-admission-batch env
 run_test td admission-refresh test/validator/test-native-admission-refresh env
 run_test td admission-refresh-batch test/validator/test-native-admission-refresh-batch env
 run_test td external-pool-scheduler test/validator/test-ext-message-pool-scheduler env
+run_test td native-message-producer-actor test/validator/test-native-message-producer-actor env
+run_test td native-canonical-journal test/validator/test-native-canonical-journal env
+run_test td native-lane-scheduler test/validator/test-native-lane-scheduler env
+run_test td native-prepared-lane-owners test/validator/test-native-prepared-lane-owners env
+run_test td native-prepared-owner-coordination test/validator/test-native-prepared-owner-coordination env
 run_test td collator-external-wait test/validator/test-collator-external-wait-stats env
 run_test standalone state-resolver-policy test/validator/consensus/test-state-resolver-policy env
 run_test td native-work-scratch test/validator/test-native-work-scratch env

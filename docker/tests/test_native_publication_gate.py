@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise publication-gate failures without a compiler, Docker, or validator."""
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -9,6 +10,13 @@ import unittest
 
 
 GATE = Path(__file__).resolve().parents[1] / "run-native-publication-tests.sh"
+LANE_BINARIES = (
+    "test/validator/test-native-message-producer-actor",
+    "test/validator/test-native-canonical-journal",
+    "test/validator/test-native-lane-scheduler",
+    "test/validator/test-native-prepared-lane-owners",
+    "test/validator/test-native-prepared-owner-coordination",
+)
 BINARIES = (
     "test/test-native-parent-metadata",
     "test/validator/consensus/test-finalize-metadata",
@@ -18,6 +26,7 @@ BINARIES = (
     "test/validator/test-native-admission-refresh",
     "test/validator/test-native-admission-refresh-batch",
     "test/validator/test-ext-message-pool-scheduler",
+    *LANE_BINARIES,
     "test/validator/test-collator-external-wait-stats",
     "test/validator/consensus/test-state-resolver-policy",
     "test/validator/test-native-work-scratch",
@@ -31,7 +40,8 @@ name = pathlib.Path(sys.argv[0]).name
 if name == 'test-cells':
     assert sys.argv[1:] == ['--filter', 'NativeStateEngine'], sys.argv
 if name == 'test-finalize-metadata':
-    print('projection=' + os.environ['TON_NATIVE_CANDIDATE_METADATA_PROJECTION'])
+    print('projection=' + os.environ.get('TON_NATIVE_CANDIDATE_METADATA_PROJECTION', 'unset'))
+    print('payload_reuse=' + os.environ.get('TON_IMMUTABLE_CANDIDATE_PAYLOAD_REUSE', 'unset'))
 if name != 'test-state-resolver-policy':
     print('Running test Test_Contract_selected...')
     print('PASS in 1.0ms')
@@ -64,10 +74,44 @@ class PublicationGateTest(unittest.TestCase):
     def test_complete_gate_runs_both_modes_and_only_native_state_filter(self):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("passed: 15 invocations", result.stdout)
+        self.assertIn("passed: 21 invocations", result.stdout)
         logs = self.build / "native-publication-logs"
         for mode, suffix in (("0", "off"), ("1", "on")):
             self.assertIn("projection=" + mode, (logs / f"finalize-metadata-{suffix}.log").read_text())
+        self.assertIn("payload_reuse=1", (logs / "candidate-payload-reuse.log").read_text())
+        for binary in LANE_BINARIES:
+            name = Path(binary).name.removeprefix("test-")
+            self.assertIn("1 test(s) passed", (logs / f"{name}.log").read_text())
+
+    def test_each_lane_suite_is_required(self):
+        for binary in LANE_BINARIES:
+            with self.subTest(binary=binary):
+                (self.build / binary).unlink()
+                try:
+                    result = self.run_gate()
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("missing executable: " + str(self.build / binary), result.stderr)
+                finally:
+                    self.write_executable(binary, GOOD)
+
+    def test_default_route_builds_every_required_target(self):
+        tool_dir = Path(self.temp.name) / "tools"
+        tool_dir.mkdir()
+        cmake = tool_dir / "cmake"
+        cmake.write_text("""#!/usr/bin/env python3
+import json, os, pathlib, sys
+pathlib.Path(os.environ['NATIVE_GATE_CMAKE_ARGS']).write_text(json.dumps(sys.argv[1:]))
+""")
+        cmake.chmod(0o700)
+        recorded_args = Path(self.temp.name) / "cmake-args.json"
+        env = dict(os.environ, PATH=str(tool_dir) + os.pathsep + os.environ["PATH"],
+                   NATIVE_GATE_CMAKE_ARGS=str(recorded_args))
+        result = self.run_gate("--jobs", "3", run_only=False, env=env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(recorded_args.read_text()), [
+            "--build", str(self.build), "--parallel", "3", "--target",
+            *(Path(binary).name for binary in BINARIES),
+        ])
 
     def test_zero_selected_tests_is_failure_even_with_zero_exit(self):
         self.write_executable(BINARIES[0], "#!/bin/sh\necho '0 test(s) passed'\n")

@@ -523,6 +523,7 @@ class ExtMessagePool : public td::actor::Actor {
     std::map<NativeAddress, NativePublishedSourcePtr> latest;
     bool scheduled{false};
     double enqueued_at{0};
+    std::atomic<std::size_t> owner_pending_sources{0};
   };
   struct NativeProducerTelemetry {
     std::atomic<td::uint64> publications{0}, published_sources{0}, published_messages{0};

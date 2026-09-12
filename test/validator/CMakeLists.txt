@@ -71,6 +71,20 @@ target_include_directories(test-native-admission-refresh-batch PRIVATE ${CMAKE_S
 target_link_libraries(test-native-admission-refresh-batch PRIVATE td-test-main tdutils ton_validator validator)
 ton_test(test-native-admission-refresh-batch)
 
+add_executable(test-native-message-producer-actor test-native-message-producer-actor.cpp)
+target_include_directories(test-native-message-producer-actor PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+                                                                     ${CMAKE_SOURCE_DIR}/common
+                                                                     ${CMAKE_SOURCE_DIR}/crypto
+                                                                     ${CMAKE_SOURCE_DIR}/tdactor
+                                                                     ${CMAKE_SOURCE_DIR}/tddb
+                                                                     ${CMAKE_SOURCE_DIR}/tdnet
+                                                                     ${CMAKE_SOURCE_DIR}/tdfec
+                                                                     ${CMAKE_SOURCE_DIR}/tl
+                                                                     ${CMAKE_SOURCE_DIR}/tl/generate
+                                                                     ${CMAKE_SOURCE_DIR}/third-party/rocksdb/include)
+target_link_libraries(test-native-message-producer-actor PRIVATE td-test-main tdutils ton_validator validator)
+ton_test(test-native-message-producer-actor)
+
 add_executable(test-native-canonical-journal test-native-canonical-journal.cpp)
 target_include_directories(test-native-canonical-journal PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
                                                                        ${CMAKE_SOURCE_DIR}/common

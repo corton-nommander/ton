@@ -24,7 +24,9 @@ synchronous snapshots retain the original pool path.
 Owner publication and producer ingestion each process at most 256 sources per
 turn. Each inbox coalesces replacements by source and permits at most 65,536
 pending source views; excess work remains as owner-side dirty keys until space
-is available. A canonical account revision change, erase or postponement fences
+is available. Announced, incomplete publication keeps the producer epoch open
+between chunks; a callback cannot mistake a partial refresh for exhaustion.
+A canonical account revision change, erase or postponement fences
 an old view before the corresponding reservation walk completes. Producer
 reactivation events are bounded to one next deadline per source. Existing initial
 transport-window publication, 512-logical-transfer selection fragments, atomic
@@ -43,7 +45,7 @@ installation still passes through the admission owner to preserve ordering of
 native view updates and generic externals. Direct routing and independent
 admission owners are separate later experiments.
 
-Validation status: implementation and differential/lifecycle tests are being
-prepared; no passing build or throughput improvement is claimed yet. Benchmark
+Validation status: differential and real actor/lifecycle test translation units
+pass syntax checks; full execution and throughput comparison remain pending. Benchmark
 artifacts belong under `build/benchmarks/native-lane-pipeline-20260912` and will be
 summarized in the cycle report after proof-complete measurements.

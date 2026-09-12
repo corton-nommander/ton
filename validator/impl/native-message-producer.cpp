@@ -4,6 +4,7 @@
     Licensed under the GNU Lesser General Public License, version 2 or later.
 */
 #include "ext-message-pool.hpp"
+#include "ton/ton-io.hpp"
 #include "td/utils/StringBuilder.h"
 
 namespace ton::validator {
@@ -38,14 +39,17 @@ ExtMessagePool::NativeProducerEndpoint &ExtMessagePool::ensure_native_producer(S
 }
 
 void ExtMessagePool::mark_native_producer_source(const NativeAddress &source, bool invalidate) {
-  if (!native_producer_lane(source)) { return; }
+  auto lane = native_producer_lane(source);
+  if (!lane) { return; }
   auto &fence = native_producer_fences_[source];
   if (!fence) { fence = std::make_shared<NativeProducerFence>(); }
   if (auto watermark = native_nonce_watermarks_.find(source); watermark != native_nonce_watermarks_.end()) {
     fence->canonical_next_nonce.store(watermark->second.observed_next_nonce, std::memory_order_release);
   }
   if (invalidate) { fence->invalidation.fetch_add(1, std::memory_order_release); }
-  native_producer_dirty_sources_.insert(source);
+  if (native_producer_dirty_sources_.insert(source).second) {
+    ensure_native_producer(lane.value()).inbox->owner_pending_sources.fetch_add(1, std::memory_order_release);
+  }
   if (!native_producer_flush_scheduled_) {
     native_producer_flush_scheduled_ = true;
     td::actor::send_closure_later(actor_id(this), &ExtMessagePool::flush_native_producer_sources);
@@ -138,6 +142,7 @@ void ExtMessagePool::flush_native_producer_sources() {
           it->second = std::move(view);
           native_producer_telemetry_->replacements_coalesced.fetch_add(1, std::memory_order_relaxed);
         }
+        CHECK(endpoint.inbox->owner_pending_sources.fetch_sub(1, std::memory_order_acq_rel) != 0);
       }
       producer_peak(native_producer_telemetry_->inbox_peak_sources, endpoint.inbox->latest.size());
       if (!endpoint.inbox->scheduled) {

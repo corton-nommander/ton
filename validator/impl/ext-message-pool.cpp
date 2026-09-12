@@ -2819,6 +2819,17 @@ td::actor::Task<> ExtMessagePool::pump_callback(std::shared_ptr<InstalledCallbac
       continue;
     }
     if (callback->callback->native_streaming) {
+      if (native_producer_only_) {
+        // A bounded publication is still part of this producer epoch. Do not
+        // advertise exhaustion between chunks and cause the collator to seal
+        // a small candidate while already-announced source views are pending.
+        bool publication_pending = native_producer_inbox_->owner_pending_sources.load(std::memory_order_acquire) != 0;
+        {
+          std::lock_guard lock(native_producer_inbox_->mutex);
+          publication_pending |= !native_producer_inbox_->latest.empty();
+        }
+        if (publication_pending) { break; }
+      }
       auto epoch = callback->producer_epoch;
       if (callback->completion_epoch < epoch) {
         // Close this epoch before awaiting the marker push. If ingress arrives

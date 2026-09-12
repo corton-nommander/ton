@@ -141,6 +141,19 @@ SignedInput signed_run(bool cross_prefix = false, bool invalid_signature = false
   return {run.src, builder.finalize()};
 }
 
+SignedInput signed_scalar() {
+  auto key = td::Ed25519::generate_private_key().move_as_ok();
+  block::NativeTransfer transfer;
+  transfer.src.as_slice().copy_from(key.get_public_key().move_as_ok().as_octet_string());
+  transfer.dst = transfer.src;
+  transfer.amount = 1;
+  transfer.valid_until = std::numeric_limits<UnixTime>::max();
+  transfer.signature = key.sign(transfer.signing_payload(bits(1))).move_as_ok().as_slice().str();
+  vm::CellBuilder builder;
+  CHECK(transfer.store_external(builder));
+  return {transfer.src, builder.finalize()};
+}
+
 }  // namespace
 
 // Seed immutable configuration facts to isolate the real batch coroutine from
@@ -579,6 +592,45 @@ TEST(NativeAdmissionPreparation, SelectsStateAfterWorkerAndPreservesSingleIdempo
     ASSERT_TRUE(has_counter(stats, "prepare_authorization_reuses", 1));
     ASSERT_TRUE(has_counter(stats, "prepare_active_parents", 0));
     ASSERT_TRUE(has_counter(stats, "snapshot_refresh_attempts", 0));
+    co_return {};
+  });
+}
+
+TEST(NativeAdmissionPreparation, ScalarAuthorizationReservesExactlyOneNonce) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    const auto input = signed_scalar();
+    auto requests = std::make_shared<Requests>();
+    auto gate = std::make_shared<NativeAdmissionPreparationTestAccess::Gate>();
+    auto manager = td::actor::create_actor<RefreshManager>("prepare-manager", requests);
+    auto pool = td::actor::create_actor<RefreshPool>("prepare-pool", manager.get(), false);
+    auto worker = co_await td::actor::ask(pool.get(), &RefreshPool::enable_preparation, gate);
+    SnapshotOptions scalar_options;
+    scalar_options.runs_enabled = false;
+    co_await td::actor::ask(pool.get(), &RefreshPool::install, 11u, scalar_options);
+    std::vector<td::BufferSlice> inputs;
+    inputs.push_back(input.boc());
+    auto pending = td::actor::ask(pool.get(), &RefreshPool::submit, std::move(inputs), td::Timestamp::in(10));
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(gate->pending.size(), 1u);
+    ASSERT_TRUE(requests->pending.empty());
+    co_await td::actor::ask(worker, &NativeAdmissionPreparationTestAccess::Worker::release, 0u);
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(requests->pending.size(), 1u);
+    ASSERT_TRUE(requests->pending[0].block == block_id(basechainId, 11));
+    requests->pending[0].promise.set_value(td::make_ref<RefreshShardState>(11, input.source));
+    auto result = co_await std::move(pending);
+    ASSERT_EQ(result.statuses.size(), 1u);
+    ASSERT_TRUE(result.statuses[0].accepted);
+    ASSERT_EQ(result.checked_messages.size(), 1u);
+    ASSERT_TRUE(result.checked_messages[0].native_admission);
+    const auto &admission = result.checked_messages[0].native_admission.value();
+    ASSERT_TRUE(!admission.is_run);
+    ASSERT_EQ(admission.first_nonce, 0u);
+    ASSERT_EQ(admission.logical_count, 1u);
+    ASSERT_EQ(co_await td::actor::ask(pool.get(), &RefreshPool::reservations, input.source), 1u);
+    auto stats = co_await td::actor::ask(pool.get(), &RefreshPool::diagnostics);
+    ASSERT_TRUE(has_counter(stats, "prepare_authorization_reuses", 1));
     co_return {};
   });
 }

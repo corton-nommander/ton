@@ -7,7 +7,7 @@ to master or published. Neither `.env.desktop` nor `.env.physical` was changed.
 
 | Experiment | Switch | Implementation and status |
 |---|---|---|
-| Masterchain prerequisites | `TON_COLLATION_MASTERCHAIN_CONTEXT` | Manager returns selected state, exact block identity, block and validated external reference together. Preserves minimum/parent selection, hardfork fallback and absolute deadlines. Needs live-chain measurement. |
+| Masterchain prerequisites | `TON_COLLATION_MASTERCHAIN_CONTEXT` | Manager returns selected state, exact block identity, block and validated external reference together. Preserves minimum/parent selection, hardfork fallback and absolute deadlines. Short live diagnostic completed; full TPS arm interrupted. |
 | Prerequisite timing | `TON_COLLATION_PREREQUISITE_PROFILE` | With context enabled, separately reports manager queue, state callback queue, asynchronous state/block waits, selection/reference service and collator callback queue. Waits include downstream scheduling and I/O; they are not CPU measurements. |
 | Checkpoint proof base | `TON_NATIVE_CHECKPOINT_PROOF_OVERLAY` | Owned immutable base plus fresh trial sets; accepted trials retain their base, rejected trials leave accounting untouched. Superseded account roots never accumulate. Microbenchmark regressed; leave disabled. |
 | Candidate payload | `TON_IMMUTABLE_CANDIDATE_PAYLOAD_REUSE` | Candidate fields become read-only and input buffers are detached. Thread-safe once-only encoding retains the complete envelope; consumers receive independent output bytes. Promising component result, TPS not measured. |
@@ -50,7 +50,7 @@ exact reference identity and malformed input, and byte-identical empty, scalar,
 native-run and multi-root payloads across concurrent consumers. Mutating input
 aliases or returned encoded buffers does not change later serialization.
 
-No validator or load was started for this cycle: root-disk free space was about
+On 11 September the cycle stopped before starting validator/load: root-disk free space was about
 **4.7 GiB**, below the existing **8 GiB start / 5 GiB stop** guard. Build artifacts
 were relocated and verified on the backup disk; a Docker trim returned only
 134 MiB. The existing chain, wallets, unrelated services and disk guards were
@@ -73,3 +73,42 @@ offered-load headroom before claiming capacity.
 
 Local resume artifacts: `build/benchmarks/native-collation-cycles-20260911/ACTIVE.md`,
 `plan.json`, `env.*`, `run-arm.py`, and `runtime-ace22335/provenance.json`.
+
+
+## Recovery and partial live results — 12 September
+
+Disk space became available. The Docker reset had removed the old local images
+and volumes; preserved binary payloads, the exact chain database and a verified
+wallet archive allowed recovery. Registry TON/stats bases were pinned by digest;
+both validator versions use a common reconstructed wrapper and the same checked
+client. All image preparation finished before load. The dashboard's repeated
+full-file import of a 5.1 GiB historical log was removed from the measurement path
+by preserving that log outside its import roots and starting a fresh active log
+before every arm. Chain/state and stats volumes were retained.
+
+| Run | Canonical logical TPS | Offered/admitted TPS | Outcome |
+|---|---:|---:|---|
+| 120s context diagnostic | 57,630.52 | 57,943.73 | Proof/drain complete; excluded from TPS comparison |
+| Original runtime, 600s | 52,525.04 | 52,414.72 | Complete |
+| New runtime, all experiments off, 600s | 55,776.96 | 55,765.49 | Complete |
+| Context-only arm | — | — | Interrupted after 26.8s measured; benchmark containers disappeared; no final proof receipt |
+
+The +6.19% sequential whole-image observation has no repeat and is not an isolated
+feature gain. Original/new image runs each passed all 132 analysis checks; a
+comparison-parser correction normalized unordered Docker mount records without
+changing raw artifacts or metrics. Historical named-volume results are not paired
+controls for this recovered host-bound database. No capacity claim or promotion
+is made. Later arms were withheld after the runtime interruption; the next account
+reuse requires canonical-state verification.
+
+The diagnostic confirms that external-work wait remains large: 109.003ms mean
+within a 164.940ms collation interval for 1,911 locally accepted basechain blocks.
+A separate 23.245s raised-verbosity sample measured 5.671ms per bundled masterchain
+prerequisite request and confirmed two encodings for 374 of 375 observed roots.
+These are different populations and stages. The short prerequisite result does
+not resolve the external-work waiting bottleneck.
+
+Exact images, joins, source identities and partial run evidence are saved in the
+[recovery record](benchmarks/results/native-collation-recovery-20260912.json).
+The [architecture roadmap](native-architecture-roadmap-2026-09-12.md) ranks five
+further designs against the retained 61,959 TPS reference and these observations.

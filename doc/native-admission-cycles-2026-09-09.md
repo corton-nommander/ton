@@ -585,3 +585,15 @@ That report records the selected desktop preset and its measurement limits. The 
 pool also consumes about 0.85 sampled core and needs queue/long-turn attribution
 on the physical servers. Matching Server A/B profiles and a production A/B test
 remain outstanding before considering the separately gated lane-owned redesign.
+
+
+## Architecture review and resumed experiments — 12 September
+
+The [architecture roadmap](native-architecture-roadmap-2026-09-12.md) reviews the
+retained 61,959 TPS reference, rejected owner/refresh/trie treatments and the latest
+collation diagnostic. It prioritizes complete lane ownership, persistent useful-work
+publication, short exact-state admission commits, canonical account deltas and
+incremental authenticated state construction. Multi-fold numbers are prototype
+targets or conditional models, not measured TPS gains. The current recovered series
+has two complete 600s whole-image controls and an interrupted context arm; no new
+feature is promoted. See the [updated experiment report](native-collation-experiments-2026-09-11.md).

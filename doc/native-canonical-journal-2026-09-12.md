@@ -3,8 +3,9 @@
 `TON_NATIVE_CANONICAL_JOURNAL=1` enables an experimental account-difference path
 inside the existing canonical reconciliation walk. The default is **off**.
 The flag belongs to the validator process environment; setting it only on the
-load generator has no effect. No throughput improvement has been measured yet.
-Broad ingress checkpoint retention remains unrelated and must stay off.
+load generator has no effect. The completed stage4 comparison demonstrated no
+repeatable TPS gain, so the selected reference keeps it **off**. Broad ingress
+checkpoint retention remains unrelated and must stay off.
 
 The publisher is unchanged: `ValidatorManagerImpl::update_shard_client_block_handle`
 sends the shard-client-confirmed masterchain state after all its referenced shard
@@ -70,12 +71,31 @@ partial atomic nonce consumption, unchanged-root expiry, stale verifier revision
 logical-time fencing, deletion/partial failure, malformed old diff fallback,
 missing predecessor publication, topology eviction, exact-reference rejection and
 32 mixed canonical transitions over 256 accounts.
-Build and execution are pending the shared build slot; no passing result or TPS
-claim is recorded here yet.
 
-For promotion, run the focused tests and existing scheduler/native admission
-regressions, then repeated 600-second strict-image A/B runs with all other runtime
-experiments held fixed. Keep 20ms coalescing and initial/max logical windows
+The frozen `52a20df0` implementation passed **144 focused cases**, the native
+publication gate's **21 invocations**, and all **seven frozen-runtime target
+checks**. These are recorded executions, not newly rerun tests. The exact binary,
+test and log hashes are in
+[integration verification](../build/benchmarks/native-lane-pipeline-20260912/integration-verification-52a20df0.json)
+and the [frozen runtime gates](../build/benchmarks/native-lane-pipeline-20260912/frozen-runtime-gates-52a20df0.json).
+The later split-startup build `095bc0de` repeated the 144 focused cases,
+21 publication-gate invocations and seven frozen-runtime checks. Its existing
+mock-manager ordinary-idle regression also passed; a real fresh zero-ingress
+split transition remains a separate pending gate. See the
+[cycle report](native-lane-pipeline-cycles-2026-09-12.md#validation-and-next-context).
+
+Performance result: all four 600-second stage4 ABBA arms completed with valid
+proofs and drain. The journal removed substantial repeated dictionary work,
+but treatment mean canonical TPS was lower and treatment/control ranges overlapped.
+Chronological drift and changes in unrelated workloads prevent an isolated causal
+regression claim. There is **no demonstrated TPS gain**, and the journal remains
+**off** in the selected reference. See the
+[stage4 decision](../build/benchmarks/native-lane-pipeline-stage4-volume-20260912/winner-decisions.json)
+and [12 September cycle report](native-lane-pipeline-cycles-2026-09-12.md).
+
+Any later promotion requires a new passing correctness gate for changed code and
+repeated 600-second strict-image A/B runs with all other runtime experiments held
+fixed. Keep 20ms coalescing and initial/max logical windows
 32,768/65,536. Require complete canonical proofs, zero residual drain, stable image
 and validator identities, useful offered-load headroom and unchanged correctness.
 Compare owner CPU/turn time, journal diff time and fallback rate, dictionary

@@ -597,3 +597,14 @@ incremental authenticated state construction. Multi-fold numbers are prototype
 targets or conditional models, not measured TPS gains. The current recovered series
 has two complete 600s whole-image controls and an interrupted context arm; no new
 feature is promoted. See the [updated experiment report](native-collation-experiments-2026-09-11.md).
+
+## Lane-pipeline outcome and current measurement — 12 September
+
+The [lane-pipeline experiment report](native-lane-pipeline-cycles-2026-09-12.md)
+retains persistent producer publication at +2.2254% mean canonical TPS in its own
+ABBA comparison. Preparation was inconclusive; the journal demonstrated no
+repeatable gain. Both the incompatible ownership treatment and the corrected
+lane-imbalanced control remain invalid for feature selection. A fresh balanced
+ownership comparison is pending. The historical 61,959.20 TPS reference and the
+64,716.77 TPS storage diagnostic retain their distinct contexts and do not
+establish a cross-chain winner, combined gain or production capacity.

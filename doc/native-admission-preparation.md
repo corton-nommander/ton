@@ -55,5 +55,29 @@ RTT, charged preparation work, batch density and final proof/drain.
 `test-native-admission-refresh-batch` target, already included in the native
 publication gate. They hold real preparation replies across state/config
 changes, run strict signed BOCs and account dictionaries, verify deadline lease
-lifetime and preserve single-message duplicate/broadcast semantics. This change
-has no benchmark result until that gate and controlled performance runs finish.
+lifetime and preserve single-message duplicate/broadcast semantics.
+
+The frozen `52a20df0` implementation passed **144 focused cases**, the native
+publication gate's **21 invocations**, and all **seven frozen-runtime target
+checks**. These are recorded executions, not newly rerun tests. The exact binary,
+test and log hashes are in
+[integration verification](../build/benchmarks/native-lane-pipeline-20260912/integration-verification-52a20df0.json)
+and the [frozen runtime gates](../build/benchmarks/native-lane-pipeline-20260912/frozen-runtime-gates-52a20df0.json).
+The later split-startup build `095bc0de` repeated the 144 focused cases,
+21 publication-gate invocations and seven frozen-runtime checks. Its existing
+mock-manager ordinary-idle regression also passed; a real fresh zero-ingress
+split transition remains a separate pending gate. See the
+[cycle report](native-lane-pipeline-cycles-2026-09-12.md#validation-and-next-context).
+
+Performance result: stage3 was **inconclusive**, so preparation remains **off**
+in the selected reference profile. Only three full 600-second arms completed;
+the second control exceeded the first treatment, and the last treatment stopped
+after a telemetry timeout. That interrupted arm is not a valid performance result.
+No repeatable preparation gain or capacity increase was established. See the
+[stage3 decision](../build/benchmarks/native-lane-pipeline-stage3-fresh-20260912/winner-decisions.json)
+and [12 September cycle report](native-lane-pipeline-cycles-2026-09-12.md).
+
+The implemented [four-owner prototype](native-prepared-lane-owners-2026-09-12.md)
+requires preparation enabled. Its comparison therefore enables preparation in
+both control and treatment; that dependency does not independently promote this
+feature or compare the combined profile with the preparation-off reference.

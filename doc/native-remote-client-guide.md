@@ -6,6 +6,14 @@ offered/admitted TPS, its historical settings and the next implementation
 priorities. Later owner experiments remain on their separate branch. A source
 checkout does not replace running or exported Docker images.
 
+The [12 September lane-pipeline report](native-lane-pipeline-cycles-2026-09-12.md)
+retains the producer-only experimental profile from a +2.2254% matched desktop
+comparison. Preparation, the journal and owners/domains have no promotion.
+Keep those flags off on production until a matching deployment comparison; the
+owner prototype supports exactly four lanes and must not be enabled on an existing
+eight-lane chain. The corrected client and observer are required for an owner
+experiment; editing a checkout does not update an already exported client image.
+
 The original measurements used sidechain result commit `4b2034a8` and MyLocalTonDocker `44ffe58`. The export/import and remote-run scripts below are now maintained in MyLocalTonDocker. Their offline integration checks use simulated Docker; they do not establish new remote throughput measurements.
 
 The existing `benchmark/run-native-connections-sweep.py --connections 10 50 100` is a **local Docker sweep**. It inspects a local `genesis`, shared volumes and process identity. Cloning it on server B does not enable remote mode; pointing `DOCKER_HOST` at A would run its generator on A. The underlying prebuilt generator already supports remote ADNL/TCP. Use the generator-only commands below on B. They retain proof-checked canonical counters but do not provide the local wrapper's full independent validator cleanup/resource acceptance report.

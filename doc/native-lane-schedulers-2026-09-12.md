@@ -2,9 +2,11 @@
 
 `TON_NATIVE_LANE_SCHEDULERS=4` enables four execution scheduler domains for the
 complete fixed four-leaf basechain topology. The default, `0`, retains the existing
-single scheduler and all configured CPU workers. This is **execution scheduling
-isolation**, not independent admission/reservation ownership, sharded storage,
-additional validators or a measured TPS improvement.
+single scheduler and all configured CPU workers. This flag controls execution
+scheduling. Independent admission/reservation ownership is implemented separately
+by the [prepared lane-owner prototype](native-prepared-lane-owners-2026-09-12.md).
+Neither flag shards storage or adds validators; their performance result remains
+pending.
 
 The engine conserves its configured CPU-worker total. Four workers remain in the
 main scheduler; the rest are divided evenly across four lane schedulers, assigning
@@ -53,19 +55,40 @@ The focused `test-native-lane-scheduler` target checks disabled behavior, total
 worker conservation across 8–127 workers, uneven remainders, invalid settings,
 exact topology mapping and unsupported fallback. Its runtime test creates real
 actors on all five scheduler groups, verifies ordinary child and BusRuntime
-inheritance, and checks explicit collation/validation/producer routing. Build and
-execution are pending integration; no passing result or performance gain is
-recorded yet.
+inheritance, and checks explicit collation/validation/producer routing.
 
-Keep admission preparation, producer and canonical journal flags fixed on both
-sides of an A/B comparison. Enable only this scheduler setting in the treatment.
-Use repeated 600-second strict-image controls with the same total engine threads,
-CPU quota, 20ms coalescing and 32,768/65,536 logical windows. Require complete
-canonical proofs and drain, correct placement in all four lanes, stable identities
-and useful offered-load headroom. Reject the treatment if main-group admission or
-manager queues saturate, downstream backlog grows, or canonical TPS regresses.
+The frozen `52a20df0` implementation passed **144 focused cases**, the native
+publication gate's **21 invocations**, and all **seven frozen-runtime target
+checks**. These are recorded executions, not newly rerun tests. The exact binary,
+test and log hashes are in
+[integration verification](../build/benchmarks/native-lane-pipeline-20260912/integration-verification-52a20df0.json)
+and the [frozen runtime gates](../build/benchmarks/native-lane-pipeline-20260912/frozen-runtime-gates-52a20df0.json).
+The later split-startup build `095bc0de` repeated the 144 focused cases,
+21 publication-gate invocations and seven frozen-runtime checks. Its existing
+mock-manager ordinary-idle regression also passed; a real fresh zero-ingress
+split transition remains a separate pending gate. See the
+[cycle report](native-lane-pipeline-cycles-2026-09-12.md#validation-and-next-context).
 
-## What remains before independent lane admission ownership
+Keep preparation, producer and journal flags fixed across a comparison. A
+scheduler-only experiment changes only this setting. The current stage1 experiment
+instead tests **owners4 plus domains4 together**, against owners0/domains0; it
+cannot isolate either feature's contribution. Both arms require preparation1,
+producer1 and journal0, the same total engine threads/CPU quota, 20ms coalescing
+and 32,768/65,536 logical windows. Require complete canonical proofs and drain,
+correct placement in all four lanes, stable identities and useful offered-load
+headroom before a capacity claim.
+
+The corrected comparison requires generator `bc15f976` and MyLocalTonDocker
+observer `e04b96f` on both sides; see [client compatibility](native-prepared-lane-owners-2026-09-12.md#client-and-observer-compatibility).
+The initial incompatible-client pair and the later lane-imbalanced corrected
+control are excluded from feature selection; the tolerance was not widened.
+
+Performance result: **not established**. The first corrected control failed the
+fixed lane-balance gate after complete proof/drain; a new balanced context is pending. No scheduler or combined owner/domain
+TPS improvement is claimed. The result and final profile decision will be recorded
+in the [12 September cycle report](native-lane-pipeline-cycles-2026-09-12.md).
+
+## Implemented ownership and prior evidence
 
 The prior `TON_NATIVE_POOL_OWNERS` prototype was actual pool ownership: commit
 `e4192789` (duplicate lineage `ed3c86c8`) partitioned source reservations,
@@ -86,33 +109,21 @@ Admission may not commit after its deadline even when returning collected result
 later. The previous client classifier omission was corrected before the long
 losing screen; it is not an explanation for that screen's regression.
 
-An implementable next ownership stage is:
+The new [prepared lane-owner implementation](native-prepared-lane-owners-2026-09-12.md)
+now provides the ownership boundary. The router prepares strict, sealed messages
+using its existing bounded worker pool, then selects a fresh common exact spending
+context. Four actual child owners, including lane zero, exclusively own native
+reservations, watermarks, indexes, expiry, reconciliation and producer publication.
+The coordinator retains generic/masterchain handling and has no native ledger.
 
-1. Extract the sealed prepared-message type and bounded preparation lease into
-   a shared preparation service. Decode and verify before routing; retain exact
-   message hash/domain binding and original wire-size/deadline checks. The
-   ingress router should stop owning native prefix zero or decoding every BOC.
-2. Create one `NativeLaneAdmissionOwner` per fixed lane (or explicitly assigned
-   lane set), placed with its producer/session domain. Move reservations,
-   canonical watermarks, revisions, raw/normalized indexes, per-address limits,
-   expiry and reconciliation endpoints exclusively into that actor. This is the
-   actual ownership boundary missing from the scheduler prototype.
-3. After preparation, select a fresh exact admission context and deliver sealed
-   parents plus that context to their owners. Reuse the existing global generation
-   commit fence initially; each owner checks the exact current context and source
-   revision at a short synchronous reserve/insert/commit boundary. Never hold a
-   fence across an await or multiply verifier workers. Preserve ordered per-item
-   results and source nonce ordering across mixed-lane RPC batches.
-4. Deliver each canonical lane endpoint/journal to its sole owner from the existing
-   shard-client-confirmed authority. Include destination balance changes and
-   expiry; local candidate acceptance stays a hint. Each owner publishes immutable
-   ready views to its lane producer. Bootstrap or missing continuity uses the
-   exact-state fallback, not another owner's watermark or competing-fork floors.
-5. Retain conserved global mempool permits and explicit per-owner diagnostics.
-   The old permit/fence code is a correctness starting point; optimize shared
-   locks or lease permits in batches only when profiles show that cost. Keep
-   masterchain/generic handling explicit, and fail closed on unsupported ownership
-   transitions until there is a tested transfer/drain protocol.
+The implementation retains the shared generation commit fence, global quota
+permits, original per-item deadlines, ordered results and callback-local branch
+floors. Workers are shared rather than multiplied. Canonical reconciliation still
+comes from the shard-client-confirmed authority, with the exact-state fallback
+when journal continuity is unavailable. Unsupported ownership transitions latch
+admission closed and retain existing state; no live ownership migration is
+implemented. The prior prototype is historical evidence, not this implementation's
+performance result.
 
 State/storage requests still pass through the shared manager/DB in this design.
 Use stage and queue evidence after each step to decide whether a lane state

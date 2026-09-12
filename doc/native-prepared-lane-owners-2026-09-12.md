@@ -1,11 +1,14 @@
 # Prepared admission with four independent lane owners
 
-Experimental implementation on top of the persistent producer, worker preparation
-and canonical journal work. It is disabled by default and has no measured TPS
-claim yet. The previous owner prototype lost throughput: its corrected-client
+The four-owner implementation is present and passed the frozen correctness gates.
+It builds on the producer and preparation boundaries; the canonical journal is
+optional and remains off in the current comparison. Owners are disabled by default,
+and their performance decision remains unestablished after the corrected control
+failed lane balance. A fresh balanced comparison is pending. The previous owner prototype lost throughput: its corrected-client
 long screen reached 46,119 canonical TPS versus 55,913 and 53,300 controls, with
 higher RTT and CPU. This implementation must earn its own repeatable result.
-See `doc/native-lane-schedulers-2026-09-12.md` for that prior evidence.
+See [lane scheduler domains](native-lane-schedulers-2026-09-12.md) for that prior
+evidence.
 
 ## Activation
 
@@ -82,6 +85,41 @@ staged by the coordinator once, then handed to the lane owner; live generic
 entries are forwarded to installed lane callbacks. Synchronous mixed callbacks
 retain native-first logical capacity accounting.
 
+## Client and observer compatibility
+
+The prepared-owner path requires the generator fix in `bc15f976` for meaningful
+NTRN congestion measurements. It recognizes only these complete server code-651
+messages for a concrete signed-run task:
+
+- `native pool owner has not applied the current admission state; retry`
+- `native pool routed admission snapshot changed; retry`
+
+They describe a generation or exact routed-state race before admission commit.
+The client uses its existing bounded snapshot/revision retry and preserves the
+window, exact parent bytes and nonce. These responses grant no admission or
+canonical proof credit. Scalar messages, actual pressure, timeouts, topology
+errors and unknown availability errors retain their prior behavior; the original
+retry horizon and drain deadline still apply. The fix passed 66 policy cases
+and the production-worker/TL callback regression. The latter uses synthetic
+preserved bytes to test accounting and identity, not cryptographic validity or
+remote throughput.
+
+MyLocalTonDocker `e04b96f` fixes both cleanup and profiling parsers for the
+engine's `topology_ready:true` / `topology_failed:false` fields. Only declared
+topology flags accept boolean tokens; required numeric cleanup gauges still
+reject them. All 53 Python cases passed, including selected raw owner snapshots.
+The corrected client comparison uses this observer and one newly frozen client
+image for every arm. Updating source files alone cannot replace an exported or
+running client image.
+
+The initial owner pair remains excluded from feature selection: its old client
+misclassified the new generation response as ordinary congestion, and its wrapper
+failed while parsing topology booleans. A separate reviewed proof/cleanup handoff
+permits the corrected comparison to use the same settled chain; it does not
+rewrite the old invalid benchmark or substitute that arm as a new control.
+See the [cycle report](native-lane-pipeline-cycles-2026-09-12.md) for exact images,
+validation receipts and corrected results.
+
 ## Instrumentation and validation
 
 `total.native_admission_lane_owners` reports the shared worker budget, actual
@@ -106,7 +144,7 @@ publication counters and retained canonical nonce watermarks need not be zero.
 Reading the added producer gauges uses one lock per lane and shared atomics,
 without traversing retained source views.
 
-Authored tests: **17 fixtures total**, not executed before the benchmark build slot.
+The two ownership targets passed **17 fixtures total** in the frozen gate.
 
 - `test-native-prepared-owner-coordination` (**7 fixtures**): four-prefix mapping, shared priority
   and address quotas, promotion/rollback/shutdown refunds, reentrant reader/writer
@@ -120,11 +158,30 @@ Authored tests: **17 fixtures total**, not executed before the benchmark build s
   native-first synchronous callbacks with independent branch floors; hash ordering
   despite reversed preparation completion.
 
-Build and run both targets, existing admission refresh/preparation, scheduler,
-producer actor, canonical journal and lane scheduler tests before activation.
-During the requested staged experiment, keep one frozen validator image and the
-unchanged client image throughout the 2 → 3 → 4 → 1 arms. Enable owners only in
-the last arm. Keep broad checkpoint retention off and the logical window fixed
+The frozen `52a20df0` implementation passed **144 focused cases**, the native
+publication gate's **21 invocations**, and all **seven frozen-runtime target
+checks**. These are recorded executions, not newly rerun tests. The exact binary,
+test and log hashes are in
+[integration verification](../build/benchmarks/native-lane-pipeline-20260912/integration-verification-52a20df0.json)
+and the [frozen runtime gates](../build/benchmarks/native-lane-pipeline-20260912/frozen-runtime-gates-52a20df0.json).
+The later split-startup build `095bc0de` repeated the 144 focused cases,
+21 publication-gate invocations and seven frozen-runtime checks. Its existing
+mock-manager ordinary-idle regression also passed; a real fresh zero-ingress
+split transition remains a separate pending gate. See the
+[cycle report](native-lane-pipeline-cycles-2026-09-12.md#validation-and-next-context).
+
+Performance result: **not established**. The first corrected control failed the
+fixed lane-balance gate after complete proof/drain; a new balanced context is pending. The comparison tests owners4
+plus domains4 against owners0/domains0, with preparation1 on both sides as an
+owner dependency. Preparation alone was inconclusive and remains off in the
+selected reference; the journal showed no demonstrated TPS gain and also remains
+off. A conditional owner/domain result must therefore be distinguished from a
+complete-profile comparison against that reference. No owner/domain throughput
+or capacity improvement is claimed. See the [12 September cycle report](native-lane-pipeline-cycles-2026-09-12.md).
+
+Keep one frozen validator image and the unchanged client image within every
+paired comparison. The stage1 comparison retains producer1, journal0 and broad
+checkpoint retention off on both sides. Keep the maximum logical window fixed
 at 65,536 until measured ready work repeatedly hits that cap. Compare measured
 phase offered/admitted/canonical TPS, cap hits, physical/logical batch density,
 RTT, follower backlog, owner queue time and process CPU against paired controls.

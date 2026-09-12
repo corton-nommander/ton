@@ -116,6 +116,36 @@ class ExtMessagePoolTestAccess {
     return ExtMessagePool({}, {});
   }
 
+  static void publish_producer_source(ExtMessagePool &owner, ExtMessagePool &producer,
+                                      NativeAddress source, bool invalidate = false) {
+    producer.native_producer_only_ = true;
+    producer.native_producer_shard_ = ShardIdFull{basechainId, shardIdAll};
+    auto &fence = owner.native_producer_fences_[source];
+    if (!fence) { fence = std::make_shared<ExtMessagePool::NativeProducerFence>(); }
+    fence->canonical_next_nonce.store(owner.native_nonce_watermarks_[source].observed_next_nonce);
+    if (invalidate) { fence->invalidation.fetch_add(1); }
+    producer.apply_native_producer_update(owner.make_native_producer_source(source));
+  }
+
+  static void publish_all_producer_sources(ExtMessagePool &owner, ExtMessagePool &producer) {
+    for (const auto &[source, _] : owner.native_accounts_) { publish_producer_source(owner, producer, source); }
+  }
+
+  static void invalidate_producer_source(ExtMessagePool &owner, NativeAddress source,
+                                         td::uint64 canonical_nonce) {
+    auto fence = owner.native_producer_fences_.at(source);
+    fence->canonical_next_nonce.store(canonical_nonce);
+    fence->invalidation.fetch_add(1);
+  }
+
+  static td::uint64 producer_index_updates(const ExtMessagePool &producer) {
+    return producer.native_producer_telemetry_->index_updates.load();
+  }
+
+  static void advance_producer_canonical_fence(ExtMessagePool &owner, NativeAddress source, td::uint64 nonce) {
+    owner.native_producer_fences_.at(source)->canonical_next_nonce.store(nonce);
+  }
+
   static NativeAddress source(unsigned prefix) {
     return {basechainId, make_bits(0, prefix)};
   }
@@ -3182,3 +3212,116 @@ TEST(ExtMessagePoolScheduler, NativeQueueTracksPhysicalAndLogicalWorkSeparately)
 }
 
 }  // namespace ton::validator
+
+TEST(ExtMessagePoolScheduler, PersistentLaneProducerLazilyVisitsOnlyNeededSources) {
+  auto owner = ton::validator::ExtMessagePoolTestAccess::make_pool();
+  auto producer = ton::validator::ExtMessagePoolTestAccess::make_pool();
+  using Access = ton::validator::ExtMessagePoolTestAccess;
+  const ton::ShardIdFull shard{ton::basechainId, ton::shardIdAll};
+  for (unsigned i = 0; i < 256; ++i) {
+    auto source = Access::source(i);
+    Access::set_watermark(owner, source, 0);
+    Access::add_work(owner, source, 0, 16);
+    Access::add_work(owner, source, 16, 16);
+  }
+  Access::publish_all_producer_sources(owner, producer);
+  ASSERT_EQ(Access::producer_index_updates(producer), 256u);
+  for (unsigned round = 0; round < 12; ++round) {
+    auto expected = Access::select_callback_round(owner, shard, 512);
+    auto actual = Access::select_callback_round(producer, shard, 512);
+    ASSERT_EQ(actual.sources, expected.sources);
+    ASSERT_EQ(actual.nonces, expected.nonces);
+    ASSERT_EQ(actual.logical_counts, expected.logical_counts);
+    ASSERT_EQ(expected.source_scans, 256u);
+    ASSERT_EQ(actual.source_scans, 32u);
+  }
+  // Republishing unchanged membership never rebuilds the persistent index.
+  Access::publish_all_producer_sources(owner, producer);
+  ASSERT_EQ(Access::producer_index_updates(producer), 256u);
+}
+
+TEST(ExtMessagePoolScheduler, PersistentLaneProducerPriorityBoundAndBranchFloorAgreeWithPool) {
+  using Access = ton::validator::ExtMessagePoolTestAccess;
+  auto owner = Access::make_pool();
+  auto producer = Access::make_pool();
+  const ton::ShardIdFull shard{ton::basechainId, ton::shardIdAll};
+  ton::validator::NativeSourceNonceFloors floors;
+  std::vector<ton::validator::ExtMessage::Hash> excluded;
+  for (unsigned i = 0; i < 48; ++i) {
+    auto source = Access::source(i);
+    Access::set_watermark(owner, source, 0);
+    auto head = Access::add_work(owner, source, 0, 16, static_cast<int>(i % 5));
+    Access::add_work(owner, source, 16, 16, 9 - static_cast<int>(i % 7));
+    Access::add_work(owner, source, 32, 16, static_cast<int>(i % 3));
+    if (i % 3 == 0) { floors.push_back({source.first, source.second, 16}); }
+    if (i % 7 == 0) { excluded.push_back(head); }
+  }
+  Access::publish_all_producer_sources(owner, producer);
+  // Different effective heads exercise upper-bound probing and priority
+  // changes within a source. Equal-priority order remains round-robin.
+  for (unsigned round = 0; round < 8; ++round) {
+    auto expected = Access::select_callback_round(owner, shard, 128, floors, excluded);
+    auto actual = Access::select_callback_round(producer, shard, 128, floors, excluded);
+    ASSERT_EQ(actual.sources, expected.sources);
+    ASSERT_EQ(actual.nonces, expected.nonces);
+  }
+}
+
+TEST(ExtMessagePoolScheduler, PersistentLaneProducerNeverSharesSpeculativeNonceProgress) {
+  using Access = ton::validator::ExtMessagePoolTestAccess;
+  auto owner = Access::make_pool();
+  auto producer = Access::make_pool();
+  auto source = Access::source(5);
+  const ton::ShardIdFull shard{ton::basechainId, ton::shardIdAll};
+  Access::set_watermark(owner, source, 0);
+  Access::add_work(owner, source, 0, 16, 0, true, false);  // Uncommitted canonical head.
+  Access::add_work(owner, source, 16, 16);
+  Access::publish_all_producer_sources(owner, producer);
+  auto branch = Access::select_callback_round(producer, shard, 16, {{source.first, source.second, 16}});
+  ASSERT_EQ(branch.nonces, (std::vector<td::uint64>{16}));
+  auto sibling = Access::select_callback_round(producer, shard, 16);
+  ASSERT_TRUE(sibling.nonces.empty());
+  auto repeated = Access::select_callback_round(producer, shard, 16, {{source.first, source.second, 16}});
+  ASSERT_EQ(repeated.nonces, branch.nonces);
+  ASSERT_TRUE(!Access::reservation_committed(owner, source, 0));
+  ASSERT_EQ(Access::reservation_nonces(owner, source), (std::vector<td::uint64>{0, 16}));
+}
+
+TEST(ExtMessagePoolScheduler, PersistentLaneProducerFenceRejectsStaleViewsUntilReplacement) {
+  using Access = ton::validator::ExtMessagePoolTestAccess;
+  auto owner = Access::make_pool();
+  auto producer = Access::make_pool();
+  auto source = Access::source(6);
+  const ton::ShardIdFull shard{ton::basechainId, ton::shardIdAll};
+  Access::set_watermark(owner, source, 0);
+  Access::add_work(owner, source, 0, 16);
+  Access::add_work(owner, source, 16, 16);
+  Access::publish_all_producer_sources(owner, producer);
+  ASSERT_EQ(Access::select_callback_round(producer, shard, 16).nonces, (std::vector<td::uint64>{0}));
+  Access::advance_producer_canonical_fence(owner, source, 16);
+  ASSERT_EQ(Access::select_callback_round(producer, shard, 16).nonces, (std::vector<td::uint64>{16}));
+  Access::invalidate_producer_source(owner, source, 16);
+  ASSERT_TRUE(Access::select_callback_round(producer, shard, 16).nonces.empty());
+  Access::set_watermark(owner, source, 16);
+  Access::publish_producer_source(owner, producer, source);
+  ASSERT_EQ(Access::select_callback_round(producer, shard, 16).nonces, (std::vector<td::uint64>{16}));
+}
+
+TEST(ExtMessagePoolScheduler, PersistentLaneProducerKeepsRunsAtomicAndExcludesExpiredWork) {
+  using Access = ton::validator::ExtMessagePoolTestAccess;
+  auto owner = Access::make_pool();
+  auto producer = Access::make_pool();
+  auto source = Access::source(7);
+  const ton::ShardIdFull shard{ton::basechainId, ton::shardIdAll};
+  Access::set_watermark(owner, source, 0);
+  auto hash = Access::add_work(owner, source, 0, 16);
+  Access::add_work(owner, source, 16, 16);
+  Access::publish_all_producer_sources(owner, producer);
+  ASSERT_TRUE(Access::select_callback_round(producer, shard, 15).nonces.empty());
+  ASSERT_TRUE(Access::select_callback_round(producer, shard, 16, {{source.first, source.second, 3}}).nonces.empty());
+  Access::expire(owner, hash);
+  Access::publish_producer_source(owner, producer, source, true);
+  ASSERT_TRUE(Access::select_callback_round(producer, shard, 32).nonces.empty());
+  ASSERT_EQ(Access::select_callback_round(producer, shard, 16, {{source.first, source.second, 16}}).nonces,
+            (std::vector<td::uint64>{16}));
+}

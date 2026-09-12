@@ -17,10 +17,12 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <deque>
 #include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <tuple>
 #include <vector>
@@ -119,6 +121,7 @@ class ExtMessagePool : public td::actor::Actor {
 
   void start_up() override;
   void alarm() override;
+  void tear_down() override;
 
  private:
   class NativeSignatureVerifier final : public td::actor::Actor {
@@ -443,6 +446,101 @@ class ExtMessagePool : public td::actor::Actor {
 
   using NativeAddress = std::pair<WorkchainId, StdSmcAddress>;
 
+  // Only the admission owner writes these fences. Producer actors may read
+  // canonical progress and invalidation, but never publish a speculative floor.
+  struct NativeProducerFence {
+    std::atomic<td::uint64> canonical_next_nonce{0};
+    std::atomic<td::uint64> invalidation{0};
+  };
+  struct NativePublishedMessage {
+    td::Ref<ExtMessage> message;
+    td::uint64 nonce{0};
+    td::uint32 logical_count{0};
+    int priority{0};
+    td::Timestamp delete_at;
+    td::Timestamp reactivate_at;
+    bool active{false};
+  };
+  struct NativePublishedSource {
+    NativeAddress source;
+    std::shared_ptr<NativeProducerFence> fence;
+    td::uint64 invalidation{0};
+    std::vector<NativePublishedMessage> messages;
+    td::optional<int> maximum_priority;
+    td::optional<int> minimum_priority;
+  };
+  using NativePublishedSourcePtr = std::shared_ptr<const NativePublishedSource>;
+  struct NativeProducerInbox {
+    std::mutex mutex;
+    // One latest replacement per source, rather than an unbounded actor
+    // mailbox of obsolete ingress/canonical snapshots.
+    std::map<NativeAddress, NativePublishedSourcePtr> latest;
+    bool scheduled{false};
+    double enqueued_at{0};
+  };
+  struct NativeProducerTelemetry {
+    std::atomic<td::uint64> publications{0}, published_sources{0}, published_messages{0};
+    std::atomic<td::uint64> replacements_coalesced{0}, inbox_peak_sources{0};
+    std::atomic<td::uint64> installs{0}, source_probes{0}, invalidated_probes{0};
+    std::atomic<td::uint64> selected{0}, logical_selected{0}, index_updates{0};
+    std::atomic<td::uint64> install_us{0}, publication_us{0}, inbox_wait_us{0};
+  };
+  struct NativeProducerEndpoint {
+    td::actor::ActorOwn<ExtMessagePool> actor;
+    std::shared_ptr<NativeProducerInbox> inbox;
+  };
+  using NativeProducerIndex = td::PersistentTreap<NativeAddress, td::Unit>;
+  struct NativeProducerSourceCursor {
+    NativeProducerIndex::InOrderIterator suffix;
+    NativeProducerIndex::InOrderIterator prefix;
+    bool suffix_done{false};
+    td::optional<NativeAddress> next() {
+      if (!suffix_done) {
+        if (auto item = suffix.next()) { return item->first; }
+        suffix_done = true;
+      }
+      if (auto item = prefix.next()) { return item->first; }
+      return {};
+    }
+  };
+  bool native_persistent_producer_enabled_{false};
+  bool native_producer_only_{false};
+  bool native_producer_flush_scheduled_{false};
+  td::optional<ShardIdFull> native_producer_shard_;
+  std::map<ShardIdFull, NativeProducerEndpoint> native_producers_;
+  std::map<NativeAddress, std::shared_ptr<NativeProducerFence>> native_producer_fences_;
+  std::set<NativeAddress> native_producer_dirty_sources_;
+  std::shared_ptr<NativeProducerInbox> native_producer_inbox_;
+  std::shared_ptr<NativeProducerTelemetry> native_producer_telemetry_{
+      std::make_shared<NativeProducerTelemetry>()};
+  // These two containers are exclusively owned by a producer actor. No
+  // mutable MempoolMsg, NativeInfo, reservation or promise crosses the boundary.
+  std::map<NativeAddress, NativePublishedSourcePtr> native_producer_sources_;
+  std::map<int, NativeProducerIndex> native_producer_index_;
+  std::size_t native_producer_mixed_priority_sources_{0};
+  std::multimap<td::Timestamp, NativeAddress> native_producer_reactivations_;
+  std::map<NativeAddress, decltype(native_producer_reactivations_)::iterator> native_producer_reactivation_by_source_;
+ public:
+  // Restricted actor construction for the scheduling projection. It does not
+  // start admission workers or own canonical state/reservations.
+  ExtMessagePool(ShardIdFull shard, std::shared_ptr<NativeProducerInbox> inbox,
+                 std::shared_ptr<NativeProducerTelemetry> telemetry,
+                 std::shared_ptr<ExtMsgQueueTelemetry> transport, std::size_t queue_limit)
+      : native_collator_queue_limit_(queue_limit), native_producer_only_(true), native_producer_shard_(shard),
+        native_producer_inbox_(std::move(inbox)), native_producer_telemetry_(std::move(telemetry)),
+        native_transport_telemetry_(std::move(transport)) {
+  }
+ private:
+  td::optional<ShardIdFull> native_producer_lane(const NativeAddress &source) const;
+  NativeProducerEndpoint &ensure_native_producer(ShardIdFull shard);
+  void mark_native_producer_source(const NativeAddress &source, bool invalidate = false);
+  NativePublishedSourcePtr make_native_producer_source(const NativeAddress &source);
+  void flush_native_producer_sources();
+  void consume_native_producer_updates();
+  void apply_native_producer_update(NativePublishedSourcePtr source);
+  void reset_native_producers();
+  void deliver_native_producer_generic(td::Ref<ExtMessage> message, int priority);
+
   // One NativeWork owns the whole source-contiguous interval represented by a
   // native external.  The map below is keyed by first_nonce, never by every
   // logical output.  Scalar NTFX uses logical_count=1, which keeps the
@@ -702,7 +800,16 @@ class ExtMessagePool : public td::actor::Actor {
     bool initialized{false};
     std::map<NativeAddress, CallbackNativeSource> sources;
     std::map<int, std::deque<CallbackNativeReadyToken>> ready_by_priority;
+    // Persistent lane membership is shared; traversal and nonce cursors are
+    // leased privately to this exact parent branch.
+    std::map<int, NativeProducerSourceCursor> unvisited_by_priority;
   };
+
+  struct InstalledCallback;
+  void install_native_producer_callback(std::shared_ptr<InstalledCallback> callback);
+  void probe_published_native_source(const std::shared_ptr<InstalledCallback> &callback,
+                                     const NativeAddress &source, CallbackNativeSource &state,
+                                     NativeQueueCounters &counters, bool enqueue_ready);
   struct InstalledCallback {
     explicit InstalledCallback(std::unique_ptr<ExtMsgCallback> value) : callback(std::move(value)) {
       // Normalize the externally supplied storage once without allocating a
@@ -919,6 +1026,7 @@ class ExtMessagePool : public td::actor::Actor {
 
   friend class ExtMessagePoolTestAccess;
   friend class NativeAdmissionRefreshBatchTestAccess;
+  friend class NativeProducerActorTestAccess;
 
   static constexpr double MAX_EXT_MSG_PER_ADDR_TIME_WINDOW = 10.0;
   static constexpr size_t MAX_EXT_MSG_PER_ADDR = 4096;

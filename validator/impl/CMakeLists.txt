@@ -6,6 +6,7 @@ set(TON_VALIDATOR_SOURCE
   config.cpp
   external-message.cpp
   ext-message-pool.cpp
+  native-message-producer.cpp
   fabric.cpp
   ihr-message.cpp
   liteserver.cpp

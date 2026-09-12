@@ -25,6 +25,7 @@
 
     Copyright 2017-2020 Telegram Systems LLP
 */
+#include <cstdlib>
 #include <memory>
 #include <vector>
 
@@ -58,6 +59,7 @@
 #include "tl/TlObject.h"
 #include "tl/tl_json.h"
 #include "ton/ton-io.hpp"
+#include "validator/native-lane-scheduler.h"
 #include "ton/ton-tl.hpp"
 #include "ton/ton-types.h"
 
@@ -6115,7 +6117,27 @@ int main(int argc, char *argv[]) {
   td::set_runtime_signal_handler(2, need_scheduler_status).ensure();
 
   td::actor::set_debug(true);
-  td::actor::Scheduler scheduler({threads});
+  unsigned native_lane_domains = 0;
+  if (const char *value = std::getenv("TON_NATIVE_LANE_SCHEDULERS")) {
+    if (td::Slice(value) != "0" && td::Slice(value) != "4") {
+      LOG(ERROR) << "TON_NATIVE_LANE_SCHEDULERS must be 0 or 4";
+      return 2;
+    }
+    native_lane_domains = value[0] == '4' ? 4 : 0;
+  }
+  auto lane_plan = ton::validator::NativeLaneSchedulerPlan::make(threads, native_lane_domains);
+  if (lane_plan.is_error()) {
+    LOG(ERROR) << lane_plan.error();
+    return 2;
+  }
+  auto &lane_runtime = ton::validator::native_lane_scheduler_runtime();
+  lane_runtime.plan = lane_plan.move_as_ok();
+  std::vector<td::actor::Scheduler::NodeInfo> scheduler_groups;
+  for (unsigned group = 0; group <= lane_runtime.plan.domains; ++group) {
+    scheduler_groups.emplace_back(lane_runtime.plan.cpu_threads[group]);
+  }
+  LOG(WARNING) << "native lane scheduler configuration: " << ton::validator::native_lane_scheduler_stats();
+  td::actor::Scheduler scheduler(std::move(scheduler_groups));
 
   scheduler.run_in_context([&] {
     vm::init_vm().ensure();

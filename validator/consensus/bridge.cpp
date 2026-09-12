@@ -10,6 +10,7 @@
 #include "ton/ton-io.hpp"
 #include "validator/consensus/simplex/bus.h"
 #include "validator/fabric.h"
+#include "validator/native-lane-scheduler.h"
 #include "validator/validator-group.hpp"
 
 namespace ton::validator {
@@ -456,7 +457,8 @@ td::actor::ActorOwn<IValidatorGroup> IValidatorGroup::create_bridge(
       .local_adnl_id = local_adnl_id,
       .overlay_members = std::move(overlay_members),
   };
-  return td::actor::create_actor<consensus::BridgeImpl>(name_with_seqno, std::move(params));
+  return td::actor::create_actor<consensus::BridgeImpl>(
+      native_lane_actor_options(name_with_seqno, shard, NativeLaneActorKind::bridge), std::move(params));
 }
 
 }  // namespace ton::validator

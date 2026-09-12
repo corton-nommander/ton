@@ -98,3 +98,8 @@ target_include_directories(test-native-canonical-journal PRIVATE ${CMAKE_SOURCE_
                                                                        ${CMAKE_SOURCE_DIR}/third-party/rocksdb/include)
 target_link_libraries(test-native-canonical-journal PRIVATE td-test-main tdutils ton_validator validator)
 ton_test(test-native-canonical-journal)
+
+add_executable(test-native-lane-scheduler test-native-lane-scheduler.cpp)
+target_include_directories(test-native-lane-scheduler PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/crypto)
+target_link_libraries(test-native-lane-scheduler PRIVATE td-test-main tdactor tdutils)
+ton_test(test-native-lane-scheduler)

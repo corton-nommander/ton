@@ -16,6 +16,7 @@
 
     Copyright 2017-2020 Telegram Systems LLP
 */
+#include "validator/native-lane-scheduler.h"
 #include <fstream>
 
 #include "auto/tl/lite_api.h"
@@ -2434,6 +2435,13 @@ void ValidatorManagerImpl::completed_prestart_sync() {
 }
 
 void ValidatorManagerImpl::new_masterchain_block() {
+  if (native_lane_scheduler_runtime().plan.domains != 0) {
+    std::vector<ShardIdFull> lanes;
+    for (const auto &shard : last_masterchain_state_->get_shards()) {
+      lanes.push_back(shard->top_block_id().shard_full());
+    }
+    publish_native_lane_scheduler_topology(lanes);
+  }
   if (last_masterchain_seqno_ > 0 && last_masterchain_block_handle_->is_key_block()) {
     last_key_block_handle_ = last_masterchain_block_handle_;
     if (last_key_block_handle_->id().seqno() > last_known_key_block_handle_->id().seqno()) {
@@ -3402,6 +3410,7 @@ void ValidatorManagerImpl::prepare_stats(td::Promise<std::vector<std::pair<std::
   }
 
   vec.emplace_back("start_time", td::to_string(started_at_));
+  vec.emplace_back("total.native_lane_schedulers", native_lane_scheduler_stats());
   for (int iter = 0; iter < 2; ++iter) {
     td::StringBuilder sb;
     td::uint32 total = 0;

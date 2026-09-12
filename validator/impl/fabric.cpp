@@ -16,6 +16,7 @@
 
     Copyright 2017-2020 Telegram Systems LLP
 */
+#include "validator/native-lane-scheduler.h"
 #include "block/signature-set.h"
 #include "ton/ton-io.hpp"
 #include "validator/block-handle.hpp"
@@ -189,8 +190,10 @@ void run_validate_query(BlockCandidate candidate, ValidateParams params, td::act
     }
   }
   static std::atomic<size_t> idx;
-  td::actor::create_actor<ValidateQuery>(PSTRING() << (params.is_fake ? "fakevalidate" : "validateblock")
-                                                   << params.shard << ":" << (seqno + 1) << "#" << idx.fetch_add(1),
+  auto actor_name = PSTRING() << (params.is_fake ? "fakevalidate" : "validateblock")
+                              << params.shard << ":" << (seqno + 1) << "#" << idx.fetch_add(1);
+  auto actor_options = native_lane_actor_options(actor_name, params.shard, NativeLaneActorKind::validator);
+  td::actor::create_actor<ValidateQuery>(actor_options,
                                          std::move(candidate), std::move(params), std::move(manager), timeout,
                                          std::move(promise))
       .release();
@@ -204,8 +207,10 @@ void run_collate_query(CollateParams params, td::actor::ActorId<ValidatorManager
       seqno = p.seqno();
     }
   }
-  td::actor::create_actor<Collator>(PSTRING() << "collate" << params.shard << ":" << (seqno + 1)
-                                              << (params.attempt_idx ? "_" + td::to_string(params.attempt_idx) : ""),
+  auto actor_name = PSTRING() << "collate" << params.shard << ":" << (seqno + 1)
+                              << (params.attempt_idx ? "_" + td::to_string(params.attempt_idx) : "");
+  auto actor_options = native_lane_actor_options(actor_name, params.shard, NativeLaneActorKind::collator);
+  td::actor::create_actor<Collator>(actor_options,
                                     std::move(params), std::move(manager), std::move(cancellation_token),
                                     std::move(promise))
       .release();

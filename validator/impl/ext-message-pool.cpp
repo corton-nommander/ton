@@ -204,6 +204,10 @@ void ExtMessagePool::start_up() {
     CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
     native_reconciliation_profile_enabled_ = td::Slice(value) == "1";
   }
+  if (const char* value = std::getenv("TON_NATIVE_CANONICAL_JOURNAL")) {
+    CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
+    native_canonical_journal_enabled_ = td::Slice(value) == "1";
+  }
   if (const char* value = std::getenv("TON_NATIVE_ADMISSION_CONFIG_CACHE")) {
     CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
     native_config_cache_enabled_ = td::Slice(value) == "1";
@@ -252,6 +256,7 @@ void ExtMessagePool::start_up() {
                << " persistent_producer=" << native_persistent_producer_enabled_
                << " admission_prepare=" << native_prepare_enabled_
                << " admission_preparation_profile=" << native_prepare_profile_enabled_
+               << " canonical_journal=" << native_canonical_journal_enabled_
                << " admission_config_cache=" << native_config_cache_enabled_
                << " admission_shard_sharing=" << native_admission_shard_sharing_enabled_
                << " admission_snapshot_refresh=" << native_admission_snapshot_refresh_enabled_
@@ -3259,6 +3264,9 @@ void ExtMessagePool::reconcile_native_external_messages(td::Ref<MasterchainState
     }
   }
   auto fingerprint = native_reconciliation_state_fingerprint(state);
+  if (native_canonical_journal_enabled_) {
+    prune_native_journal_endpoints(fingerprint);
+  }
   applied_reconciliation_state_ = state;
   native_reconciliation_last_mc_seqno_ = block_id.seqno();
   // Masterchain blocks often advance without changing any referenced basechain
@@ -3414,6 +3422,17 @@ td::actor::Task<> ExtMessagePool::reconcile_native_snapshot(td::Ref<MasterchainS
     }
     native_reconciliation_last_shard_seqno_ =
         std::max<td::uint64>(native_reconciliation_last_shard_seqno_, shard_state->get_seqno());
+    if (native_canonical_journal_enabled_) {
+      auto result = reconcile_native_journal_shard(*state, shard_state, addresses, changed_sources);
+      if (result.is_error()) {
+        if (first_error.is_ok()) {
+          first_error = std::move(result);
+        }
+      } else {
+        record_successful_native_shard_reconciliation(shard_block_id);
+      }
+      continue;
+    }
     block::gen::ShardStateUnsplit::Record state_info;
     if (!tlb::unpack_cell(shard_state->root_cell(), state_info)) {
       shard_complete = false;
@@ -3848,6 +3867,27 @@ std::string ExtMessagePool::native_reconciliation_telemetry_string() const {
   timing("unpack", t.unpack);
   timing("apply", t.apply);
   timing("wake", t.wake);
+  const auto &j = native_canonical_journal_telemetry_;
+  emit("journal_enabled", native_canonical_journal_enabled_ ? 1 : 0);
+  emit("journal_attempts", j.attempts);
+  emit("journal_completed", j.completed);
+  emit("journal_bootstrap", j.bootstrap);
+  emit("journal_continuity_fallbacks", j.continuity_fallbacks);
+  emit("journal_diff_fallbacks", j.diff_fallbacks);
+  emit("journal_budget_fallbacks", j.budget_fallbacks);
+  emit("journal_topology_evictions", j.topology_evictions);
+  emit("journal_diff_changed_accounts", j.diff_changed_accounts);
+  emit("journal_diff_tracked_changed", j.diff_tracked_changed);
+  emit("journal_reused_observations", j.reused_observations);
+  emit("journal_lookup_bootstraps", j.lookup_bootstraps);
+  emit("journal_unchanged_apply_skips", j.unchanged_apply_skips);
+  emit("journal_reservation_checks", j.reservation_checks);
+  emit("journal_apply_required", j.apply_required);
+  emit("journal_failed_shards", j.failed_shards);
+  emit("journal_retained_endpoints", native_canonical_journal_endpoints_.size());
+  emit("journal_retained_sources", j.retained_sources);
+  emit("journal_peak_retained_sources", j.peak_retained_sources);
+  timing("journal_diff", j.diff);
   return out.as_cslice().str();
 }
 

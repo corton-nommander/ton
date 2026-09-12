@@ -7,6 +7,7 @@ set(TON_VALIDATOR_SOURCE
   external-message.cpp
   ext-message-pool.cpp
   native-message-producer.cpp
+  native-canonical-journal.cpp
   fabric.cpp
   ihr-message.cpp
   liteserver.cpp
@@ -25,6 +26,7 @@ set(TON_VALIDATOR_SOURCE
   config.hpp
   external-message.hpp
   ext-message-pool.hpp
+  native-canonical-journal.h
   ihr-message.hpp
   liteserver.hpp
   liteserver-cache.hpp

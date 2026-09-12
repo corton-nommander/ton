@@ -36,6 +36,7 @@
 #include "native-admission-telemetry.h"
 #include "native-admission-config-cache.h"
 #include "native-reconciliation-telemetry.h"
+#include "native-canonical-journal.h"
 
 namespace ton::validator {
 
@@ -384,6 +385,12 @@ class ExtMessagePool : public td::actor::Actor {
   td::uint64 native_batch_watermark_lag_rejections_{0}, native_batch_max_watermark_nonce_lag_{0};
   td::uint64 native_reconciliation_tracked_candidates_{0}, native_reconciliation_tracked_messages_{0};
   bool native_reconciliation_profile_enabled_{false};
+  bool native_canonical_journal_enabled_{false};
+  NativeCanonicalJournalTelemetry native_canonical_journal_telemetry_;
+  std::map<ShardIdFull, NativeCanonicalJournalEndpoint> native_canonical_journal_endpoints_;
+  static constexpr std::size_t MAX_NATIVE_JOURNAL_SHARDS = 64;
+  static constexpr std::size_t MAX_NATIVE_JOURNAL_SOURCES = 65536;
+  static constexpr std::size_t MAX_NATIVE_JOURNAL_CHANGED_ACCOUNTS = 65536;
   NativeReconciliationTelemetry native_reconciliation_telemetry_;
   td::uint64 native_reconciliation_runs_{0}, native_reconciliation_state_fetches_{0};
   td::uint64 native_reconciliation_account_lookups_{0}, native_reconciliation_sources_advanced_{0};
@@ -1051,6 +1058,14 @@ class ExtMessagePool : public td::actor::Actor {
                                                         NativeReconciliationTelemetry *telemetry = nullptr);
   td::Result<bool> apply_reconciled_native_account_state(const NativeAddress &address, td::uint64 native_nonce,
                                                          td::uint64 balance, UnixTime utime, LogicalTime lt);
+  td::Status reconcile_native_journal_shard(const MasterchainState &masterchain,
+                                            const td::Ref<ShardState> &shard_state,
+                                            const std::vector<NativeAddress> &sources,
+                                            std::set<NativeAddress> &changed_sources);
+  bool advance_unchanged_native_journal_account(const NativeAddress &address,
+                                               const NativeCanonicalAccountObservation &observation,
+                                               UnixTime utime, LogicalTime lt);
+  void prune_native_journal_endpoints(const NativeShardTopFingerprint &topology);
   std::string native_reconciliation_telemetry_string() const;
   td::uint64 erase_processed_native_messages(NativeMessageProcessResult processed);
   td::uint64 prune_expired_native_suffix(const NativeAddress &address, td::uint64 from_nonce,
@@ -1066,6 +1081,7 @@ class ExtMessagePool : public td::actor::Actor {
   std::vector<std::shared_ptr<InstalledCallback>> callbacks_;
 
   friend class ExtMessagePoolTestAccess;
+  friend class NativeCanonicalJournalTestAccess;
   friend class NativeAdmissionRefreshBatchTestAccess;
   friend class NativeProducerActorTestAccess;
   friend class NativeAdmissionPreparationTestAccess;

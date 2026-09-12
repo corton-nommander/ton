@@ -4487,6 +4487,22 @@ td::actor::Task<> Collator::process_external_and_new_messages() {
               << out_msg_queue_size_ << " > " << SKIP_EXTERNALS_QUEUE_SIZE << ")";
   }
   bool enqueue_only = !inbound_queues_empty_;
+  if (use_native_fast_path() && consensus::work_driven_max_tps_mode_enabled(shard_) &&
+      (before_split_ || after_split_)) {
+    // Exact topology, predecessor roots and the split time window have already
+    // been checked by do_preinit(). A split transition is useful work even
+    // without native ingress: waiting can exhaust the eligible split window,
+    // and returning the ordinary idle result would discard this candidate.
+    // Leave external parents untouched for a subsequent candidate; ordinary
+    // callback teardown closes the unconsumed queue without acknowledging it.
+    if (!check_cancelled()) {
+      co_return td::Status::Error(ErrorCode::cancelled, "cancelled");
+    }
+    if (!process_new_messages(enqueue_only)) {
+      co_return td::Status::Error("cannot process newly-generated outbound messages");
+    }
+    co_return {};
+  }
   if (use_native_fast_path() && consensus::work_driven_max_tps_mode_enabled(shard_)) {
     // Work-driven native collation owns first-work, fragment refill, and
     // post-commit idle waits in one processor invocation.  Re-entering from

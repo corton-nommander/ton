@@ -22,6 +22,7 @@
 #include "block/mc-config.h"
 #include "td/actor/SharedFuture.h"
 #include "td/utils/StringBuilder.h"
+#include "td/utils/Timer.h"
 #include "tl/tlblib.hpp"
 #include "vm/dict.h"
 
@@ -39,6 +40,150 @@
 #include <tuple>
 
 namespace ton::validator {
+ExtMessagePool::PreparationLease::~PreparationLease() {
+  // A timeout can destroy the requesting coroutine while queued workers still
+  // own its bytes. Charge the request until its final worker actually releases
+  // this lease, then return capacity on the owning actor.
+  td::actor::send_closure(pool, &ExtMessagePool::release_native_preparation_budget, parents, bytes);
+}
+
+void ExtMessagePool::release_native_preparation_budget(std::size_t parents, std::size_t bytes) {
+  CHECK(parents <= native_preparation_parents_ && bytes <= native_preparation_bytes_);
+  native_preparation_parents_ -= parents;
+  native_preparation_bytes_ -= bytes;
+}
+
+void ExtMessagePool::NativeSignatureVerifier::prepare(
+    td::BufferSlice data, block::SizeLimitsConfig::ExtMsgLimits limits, Bits256 chain_domain,
+    td::Timestamp deadline, bool profile, std::shared_ptr<PreparationLease> lease,
+    td::Promise<PreparationResult> promise) {
+  PreparationResult output;
+  td::ThreadCpuTimer cpu(!profile);
+  output.started_at = profile ? td::Time::now() : 0;
+  SCOPE_EXIT {
+    if (profile) {
+      output.finished_at = td::Time::now();
+      output.cpu_seconds = cpu.elapsed();
+    }
+    promise.set_value(std::move(output));
+  };
+  if (deadline && deadline.is_in_past()) {
+    output.result = td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
+    return;
+  }
+  PreparedExternalMessage prepared;
+  prepared.wire_size_ = data.size();
+  prepared.chain_domain_ = chain_domain;
+  auto decoded = [&]() -> td::Status {
+    TRY_RESULT(message, create_ext_message(std::move(data), limits));
+    prepared.message_ = std::move(message);
+    const auto tag = vm::load_cell_slice(prepared.message_->root_cell()).prefetch_ulong(32);
+    if (tag == block::NativeTransfer::magic) {
+      TRY_RESULT(transfer, block::NativeTransfer::unpack_external(prepared.message_->root_cell()));
+      prepared.transfer_ = std::move(transfer);
+    } else if (tag == block::NativeTransferRun::magic) {
+      TRY_RESULT(run, block::NativeTransferRun::unpack_external(prepared.message_->root_cell()));
+      prepared.run_ = std::move(run);
+    }
+    return td::Status::OK();
+  }();
+  const double decoded_at = profile ? td::Time::now() : 0;
+  if (profile) {
+    output.decode_seconds = decoded_at - output.started_at;
+  }
+  if (decoded.is_error()) {
+    output.result = std::move(decoded);
+    return;
+  }
+  if (deadline && deadline.is_in_past()) {
+    output.result = td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
+    return;
+  }
+  if (prepared.transfer_) {
+    prepared.signature_status_ = prepared.transfer_.value().verify_signature(chain_domain);
+  } else if (prepared.run_) {
+    prepared.signature_status_ = prepared.run_.value().verify_signature(chain_domain);
+  }
+  if (profile) {
+    output.signature_seconds = td::Time::now() - decoded_at;
+  }
+  // A failed signature is retained as data, not an early RPC rejection: the
+  // owner still applies the existing mode/locality/account error precedence.
+  output.result = std::move(prepared);
+}
+
+td::actor::Task<td::optional<ExtMessagePool::PreparedBatch>> ExtMessagePool::prepare_external_batch(
+    std::vector<td::BufferSlice> &batch, td::Timestamp deadline) {
+  if (!native_prepare_enabled_ || batch.empty()) {
+    co_return td::optional<PreparedBatch>{};
+  }
+  std::size_t bytes = 0;
+  bool over_budget = batch.size() > MAX_NATIVE_PREPARATION_PARENTS - native_preparation_parents_;
+  for (const auto &body : batch) {
+    if (body.size() > MAX_NATIVE_PREPARATION_BYTES - bytes) {
+      over_budget = true;
+      break;
+    }
+    bytes += body.size();
+  }
+  if (over_budget || bytes > MAX_NATIVE_PREPARATION_BYTES - native_preparation_bytes_) {
+    ++native_preparation_budget_fallbacks_;
+    co_return td::optional<PreparedBatch>{};
+  }
+  // This context supplies a cryptographic domain and an initial decode bound,
+  // never account authority. The first spending snapshot is selected only
+  // after preparation completes and is validated by the normal owner path.
+  auto context = pin_native_admission_snapshot();
+  if (context.is_error()) {
+    ++native_preparation_config_fallbacks_;
+    co_return td::optional<PreparedBatch>{};
+  }
+  const auto domain = context.ok().chain_domain;
+  const auto limits = context.ok().state->get_ext_msg_limits();
+  auto lease = std::make_shared<PreparationLease>();
+  lease->pool = actor_id(this);
+  lease->parents = batch.size();
+  lease->bytes = bytes;
+  native_preparation_parents_ += batch.size();
+  native_preparation_bytes_ += bytes;
+  native_preparation_peak_parents_ = std::max(native_preparation_peak_parents_, native_preparation_parents_);
+  native_preparation_peak_bytes_ = std::max(native_preparation_peak_bytes_, native_preparation_bytes_);
+  ++native_preparation_requests_;
+  native_preparation_inputs_ += batch.size();
+  const double queued_at = native_prepare_profile_enabled_ ? td::Time::now() : 0;
+  std::vector<td::actor::StartedTask<PreparationResult>> tasks;
+  tasks.reserve(batch.size());
+  CHECK(!native_signature_verifiers_.empty());
+  for (auto &body : batch) {
+    auto &worker = native_signature_verifiers_[native_signature_verifier_cursor_++ % native_signature_verifiers_.size()];
+    tasks.push_back(td::actor::await_with_timeout(
+        td::actor::ask(worker, &NativeSignatureVerifier::prepare, std::move(body), limits, domain, deadline,
+                       native_prepare_profile_enabled_, lease), deadline).start());
+  }
+  auto results = co_await td::actor::all_wrap(std::move(tasks));
+  const double resumed_at = native_prepare_profile_enabled_ ? td::Time::now() : 0;
+  PreparedBatch prepared;
+  prepared.reserve(results.size());
+  for (auto &result : results) {
+    if (result.is_error()) {
+      prepared.emplace_back(result.move_as_error());
+      continue;
+    }
+    auto value = result.move_as_ok();
+    if (native_prepare_profile_enabled_) {
+      native_preparation_queue_.observe(value.started_at - queued_at);
+      native_preparation_decode_.observe(value.decode_seconds);
+      native_preparation_signature_.observe(value.signature_seconds);
+      native_preparation_cpu_.observe(value.cpu_seconds);
+      // This includes waiting for slower siblings in the same RPC, not just
+      // the actor mailbox. Keep this completed-item-to-batch-resume scope explicit.
+      native_preparation_resume_.observe(resumed_at - value.finished_at);
+    }
+    prepared.push_back(std::move(value.result));
+  }
+  co_return td::optional<PreparedBatch>{std::move(prepared)};
+}
+
 void ExtMessagePool::start_up() {
   if (native_producer_only_) {
     return;
@@ -46,6 +191,14 @@ void ExtMessagePool::start_up() {
   if (const char* value = std::getenv("TON_NATIVE_PERSISTENT_PRODUCER")) {
     CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
     native_persistent_producer_enabled_ = td::Slice(value) == "1";
+  }
+  for (auto [name, destination] : {std::pair{"TON_NATIVE_ADMISSION_PREPARE", &native_prepare_enabled_},
+                                  std::pair{"TON_NATIVE_ADMISSION_PREPARATION_PROFILE",
+                                            &native_prepare_profile_enabled_}}) {
+    if (const char *value = std::getenv(name)) {
+      CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
+      *destination = td::Slice(value) == "1";
+    }
   }
   if (const char* value = std::getenv("TON_NATIVE_RECONCILIATION_PROFILE")) {
     CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
@@ -97,6 +250,8 @@ void ExtMessagePool::start_up() {
   }
   LOG(WARNING) << "native mempool configuration: signature_workers=" << workers
                << " persistent_producer=" << native_persistent_producer_enabled_
+               << " admission_prepare=" << native_prepare_enabled_
+               << " admission_preparation_profile=" << native_prepare_profile_enabled_
                << " admission_config_cache=" << native_config_cache_enabled_
                << " admission_shard_sharing=" << native_admission_shard_sharing_enabled_
                << " admission_snapshot_refresh=" << native_admission_snapshot_refresh_enabled_
@@ -152,6 +307,28 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_external_
   }
   if (last_masterchain_state_.is_null()) {
     co_return td::Status::Error(ErrorCode::notready, "not ready");
+  }
+  if (native_prepare_enabled_) {
+    std::vector<td::BufferSlice> inputs;
+    inputs.push_back(std::move(data));
+    auto prepared = co_await prepare_external_batch(inputs, deadline);
+    if (prepared) {
+      auto &result = prepared.value().front();
+      if (result.is_error()) {
+        co_return result.move_as_error();
+      }
+      const auto &value = result.ok();
+      const auto limits = last_masterchain_state_->get_ext_msg_limits();
+      if (value.wire_size_ > limits.max_size) {
+        co_return td::Status::Error("external message too large, rejecting");
+      }
+      if (value.message_->root_cell()->get_depth() >= limits.max_depth) {
+        co_return td::Status::Error("external message is too deep");
+      }
+      co_return co_await check_add_parsed_external_message_until(value.message_, priority, add_to_mempool,
+                                                                 deadline, &value);
+    }
+    data = std::move(inputs.front());
   }
   auto r_message = create_ext_message(std::move(data), last_masterchain_state_->get_ext_msg_limits());
   if (r_message.is_error()) {
@@ -862,7 +1039,8 @@ td::Result<ExtMessagePool::CheckResult> ExtMessagePool::finalize_checked_message
 }
 
 td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_parsed_external_message_until(
-    td::Ref<ExtMessage> message, int priority, bool add_to_mempool, td::Timestamp deadline) {
+    td::Ref<ExtMessage> message, int priority, bool add_to_mempool, td::Timestamp deadline,
+    const PreparedExternalMessage *prepared) {
   if (deadline && deadline.is_in_past()) {
     co_return td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
   }
@@ -883,7 +1061,9 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_parsed_ex
     // native message retained across a shard split must not gain a free pass
     // merely because an older admission left it in the pool.
     if (native_tag == block::NativeTransfer::magic) {
-      auto transfer = block::NativeTransfer::unpack_external(message->root_cell());
+      auto transfer = prepared && prepared->transfer_
+                          ? td::Result<block::NativeTransfer>{prepared->transfer_.value()}
+                          : block::NativeTransfer::unpack_external(message->root_cell());
       if (transfer.is_error()) {
         co_return transfer.move_as_error();
       }
@@ -893,7 +1073,9 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_parsed_ex
         co_return locality.move_as_error();
       }
     } else {
-      auto run = block::NativeTransferRun::unpack_external(message->root_cell());
+      auto run = prepared && prepared->run_
+                     ? td::Result<block::NativeTransferRun>{prepared->run_.value()}
+                     : block::NativeTransferRun::unpack_external(message->root_cell());
       if (run.is_error()) {
         co_return run.move_as_error();
       }
@@ -902,6 +1084,11 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_parsed_ex
       if (locality.is_error()) {
         co_return locality.move_as_error();
       }
+    }
+    if (prepared && prepared->chain_domain_ != snapshot.ok().chain_domain) {
+      ++native_preparation_domain_rejections_;
+      co_return td::Status::Error(ErrorCode::notready,
+                                  "native transfer run admission snapshot changed; retry");
     }
   }
   auto r_existing = check_existing_external_message(message, priority, add_to_mempool);
@@ -917,7 +1104,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_parsed_ex
   if (checked_ext_msg_counter_.get_msg_count(wc, addr) >= MAX_EXT_MSG_PER_ADDR) {
     co_return td::Status::Error(PSTRING() << "too many external messages to address " << wc << ":" << addr.to_hex());
   }
-  auto result = co_await check_message(message, deadline).wrap();
+  auto result = co_await check_message(message, deadline, prepared).wrap();
   if (result.is_error()) {
     ++total_check_ext_messages_error_;
     co_return result.move_as_error();
@@ -1002,6 +1189,10 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     co_return output;
   }
 
+  td::optional<PreparedBatch> prepared_inputs;
+  if (native_prepare_enabled_) {
+    prepared_inputs = co_await prepare_external_batch(batch, deadline);
+  }
   struct BatchItem {
     td::Ref<ExtMessage> message;
     td::optional<block::NativeTransfer> native_transfer;
@@ -1010,6 +1201,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     td::optional<std::size_t> duplicate_of;
     std::size_t wire_size{0};
     NativeAdmissionSignatureProof signature_proof;
+    const PreparedExternalMessage *prepared{nullptr};
   };
   std::vector<BatchItem> items(batch.size());
   std::map<ExtMessage::Hash, std::size_t> first_by_hash;
@@ -1022,8 +1214,30 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
       reject(i, td::Status::Error(ErrorCode::timeout, "external message admission deadline expired"));
       continue;
     }
-    items[i].wire_size = batch[i].size();
-    auto r_message = create_ext_message(std::move(batch[i]), limits);
+    td::Result<td::Ref<ExtMessage>> r_message{td::Ref<ExtMessage>{}};
+    if (prepared_inputs) {
+      auto &result = prepared_inputs.value()[i];
+      if (result.is_error()) {
+        reject(i, result.move_as_error());
+        continue;
+      }
+      items[i].prepared = &result.ok();
+      items[i].wire_size = result.ok().wire_size_;
+      r_message = result.ok().message_;
+      // Each wire encoding, including duplicate roots, must independently
+      // satisfy the limits selected after worker preparation.
+      if (items[i].wire_size > limits.max_size) {
+        reject(i, td::Status::Error("external message too large, rejecting"));
+        continue;
+      }
+      if (r_message.ok()->root_cell()->get_depth() >= limits.max_depth) {
+        reject(i, td::Status::Error("external message is too deep"));
+        continue;
+      }
+    } else {
+      items[i].wire_size = batch[i].size();
+      r_message = create_ext_message(std::move(batch[i]), limits);
+    }
     if (r_message.is_error()) {
       reject(i, r_message.move_as_error());
       continue;
@@ -1038,7 +1252,9 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     auto native_cs = vm::load_cell_slice(items[i].message->root_cell());
     auto native_tag = native_cs.prefetch_ulong(32);
     if (native_tag == block::NativeTransfer::magic) {
-      auto native_transfer = block::NativeTransfer::unpack_external(items[i].message->root_cell());
+      auto native_transfer = items[i].prepared && items[i].prepared->transfer_
+                                 ? td::Result<block::NativeTransfer>{items[i].prepared->transfer_.value()}
+                                 : block::NativeTransfer::unpack_external(items[i].message->root_cell());
       if (native_transfer.is_error()) {
         reject(i, native_transfer.move_as_error());
         continue;
@@ -1052,7 +1268,9 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
       items[i].native_admission = admission.move_as_ok();
       native_indices.push_back(i);
     } else if (native_tag == block::NativeTransferRun::magic) {
-      auto native_run = block::NativeTransferRun::unpack_external(items[i].message->root_cell());
+      auto native_run = items[i].prepared && items[i].prepared->run_
+                            ? td::Result<block::NativeTransferRun>{items[i].prepared->run_.value()}
+                            : block::NativeTransferRun::unpack_external(items[i].message->root_cell());
       if (native_run.is_error()) {
         reject(i, native_run.move_as_error());
         continue;
@@ -1116,6 +1334,12 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
                                                               *snapshot.state, snapshot.payment_lane_policy);
       if (locality.is_error()) {
         reject(index, locality.move_as_error());
+        continue;
+      }
+      if (items[index].prepared && items[index].prepared->chain_domain_ != snapshot.chain_domain) {
+        ++native_preparation_domain_rejections_;
+        reject(index, td::Status::Error(ErrorCode::notready,
+                                       "native transfer run admission snapshot changed; retry"));
         continue;
       }
       items[index].native_admission.value().payment_lane_depth =
@@ -1432,6 +1656,21 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
           continue;
         }
         verify_indices.push_back(index);
+        if (items[index].prepared) {
+          const auto &prepared = *items[index].prepared;
+          CHECK(prepared.message_->hash() == items[index].message->hash());
+          CHECK(prepared.message_->addr() == items[index].message->addr());
+          if (prepared.chain_domain_ != chain_domain) {
+            ++native_preparation_domain_rejections_;
+            reject(index, td::Status::Error(ErrorCode::notready,
+                                           "native transfer run admission snapshot changed; retry"));
+          } else if (prepared.signature_status_.is_error()) {
+            reject(index, prepared.signature_status_.clone());
+          } else {
+            ++native_preparation_authorization_reuses_;
+          }
+          continue;
+        }
         if (native_admission_snapshot_refresh_enabled_ &&
             items[index].signature_proof.reusable(signature_key(index))) {
           ++native_batch_snapshot_refresh_signature_reuses_;
@@ -1634,6 +1873,20 @@ std::string ExtMessagePool::native_batch_telemetry_string(char separator) const 
   emit("config_cache_hits", native_config_cache_hits_);
   emit("config_cache_misses", native_config_cache_misses_);
   emit("config_errors", native_config_errors_);
+  emit("prepare_enabled", native_prepare_enabled_ ? 1 : 0);
+  emit("prepare_profile_enabled", native_prepare_profile_enabled_ ? 1 : 0);
+  emit("prepare_requests", native_preparation_requests_);
+  emit("prepare_inputs", native_preparation_inputs_);
+  emit("prepare_active_parents", native_preparation_parents_);
+  emit("prepare_active_bytes", native_preparation_bytes_);
+  emit("prepare_peak_parents", native_preparation_peak_parents_);
+  emit("prepare_peak_bytes", native_preparation_peak_bytes_);
+  emit("prepare_parent_limit", MAX_NATIVE_PREPARATION_PARENTS);
+  emit("prepare_byte_limit", MAX_NATIVE_PREPARATION_BYTES);
+  emit("prepare_budget_fallbacks", native_preparation_budget_fallbacks_);
+  emit("prepare_config_fallbacks", native_preparation_config_fallbacks_);
+  emit("prepare_authorization_reuses", native_preparation_authorization_reuses_);
+  emit("prepare_domain_rejections", native_preparation_domain_rejections_);
   emit("snapshot_refresh_enabled", native_admission_snapshot_refresh_enabled_ ? 1 : 0);
   emit("snapshot_refresh_attempts", native_batch_snapshot_refresh_attempts_);
   emit("snapshot_refresh_successes", native_batch_snapshot_refresh_successes_);
@@ -1673,6 +1926,11 @@ std::string ExtMessagePool::native_batch_telemetry_string(char separator) const 
   timing("snapshot_age", telemetry.snapshot_age);
   timing("changed_snapshot_age", telemetry.changed_snapshot_age);
   timing("config_extract", native_config_extract_time_);
+  timing("prepare_queue", native_preparation_queue_);
+  timing("prepare_decode", native_preparation_decode_);
+  timing("prepare_signature", native_preparation_signature_);
+  timing("prepare_worker_cpu", native_preparation_cpu_);
+  timing("prepare_item_to_batch_resume", native_preparation_resume_);
   return out.as_cslice().str();
 }
 
@@ -4275,7 +4533,8 @@ void ExtMessagePool::rollback_checked_message(td::Ref<ExtMessage> message,
 }
 
 td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::Ref<ExtMessage> message,
-                                                                           td::Timestamp deadline) {
+                                                                           td::Timestamp deadline,
+                                                                           const PreparedExternalMessage *prepared) {
   auto deadline_expired = [&] { return deadline && deadline.is_in_past(); };
   if (deadline_expired()) {
     co_return td::Status::Error(ErrorCode::timeout,
@@ -4323,7 +4582,9 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     NativeAdmission admission;
     StdSmcAddress source;
     if (native_tag == block::NativeTransfer::magic) {
-      auto parsed_transfer = block::NativeTransfer::unpack_external(message->root_cell());
+      auto parsed_transfer = prepared && prepared->transfer_
+                                 ? td::Result<block::NativeTransfer>{prepared->transfer_.value()}
+                                 : block::NativeTransfer::unpack_external(message->root_cell());
       if (parsed_transfer.is_error()) {
         co_return parsed_transfer.move_as_error();
       }
@@ -4343,7 +4604,9 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
       }
       source = transfer.value().src;
     } else {
-      auto parsed_run = block::NativeTransferRun::unpack_external(message->root_cell());
+      auto parsed_run = prepared && prepared->run_
+                            ? td::Result<block::NativeTransferRun>{prepared->run_.value()}
+                            : block::NativeTransferRun::unpack_external(message->root_cell());
       if (parsed_run.is_error()) {
         co_return parsed_run.move_as_error();
       }
@@ -4421,7 +4684,19 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     auto& verifier =
         native_signature_verifiers_[native_signature_verifier_cursor_++ % native_signature_verifiers_.size()];
     td::Result<td::Unit> signature_result = td::Status::Error("native signature verification was not started");
-    if (transfer) {
+    if (prepared) {
+      CHECK(prepared->message_->hash() == message->hash() && prepared->message_->addr() == message->addr());
+      if (prepared->chain_domain_ != admission_snapshot.chain_domain) {
+        ++native_preparation_domain_rejections_;
+        co_return td::Status::Error(ErrorCode::notready,
+                                    "native transfer run admission snapshot changed; retry");
+      }
+      if (prepared->signature_status_.is_error()) {
+        co_return prepared->signature_status_.clone();
+      }
+      ++native_preparation_authorization_reuses_;
+      signature_result = td::Unit{};
+    } else if (transfer) {
       signature_result =
           co_await td::actor::ask(verifier, &NativeSignatureVerifier::verify, transfer.value(),
                                   admission_snapshot.chain_domain)

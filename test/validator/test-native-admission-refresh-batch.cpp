@@ -177,6 +177,53 @@ class NativeAdmissionRefreshBatchTestAccess {
   }
 };
 
+class NativeAdmissionPreparationTestAccess {
+ public:
+  struct Request {
+    td::BufferSlice data;
+    block::SizeLimitsConfig::ExtMsgLimits limits;
+    Bits256 domain;
+    td::Timestamp deadline;
+    bool profile;
+    std::shared_ptr<ExtMessagePool::PreparationLease> lease;
+    td::Promise<ExtMessagePool::PreparationResult> promise;
+  };
+  struct Gate {
+    std::vector<Request> pending;
+  };
+  class Worker final : public ExtMessagePool::NativeSignatureVerifier {
+   public:
+    explicit Worker(std::shared_ptr<Gate> gate) : gate_(std::move(gate)) {
+    }
+    void prepare(td::BufferSlice data, block::SizeLimitsConfig::ExtMsgLimits limits, Bits256 domain,
+                 td::Timestamp deadline, bool profile, std::shared_ptr<ExtMessagePool::PreparationLease> lease,
+                 td::Promise<ExtMessagePool::PreparationResult> promise) override {
+      gate_->pending.push_back({std::move(data), limits, domain, deadline, profile, std::move(lease),
+                                std::move(promise)});
+    }
+    void release(std::size_t index) {
+      auto request = std::move(gate_->pending.at(index));
+      ExtMessagePool::NativeSignatureVerifier::prepare(
+          std::move(request.data), request.limits, request.domain, request.deadline, request.profile,
+          std::move(request.lease), std::move(request.promise));
+    }
+   private:
+    std::shared_ptr<Gate> gate_;
+  };
+  static td::actor::ActorId<Worker> enable(ExtMessagePool &pool, std::shared_ptr<Gate> gate) {
+    pool.native_prepare_enabled_ = true;
+    pool.native_prepare_profile_enabled_ = true;
+    pool.native_signature_verifiers_.clear();
+    auto worker = td::actor::create_actor<Worker>("preparation-test-worker", std::move(gate));
+    auto id = worker.get();
+    pool.native_signature_verifiers_.push_back(std::move(worker));
+    return id;
+  }
+  static void saturate_budget(ExtMessagePool &pool, bool enabled) {
+    pool.native_preparation_parents_ = enabled ? ExtMessagePool::MAX_NATIVE_PREPARATION_PARENTS : 0;
+  }
+};
+
 namespace {
 
 class RefreshPool final : public ExtMessagePool {
@@ -199,6 +246,16 @@ class RefreshPool final : public ExtMessagePool {
   }
   std::string diagnostics() {
     return NativeAdmissionRefreshBatchTestAccess::diagnostics(*this);
+  }
+  td::actor::ActorId<NativeAdmissionPreparationTestAccess::Worker> enable_preparation(
+      std::shared_ptr<NativeAdmissionPreparationTestAccess::Gate> gate) {
+    return NativeAdmissionPreparationTestAccess::enable(*this, std::move(gate));
+  }
+  void saturate_preparation_budget(bool enabled) {
+    NativeAdmissionPreparationTestAccess::saturate_budget(*this, enabled);
+  }
+  td::actor::Task<CheckResult> submit_single(td::BufferSlice input, td::Timestamp deadline) {
+    co_return co_await check_add_external_message_until(std::move(input), 0, true, deadline);
   }
 
  private:
@@ -478,6 +535,262 @@ TEST(NativeAdmissionRefreshBatch, DisabledRefreshAndFailedSignatureDoNotStartSec
       co_return {};
     });
   }
+}
+
+TEST(NativeAdmissionPreparation, SelectsStateAfterWorkerAndPreservesSingleIdempotence) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    const auto input = signed_run();
+    auto requests = std::make_shared<Requests>();
+    auto gate = std::make_shared<NativeAdmissionPreparationTestAccess::Gate>();
+    auto manager = td::actor::create_actor<RefreshManager>("prepare-manager", requests);
+    auto pool = td::actor::create_actor<RefreshPool>("prepare-pool", manager.get(), false);
+    auto worker = co_await td::actor::ask(pool.get(), &RefreshPool::enable_preparation, gate);
+    std::vector<td::BufferSlice> inputs;
+    inputs.push_back(input.boc());
+    inputs.push_back(input.boc());
+    const auto deadline = td::Timestamp::in(10);
+    auto pending = td::actor::ask(pool.get(), &RefreshPool::submit, std::move(inputs), deadline);
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(gate->pending.size(), 2u);
+    ASSERT_TRUE(requests->pending.empty());
+    co_await td::actor::ask(pool.get(), &RefreshPool::install, 11u, SnapshotOptions{});
+    co_await td::actor::ask(worker, &NativeAdmissionPreparationTestAccess::Worker::release, 0u);
+    co_await td::actor::ask(worker, &NativeAdmissionPreparationTestAccess::Worker::release, 1u);
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(requests->pending.size(), 1u);
+    ASSERT_TRUE(requests->pending[0].block == block_id(basechainId, 11));
+    ASSERT_EQ(requests->pending[0].deadline.get(), deadline.get());
+    requests->pending[0].promise.set_value(td::make_ref<RefreshShardState>(11, input.source));
+    auto result = co_await std::move(pending);
+    ASSERT_TRUE(result.statuses[0].accepted && result.statuses[1].accepted);
+    ASSERT_EQ(result.checked_messages.size(), 1u);
+    ASSERT_EQ(co_await td::actor::ask(pool.get(), &RefreshPool::reservations, input.source), 1u);
+    auto single = td::actor::ask(pool.get(), &RefreshPool::submit_single, input.boc(), deadline);
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(gate->pending.size(), 3u);
+    co_await td::actor::ask(worker, &NativeAdmissionPreparationTestAccess::Worker::release, 2u);
+    auto checked = co_await std::move(single);
+    ASSERT_TRUE(!checked.should_broadcast);
+    ASSERT_TRUE(checked.message->hash() == RootHash{input.root->get_hash().bits()});
+    co_await std::move(checked.wait_allow_broadcast);
+    ASSERT_EQ(requests->pending.size(), 1u);
+    auto stats = co_await td::actor::ask(pool.get(), &RefreshPool::diagnostics);
+    ASSERT_TRUE(has_counter(stats, "prepare_authorization_reuses", 1));
+    ASSERT_TRUE(has_counter(stats, "prepare_active_parents", 0));
+    ASSERT_TRUE(has_counter(stats, "snapshot_refresh_attempts", 0));
+    co_return {};
+  });
+}
+
+TEST(NativeAdmissionPreparation, CurrentModeLaneDomainAndWireLimitsRemainAuthoritative) {
+  for (unsigned scenario = 0; scenario < 4; ++scenario) {
+    td::actor::TestScheduler scheduler;
+    scheduler.run([&]() -> td::actor::Task<> {
+      const auto input = signed_run(scenario == 1);
+      auto requests = std::make_shared<Requests>();
+      auto gate = std::make_shared<NativeAdmissionPreparationTestAccess::Gate>();
+      auto manager = td::actor::create_actor<RefreshManager>("prepare-manager", requests);
+      auto pool = td::actor::create_actor<RefreshPool>("prepare-pool", manager.get(), false);
+      auto worker = co_await td::actor::ask(pool.get(), &RefreshPool::enable_preparation, gate);
+      std::vector<td::BufferSlice> inputs;
+      inputs.push_back(input.boc(0));
+      inputs.push_back(input.boc(3));
+      auto pending = td::actor::ask(pool.get(), &RefreshPool::submit, std::move(inputs), td::Timestamp::in(10));
+      co_await scheduler.wait_sync_work();
+      SnapshotOptions options;
+      if (scenario == 0) { options.runs_enabled = false; }
+      if (scenario == 1) { options.lane_depth = 1; }
+      if (scenario == 2) { options.domain = bits(2); }
+      if (scenario == 3) { options.limits.max_size = static_cast<td::uint32>(input.boc(0).size()); }
+      co_await td::actor::ask(pool.get(), &RefreshPool::install, 11u, options);
+      co_await td::actor::ask(worker, &NativeAdmissionPreparationTestAccess::Worker::release, 0u);
+      co_await td::actor::ask(worker, &NativeAdmissionPreparationTestAccess::Worker::release, 1u);
+      co_await scheduler.wait_sync_work();
+      if (scenario == 3) {
+        ASSERT_EQ(requests->pending.size(), 1u);
+        requests->pending[0].promise.set_value(td::make_ref<RefreshShardState>(11, input.source));
+      } else {
+        ASSERT_TRUE(requests->pending.empty());
+      }
+      auto result = co_await std::move(pending);
+      ASSERT_EQ(result.statuses[0].accepted, scenario == 3);
+      ASSERT_TRUE(!result.statuses[1].accepted);
+      if (scenario == 2) {
+        ASSERT_EQ(result.statuses[0].error_message, "native transfer run admission snapshot changed; retry");
+      }
+      if (scenario == 3) {
+        ASSERT_EQ(result.statuses[1].error_message, "external message too large, rejecting");
+      }
+      ASSERT_EQ(co_await td::actor::ask(pool.get(), &RefreshPool::reservations, input.source), scenario == 3 ? 1u : 0u);
+      co_return {};
+    });
+  }
+}
+
+TEST(NativeAdmissionPreparation, TimeoutRetainsBudgetUntilQueuedWorkerActuallyFinishes) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    const auto input = signed_run();
+    auto requests = std::make_shared<Requests>();
+    auto gate = std::make_shared<NativeAdmissionPreparationTestAccess::Gate>();
+    auto manager = td::actor::create_actor<RefreshManager>("prepare-manager", requests);
+    auto pool = td::actor::create_actor<RefreshPool>("prepare-pool", manager.get(), false);
+    auto worker = co_await td::actor::ask(pool.get(), &RefreshPool::enable_preparation, gate);
+    std::vector<td::BufferSlice> inputs;
+    inputs.push_back(input.boc());
+    auto pending = td::actor::ask(pool.get(), &RefreshPool::submit, std::move(inputs), td::Timestamp::in(2));
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(gate->pending.size(), 1u);
+    scheduler.advance_time(3);
+    auto result = co_await std::move(pending);
+    ASSERT_TRUE(!result.statuses[0].accepted);
+    auto stats = co_await td::actor::ask(pool.get(), &RefreshPool::diagnostics);
+    ASSERT_TRUE(has_counter(stats, "prepare_active_parents", 1));
+    co_await td::actor::ask(worker, &NativeAdmissionPreparationTestAccess::Worker::release, 0u);
+    co_await scheduler.wait_sync_work();
+    stats = co_await td::actor::ask(pool.get(), &RefreshPool::diagnostics);
+    ASSERT_TRUE(has_counter(stats, "prepare_active_parents", 0));
+    ASSERT_TRUE(has_counter(stats, "prepare_active_bytes", 0));
+    ASSERT_TRUE(requests->pending.empty());
+    ASSERT_EQ(co_await td::actor::ask(pool.get(), &RefreshPool::reservations, input.source), 0u);
+    co_return {};
+  });
+}
+
+TEST(NativeAdmissionPreparation, StateChangeAfterAccountWaitStillRejects) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    const auto input = signed_run();
+    auto requests = std::make_shared<Requests>();
+    auto gate = std::make_shared<NativeAdmissionPreparationTestAccess::Gate>();
+    auto manager = td::actor::create_actor<RefreshManager>("prepare-manager", requests);
+    auto pool = td::actor::create_actor<RefreshPool>("prepare-pool", manager.get(), false);
+    auto worker = co_await td::actor::ask(pool.get(), &RefreshPool::enable_preparation, gate);
+    std::vector<td::BufferSlice> inputs;
+    inputs.push_back(input.boc());
+    auto pending = td::actor::ask(pool.get(), &RefreshPool::submit, std::move(inputs), td::Timestamp::in(10));
+    co_await scheduler.wait_sync_work();
+    co_await td::actor::ask(worker, &NativeAdmissionPreparationTestAccess::Worker::release, 0u);
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(requests->pending.size(), 1u);
+    co_await td::actor::ask(pool.get(), &RefreshPool::install, 11u, SnapshotOptions{});
+    requests->pending[0].promise.set_value(td::make_ref<RefreshShardState>(10, input.source));
+    auto result = co_await std::move(pending);
+    ASSERT_TRUE(!result.statuses[0].accepted);
+    ASSERT_EQ(result.statuses[0].error_message, "native transfer run admission snapshot changed; retry");
+    ASSERT_EQ(co_await td::actor::ask(pool.get(), &RefreshPool::reservations, input.source), 0u);
+    co_return {};
+  });
+}
+
+TEST(NativeAdmissionPreparation, SignatureFailureKeepsAccountPrecheckPrecedence) {
+  for (unsigned scenario = 0; scenario < 3; ++scenario) {
+    td::actor::TestScheduler scheduler;
+    scheduler.run([&]() -> td::actor::Task<> {
+      const auto input = signed_run(false, true);
+      auto requests = std::make_shared<Requests>();
+      auto gate = std::make_shared<NativeAdmissionPreparationTestAccess::Gate>();
+      auto manager = td::actor::create_actor<RefreshManager>("prepare-manager", requests);
+      auto pool = td::actor::create_actor<RefreshPool>("prepare-pool", manager.get(), false);
+      auto worker = co_await td::actor::ask(pool.get(), &RefreshPool::enable_preparation, gate);
+      std::vector<td::BufferSlice> inputs;
+      inputs.push_back(input.boc());
+      auto pending = td::actor::ask(pool.get(), &RefreshPool::submit, std::move(inputs), td::Timestamp::in(10));
+      co_await scheduler.wait_sync_work();
+      co_await td::actor::ask(worker, &NativeAdmissionPreparationTestAccess::Worker::release, 0u);
+      co_await scheduler.wait_sync_work();
+      ASSERT_EQ(requests->pending.size(), 1u);
+      requests->pending[0].promise.set_value(td::make_ref<RefreshShardState>(
+          10, input.source, scenario == 0 ? 1u : 100u, scenario == 1 ? 2u : 0u));
+      auto result = co_await std::move(pending);
+      ASSERT_TRUE(!result.statuses[0].accepted);
+      if (scenario == 0) {
+        ASSERT_EQ(result.statuses[0].error_message, "native transfer has insufficient source balance");
+      } else if (scenario == 1) {
+        ASSERT_TRUE(result.statuses[0].error_message.find("Too old native nonce") != std::string::npos);
+      } else {
+        ASSERT_EQ(result.statuses[0].error_message, "Wrong signature");
+      }
+      ASSERT_EQ(co_await td::actor::ask(pool.get(), &RefreshPool::reservations, input.source), 0u);
+      co_return {};
+    });
+  }
+}
+
+TEST(NativeAdmissionPreparation, FullBudgetFallsBackWithoutLosingInputOrChangingWorkerCount) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    const auto input = signed_run();
+    auto requests = std::make_shared<Requests>();
+    auto gate = std::make_shared<NativeAdmissionPreparationTestAccess::Gate>();
+    auto manager = td::actor::create_actor<RefreshManager>("prepare-manager", requests);
+    auto pool = td::actor::create_actor<RefreshPool>("prepare-pool", manager.get(), false);
+    co_await td::actor::ask(pool.get(), &RefreshPool::enable_preparation, gate);
+    co_await td::actor::ask(pool.get(), &RefreshPool::saturate_preparation_budget, true);
+    std::vector<td::BufferSlice> inputs;
+    inputs.push_back(input.boc());
+    auto pending = td::actor::ask(pool.get(), &RefreshPool::submit, std::move(inputs), td::Timestamp::in(10));
+    co_await scheduler.wait_sync_work();
+    ASSERT_TRUE(gate->pending.empty());
+    ASSERT_EQ(requests->pending.size(), 1u);
+    requests->pending[0].promise.set_value(td::make_ref<RefreshShardState>(10, input.source));
+    auto result = co_await std::move(pending);
+    ASSERT_TRUE(result.statuses[0].accepted);
+    co_await td::actor::ask(pool.get(), &RefreshPool::saturate_preparation_budget, false);
+    auto stats = co_await td::actor::ask(pool.get(), &RefreshPool::diagnostics);
+    ASSERT_TRUE(has_counter(stats, "prepare_budget_fallbacks", 1));
+    ASSERT_TRUE(has_counter(stats, "prepare_requests", 0));
+    co_return {};
+  });
+}
+
+TEST(NativeAdmissionPreparation, StrictDecodeFailureNeverRequestsAccountOrReserves) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto requests = std::make_shared<Requests>();
+    auto gate = std::make_shared<NativeAdmissionPreparationTestAccess::Gate>();
+    auto manager = td::actor::create_actor<RefreshManager>("prepare-manager", requests);
+    auto pool = td::actor::create_actor<RefreshPool>("prepare-pool", manager.get(), false);
+    auto worker = co_await td::actor::ask(pool.get(), &RefreshPool::enable_preparation, gate);
+    auto pending = td::actor::ask(pool.get(), &RefreshPool::submit_single, td::BufferSlice("invalid-boc"),
+                                 td::Timestamp::in(10));
+    co_await scheduler.wait_sync_work();
+    co_await td::actor::ask(worker, &NativeAdmissionPreparationTestAccess::Worker::release, 0u);
+    auto result = co_await std::move(pending).wrap();
+    ASSERT_TRUE(result.is_error());
+    ASSERT_TRUE(requests->pending.empty());
+    co_await scheduler.wait_sync_work();
+    auto stats = co_await td::actor::ask(pool.get(), &RefreshPool::diagnostics);
+    ASSERT_TRUE(has_counter(stats, "prepare_active_parents", 0));
+    co_return {};
+  });
+}
+
+TEST(NativeAdmissionPreparation, SignedExpiryWhileQueuedDoesNotUseRemainingRpcBudget) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    const auto input = signed_run(false, false, static_cast<UnixTime>(td::Clocks::system()) + 2);
+    auto requests = std::make_shared<Requests>();
+    auto gate = std::make_shared<NativeAdmissionPreparationTestAccess::Gate>();
+    auto manager = td::actor::create_actor<RefreshManager>("prepare-manager", requests);
+    auto pool = td::actor::create_actor<RefreshPool>("prepare-pool", manager.get(), false);
+    auto worker = co_await td::actor::ask(pool.get(), &RefreshPool::enable_preparation, gate);
+    std::vector<td::BufferSlice> inputs;
+    inputs.push_back(input.boc());
+    const auto deadline = td::Timestamp::in(10);
+    auto pending = td::actor::ask(pool.get(), &RefreshPool::submit, std::move(inputs), deadline);
+    co_await scheduler.wait_sync_work();
+    scheduler.advance_time(3);
+    ASSERT_TRUE(!deadline.is_in_past());
+    co_await td::actor::ask(worker, &NativeAdmissionPreparationTestAccess::Worker::release, 0u);
+    auto result = co_await std::move(pending);
+    ASSERT_TRUE(!result.statuses[0].accepted);
+    ASSERT_EQ(result.statuses[0].error_message, "native transfer valid_until is in the past");
+    ASSERT_TRUE(requests->pending.empty());
+    ASSERT_EQ(co_await td::actor::ask(pool.get(), &RefreshPool::reservations, input.source), 0u);
+    co_return {};
+  });
 }
 
 }  // namespace ton::validator

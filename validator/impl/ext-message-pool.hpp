@@ -124,8 +124,33 @@ class ExtMessagePool : public td::actor::Actor {
   void tear_down() override;
 
  private:
-  class NativeSignatureVerifier final : public td::actor::Actor {
+  class NativeSignatureVerifier;
+  // Owned bytes and decoded fields are sealed after worker verification. No
+  // account state, reservation or branch-local scheduler state crosses here.
+  class PreparedExternalMessage {
+    friend class ExtMessagePool;
+    friend class NativeSignatureVerifier;
+    td::Ref<ExtMessage> message_;
+    td::optional<block::NativeTransfer> transfer_;
+    td::optional<block::NativeTransferRun> run_;
+    Bits256 chain_domain_;
+    td::Status signature_status_;
+    std::size_t wire_size_{0};
+  };
+  struct PreparationLease {
+    td::actor::ActorId<ExtMessagePool> pool;
+    std::size_t parents{0}, bytes{0};
+    ~PreparationLease();
+  };
+  struct PreparationResult {
+    td::Result<PreparedExternalMessage> result{td::Status::Error("preparation did not finish")};
+    double started_at{0}, finished_at{0}, decode_seconds{0}, signature_seconds{0}, cpu_seconds{0};
+  };
+  class NativeSignatureVerifier : public td::actor::Actor {
    public:
+    virtual void prepare(td::BufferSlice data, block::SizeLimitsConfig::ExtMsgLimits limits,
+                         Bits256 chain_domain, td::Timestamp deadline, bool profile,
+                         std::shared_ptr<PreparationLease> lease, td::Promise<PreparationResult> promise);
     void verify(block::NativeTransfer transfer, Bits256 chain_domain, td::Promise<td::Unit> promise) {
       auto status = transfer.verify_signature(chain_domain);
       if (status.is_error()) {
@@ -274,6 +299,20 @@ class ExtMessagePool : public td::actor::Actor {
   td::actor::ActorId<ValidatorManager> manager_;
   td::Ref<MasterchainState> last_masterchain_state_;
   std::vector<td::actor::ActorOwn<NativeSignatureVerifier>> native_signature_verifiers_;
+  bool native_prepare_enabled_{false}, native_prepare_profile_enabled_{false};
+  static constexpr std::size_t MAX_NATIVE_PREPARATION_PARENTS = 4096;
+  static constexpr std::size_t MAX_NATIVE_PREPARATION_BYTES = 16 * 1024 * 1024;
+  std::size_t native_preparation_parents_{0}, native_preparation_bytes_{0};
+  std::size_t native_preparation_peak_parents_{0}, native_preparation_peak_bytes_{0};
+  td::uint64 native_preparation_requests_{0}, native_preparation_inputs_{0};
+  td::uint64 native_preparation_budget_fallbacks_{0}, native_preparation_config_fallbacks_{0};
+  td::uint64 native_preparation_authorization_reuses_{0}, native_preparation_domain_rejections_{0};
+  NativeAdmissionWallTime native_preparation_queue_, native_preparation_decode_, native_preparation_signature_;
+  NativeAdmissionWallTime native_preparation_cpu_, native_preparation_resume_;
+  using PreparedBatch = std::vector<td::Result<PreparedExternalMessage>>;
+  td::actor::Task<td::optional<PreparedBatch>> prepare_external_batch(std::vector<td::BufferSlice> &batch,
+                                                                    td::Timestamp deadline);
+  void release_native_preparation_budget(std::size_t parents, std::size_t bytes);
   std::size_t native_signature_verifier_cursor_{0};
 
   struct ExtMessages {
@@ -940,10 +979,12 @@ class ExtMessagePool : public td::actor::Actor {
   td::actor::Task<> pump_callback(std::shared_ptr<InstalledCallback> callback);
 
   td::actor::Task<CheckResult> check_message(td::Ref<ExtMessage> message,
-                                             td::Timestamp deadline = td::Timestamp::never());
+                                             td::Timestamp deadline = td::Timestamp::never(),
+                                             const PreparedExternalMessage *prepared = nullptr);
   td::actor::Task<CheckResult> check_add_parsed_external_message_until(td::Ref<ExtMessage> message,
-                                                                       int priority, bool add_to_mempool,
-                                                                       td::Timestamp deadline);
+                                                                      int priority, bool add_to_mempool,
+                                                                      td::Timestamp deadline,
+                                                                      const PreparedExternalMessage *prepared = nullptr);
   td::Result<td::optional<CheckResult>> check_existing_external_message(td::Ref<ExtMessage> message,
                                                                         int priority, bool add_to_mempool);
   td::Result<CheckResult> finalize_checked_message(CheckResult result, int priority, bool add_to_mempool,
@@ -1027,6 +1068,7 @@ class ExtMessagePool : public td::actor::Actor {
   friend class ExtMessagePoolTestAccess;
   friend class NativeAdmissionRefreshBatchTestAccess;
   friend class NativeProducerActorTestAccess;
+  friend class NativeAdmissionPreparationTestAccess;
 
   static constexpr double MAX_EXT_MSG_PER_ADDR_TIME_WINDOW = 10.0;
   static constexpr size_t MAX_EXT_MSG_PER_ADDR = 4096;

@@ -57,19 +57,20 @@ void ExtMessagePool::NativeSignatureVerifier::prepare(
     td::BufferSlice data, block::SizeLimitsConfig::ExtMsgLimits limits, Bits256 chain_domain,
     td::Timestamp deadline, bool profile, std::shared_ptr<PreparationLease> lease,
     td::Promise<PreparationResult> promise) {
+  promise.set_value(prepare_owned(std::move(data), limits, chain_domain, deadline, profile));
+}
+
+ExtMessagePool::PreparationResult ExtMessagePool::NativeSignatureVerifier::prepare_owned(
+    td::BufferSlice data, block::SizeLimitsConfig::ExtMsgLimits limits, Bits256 chain_domain,
+    td::Timestamp deadline, bool profile) {
   PreparationResult output;
   td::ThreadCpuTimer cpu(!profile);
   output.started_at = profile ? td::Time::now() : 0;
-  SCOPE_EXIT {
-    if (profile) {
-      output.finished_at = td::Time::now();
-      output.cpu_seconds = cpu.elapsed();
-    }
-    promise.set_value(std::move(output));
-  };
+
   if (deadline && deadline.is_in_past()) {
     output.result = td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
-    return;
+    if (profile) { output.finished_at = td::Time::now(); output.cpu_seconds = cpu.elapsed(); }
+    return output;
   }
   PreparedExternalMessage prepared;
   prepared.wire_size_ = data.size();
@@ -93,11 +94,13 @@ void ExtMessagePool::NativeSignatureVerifier::prepare(
   }
   if (decoded.is_error()) {
     output.result = std::move(decoded);
-    return;
+    if (profile) { output.finished_at = td::Time::now(); output.cpu_seconds = cpu.elapsed(); }
+    return output;
   }
   if (deadline && deadline.is_in_past()) {
     output.result = td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
-    return;
+    if (profile) { output.finished_at = td::Time::now(); output.cpu_seconds = cpu.elapsed(); }
+    return output;
   }
   if (prepared.transfer_) {
     prepared.signature_status_ = prepared.transfer_.value().verify_signature(chain_domain);
@@ -110,6 +113,8 @@ void ExtMessagePool::NativeSignatureVerifier::prepare(
   // A failed signature is retained as data, not an early RPC rejection: the
   // owner still applies the existing mode/locality/account error precedence.
   output.result = std::move(prepared);
+  if (profile) { output.finished_at = td::Time::now(); output.cpu_seconds = cpu.elapsed(); }
+  return output;
 }
 
 td::actor::Task<td::optional<ExtMessagePool::PreparedBatch>> ExtMessagePool::prepare_external_batch(
@@ -153,9 +158,8 @@ td::actor::Task<td::optional<ExtMessagePool::PreparedBatch>> ExtMessagePool::pre
   const double queued_at = native_prepare_profile_enabled_ ? td::Time::now() : 0;
   std::vector<td::actor::StartedTask<PreparationResult>> tasks;
   tasks.reserve(batch.size());
-  CHECK(!native_signature_verifiers_.empty());
   for (auto &body : batch) {
-    auto &worker = native_signature_verifiers_[native_signature_verifier_cursor_++ % native_signature_verifiers_.size()];
+    auto worker = next_native_signature_verifier();
     tasks.push_back(td::actor::await_with_timeout(
         td::actor::ask(worker, &NativeSignatureVerifier::prepare, std::move(body), limits, domain, deadline,
                        native_prepare_profile_enabled_, lease), deadline).start());
@@ -248,6 +252,22 @@ void ExtMessagePool::start_up() {
   if (!workers) {
     workers = std::clamp(std::max(1u, std::thread::hardware_concurrency()) / 2, 1u, 8u);
   }
+  if (is_native_lane_owner()) {
+    CHECK(native_prepare_enabled_ && !native_admission_snapshot_refresh_enabled_);
+    CHECK(!native_lane_owner_.workers.empty());
+    native_lane_owners_enabled_ = true;
+    return;  // Verifier actors and preparation leases belong to the coordinator.
+  }
+  if (const char *value = std::getenv("TON_NATIVE_ADMISSION_LANE_OWNERS")) {
+    CHECK(td::Slice(value) == "0" || td::Slice(value) == "4");
+    native_lane_owners_enabled_ = td::Slice(value) == "4";
+  }
+  if (native_lane_owners_enabled_) {
+    CHECK(native_prepare_enabled_ && !native_admission_snapshot_refresh_enabled_);
+    native_lane_owner_.coordination = std::make_shared<NativePoolOwnerCoordination>(4, opts_->max_mempool_num());
+    native_lane_owner_.coordination->total_signature_workers = workers;
+    CHECK(native_accounts_.empty() && native_nonce_watermarks_.empty());
+  }
   native_signature_verifiers_.reserve(workers);
   for (unsigned i = 0; i < workers; ++i) {
     native_signature_verifiers_.push_back(td::actor::create_actor<NativeSignatureVerifier>("native-sig-verify"));
@@ -265,7 +285,7 @@ void ExtMessagePool::start_up() {
                << " generic_retention_s=" << MempoolMsg::GENERIC_MEMPOOL_TTL_SECONDS;
 }
 
-void ExtMessagePool::update_last_masterchain_state(td::Ref<MasterchainState> state) {
+void ExtMessagePool::update_last_masterchain_state_local(td::Ref<MasterchainState> state) {
   if (state.is_null()) {
     return;
   }
@@ -307,6 +327,14 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_external_
 
 td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_external_message_until(
     td::BufferSlice data, int priority, bool add_to_mempool, td::Timestamp deadline) {
+  if (is_native_lane_router()) {
+    co_return co_await route_prepared_lane_single(std::move(data), priority, add_to_mempool, deadline);
+  }
+  if (is_native_lane_owner()) {
+    auto status = check_native_lane_fence();
+    if (status.is_error()) { co_return std::move(status); }
+    co_return td::Status::Error(ErrorCode::notready, "native admission owner requires sealed coordinator preparation");
+  }
   if (deadline && deadline.is_in_past()) {
     co_return td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
   }
@@ -642,7 +670,7 @@ td::optional<ExtMessagePool::NativeAdmissionShardRequest> ExtMessagePool::queue_
   auto it = native_admission_shard_waits_.find(key);
   bool dispatch = it == native_admission_shard_waits_.end();
   if (dispatch) {
-    if (native_admission_shard_waits_.size() >= MAX_NATIVE_ADMISSION_SHARED_SHARDS) {
+    if (native_admission_shard_waits_.size() >= (is_native_lane_owner() ? MAX_NATIVE_ADMISSION_SHARED_SHARDS / 4 : MAX_NATIVE_ADMISSION_SHARED_SHARDS)) {
       ++native_batch_shard_shared_table_full_;
       return {};
     }
@@ -929,6 +957,11 @@ td::Status ExtMessagePool::validate_native_transfer_locality(
 
 td::Result<td::optional<ExtMessagePool::CheckResult>> ExtMessagePool::check_existing_external_message(
     td::Ref<ExtMessage> message, int priority, bool add_to_mempool) {
+  std::optional<NativePoolOwnerCoordination::ReadFence> owner_fence;
+  if (native_lane_owner_.coordination) {
+    owner_fence.emplace(native_lane_owner_.coordination.get());
+    TRY_STATUS(check_native_lane_message(*message));
+  }
   if (add_to_mempool) {
     auto existing = ext_messages_hashes_.find(message->hash());
     if (existing != ext_messages_hashes_.end()) {
@@ -999,6 +1032,19 @@ td::Result<td::optional<ExtMessagePool::CheckResult>> ExtMessagePool::check_exis
 td::Result<ExtMessagePool::CheckResult> ExtMessagePool::finalize_checked_message(CheckResult result, int priority,
                                                                                   bool add_to_mempool,
                                                                                   td::Timestamp deadline) {
+  std::optional<NativePoolOwnerCoordination::ReadFence> owner_fence;
+  if (native_lane_owner_.coordination) {
+    owner_fence.emplace(native_lane_owner_.coordination.get());
+    auto status = check_native_lane_message(*result.message,
+        result.native_admission ? result.native_admission.value().owner_generation : 0);
+    if (status.is_error()) {
+      if (result.should_broadcast) {
+        rollback_checked_message(result.message, result.msg_seqno,
+            result.native_admission ? &result.native_admission.value() : nullptr);
+      }
+      return std::move(status);
+    }
+  }
   if (!result.should_broadcast) {
     return std::move(result);
   }
@@ -1011,7 +1057,7 @@ td::Result<ExtMessagePool::CheckResult> ExtMessagePool::finalize_checked_message
     rollback_checked_message(message, result.msg_seqno, native_admission);
     return td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
   }
-  if (checked_ext_msg_counter_.inc_msg_count(wc, addr) > MAX_EXT_MSG_PER_ADDR) {
+  if (checked_message_count(wc, addr, true) > MAX_EXT_MSG_PER_ADDR) {
     rollback_checked_message(message, result.msg_seqno, native_admission);
     return td::Status::Error(PSTRING() << "too many external messages to address " << wc << ":" << addr.to_hex());
   }
@@ -1106,7 +1152,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_parsed_ex
   }
   WorkchainId wc = message->wc();
   StdSmcAddress addr = message->addr();
-  if (checked_ext_msg_counter_.get_msg_count(wc, addr) >= MAX_EXT_MSG_PER_ADDR) {
+  if (checked_message_count(wc, addr, false) >= MAX_EXT_MSG_PER_ADDR) {
     co_return td::Status::Error(PSTRING() << "too many external messages to address " << wc << ":" << addr.to_hex());
   }
   auto result = co_await check_message(message, deadline, prepared).wrap();
@@ -1124,6 +1170,16 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_add_parsed_ex
 
 td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_external_messages_until(
     std::vector<td::BufferSlice> batch, int priority, bool add_to_mempool, td::Timestamp deadline) {
+  if (is_native_lane_router()) {
+    return route_prepared_lane_batch(std::move(batch), priority, add_to_mempool, deadline);
+  }
+  return check_add_external_messages_impl(std::move(batch), priority, add_to_mempool, deadline);
+}
+
+td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_external_messages_impl(
+    std::vector<td::BufferSlice> batch, int priority, bool add_to_mempool, td::Timestamp deadline,
+    td::optional<PreparedBatch> prepared_inputs, td::optional<NativeAdmissionSnapshot> common_snapshot,
+    td::uint64 owner_generation) {
   const double batch_started_at = td::Time::now();
   native_batch_telemetry_.begin_batch();
   bool batch_completed = false;
@@ -1194,8 +1250,15 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
     co_return output;
   }
 
-  td::optional<PreparedBatch> prepared_inputs;
-  if (native_prepare_enabled_) {
+  if (is_native_lane_owner() && !prepared_inputs) {
+    auto status = check_native_lane_fence();
+    if (status.is_ok()) { status = td::Status::Error(ErrorCode::notready, "native admission owner requires sealed coordinator preparation"); }
+    for (std::size_t index = 0; index < batch.size(); ++index) { reject(index, status.clone()); }
+    native_batch_rejected_ += batch.size();
+    complete_batch();
+    co_return output;
+  }
+  if (!prepared_inputs && native_prepare_enabled_) {
     prepared_inputs = co_await prepare_external_batch(batch, deadline);
   }
   struct BatchItem {
@@ -1347,12 +1410,14 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
                                        "native transfer run admission snapshot changed; retry"));
         continue;
       }
+      items[index].native_admission.value().owner_generation = owner_generation;
       items[index].native_admission.value().payment_lane_depth =
           snapshot.payment_lane_policy ? snapshot.payment_lane_policy.value().depth() : 0;
     }
   };
   if (!native_indices.empty()) {
-    auto snapshot = pin_native_admission_snapshot();
+    auto snapshot = common_snapshot ? td::Result<NativeAdmissionSnapshot>{common_snapshot.value()}
+                                    : pin_native_admission_snapshot();
     if (snapshot.is_error()) {
       auto error = snapshot.move_as_error();
       for (auto index : native_indices) {
@@ -1416,7 +1481,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
         accept(index);
         continue;
       }
-      if (checked_ext_msg_counter_.get_msg_count(message->wc(), message->addr()) >= MAX_EXT_MSG_PER_ADDR) {
+      if (checked_message_count(message->wc(), message->addr(), false) >= MAX_EXT_MSG_PER_ADDR) {
         reject(index, td::Status::Error(PSTRING() << "too many external messages to address " << message->wc() << ":"
                                                   << message->addr().to_hex()));
         continue;
@@ -1536,6 +1601,12 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
                 continue;
               }
               shard_view = view_result.move_as_ok();
+            }
+            std::optional<NativePoolOwnerCoordination::ReadFence> source_owner_fence;
+            if (is_native_lane_owner()) {
+              source_owner_fence.emplace(native_lane_owner_.coordination.get());
+              auto status = check_native_lane_fence(owner_generation);
+              if (status.is_error()) { reject_shard(std::move(status)); continue; }
             }
             native_batch_last_pinned_shard_seqno_ = shard_view->block_id.seqno();
             if (mc_state->get_unix_time() >= shard_view->gen_utime) {
@@ -1681,9 +1752,7 @@ td::actor::Task<ExtMessagePool::BatchCheckResult> ExtMessagePool::check_add_exte
           ++native_batch_snapshot_refresh_signature_reuses_;
           continue;
         }
-        CHECK(!native_signature_verifiers_.empty());
-        auto &verifier =
-            native_signature_verifiers_[native_signature_verifier_cursor_++ % native_signature_verifiers_.size()];
+        auto verifier = next_native_signature_verifier();
         if (items[index].native_transfer_run) {
           verification_tasks.push_back(
               td::actor::await_with_timeout(
@@ -3093,6 +3162,11 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
       std::unique(callback->excluded_messages.begin(), callback->excluded_messages.end()),
       callback->excluded_messages.end());
   auto installed = std::make_shared<InstalledCallback>(std::move(callback));
+  const bool use_lane_owner = is_native_lane_router() && shard.workchain == basechainId;
+  if (use_lane_owner && (check_native_lane_fence().is_error() || shard_prefix_length(shard) != 2)) {
+    cancel_callback_delivery(installed);
+    return;
+  }
   const bool use_producer = native_persistent_producer_enabled_ && !native_producer_only_ &&
       installed->callback->native_streaming && !installed->callback->sync_only &&
       shard.workchain == basechainId && native_payment_lane_depth_ &&
@@ -3106,7 +3180,7 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
   // Native scheduling is deliberately skipped for masterchain installs. Native
   // transfers are basechain-only, and copying/scanning their large treaps while
   // producing a masterchain anchor created avoidable multi-second stalls.
-  if (!use_producer) {
+  if (!use_producer && !use_lane_owner) {
     restore_callback_native_cursor(installed);
     prefill_callback_native(installed, true);
     persist_callback_native_cursor(installed);
@@ -3152,6 +3226,11 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
     }
   }
 
+  if (use_lane_owner) {
+    const auto owner = native_lane_owner_.coordination->owner_for(shard);
+    td::actor::send_closure(native_lane_owners_[owner], &ExtMessagePool::install_lane_callback, std::move(installed));
+    return;
+  }
   if (use_producer) {
     // Dirty source publication already owns one queued flush. Draining it
     // synchronously here would leave that closure queued and schedule another
@@ -3178,6 +3257,9 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
 }
 
 void ExtMessagePool::cleanup_external_messages(ShardIdFull shard) {
+  if (is_native_lane_router() && shard.workchain == basechainId) {
+    for (auto &owner : native_lane_owners_) { td::actor::send_closure(owner, &ExtMessagePool::cleanup_external_messages, shard); }
+  }
   // Clean up expired messages
   for (auto &[priority, msgs] : ext_msgs_) {
     std::vector<MessageId> to_erase;
@@ -3196,6 +3278,11 @@ void ExtMessagePool::cleanup_external_messages(ShardIdFull shard) {
 
 void ExtMessagePool::complete_external_messages(std::vector<ExtMessage::Hash> to_delay,
                                                 std::vector<ExtMessage::Hash> to_delete) {
+  if (is_native_lane_router()) {
+    for (auto &owner : native_lane_owners_) {
+      td::actor::send_closure(owner, &ExtMessagePool::complete_external_messages, to_delay, to_delete);
+    }
+  }
   for (auto &hash : to_delete) {
     auto it = ext_messages_hashes_.find(hash);
     if (it != ext_messages_hashes_.end()) {
@@ -3219,7 +3306,7 @@ void ExtMessagePool::complete_external_messages(std::vector<ExtMessage::Hash> to
           native_reactivations_.emplace(msg_opt.value()->reactivate_at, std::make_pair(priority, msg_id));
           alarm_timestamp().relax(msg_opt.value()->reactivate_at);
         }
-      } else if (msg_opt && msgs.ext_messages_.size() < SOFT_MEMPOOL_LIMIT && msg_opt.value()->can_postpone()) {
+      } else if (msg_opt && (native_lane_owner_.coordination ? native_lane_owner_.coordination->count(priority) : msgs.ext_messages_.size()) < SOFT_MEMPOOL_LIMIT && msg_opt.value()->can_postpone()) {
         msg_opt.value()->postpone();
       } else {
         erase_message(priority, msg_id);
@@ -3230,6 +3317,20 @@ void ExtMessagePool::complete_external_messages(std::vector<ExtMessage::Hash> to
 
 void ExtMessagePool::track_locally_accepted_native_messages(
     std::vector<TrackedNativeExternalMessage> messages) {
+  if (is_native_lane_router()) {
+    std::array<std::vector<TrackedNativeExternalMessage>, 4> groups;
+    for (auto &message : messages) {
+      if (message.workchain == basechainId) {
+        groups[native_lane_owner_.coordination->owner_for(message.workchain, message.source)].push_back(std::move(message));
+      }
+    }
+    for (std::size_t index = 0; index < native_lane_owners_.size(); ++index) {
+      if (!groups[index].empty()) {
+        td::actor::send_closure(native_lane_owners_[index], &ExtMessagePool::track_locally_accepted_native_messages, std::move(groups[index]));
+      }
+    }
+    return; // Hints never manufacture coordinator native state.
+  }
   if (messages.empty()) {
     return;
   }
@@ -3264,6 +3365,15 @@ void ExtMessagePool::track_locally_accepted_native_messages(
 }
 
 void ExtMessagePool::reconcile_native_external_messages(td::Ref<MasterchainState> state) {
+  if (is_native_lane_router()) {
+    // Only shard-client-confirmed authority reaches this API. The common
+    // generation fence is metadata; it never advances a canonical nonce.
+    if (native_lane_owner_.coordination->topology_ready.load(std::memory_order_acquire)) {
+      for (auto &owner : native_lane_owners_) { td::actor::send_closure(owner, &ExtMessagePool::reconcile_native_external_messages, state); }
+    }
+    return;
+  }
+  if (is_native_lane_owner() && !native_lane_owner_.coordination->topology_ready.load(std::memory_order_acquire)) { return; }
   if (state.is_null() || !state->get_block_id().is_masterchain()) {
     ++native_reconciliation_failures_;
     return;
@@ -3427,6 +3537,9 @@ td::actor::Task<> ExtMessagePool::reconcile_native_snapshot(td::Ref<MasterchainS
         first_error = state_result.move_as_error_prefix("cannot load applied shard state: ");
       }
       continue;
+    }
+    if (is_native_lane_owner() && !native_lane_owner_.coordination->topology_ready.load(std::memory_order_acquire)) {
+      co_return td::Status::Error(ErrorCode::notready, "native pool owners require unchanged fixed payment-lane topology");
     }
     auto shard_state = state_result.move_as_ok();
     if (shard_state->get_block_id() != shard_block_id) {
@@ -3908,6 +4021,9 @@ std::string ExtMessagePool::native_reconciliation_telemetry_string() const {
 }
 
 void ExtMessagePool::erase_external_messages(std::vector<ExtMessage::Hash> to_delete) {
+  if (is_native_lane_router()) {
+    for (auto &owner : native_lane_owners_) { td::actor::send_closure(owner, &ExtMessagePool::erase_external_messages, to_delete); }
+  }
   applied_ext_msgs_delete_requests_ += to_delete.size();
   for (auto &hash : to_delete) {
     auto it = ext_messages_hashes_norm_.find(hash);
@@ -3987,6 +4103,7 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id, bool prune
   }
   msgs.ext_addr_messages_[address].erase(id.hash);
   msgs.ext_messages_ = msgs.ext_messages_.erase(id);
+  mempool_message->owner_permit.reset();
   ext_messages_hashes_.erase(id.hash);
 
   auto it_norm = ext_messages_hashes_norm_.find(hash_norm);
@@ -4001,6 +4118,38 @@ bool ExtMessagePool::erase_message(int priority, const MessageId &id, bool prune
 
 std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats() {
   std::vector<std::pair<std::string, std::string>> vec;
+  if (native_lane_owner_.coordination) {
+    const auto &coordination = *native_lane_owner_.coordination;
+    if (is_native_lane_router()) {
+      vec.emplace_back("total.native_admission_lane_owners", PSTRING()
+          << "enabled:1 owners:" << native_lane_owners_.size()
+          << " topology_ready:" << coordination.topology_ready.load(std::memory_order_acquire)
+          << " topology_failed:" << native_lane_topology_failed_
+          << " published_generation:" << coordination.published_generation.load(std::memory_order_acquire)
+          << " shared_signature_workers:" << native_signature_verifiers_.size()
+          << " aggregate_mempool:" << coordination.count()
+          << " coordinator_native_accounts:" << native_accounts_.size()
+          << " coordinator_native_watermarks:" << native_nonce_watermarks_.size()
+          << " routed_batches:" << native_lane_routed_batches_
+          << " routed_parents:" << native_lane_routed_messages_
+          << " inline_preparations:" << native_lane_inline_preparations_
+          << " join_samples:" << native_lane_router_join_.samples
+          << " join_sum_s:" << native_lane_router_join_.sum_seconds
+          << " join_max_s:" << native_lane_router_join_.max_seconds);
+    } else {
+      vec.emplace_back("identity", PSTRING() << "index:" << native_lane_owner_.index
+          << " generation:" << native_lane_applied_generation_
+          << " local_signature_workers:" << native_signature_verifiers_.size()
+          << " shared_signature_workers:" << native_lane_owner_.workers.size()
+          << " fence_rejections:" << native_lane_fence_rejections_
+          << " admission_batches:" << native_lane_routed_batches_
+          << " admission_parents:" << native_lane_routed_messages_
+          << " admission_max_parents:" << native_lane_max_batch_parents_
+          << " queue_samples:" << native_lane_owner_queue_.samples
+          << " queue_sum_s:" << native_lane_owner_queue_.sum_seconds
+          << " queue_max_s:" << native_lane_owner_queue_.max_seconds);
+    }
+  }
   vec.emplace_back("total.ext_msg_check",
                    PSTRING() << "ok:" << total_check_ext_messages_ok_ << " error:" << total_check_ext_messages_error_);
   vec.emplace_back("total.ext_msg_applied_cleanup", PSTRING() << "requested:" << applied_ext_msgs_delete_requests_
@@ -4392,7 +4541,13 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
                << " is already present in mempool at priority " << it2->second.first;
     return td::Status::OK();
   }
-  if (msgs.ext_messages_.size() >= opts_->max_mempool_num()) {
+  std::unique_ptr<NativePoolOwnerCoordination::Permit> permit;
+  if (native_lane_owner_.coordination) {
+    permit = native_lane_owner_.coordination->try_acquire(native_lane_owner_.coordination, priority, wc, addr);
+  }
+  if ((native_lane_owner_.coordination && !permit &&
+       native_lane_owner_.coordination->address_count(priority, wc, addr) < PER_ADDRESS_LIMIT) ||
+      (!native_lane_owner_.coordination && msgs.ext_messages_.size() >= opts_->max_mempool_num())) {
     auto error = td::Status::Error(ErrorCode::notready,
                                    PSTRING() << "external message mempool is full (priority=" << priority
                                              << ", limit=" << opts_->max_mempool_num() << ")");
@@ -4401,7 +4556,8 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
     return error;
   }
   auto it = msgs.ext_addr_messages_.find(address);
-  if (it != msgs.ext_addr_messages_.end() && it->second.size() >= PER_ADDRESS_LIMIT) {
+  if ((native_lane_owner_.coordination && !permit) ||
+      (!native_lane_owner_.coordination && it != msgs.ext_addr_messages_.end() && it->second.size() >= PER_ADDRESS_LIMIT)) {
     auto error = td::Status::Error(ErrorCode::notready,
                                    PSTRING() << "external message per-address mempool limit reached (address=" << wc
                                              << ":" << addr.to_hex() << ", priority=" << priority
@@ -4414,6 +4570,7 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
     int old_priority = it2->second.first;
     erase_message(old_priority, id);
   }
+  msg->owner_permit = std::move(permit);
   auto hash_norm = msg->hash_norm;
   msgs.ext_messages_ = msgs.ext_messages_.insert(id, msg);
   if (msg->has_native_interval()) {
@@ -4445,6 +4602,11 @@ td::Status ExtMessagePool::add_message_to_mempool(td::Ref<ExtMessage> message, i
   VLOG(VALIDATOR_DEBUG) << "adding message addr=" << wc << ":" << addr.to_hex() << " prio=" << priority
                         << " to mempool";
   if (!msg->has_native_interval()) {
+    if (is_native_lane_router() && wc == basechainId &&
+        native_lane_owner_.coordination->topology_ready.load(std::memory_order_acquire)) {
+      const auto owner = native_lane_owner_.coordination->owner_for(wc, addr);
+      td::actor::send_closure(native_lane_owners_[owner], &ExtMessagePool::deliver_lane_generic, message, priority);
+    }
     if (auto lane = native_producer_lane(address)) {
       if (auto producer = native_producers_.find(lane.value()); producer != native_producers_.end()) {
         td::actor::send_closure(producer->second.actor, &ExtMessagePool::deliver_native_producer_generic, message, priority);
@@ -4736,9 +4898,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
     if (!(acc.balance >= required)) {
       co_return td::Status::Error("native transfer has insufficient source balance");
     }
-    CHECK(!native_signature_verifiers_.empty());
-    auto& verifier =
-        native_signature_verifiers_[native_signature_verifier_cursor_++ % native_signature_verifiers_.size()];
+    auto verifier = next_native_signature_verifier();
     td::Result<td::Unit> signature_result = td::Status::Error("native signature verification was not started");
     if (prepared) {
       CHECK(prepared->message_->hash() == message->hash() && prepared->message_->addr() == message->addr());
@@ -4822,6 +4982,12 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::check_message(td::R
 td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_native_message(
     td::Ref<ExtMessage> message, NativeAdmission native_admission, td::uint64 available_balance,
     td::uint64 account_revision, UnixTime utime, td::Timestamp deadline) {
+  std::optional<NativePoolOwnerCoordination::ReadFence> owner_fence;
+  if (native_lane_owner_.coordination) {
+    owner_fence.emplace(native_lane_owner_.coordination.get());
+    auto status = check_native_lane_message(*message, native_admission.owner_generation);
+    if (status.is_error()) { co_return std::move(status); }
+  }
   if (deadline && deadline.is_in_past()) {
     co_return td::Status::Error(ErrorCode::timeout, "external message admission deadline expired");
   }
@@ -4974,6 +5140,7 @@ td::actor::Task<ExtMessagePool::CheckResult> ExtMessagePool::reserve_verified_na
     }
   }
 
+  owner_fence.reset();  // Never hold a cross-owner publication fence across suspension.
   auto insertion_result = co_await std::move(wait_for_insertion).wrap();
   if (insertion_result.is_error()) {
     co_return insertion_result.move_as_error();

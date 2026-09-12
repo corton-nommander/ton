@@ -103,3 +103,31 @@ add_executable(test-native-lane-scheduler test-native-lane-scheduler.cpp)
 target_include_directories(test-native-lane-scheduler PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/crypto)
 target_link_libraries(test-native-lane-scheduler PRIVATE td-test-main tdactor tdutils)
 ton_test(test-native-lane-scheduler)
+
+add_executable(test-native-prepared-lane-owners test-native-prepared-lane-owners.cpp)
+target_include_directories(test-native-prepared-lane-owners PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+                                                                       ${CMAKE_SOURCE_DIR}/common
+                                                                       ${CMAKE_SOURCE_DIR}/crypto
+                                                                       ${CMAKE_SOURCE_DIR}/tdactor
+                                                                       ${CMAKE_SOURCE_DIR}/tddb
+                                                                       ${CMAKE_SOURCE_DIR}/tdnet
+                                                                       ${CMAKE_SOURCE_DIR}/tdfec
+                                                                       ${CMAKE_SOURCE_DIR}/tl
+                                                                       ${CMAKE_SOURCE_DIR}/tl/generate
+                                                                       ${CMAKE_SOURCE_DIR}/third-party/rocksdb/include)
+target_link_libraries(test-native-prepared-lane-owners PRIVATE td-test-main tdutils ton_validator validator)
+ton_test(test-native-prepared-lane-owners)
+
+add_executable(test-native-prepared-owner-coordination test-native-prepared-owner-coordination.cpp)
+target_include_directories(test-native-prepared-owner-coordination PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+                                                                       ${CMAKE_SOURCE_DIR}/common
+                                                                       ${CMAKE_SOURCE_DIR}/crypto
+                                                                       ${CMAKE_SOURCE_DIR}/tdactor
+                                                                       ${CMAKE_SOURCE_DIR}/tddb
+                                                                       ${CMAKE_SOURCE_DIR}/tdnet
+                                                                       ${CMAKE_SOURCE_DIR}/tdfec
+                                                                       ${CMAKE_SOURCE_DIR}/tl
+                                                                       ${CMAKE_SOURCE_DIR}/tl/generate
+                                                                       ${CMAKE_SOURCE_DIR}/third-party/rocksdb/include)
+target_link_libraries(test-native-prepared-owner-coordination PRIVATE td-test-main tdutils ton_validator validator)
+ton_test(test-native-prepared-owner-coordination)

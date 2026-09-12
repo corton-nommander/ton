@@ -37,6 +37,7 @@
 #include "native-admission-config-cache.h"
 #include "native-reconciliation-telemetry.h"
 #include "native-canonical-journal.h"
+#include "native-pool-owner-coordination.h"
 
 namespace ton::validator {
 
@@ -61,6 +62,8 @@ class ExtMessagePool : public td::actor::Actor {
     // a source-signed run may legitimately contain one output. Keep the mode
     // explicit so a capability transition can evict only incompatible work.
     bool is_run{false};
+    // Process-local routed context; never serialized or used as nonce authority.
+    td::uint64 owner_generation{0};
     // Zero is legacy/no-lane admission. A live lane capability records its
     // fixed split depth so a queued pre-lane parent cannot survive a v16 topology
     // activation or depth change.
@@ -115,9 +118,8 @@ class ExtMessagePool : public td::actor::Actor {
   void erase_external_messages(std::vector<ExtMessage::Hash> to_delete);
 
   void update_last_masterchain_state(td::Ref<MasterchainState> state);
-  void update_options(td::Ref<ValidatorManagerOptions> opts) {
-    opts_ = std::move(opts);
-  }
+  void update_options(td::Ref<ValidatorManagerOptions> opts);
+  void prepare_stats_all(td::Promise<std::vector<std::pair<std::string, std::string>>> promise);
   std::vector<std::pair<std::string, std::string>> prepare_stats();
 
   void start_up() override;
@@ -149,6 +151,8 @@ class ExtMessagePool : public td::actor::Actor {
   };
   class NativeSignatureVerifier : public td::actor::Actor {
    public:
+    static PreparationResult prepare_owned(td::BufferSlice data, block::SizeLimitsConfig::ExtMsgLimits limits,
+        Bits256 domain, td::Timestamp deadline, bool profile);
     virtual void prepare(td::BufferSlice data, block::SizeLimitsConfig::ExtMsgLimits limits,
                          Bits256 chain_domain, td::Timestamp deadline, bool profile,
                          std::shared_ptr<PreparationLease> lease, td::Promise<PreparationResult> promise);
@@ -215,6 +219,7 @@ class ExtMessagePool : public td::actor::Actor {
     // link, so erasure must make a stale link observable before the treap
     // releases its ownership.
     bool in_mempool{false};
+    std::unique_ptr<NativePoolOwnerCoordination::Permit> owner_permit;
     td::Timestamp reactivate_at;
     td::Timestamp delete_at;
     td::optional<td::uint32> msg_seqno;
@@ -457,6 +462,58 @@ class ExtMessagePool : public td::actor::Actor {
     td::optional<block::NativePaymentLanePolicy> payment_lane_policy;
   };
   NativeAdmissionConfigCache<NativeAdmissionSnapshot> native_config_cache_;
+
+  // Coordinator is index -1 and owns no native accounts, even in lane zero.
+  // Only immutable preparation and exact-state identities cross owner mailboxes.
+  struct InstalledCallback;
+  struct NativeLaneOwnerInit {
+    std::shared_ptr<NativePoolOwnerCoordination> coordination;
+    int index{-1};
+    std::vector<td::actor::ActorId<NativeSignatureVerifier>> workers;
+  };
+ public:
+  // Public construction with a private, coordinator-only capability argument.
+  ExtMessagePool(td::Ref<ValidatorManagerOptions> opts, td::actor::ActorId<ValidatorManager> manager,
+                 NativeLaneOwnerInit init)
+      : opts_(opts), manager_(manager), native_lane_owner_(std::move(init)) {
+    native_prepare_enabled_ = true;
+  }
+ private:
+  NativeLaneOwnerInit native_lane_owner_;
+  std::vector<td::actor::ActorOwn<ExtMessagePool>> native_lane_owners_;
+  bool native_lane_owners_enabled_{false}, native_lane_topology_activated_{false}, native_lane_topology_failed_{false};
+  td::uint64 native_lane_applied_generation_{0};
+  td::uint64 native_lane_routed_batches_{0}, native_lane_routed_messages_{0}, native_lane_fence_rejections_{0};
+  td::uint64 native_lane_inline_preparations_{0}, native_lane_max_batch_parents_{0};
+  NativeAdmissionWallTime native_lane_owner_queue_, native_lane_router_join_;
+  bool is_native_lane_router() const { return native_lane_owners_enabled_ && native_lane_owner_.index < 0; }
+  bool is_native_lane_owner() const { return native_lane_owner_.index >= 0; }
+  td::actor::ActorId<NativeSignatureVerifier> next_native_signature_verifier();
+  void update_last_masterchain_state_local(td::Ref<MasterchainState> state);
+  void apply_lane_masterchain_state(NativeAdmissionSnapshot snapshot, td::uint64 generation);
+  void close_native_lane_callbacks();
+  bool native_lane_topology_supported(const NativeAdmissionSnapshot &snapshot) const;
+  td::Status check_native_lane_fence(td::uint64 generation = 0);
+  td::Status check_native_lane_message(const ExtMessage &message, td::uint64 generation = 0);
+  td::actor::Task<PreparedBatch> prepare_for_lane_routing(std::vector<td::BufferSlice> batch, td::Timestamp deadline);
+  td::actor::Task<BatchCheckResult> route_prepared_lane_batch(std::vector<td::BufferSlice> batch,
+      int priority, bool add_to_mempool, td::Timestamp deadline);
+  td::actor::Task<CheckResult> route_prepared_lane_single(td::BufferSlice body,
+      int priority, bool add_to_mempool, td::Timestamp deadline);
+  td::actor::Task<BatchCheckResult> check_add_prepared_lane_batch(PreparedBatch prepared,
+      int priority, bool add_to_mempool, td::Timestamp deadline, NativeAdmissionSnapshot snapshot,
+      td::uint64 generation, double queued_at);
+  td::actor::Task<CheckResult> check_add_prepared_lane_single(PreparedExternalMessage prepared,
+      int priority, bool add_to_mempool, td::Timestamp deadline, NativeAdmissionSnapshot snapshot,
+      td::uint64 generation, double queued_at);
+  td::actor::Task<BatchCheckResult> check_add_external_messages_impl(std::vector<td::BufferSlice> batch,
+      int priority, bool add_to_mempool, td::Timestamp deadline,
+      td::optional<PreparedBatch> prepared_inputs = {}, td::optional<NativeAdmissionSnapshot> common_snapshot = {},
+      td::uint64 owner_generation = 0);
+  td::actor::Task<> collect_native_lane_stats(td::Promise<std::vector<std::pair<std::string, std::string>>> promise);
+  void install_lane_callback(std::shared_ptr<InstalledCallback> installed);
+  void deliver_lane_generic(td::Ref<ExtMessage> message, int priority);
+  std::size_t checked_message_count(WorkchainId wc, StdSmcAddress addr, bool increment);
 
   td::Timestamp cleanup_mempool_at_ = td::Timestamp::now();
 
@@ -1086,6 +1143,7 @@ class ExtMessagePool : public td::actor::Actor {
   friend class NativeAdmissionRefreshBatchTestAccess;
   friend class NativeProducerActorTestAccess;
   friend class NativeAdmissionPreparationTestAccess;
+  friend class NativePreparedLaneOwnerTestAccess;
 
   static constexpr double MAX_EXT_MSG_PER_ADDR_TIME_WINDOW = 10.0;
   static constexpr size_t MAX_EXT_MSG_PER_ADDR = 4096;

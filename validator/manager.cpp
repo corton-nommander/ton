@@ -3441,7 +3441,7 @@ void ValidatorManagerImpl::prepare_stats(td::Promise<std::vector<std::pair<std::
   vec.emplace_back("stateserializerenabled", serializer_enabled ? "true" : "false");
 
   merger.make_promise("").set_value(std::move(vec));
-  td::actor::send_closure(ext_message_pool_, &ExtMessagePool::prepare_stats, merger.make_promise(""));
+  td::actor::send_closure(ext_message_pool_, &ExtMessagePool::prepare_stats_all, merger.make_promise(""));
 
   if (!serializer_.empty()) {
     td::actor::send_closure(serializer_, &AsyncStateSerializer::prepare_stats, merger.make_promise(""));

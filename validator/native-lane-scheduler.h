@@ -68,7 +68,7 @@ struct NativeLaneSchedulerPlan {
   }
 };
 
-enum class NativeLaneActorKind : unsigned { bridge, collator, validator, producer, count };
+enum class NativeLaneActorKind : unsigned { bridge, collator, validator, producer, admission, count };
 
 struct NativeLaneSchedulerRuntime {
   // Written only by validator-engine main before starting any actors.
@@ -110,7 +110,7 @@ inline std::string native_lane_scheduler_stats() {
       << " topology_supported:" << runtime.topology_supported.load(std::memory_order_acquire)
       << " topology_updates:" << runtime.topology_updates.load(std::memory_order_relaxed)
       << " unsupported_updates:" << runtime.unsupported_updates.load(std::memory_order_relaxed);
-  constexpr const char *names[] = {"bridge", "collator", "validator", "producer"};
+  constexpr const char *names[] = {"bridge", "collator", "validator", "producer", "admission"};
   for (unsigned scheduler = 0; scheduler <= runtime.plan.domains; ++scheduler) {
     out << " group" << scheduler << "_cpu_threads:" << runtime.plan.cpu_threads[scheduler];
     for (unsigned kind = 0; kind < static_cast<unsigned>(NativeLaneActorKind::count); ++kind) {

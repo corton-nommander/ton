@@ -6,6 +6,7 @@ set(TON_VALIDATOR_SOURCE
   config.cpp
   external-message.cpp
   ext-message-pool.cpp
+  native-prepared-lane-owners.cpp
   native-message-producer.cpp
   native-canonical-journal.cpp
   fabric.cpp

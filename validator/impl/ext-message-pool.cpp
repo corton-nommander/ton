@@ -3153,7 +3153,12 @@ void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<E
   }
 
   if (use_producer) {
-    flush_native_producer_sources();
+    // Dirty source publication already owns one queued flush. Draining it
+    // synchronously here would leave that closure queued and schedule another
+    // whenever a bounded chunk has a remainder. Repeated callback installs
+    // could therefore multiply flush turns under sustained ingress. The
+    // producer's owner_pending_sources fence keeps this callback epoch open
+    // until the existing queued publication finishes.
     auto &producer = ensure_native_producer(shard);
     td::actor::send_closure(producer.actor, &ExtMessagePool::install_native_producer_callback, std::move(installed));
     return;

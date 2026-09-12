@@ -75,6 +75,19 @@ class NativeProducerActorTestAccess {
     std::size_t blocked_pumps() { return NativeProducerActorTestAccess::blocked_pumps(*this); }
   };
 
+  class Owner final : public ExtMessagePool {
+   public:
+    Owner() : ExtMessagePool({}, {}) {}
+    void start_up() override {}
+    std::pair<std::size_t, td::uint64> install_with_queued_publication(
+        std::vector<std::unique_ptr<ExtMsgCallback>> callbacks) {
+      return NativeProducerActorTestAccess::install_with_queued_publication(*this, std::move(callbacks));
+    }
+    td::uint64 publications() const {
+      return NativeProducerActorTestAccess::publications(*this);
+    }
+  };
+
   static std::shared_ptr<View> view(unsigned source_id, std::shared_ptr<Fence> fence,
                                     std::size_t count, td::uint32 logical_count = 1) {
     auto result = std::make_shared<View>();
@@ -100,6 +113,59 @@ class NativeProducerActorTestAccess {
   }
 
  private:
+  static std::pair<std::size_t, td::uint64> install_with_queued_publication(
+      ExtMessagePool &owner, std::vector<std::unique_ptr<ExtMsgCallback>> callbacks) {
+    owner.native_persistent_producer_enabled_ = true;
+    owner.native_payment_lane_depth_ = 1;
+    // The first callback creates an empty producer. Its generic snapshot must
+    // survive while native sources are announced later in this same owner turn.
+    auto generic = td::make_ref<ProducerMessage>(producer_bits(9000), 0);
+    auto mempool = std::make_shared<ExtMessagePool::MempoolMsg>(generic);
+    mempool->in_mempool = true;
+    ExtMessagePool::MessageId generic_id{generic->shard(), generic->hash()};
+    owner.ext_msgs_[3].generic_messages_ = owner.ext_msgs_[3].generic_messages_.insert(generic_id, mempool);
+    CHECK(!callbacks.empty());
+    owner.install_collator_queue(lane(), std::move(callbacks.front()));
+    // Each reservation is already verified and committed, as in the other
+    // producer fixtures. Use the real owner publication and install methods;
+    // no source view or producer inbox is injected in this regression.
+    for (unsigned i = 1; i <= 600; ++i) {
+      Address source{basechainId, producer_bits(i)};
+      auto message = td::make_ref<ProducerMessage>(source.second, 0);
+      auto mempool = std::make_shared<ExtMessagePool::MempoolMsg>(message);
+      mempool->native_nonce = 0;
+      mempool->native_nonce_count = 1;
+      mempool->in_mempool = true;
+      ExtMessagePool::MessageId id{message->shard(), message->hash()};
+      auto &tier = owner.ext_msgs_[0];
+      tier.ext_messages_ = tier.ext_messages_.insert(id, mempool);
+      tier.native_messages_ = tier.native_messages_.insert({0, id.dst, id.hash}, mempool);
+      tier.ext_addr_messages_[source].emplace(id.hash, id);
+      owner.ext_messages_hashes_[id.hash] = {0, id};
+      owner.ext_messages_hashes_norm_[id.hash].insert({0, id});
+      auto &watermark = owner.native_nonce_watermarks_[source];
+      CHECK(watermark.observe_account_state(0, 100, 1));
+      auto &work = owner.native_accounts_[source].messages[0];
+      work.hash = id.hash;
+      work.source = source;
+      work.logical_count = 1;
+      work.amount = 1;
+      work.valid_until = 10000;
+      work.account_revision = watermark.revision;
+      work.committed = true;
+      work.set_mempool_link(mempool, 0, id);
+      owner.mark_native_producer_source(source);
+    }
+    for (auto &callback : callbacks) {
+      if (callback) { owner.install_collator_queue(lane(), std::move(callback)); }
+    }
+    CHECK(owner.native_producer_flush_scheduled_);
+    const auto &endpoint = owner.native_producers_.at(lane());
+    return {endpoint.inbox->owner_pending_sources.load(), owner.native_producer_telemetry_->publications.load()};
+  }
+  static td::uint64 publications(const ExtMessagePool &owner) {
+    return owner.native_producer_telemetry_->publications.load();
+  }
   static void consume(ExtMessagePool &pool) { pool.consume_native_producer_updates(); }
   static void install(ExtMessagePool &pool, std::unique_ptr<ExtMsgCallback> callback) {
     auto installed = std::make_shared<ExtMessagePool::InstalledCallback>(std::move(callback));
@@ -169,6 +235,49 @@ td::actor::Task<std::vector<ExtMsgQueueEntry>> collect_epoch(Consumer &consumer)
 }
 
 }  // namespace
+
+TEST(NativeMessageProducerActor, RepeatedInstallsReuseQueuedPublicationAndKeepInitialGenericSnapshot) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    auto owner = td::actor::create_actor<Access::Owner>("native-producer-owner-fixture");
+    Consumer first(8), second(8), third(8);
+    std::vector<std::unique_ptr<ExtMsgCallback>> callbacks;
+    for (auto *consumer : {&first, &second, &third}) { callbacks.push_back(consumer->callback(1024)); }
+    auto immediate = co_await td::actor::ask(owner, &Access::Owner::install_with_queued_publication,
+                                            std::move(callbacks));
+    // The empty producer creation and two subsequent installs occurred in one
+    // owner turn. The latter two must not consume the queued publication token
+    // synchronously or replace it with another one.
+    ASSERT_EQ(immediate.first, 600u);
+    ASSERT_EQ(immediate.second, 0u);
+    for (auto *consumer : {&first, &second, &third}) {
+      std::set<StdSmcAddress> native_sources;
+      std::size_t generic_count = 0;
+      for (std::size_t count = 0; count <= 601; ++count) {
+        auto entry = co_await consumer->queue.pop();
+        if (entry.is_completion()) {
+          consumer->state->observe_completion(entry.completed_epoch);
+          break;
+        }
+        CHECK(entry.message);
+        if (entry.native) {
+          ASSERT_EQ(message_nonce(entry), 0u);
+          ASSERT_TRUE(native_sources.insert(entry.message->first->addr()).second);
+          consumer->state->record_consumed(1, entry.logical_native_count());
+        } else {
+          ++generic_count;
+          ASSERT_TRUE(entry.message->first->addr() == producer_bits(9000));
+          ASSERT_EQ(entry.message->second, 3);
+        }
+      }
+      ASSERT_EQ(native_sources.size(), 600u);
+      ASSERT_EQ(generic_count, 1u);
+      ASSERT_TRUE(!consumer->state->producer_pending());
+    }
+    ASSERT_EQ(co_await td::actor::ask(owner, &Access::Owner::publications), 3u);
+    co_return {};
+  });
+}
 
 TEST(NativeMessageProducerActor, SiblingCallbacksKeepExactFloorsAndIntactRunsIndependent) {
   td::actor::TestScheduler scheduler;

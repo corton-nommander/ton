@@ -68,7 +68,8 @@ against an independent implementation of the original full scanner. It covers
 new-source bootstrap, coalesced canonical endpoints, destination balances,
 partial atomic nonce consumption, unchanged-root expiry, stale verifier revisions,
 logical-time fencing, deletion/partial failure, malformed old diff fallback,
-missing predecessor publication, topology eviction and exact-reference rejection.
+missing predecessor publication, topology eviction, exact-reference rejection and
+32 mixed canonical transitions over 256 accounts.
 Build and execution are pending the shared build slot; no passing result or TPS
 claim is recorded here yet.
 

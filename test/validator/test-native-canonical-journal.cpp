@@ -186,6 +186,15 @@ class NativeCanonicalJournalTestAccess {
     work.set_mempool_link(mempool, 0, id);
     pool.register_pending_native_reconciliation_targets();
   }
+  static td::uint64 next_nonce(const ExtMessagePool &pool, unsigned key) {
+    auto source = address(key);
+    auto account = pool.native_accounts_.find(source);
+    if (account != pool.native_accounts_.end() && !account->second.messages.empty()) {
+      const auto &[nonce, work] = *account->second.messages.rbegin();
+      return nonce + work.logical_count;
+    }
+    return pool.native_nonce_watermarks_.at(source).observed_next_nonce;
+  }
   static std::string state(const ExtMessagePool &pool) {
     std::ostringstream out;
     for (const auto &[source, watermark] : pool.native_nonce_watermarks_) {
@@ -346,6 +355,41 @@ TEST(NativeCanonicalJournal, RepeatedEndpointAndSameHeightIdentityChangeNeverReu
       std::map<unsigned, AccountFacts>{{1, {120, 0}}}, 101, 100, 1), Access::addresses({1}), true, 2);
   ASSERT_EQ(Access::stats(journal).continuity_fallbacks, 1u);
   ASSERT_EQ(Access::stats(journal).lookup_bootstraps, 2u);
+}
+
+TEST(NativeCanonicalJournal, RepeatedMixedChangesMatchFullScanFor256Accounts) {
+  auto journal = Access::pool();
+  auto reference = Access::pool();
+  std::map<unsigned, AccountFacts> facts;
+  std::vector<Access::Address> sources;
+  for (unsigned key = 1; key <= 256; ++key) {
+    facts[key] = {10000, 0};
+    sources.push_back(Access::address(key));
+  }
+  Access::compare(journal, reference, td::make_ref<JournalShardState>(1, facts), sources);
+  for (unsigned round = 1; round <= 32; ++round) {
+    for (unsigned key = 1; key <= 256; ++key) {
+      if ((key + round) % 3 == 0) {
+        const auto nonce = Access::next_nonce(journal, key);
+        for (auto *pool : {&journal, &reference}) {
+          Access::reserve(*pool, key, nonce, 16, 16, 100 + round * 3 + 6,
+                          (key + round) % 7 != 0, (key + round) % 11 == 0);
+        }
+      }
+      if ((key + round) % 8 == 0) {
+        facts[key].nonce += 16;
+        facts[key].balance = 1 + ((key * 31 + round * 17) % 1000);
+      } else if ((key + round) % 13 == 0) {
+        facts[key].balance += 7;  // incoming destination-only changes
+      }
+    }
+    // Endpoint jumps exercise coalesced roots and changing expiry horizons.
+    Access::compare(journal, reference, td::make_ref<JournalShardState>(1 + round * 3, facts), sources);
+  }
+  ASSERT_TRUE(Access::stats(journal).reused_observations > 5000u);
+  ASSERT_TRUE(Access::stats(journal).unchanged_apply_skips > 0u);
+  ASSERT_EQ(Access::stats(journal).failed_shards, 0u);
+  ASSERT_EQ(Access::stats(journal).retained_sources, 256u);
 }
 
 }  // namespace ton::validator

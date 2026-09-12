@@ -5,6 +5,7 @@
 */
 #include "ext-message-pool.hpp"
 #include "ton/ton-io.hpp"
+#include "validator/native-lane-scheduler.h"
 #include "td/utils/StringBuilder.h"
 
 namespace ton::validator {
@@ -31,8 +32,10 @@ ExtMessagePool::NativeProducerEndpoint &ExtMessagePool::ensure_native_producer(S
   auto [it, inserted] = native_producers_.try_emplace(shard);
   if (inserted) {
     it->second.inbox = std::make_shared<NativeProducerInbox>();
+    auto name = PSTRING() << "native-producer-" << shard;
     it->second.actor = td::actor::create_actor<ExtMessagePool>(
-        PSTRING() << "native-producer-" << shard, shard, it->second.inbox, native_producer_telemetry_,
+        native_lane_actor_options(name, shard, NativeLaneActorKind::producer),
+        shard, it->second.inbox, native_producer_telemetry_,
         native_transport_telemetry_, native_collator_queue_limit_);
   }
   return it->second;

@@ -98,7 +98,7 @@ struct RecoveryFixture {
   }
 };
 
-void exercise_deadline_callback(bool batch) {
+void exercise_deadline_callback(bool batch, const std::string& owner_race = {}) {
   Options options;
   options.native_signed_runs.requested = true;
   options.adaptive_inflight = true;
@@ -146,34 +146,44 @@ void exercise_deadline_callback(bool batch) {
     worker.remember_expected_hash(task, original_hash);
     tasks.push_back(task);
   }
-  const std::string diagnostic = "external message admission deadline expired";
+  const bool owner_state_race = !owner_race.empty();
+  const std::string diagnostic = owner_state_race ? owner_race : "external message admission deadline expired";
+  const auto error_code = owner_state_race ? ton::ErrorCode::notready : ton::ErrorCode::timeout;
+  const auto error_reason = owner_state_race ? TaskErrorReason::not_ready : TaskErrorReason::timeout;
   if (batch) {
     std::vector<ton::tl_object_ptr<ton::lite_api::liteServer_sendMsgResult>> results;
     for (std::size_t i = 0; i < count; ++i) {
       results.push_back(ton::create_tl_object<ton::lite_api::liteServer_sendMsgResult>(
-          0, ton::ErrorCode::timeout, diagnostic));
+          0, error_code, diagnostic));
     }
     auto response = ton::serialize_tl_object(
         ton::create_tl_object<ton::lite_api::liteServer_sendMsgStatusBatch>(std::move(results)), true);
     worker.on_batch_result(tasks, 0, std::move(response));
   } else {
     auto response = ton::serialize_tl_object(
-        ton::create_tl_object<ton::lite_api::liteServer_error>(ton::ErrorCode::timeout, diagnostic), true);
+        ton::create_tl_object<ton::lite_api::liteServer_error>(error_code, diagnostic), true);
     worker.on_result(tasks.front(), 0, std::move(response));
   }
   CHECK(worker.inflight_ == 0 && client.inflight == 0 && client.admission_queries_inflight == 0);
   CHECK(worker.active_tasks_ == count * 16 && worker.signing_ == 0);
   CHECK(worker.stats_.resigned == 0 && worker.stats_.rejected_expired == 0);
   CHECK(worker.stats_.mempool_accepted == 0 && worker.stats_.canonical_hash_matched == 0);
-  CHECK(worker.stats_.timeouts == count && worker.stats_.task_errors_by_reason.timeout == count);
-  CHECK(worker.stats_.retries == count && worker.stats_.retries_by_reason.timeout == count);
-  CHECK(worker.retry_tasks_.size() == count);
-  CHECK(client.cwnd == 32);
+  CHECK(worker.stats_.retries == count && worker.retry_tasks_.size() == count);
+  if (owner_state_race) {
+    CHECK(worker.stats_.timeouts == 0 && worker.stats_.task_errors_by_reason.timeout == 0);
+    CHECK(worker.stats_.task_errors_by_reason.not_ready == count);
+    CHECK(worker.stats_.snapshot_revision_not_ready_errors == count && worker.stats_.other_not_ready_errors == 0);
+    CHECK(worker.stats_.retries_by_reason.not_ready == count && worker.stats_.retries_by_reason.timeout == 0);
+    CHECK(client.cwnd == 64);
+  } else {
+    CHECK(worker.stats_.timeouts == count && worker.stats_.task_errors_by_reason.timeout == count);
+    CHECK(worker.stats_.retries_by_reason.timeout == count && client.cwnd == 32);
+  }
   for (std::size_t i = 0; i < count; ++i) {
     const auto& task = tasks[i];
     const auto& wallet = worker.wallets_[i];
     CHECK(task->state == NativeLoadWorker::TaskState::retry_wait);
-    CHECK(task->retry_reason == TaskErrorReason::timeout);
+    CHECK(task->retry_reason == error_reason);
     CHECK(task->retry_at >= task->first_retry_at && task->first_retry_at >= 0);
     CHECK(task->boc.as_slice().str() == original_boc);
     CHECK(task->run.signature == original_signature && task->valid_until() == valid_until);
@@ -186,13 +196,14 @@ void exercise_deadline_callback(bool batch) {
       CHECK(hashes.size() == 1 && hashes.front() == original_hash);
     }
   }
-  std::cout << (batch ? "batch_32_logical" : "single_16_logical")
-            << ": PASS exact parent bytes/signature/hash/valid_until retained; timeout retried without admission/proof credit\n";
+  std::cout << (owner_state_race ? "owner_state_" : "deadline_")
+            << (batch ? "batch_32_logical" : "single_16_logical")
+            << ": PASS exact parent retained; typed error retried without admission/proof credit\n";
 }
 
-void exercise_bounded_revision_retry() {
+void exercise_bounded_revision_retry(
+    const std::string& race = "native account changed before mempool insertion; retry admission") {
   RecoveryFixture fixture(1);
-  const std::string race = "native account changed before mempool insertion; retry admission";
   for (unsigned i = 0; i < 12; ++i) {
     fixture.parents[0]->attempts = i + 1;
     const auto before = td::Time::now();
@@ -204,13 +215,86 @@ void exercise_bounded_revision_retry() {
   }
   CHECK(fixture.worker->stats_.snapshot_revision_not_ready_errors == 12);
   CHECK(fixture.worker->stats_.other_not_ready_errors == 0);
+  CHECK(fixture.worker->clients_[0].cwnd == 256);
+  CHECK(fixture.worker->stats_.mempool_accepted == 0 && fixture.worker->stats_.canonical_hash_matched == 0);
+  fixture.worker->clients_[0].last_decrease_at = td::Time::now() - 1;
   fixture.fail_parent(0, "validator not ready");
+  CHECK(fixture.worker->clients_[0].cwnd == 128);
   CHECK(fixture.parents[0]->snapshot_revision_retry_attempts == 0);
   CHECK(fixture.worker->stats_.other_not_ready_errors == 1);
   fixture.fail_parent(0, race);
   CHECK(fixture.parents[0]->snapshot_revision_retry_attempts == 1);
+  CHECK(fixture.worker->clients_[0].cwnd == 128);
   fixture.check_identity();
   std::cout << "bounded_revision_retry: PASS 250/500/1000/2000ms cap, independent streak, typed counters, exact parent retained\n";
+}
+
+void exercise_owner_state_rejection_boundaries(const std::string& marker) {
+  using Origin = NativeLoadWorker::ErrorOrigin;
+  for (auto origin : {Origin::server, Origin::transport, Origin::parse}) {
+    RecoveryFixture fixture(1);
+    fixture.worker->clients_[0].last_decrease_at = td::Time::now() - 1;
+    const auto code = origin == Origin::server ? -123 : static_cast<int>(ton::ErrorCode::notready);
+    fixture.worker->handle_task_error(fixture.parents[0], 0, td::Status::Error(code, marker), origin);
+    CHECK(fixture.worker->stats_.snapshot_revision_not_ready_errors == 0);
+    CHECK(fixture.parents[0]->snapshot_revision_retry_attempts == 0);
+    CHECK(fixture.parents[0]->retry_reason == (origin == Origin::server ? TaskErrorReason::server_other :
+          origin == Origin::transport ? TaskErrorReason::transport : TaskErrorReason::parse));
+    CHECK(fixture.worker->clients_[0].cwnd == (origin == Origin::server ? 256 : 128));
+    CHECK(fixture.worker->stats_.mempool_accepted == 0 && fixture.worker->stats_.canonical_hash_matched == 0);
+    fixture.check_identity();
+  }
+  for (const std::string diagnostic : {
+           "native pool owners require unchanged fixed payment-lane topology",
+           "native pool routed admission snapshot changed; retry later", "validator not ready"}) {
+    RecoveryFixture fixture(1);
+    fixture.worker->clients_[0].last_decrease_at = td::Time::now() - 1;
+    fixture.fail_parent(0, diagnostic);
+    CHECK(fixture.worker->stats_.snapshot_revision_not_ready_errors == 0);
+    CHECK(fixture.worker->stats_.other_not_ready_errors == 1);
+    CHECK(fixture.worker->clients_[0].cwnd == 128);
+    fixture.check_identity();
+  }
+  // Scalar task state keeps its historical not-ready loss response, even
+  // though its diagnostic is one of the new NTRN-only markers.
+  {
+    RecoveryFixture fixture(1);
+    auto& worker = *fixture.worker;
+    auto& task = fixture.parents[0];
+    auto& wallet = worker.wallets_[0];
+    worker.options_.native_signed_runs.requested = false;
+    worker.active_tasks_ = worker.canonical_backlog_ = 1;
+    worker.stats_.offered = worker.stats_.steady_offered = 1;
+    task->signed_run = false;
+    task->transfer.nonce = 100;
+    task->transfer.valid_until = fixture.valid_until;
+    task->proof_observed.assign(1, false);
+    wallet.next_nonce = wallet.steady_end_nonce = 101;
+    wallet.expected_hashes.clear();
+    worker.remember_expected_hash(task, fixture.hashes[0]);
+    worker.clients_[0].last_decrease_at = td::Time::now() - 1;
+    fixture.fail_parent(0, marker);
+    CHECK(worker.stats_.snapshot_revision_not_ready_errors == 0 && worker.stats_.other_not_ready_errors == 1);
+    CHECK(worker.clients_[0].cwnd == 128 && task->logical_count() == 1);
+    CHECK(task->boc.as_slice().str() == fixture.bytes[0] && task->first_nonce() == 100);
+    CHECK(task->valid_until() == fixture.valid_until && !task->admission_counted);
+    CHECK(wallet.anchored_nonce == 100 && wallet.next_nonce == 101 && wallet.tasks.at(100) == task);
+    CHECK(worker.stats_.mempool_accepted == 0 && worker.stats_.canonical_hash_matched == 0 && worker.stats_.resigned == 0);
+  }
+  // Generation races remain bounded: an exhausted source-head horizon still
+  // invalidates capacity and quarantines issuance while retaining exact work.
+  {
+    RecoveryFixture fixture(1);
+    fixture.parents[0]->first_retry_at = td::Time::now() - 185;
+    fixture.parents[0]->source_head_retry_at = td::Time::now() - 185;
+    fixture.fail_parent(0, marker);
+    CHECK(fixture.worker->wallets_[0].retry_quarantined && !fixture.worker->wallets_[0].disabled);
+    CHECK(fixture.worker->stats_.retry_exhausted == 1 && fixture.worker->stats_.retry_exhausted_sources == 1);
+    CHECK(fixture.worker->active_tasks_ == 16 && fixture.worker->wallets_[0].tasks.at(100) == fixture.parents[0]);
+    CHECK(fixture.worker->stats_.mempool_accepted == 0 && fixture.worker->stats_.canonical_hash_matched == 0);
+    fixture.check_identity();
+  }
+  std::cout << "owner_state_boundaries: PASS scalar/origin/code/topology pressure and retry horizon unchanged\n";
 }
 
 void exercise_suffix_clock() {
@@ -367,6 +451,14 @@ int main() {
   exercise_deadline_callback(false);
   exercise_deadline_callback(true);
   exercise_bounded_revision_retry();
+  for (const std::string marker : {
+           "native pool owner has not applied the current admission state; retry",
+           "native pool routed admission snapshot changed; retry"}) {
+    exercise_deadline_callback(false, marker);
+    exercise_deadline_callback(true, marker);
+    exercise_bounded_revision_retry(marker);
+    exercise_owner_state_rejection_boundaries(marker);
+  }
   exercise_suffix_clock();
   exercise_scalar_repair_and_conflict();
   exercise_due_retry_pump();

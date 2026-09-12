@@ -215,6 +215,18 @@ inline bool is_native_signed_run_admission_snapshot_or_revision_race_diagnostic(
          lowercase_diagnostic.find(commit_revision_marker) != std::string_view::npos;
 }
 
+// The prepared-owner protocol adds two precise pre-commit state-race replies.
+// Unlike the older substring classifier, these exemptions require the complete
+// raw server diagnostic and a typed notready reply. The caller supplies both
+// server origin and code==651 as server_not_ready; no transport/parse text,
+// scalar task, topology transition, or unknown availability error is exempted.
+inline bool is_native_signed_run_owner_state_race_diagnostic(
+    bool native_signed_run_task, bool server_not_ready, std::string_view diagnostic) {
+  return native_signed_run_task && server_not_ready &&
+         (diagnostic == "native pool owner has not applied the current admission state; retry" ||
+          diagnostic == "native pool routed admission snapshot changed; retry");
+}
+
 // Preserve the existing congestion response for timeouts, explicit pressure,
 // and every unclassified not-ready response. Snapshot/revision races retain
 // their existing retry path; this decision only avoids treating that narrow

@@ -4627,7 +4627,10 @@ void NativeLoadWorker::handle_task_error(std::shared_ptr<TransferTask> task, std
   bool canonical_state_lag = native_load::is_canonical_state_lag_diagnostic(lower);
   bool native_signed_run_snapshot_or_revision_race =
       native_load::is_native_signed_run_admission_snapshot_or_revision_race_diagnostic(
-          task && task->signed_run, lower);
+          task && task->signed_run, lower) ||
+      native_load::is_native_signed_run_owner_state_race_diagnostic(
+          task && task->signed_run, origin == ErrorOrigin::server && error.code() == ton::ErrorCode::notready,
+          std::string_view{diagnostic.data(), diagnostic.size()});
   bool not_ready = canonical_state_lag || error.code() == ton::ErrorCode::notready || contains("not ready") ||
                    contains("still in flight");
   // ErrorCode::notready may explain that the canonical account state has not

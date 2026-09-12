@@ -271,6 +271,29 @@ TEST(NativeLoadGeneratorPolicy, SignedRunSnapshotRevisionRacesAvoidOnlyAimdDecre
   ASSERT_TRUE(should_decrease(false, false, true, true, false, true));
 }
 
+TEST(NativeLoadGeneratorPolicy, OwnerStateRacesRequireExactNtrnServerNotReady) {
+  for (std::string_view marker : {
+           "native pool owner has not applied the current admission state; retry",
+           "native pool routed admission snapshot changed; retry"}) {
+    ASSERT_TRUE(native_load::is_native_signed_run_owner_state_race_diagnostic(true, true, marker));
+    ASSERT_TRUE(!native_load::is_native_signed_run_owner_state_race_diagnostic(false, true, marker));
+    ASSERT_TRUE(!native_load::is_native_signed_run_owner_state_race_diagnostic(true, false, marker));
+    auto truncated = marker.substr(0, marker.size() - 1);
+    ASSERT_TRUE(!native_load::is_native_signed_run_owner_state_race_diagnostic(true, true, truncated));
+  }
+  for (std::string_view diagnostic : {
+           "native pool owners require unchanged fixed payment-lane topology",
+           "native message was routed to the wrong admission owner",
+           "native pool owner has not applied the current admission state",
+           "error 651: native pool owner has not applied the current admission state; retry",
+           "native pool routed admission snapshot changed; retry later",
+           "native pool owner has not applied the current admission state; retry; mempool is full",
+           "not ready", "validator not ready", "still in flight", "mempool is full",
+           "per-address rate limit"}) {
+    ASSERT_TRUE(!native_load::is_native_signed_run_owner_state_race_diagnostic(true, true, diagnostic));
+  }
+}
+
 TEST(NativeLoadGeneratorPolicy, CanonicalLagBackoffIsBounded) {
   auto delay = [](std::uint32_t failures) {
     return native_load::canonical_state_lag_retry_delay_seconds(failures, 250, 2000);

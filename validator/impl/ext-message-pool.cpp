@@ -4156,8 +4156,26 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                                                               << " deleted:" << applied_ext_msgs_deleted_);
   if (native_persistent_producer_enabled_) {
     auto &t = *native_producer_telemetry_;
+    std::size_t inbox_latest_sources = 0, inbox_pending_sources = 0;
+    for (const auto &[_, endpoint] : native_producers_) {
+      std::lock_guard lock(endpoint.inbox->mutex);
+      inbox_latest_sources += endpoint.inbox->latest.size();
+      inbox_pending_sources += endpoint.inbox->owner_pending_sources.load(std::memory_order_acquire);
+    }
+    // Read the handoff before live membership. Its release follows all view
+    // updates. As with other actor stats, cleanup requires repeated snapshots.
+    const auto updates_inflight_sources = t.updates_inflight_sources.load(std::memory_order_acquire);
+    const auto live_sources = t.live_sources.load(std::memory_order_acquire);
+    const auto live_physical_messages = t.live_physical_messages.load(std::memory_order_acquire);
     vec.emplace_back("total.ext_msg_native_persistent_producer",
         PSTRING() << "enabled:1 lanes:" << native_producers_.size()
+          << " owner_dirty_sources:" << native_producer_dirty_sources_.size()
+          << " owner_flush_scheduled:" << static_cast<unsigned>(native_producer_flush_scheduled_)
+          << " inbox_pending_sources:" << inbox_pending_sources
+          << " inbox_latest_sources:" << inbox_latest_sources
+          << " updates_inflight_sources:" << updates_inflight_sources
+          << " live_sources:" << live_sources
+          << " live_physical_messages:" << live_physical_messages
           << " publications:" << t.publications.load(std::memory_order_relaxed)
           << " published_sources:" << t.published_sources.load(std::memory_order_relaxed)
           << " published_messages:" << t.published_messages.load(std::memory_order_relaxed)

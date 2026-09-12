@@ -1,5 +1,7 @@
 #include <memory>
+#include <optional>
 #include <set>
+#include <sstream>
 #include <vector>
 
 #include "td/actor/TestScheduler.h"
@@ -58,6 +60,8 @@ class NativeProducerActorTestAccess {
   using View = ExtMessagePool::NativePublishedSource;
   using ViewPtr = ExtMessagePool::NativePublishedSourcePtr;
   using Telemetry = ExtMessagePool::NativeProducerTelemetry;
+  using Batch = ExtMessagePool::NativeProducerUpdateBatch;
+  using Gauges = std::map<std::string, td::uint64>;
 
   static ShardIdFull lane() { return shard_prefix(extract_addr_prefix(basechainId, producer_bits(1)), 1); }
 
@@ -73,6 +77,17 @@ class NativeProducerActorTestAccess {
     }
     void wake(Address source) { NativeProducerActorTestAccess::wake(*this, source); }
     std::size_t blocked_pumps() { return NativeProducerActorTestAccess::blocked_pumps(*this); }
+    void extract_updates() {
+      CHECK(!extracted_);
+      extracted_.emplace(NativeProducerActorTestAccess::take(*this));
+    }
+    void apply_extracted() {
+      CHECK(extracted_);
+      NativeProducerActorTestAccess::apply(*this, std::move(*extracted_));
+      extracted_.reset();
+    }
+   private:
+    std::optional<Batch> extracted_;
   };
 
   class Owner final : public ExtMessagePool {
@@ -86,6 +101,8 @@ class NativeProducerActorTestAccess {
     td::uint64 publications() {
       return NativeProducerActorTestAccess::publications(*this);
     }
+    Gauges gauges() { return NativeProducerActorTestAccess::gauges(*this); }
+    void erase_native_messages() { NativeProducerActorTestAccess::erase_native_messages(*this); }
   };
 
   static std::shared_ptr<View> view(unsigned source_id, std::shared_ptr<Fence> fence,
@@ -160,12 +177,42 @@ class NativeProducerActorTestAccess {
       if (callback) { owner.install_collator_queue(lane(), std::move(callback)); }
     }
     CHECK(owner.native_producer_flush_scheduled_);
+    const auto snapshot = gauges(owner);
+    ASSERT_EQ(snapshot.at("owner_dirty_sources"), 600u);
+    ASSERT_EQ(snapshot.at("owner_flush_scheduled"), 1u);
+    ASSERT_EQ(snapshot.at("inbox_pending_sources"), 600u);
+    ASSERT_EQ(snapshot.at("inbox_latest_sources"), 0u);
+    ASSERT_EQ(snapshot.at("updates_inflight_sources"), 0u);
+    ASSERT_EQ(snapshot.at("live_sources"), 0u);
+    ASSERT_EQ(snapshot.at("live_physical_messages"), 0u);
     const auto &endpoint = owner.native_producers_.at(lane());
     return {endpoint.inbox->owner_pending_sources.load(), owner.native_producer_telemetry_->publications.load()};
   }
   static td::uint64 publications(const ExtMessagePool &owner) {
     return owner.native_producer_telemetry_->publications.load();
   }
+  static Gauges gauges(ExtMessagePool &owner) {
+    for (const auto &[key, value] : owner.prepare_stats()) {
+      if (key != "total.ext_msg_native_persistent_producer") { continue; }
+      Gauges result;
+      std::istringstream tokens(value);
+      std::string token;
+      while (tokens >> token) {
+        auto colon = token.find(':');
+        CHECK(colon != std::string::npos);
+        result.emplace(token.substr(0, colon), std::stoull(token.substr(colon + 1)));
+      }
+      return result;
+    }
+    UNREACHABLE();
+  }
+  static void erase_native_messages(ExtMessagePool &owner) {
+    std::vector<ExtMessage::Hash> hashes;
+    for (const auto &[hash, _] : owner.ext_messages_hashes_) { hashes.push_back(hash); }
+    owner.erase_external_messages(std::move(hashes));
+  }
+  static Batch take(ExtMessagePool &pool) { return pool.take_native_producer_updates(); }
+  static void apply(ExtMessagePool &pool, Batch batch) { pool.apply_native_producer_updates(std::move(batch)); }
   static void consume(ExtMessagePool &pool) { pool.consume_native_producer_updates(); }
   static void install(ExtMessagePool &pool, std::unique_ptr<ExtMsgCallback> callback) {
     auto installed = std::make_shared<ExtMessagePool::InstalledCallback>(std::move(callback));
@@ -275,6 +322,19 @@ TEST(NativeMessageProducerActor, RepeatedInstallsReuseQueuedPublicationAndKeepIn
       ASSERT_TRUE(!consumer->state->producer_pending());
     }
     ASSERT_EQ(co_await td::actor::ask(owner, &Access::Owner::publications), 3u);
+    co_await scheduler.wait_sync_work();
+    auto live = co_await td::actor::ask(owner, &Access::Owner::gauges);
+    ASSERT_EQ(live.at("live_sources"), 600u);
+    ASSERT_EQ(live.at("live_physical_messages"), 600u);
+    co_await td::actor::ask(owner, &Access::Owner::erase_native_messages);
+    co_await scheduler.wait_sync_work();
+    const auto clean = co_await td::actor::ask(owner, &Access::Owner::gauges);
+    ASSERT_EQ(clean.at("lanes"), 1u);  // Idle producers remain useful for the next callback.
+    for (const auto *name : {"owner_dirty_sources", "owner_flush_scheduled", "inbox_pending_sources",
+                             "inbox_latest_sources", "updates_inflight_sources", "live_sources",
+                             "live_physical_messages"}) {
+      ASSERT_EQ(clean.at(name), 0u);
+    }
     co_return {};
   });
 }
@@ -448,6 +508,8 @@ TEST(NativeMessageProducerActor, RetiringProducerClosesFullQueueAndAccountsDisca
     Runtime runtime;
     Access::queue(runtime.inbox, Access::view(4, std::make_shared<Access::Fence>(), 2048));
     co_await td::actor::ask(runtime.producer, &Producer::consume);
+    ASSERT_EQ(runtime.telemetry->live_sources.load(), 1u);
+    ASSERT_EQ(runtime.telemetry->live_physical_messages.load(), 2048u);
     Consumer consumer;
     co_await td::actor::ask(runtime.producer, &Producer::install, consumer.callback(4096));
     co_await scheduler.wait_sync_work();
@@ -456,6 +518,9 @@ TEST(NativeMessageProducerActor, RetiringProducerClosesFullQueueAndAccountsDisca
     ASSERT_TRUE(consumer.state->native_selected_ahead() <= 1025u);
     runtime.producer.reset();
     co_await scheduler.wait_sync_work();
+    ASSERT_EQ(runtime.telemetry->live_sources.load(), 0u);
+    ASSERT_EQ(runtime.telemetry->live_physical_messages.load(), 0u);
+    ASSERT_EQ(runtime.telemetry->updates_inflight_sources.load(), 0u);
     std::size_t retained = 0;
     for (unsigned i = 0; i < 3; ++i) {
       auto entry = co_await consumer.queue.try_pop().wrap();
@@ -472,6 +537,61 @@ TEST(NativeMessageProducerActor, RetiringProducerClosesFullQueueAndAccountsDisca
     ASSERT_TRUE(closed.is_error());
     ASSERT_EQ(runtime.transport->queued_discarded.load() + runtime.transport->unpushed_discarded.load(),
               runtime.transport->selected.load());
+    co_return {};
+  });
+}
+
+TEST(NativeMessageProducerActor, LiveGaugesCoverHandoffReplacementAndIndependentRetirement) {
+  td::actor::TestScheduler scheduler;
+  scheduler.run([&]() -> td::actor::Task<> {
+    Runtime first;
+    auto second_inbox = std::make_shared<Access::Inbox>();
+    auto second = td::actor::create_actor<Producer>("native-producer-second-fixture", second_inbox,
+                                                     first.telemetry, first.transport);
+    // Keep the original immutable views alive: gauges count producer
+    // membership, independently of old snapshots retained by readers.
+    auto original = Access::view(1, std::make_shared<Access::Fence>(), 3);
+    auto other = Access::view(2, std::make_shared<Access::Fence>(), 5);
+    Access::queue(first.inbox, original);
+    co_await td::actor::ask(first.producer, &Producer::extract_updates);
+    {
+      std::lock_guard lock(first.inbox->mutex);
+      ASSERT_EQ(first.inbox->latest.size(), 0u);
+    }
+    ASSERT_EQ(first.telemetry->updates_inflight_sources.load(), 1u);
+    ASSERT_EQ(first.telemetry->live_sources.load(), 0u);
+    ASSERT_EQ(first.telemetry->live_physical_messages.load(), 0u);
+    co_await td::actor::ask(first.producer, &Producer::apply_extracted);
+    ASSERT_EQ(first.telemetry->updates_inflight_sources.load(), 0u);
+    Access::queue(second_inbox, other);
+    co_await td::actor::ask(second, &Producer::consume);
+    ASSERT_EQ(first.telemetry->live_sources.load(), 2u);
+    ASSERT_EQ(first.telemetry->live_physical_messages.load(), 8u);
+    Access::queue(first.inbox, Access::view(1, original->fence, 1));
+    co_await td::actor::ask(first.producer, &Producer::consume);
+    ASSERT_EQ(first.telemetry->live_sources.load(), 2u);
+    ASSERT_EQ(first.telemetry->live_physical_messages.load(), 6u);
+    Access::queue(first.inbox, Access::view(1, original->fence, 0));
+    co_await td::actor::ask(first.producer, &Producer::consume);
+    ASSERT_EQ(first.telemetry->live_sources.load(), 1u);
+    ASSERT_EQ(first.telemetry->live_physical_messages.load(), 5u);
+    Access::queue(first.inbox, Access::view(1, original->fence, 7));
+    co_await td::actor::ask(first.producer, &Producer::consume);
+    ASSERT_EQ(first.telemetry->live_physical_messages.load(), 12u);
+    // A retiring producer also releases a taken-but-unapplied batch. It must
+    // never reset telemetry owned concurrently by the surviving producer.
+    Access::queue(first.inbox, Access::view(1, original->fence, 9));
+    co_await td::actor::ask(first.producer, &Producer::extract_updates);
+    ASSERT_EQ(first.telemetry->updates_inflight_sources.load(), 1u);
+    first.producer.reset();
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(first.telemetry->updates_inflight_sources.load(), 0u);
+    ASSERT_EQ(first.telemetry->live_sources.load(), 1u);
+    ASSERT_EQ(first.telemetry->live_physical_messages.load(), 5u);
+    second.reset();
+    co_await scheduler.wait_sync_work();
+    ASSERT_EQ(first.telemetry->live_sources.load(), 0u);
+    ASSERT_EQ(first.telemetry->live_physical_messages.load(), 0u);
     co_return {};
   });
 }

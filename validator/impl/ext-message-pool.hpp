@@ -588,6 +588,19 @@ class ExtMessagePool : public td::actor::Actor {
     std::atomic<td::uint64> installs{0}, source_probes{0}, invalidated_probes{0};
     std::atomic<td::uint64> selected{0}, logical_selected{0}, index_updates{0};
     std::atomic<td::uint64> install_us{0}, publication_us{0}, inbox_wait_us{0};
+    // Current membership across active and retiring producers, not cumulative
+    // publications or immutable view reference lifetimes.
+    std::atomic<td::uint64> live_sources{0}, live_physical_messages{0};
+    std::atomic<td::uint64> updates_inflight_sources{0};
+  };
+  struct NativeProducerUpdateBatch {
+    explicit NativeProducerUpdateBatch(std::shared_ptr<NativeProducerTelemetry> telemetry);
+    NativeProducerUpdateBatch(NativeProducerUpdateBatch &&other) noexcept;
+    NativeProducerUpdateBatch(const NativeProducerUpdateBatch &) = delete;
+    ~NativeProducerUpdateBatch();
+    std::map<NativeAddress, NativePublishedSourcePtr> updates;
+    std::shared_ptr<NativeProducerTelemetry> telemetry;
+    std::size_t inflight_sources{0};
   };
   struct NativeProducerEndpoint {
     td::actor::ActorOwn<ExtMessagePool> actor;
@@ -620,6 +633,7 @@ class ExtMessagePool : public td::actor::Actor {
   // These two containers are exclusively owned by a producer actor. No
   // mutable MempoolMsg, NativeInfo, reservation or promise crosses the boundary.
   std::map<NativeAddress, NativePublishedSourcePtr> native_producer_sources_;
+  std::size_t native_producer_live_physical_messages_{0};
   std::map<int, NativeProducerIndex> native_producer_index_;
   std::size_t native_producer_mixed_priority_sources_{0};
   std::multimap<td::Timestamp, NativeAddress> native_producer_reactivations_;
@@ -641,6 +655,8 @@ class ExtMessagePool : public td::actor::Actor {
   NativePublishedSourcePtr make_native_producer_source(const NativeAddress &source);
   void flush_native_producer_sources();
   void consume_native_producer_updates();
+  NativeProducerUpdateBatch take_native_producer_updates();
+  void apply_native_producer_updates(NativeProducerUpdateBatch updates);
   void apply_native_producer_update(NativePublishedSourcePtr source);
   void reset_native_producers();
   void deliver_native_producer_generic(td::Ref<ExtMessage> message, int priority);

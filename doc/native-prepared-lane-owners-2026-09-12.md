@@ -94,6 +94,18 @@ counts and owner mailbox wait. Existing native admission, producer and journal
 statistics remain namespaced by owner. Router join time includes downstream
 service and sibling wait; it is not exclusive coordinator CPU time.
 
+Producer cleanup is visible in each owner's
+`total.ext_msg_native_persistent_producer`: `owner_dirty_sources`,
+`owner_flush_scheduled`, `inbox_pending_sources`, `inbox_latest_sources`,
+`updates_inflight_sources`, `live_sources`, and `live_physical_messages`.
+The handoff gauge remains charged from inbox extraction through view application
+and callback wake; retirement releases only that producer's membership. Require
+repeated zero observations together with empty pool/transport gauges and a
+proof-consistent client drain. Idle producer objects, callbacks, cumulative
+publication counters and retained canonical nonce watermarks need not be zero.
+Reading the added producer gauges uses one lock per lane and shared atomics,
+without traversing retained source views.
+
 Authored tests: **17 fixtures total**, not executed before the benchmark build slot.
 
 - `test-native-prepared-owner-coordination` (**7 fixtures**): four-prefix mapping, shared priority

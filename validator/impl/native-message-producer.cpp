@@ -7,6 +7,7 @@
 #include "ton/ton-io.hpp"
 #include "validator/native-lane-scheduler.h"
 #include "td/utils/StringBuilder.h"
+#include <utility>
 
 namespace ton::validator {
 namespace {
@@ -167,6 +168,23 @@ void ExtMessagePool::flush_native_producer_sources() {
 void ExtMessagePool::apply_native_producer_update(NativePublishedSourcePtr view) {
   CHECK(native_producer_only_);
   auto previous = native_producer_sources_.find(view->source);
+  const auto old_messages = previous == native_producer_sources_.end() ? 0u : previous->second->messages.size();
+  const auto new_messages = view->messages.size();
+  auto &telemetry = *native_producer_telemetry_;
+  if (new_messages > old_messages) {
+    telemetry.live_physical_messages.fetch_add(new_messages - old_messages, std::memory_order_relaxed);
+    native_producer_live_physical_messages_ += new_messages - old_messages;
+  } else if (old_messages > new_messages) {
+    CHECK(telemetry.live_physical_messages.fetch_sub(old_messages - new_messages, std::memory_order_relaxed) >=
+          old_messages - new_messages);
+    CHECK(native_producer_live_physical_messages_ >= old_messages - new_messages);
+    native_producer_live_physical_messages_ -= old_messages - new_messages;
+  }
+  if (old_messages == 0 && new_messages != 0) {
+    telemetry.live_sources.fetch_add(1, std::memory_order_relaxed);
+  } else if (old_messages != 0 && new_messages == 0) {
+    CHECK(telemetry.live_sources.fetch_sub(1, std::memory_order_relaxed) != 0);
+  }
   const auto old_priority = previous == native_producer_sources_.end() ? td::optional<int>{}
                                                                      : previous->second->maximum_priority;
   if (previous != native_producer_sources_.end() &&
@@ -196,9 +214,27 @@ void ExtMessagePool::apply_native_producer_update(NativePublishedSourcePtr view)
   }
 }
 
-void ExtMessagePool::consume_native_producer_updates() {
+ExtMessagePool::NativeProducerUpdateBatch::NativeProducerUpdateBatch(
+    std::shared_ptr<NativeProducerTelemetry> telemetry)
+    : telemetry(std::move(telemetry)) {
+}
+
+ExtMessagePool::NativeProducerUpdateBatch::NativeProducerUpdateBatch(NativeProducerUpdateBatch &&other) noexcept
+    : updates(std::move(other.updates)), telemetry(std::move(other.telemetry)),
+      inflight_sources(std::exchange(other.inflight_sources, 0)) {
+}
+
+ExtMessagePool::NativeProducerUpdateBatch::~NativeProducerUpdateBatch() {
+  if (inflight_sources != 0) {
+    CHECK(telemetry->updates_inflight_sources.fetch_sub(inflight_sources, std::memory_order_release) >=
+          inflight_sources);
+  }
+}
+
+ExtMessagePool::NativeProducerUpdateBatch ExtMessagePool::take_native_producer_updates() {
   CHECK(native_producer_only_);
-  std::map<NativeAddress, NativePublishedSourcePtr> updates;
+  NativeProducerUpdateBatch batch(native_producer_telemetry_);
+  auto &updates = batch.updates;
   bool more = false;
   {
     std::lock_guard lock(native_producer_inbox_->mutex);
@@ -206,6 +242,11 @@ void ExtMessagePool::consume_native_producer_updates() {
       updates.insert(native_producer_inbox_->latest.extract(native_producer_inbox_->latest.begin()));
     }
     if (!updates.empty()) {
+      // Publish the handoff under the same lock as extraction: an observer
+      // cannot see an empty inbox without either this lease or applied views.
+      batch.inflight_sources = updates.size();
+      native_producer_telemetry_->updates_inflight_sources.fetch_add(batch.inflight_sources,
+                                                                    std::memory_order_relaxed);
       native_producer_telemetry_->inbox_wait_us.fetch_add(
           producer_micros(td::Timestamp::now().at() - native_producer_inbox_->enqueued_at), std::memory_order_relaxed);
     }
@@ -213,6 +254,16 @@ void ExtMessagePool::consume_native_producer_updates() {
     native_producer_inbox_->scheduled = more;
   }
   if (more) { td::actor::send_closure_later(actor_id(this), &ExtMessagePool::consume_native_producer_updates); }
+  return batch;
+}
+
+void ExtMessagePool::consume_native_producer_updates() {
+  apply_native_producer_updates(take_native_producer_updates());
+}
+
+void ExtMessagePool::apply_native_producer_updates(NativeProducerUpdateBatch batch) {
+  CHECK(native_producer_only_);
+  auto &updates = batch.updates;
   if (updates.empty()) { return; }
   const bool was_uniform = native_producer_index_.size() <= 1 && native_producer_mixed_priority_sources_ == 0;
   std::set<NativeAddress> changed;
@@ -346,5 +397,15 @@ void ExtMessagePool::deliver_native_producer_generic(td::Ref<ExtMessage> message
 void ExtMessagePool::tear_down() {
   for (auto &callback : callbacks_) { cancel_callback_delivery(callback); }
   callbacks_.clear();
+  if (native_producer_only_) {
+    CHECK(native_producer_telemetry_->live_sources.fetch_sub(native_producer_sources_.size(),
+                                                            std::memory_order_relaxed) >=
+          native_producer_sources_.size());
+    CHECK(native_producer_telemetry_->live_physical_messages.fetch_sub(native_producer_live_physical_messages_,
+                                                                      std::memory_order_relaxed) >=
+          native_producer_live_physical_messages_);
+    native_producer_sources_.clear();
+    native_producer_live_physical_messages_ = 0;
+  }
 }
 }  // namespace ton::validator

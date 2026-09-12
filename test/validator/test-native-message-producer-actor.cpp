@@ -1,6 +1,5 @@
 #include <memory>
 #include <set>
-#include <string>
 #include <vector>
 
 #include "td/actor/TestScheduler.h"
@@ -352,12 +351,14 @@ TEST(NativeMessageProducerActor, RetiringProducerClosesFullQueueAndAccountsDisca
     for (unsigned i = 0; i < 3; ++i) {
       auto entry = co_await consumer.queue.try_pop().wrap();
       if (entry.is_error()) {
-        ASSERT_TRUE(entry.error().message().str().find("closed") != std::string::npos);
         break;
       }
       ++retained;
     }
     ASSERT_TRUE(retained <= 1u);
+    // The queue's API uses the same "empty" status for nonblocking empty and
+    // already-closed empty. A blocking pop must now fail without another wake;
+    // an accidentally open queue deadlocks this deterministic scheduler.
     auto closed = co_await consumer.queue.pop().wrap();
     ASSERT_TRUE(closed.is_error());
     ASSERT_EQ(runtime.transport->queued_discarded.load() + runtime.transport->unpushed_discarded.load(),

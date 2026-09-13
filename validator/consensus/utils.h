@@ -91,6 +91,30 @@ inline bool native_checkpoint_retain_ingress_enabled() {
   return enabled;
 }
 
+// Callback installation normally follows the previous-state/block work
+// scheduled by Collator::start_up. This experiment only changes that
+// submission order; the callback still uses the same queue, branch snapshot,
+// producer path, deadline and cancellation token.
+constexpr bool parse_native_eager_collator_callback(std::string_view value) {
+  return value == "1";
+}
+
+enum class NativeCallbackInstallOrder { after_previous_state_loads, before_previous_state_loads };
+
+constexpr NativeCallbackInstallOrder select_native_callback_install_order(bool native_streaming, bool eager_opt_in) {
+  return native_streaming && eager_opt_in
+             ? NativeCallbackInstallOrder::before_previous_state_loads
+             : NativeCallbackInstallOrder::after_previous_state_loads;
+}
+
+inline bool native_eager_collator_callback_enabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("TON_NATIVE_EAGER_COLLATOR_CALLBACK");
+    return parse_native_eager_collator_callback(value ? std::string_view{value} : std::string_view{});
+  }();
+  return enabled;
+}
+
 // Dense post-commit packing is an explicit sidechain throughput tradeoff.  A
 // committed checkpoint may wait up to 20 ms for more work when every validator
 // opts in; the default remains 10 ms.  This does not change the independent

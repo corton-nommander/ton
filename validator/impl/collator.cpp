@@ -232,63 +232,23 @@ void Collator::start_up() {
   // 2. load previous block(s) and corresponding state(s)
   prev_states.resize(prev_blocks.size());
   prev_block_data.resize(prev_blocks.size());
+  const bool eager_external_message_queue_opt_in =
+      !params_.is_hardfork && consensus::native_eager_collator_callback_enabled();
+  const auto external_message_queue_order = consensus::select_native_callback_install_order(
+      eager_external_message_queue_opt_in && consensus::work_driven_max_tps_mode_enabled(shard_),
+      eager_external_message_queue_opt_in);
+  const bool eager_external_message_queue =
+      external_message_queue_order == consensus::NativeCallbackInstallOrder::before_previous_state_loads;
+  if (eager_external_message_queue) {
+    install_external_message_queue(true);
+  }
   load_prev_states_blocks();
   if (params_.is_hardfork) {
     LOG(WARNING) << "generating a hardfork block";
   }
   // 3. install external message queue
-  if (!params_.is_hardfork) {
-    LOG(DEBUG) << "installing external message queue";
-    const char* native_queue_limit = std::getenv("TON_NATIVE_COLLATOR_QUEUE_LIMIT");
-    const auto queue_capacity = consensus::select_collator_queue_capacity(
-        consensus::work_driven_max_tps_mode_enabled(shard_),
-        native_queue_limit ? std::string_view{native_queue_limit} : std::string_view{});
-    const bool native_streaming = consensus::work_driven_max_tps_mode_enabled(shard_);
-    const char* native_transport_window = std::getenv("TON_NATIVE_EXT_MSG_TRANSPORT_WINDOW");
-    // One extra physical slot keeps a FIFO completion marker independent from
-    // the bounded message window; it is not part of the logical transfer cap.
-    const auto transport_message_capacity = consensus::select_native_ext_msg_transport_capacity(
-        native_streaming, queue_capacity,
-        native_transport_window ? std::string_view{native_transport_window} : std::string_view{});
-    const auto physical_queue_capacity = transport_message_capacity + (native_streaming ? 1 : 0);
-    ext_msg_queue_ = ExtMsgQueue("ext_msg_queue", physical_queue_capacity);
-    ext_msg_queue_state_ = std::make_shared<ExtMsgQueueState>();
-    if (native_streaming) {
-      LOG(DEBUG) << "native Collator BackpressureQueue logical_capacity=" << queue_capacity
-                 << " transport_message_capacity=" << transport_message_capacity
-                 << " configured_transport_window="
-                 << (native_transport_window ? native_transport_window : "default");
-    }
-    auto callback = std::make_unique<ExtMsgCallback>();
-    callback->shard = shard_;
-    callback->queue_capacity = queue_capacity;
-    callback->transport_message_capacity = transport_message_capacity;
-    callback->queue_state = ext_msg_queue_state_;
-    callback->cancellation_token = ext_msg_cancellation_.get_cancellation_token();
-    auto callback_until =
-        params_.ext_msg_callback_until ? params_.ext_msg_callback_until : params_.wait_externals_until;
-    callback->timeout = callback_until ? callback_until : td::Timestamp::now();
-    callback->sync_only = !callback_until;
-    callback->native_streaming = native_streaming;
-    callback->excluded_messages = params_.excluded_ext_messages;
-    // Keep the immutable branch snapshot in params_ as well: fatal_error()
-    // may clone CollateParams for a retry after this callback has been handed
-    // to the pool. Moving here made that retry fall back to canonical-only
-    // probing and rescan every excluded ancestor interval.
-    callback->native_source_nonce_floors = params_.native_source_nonce_floors;
-    callback->queue = ext_msg_queue_;
-    // A work-driven native candidate is latency-sensitive: its first useful
-    // item otherwise waits through the Collator -> Manager -> Pool mailbox
-    // chain before the bounded producer can prefill. Use the actor runtime's
-    // guarded immediate dispatch only for this isolated native streaming
-    // path. It still falls back to the mailbox whenever a target actor is
-    // active, so it cannot re-enter a busy Manager or pool actor.
-    if (native_streaming) {
-      td::actor::send_closure_immediate(manager, &ValidatorManager::get_external_messages, shard_,
-                                        std::move(callback));
-    } else {
-      td::actor::send_closure_later(manager, &ValidatorManager::get_external_messages, shard_, std::move(callback));
-    }
+  if (!params_.is_hardfork && !eager_external_message_queue) {
+    install_external_message_queue(false);
   }
   if (is_masterchain() && !params_.is_hardfork) {
     // 4. load shard block info messages
@@ -317,6 +277,66 @@ void Collator::start_up() {
   // 6. set timeout
   alarm_timestamp() = timeout_;
   CHECK(pending);
+}
+
+void Collator::install_external_message_queue(bool eager) {
+  CHECK(!params_.is_hardfork && !ext_msg_queue_state_);
+  LOG(DEBUG) << "installing external message queue";
+  const char* native_queue_limit = std::getenv("TON_NATIVE_COLLATOR_QUEUE_LIMIT");
+  const auto queue_capacity = consensus::select_collator_queue_capacity(
+      consensus::work_driven_max_tps_mode_enabled(shard_),
+      native_queue_limit ? std::string_view{native_queue_limit} : std::string_view{});
+  const bool native_streaming = consensus::work_driven_max_tps_mode_enabled(shard_);
+  CHECK(!eager || native_streaming);
+  const char* native_transport_window = std::getenv("TON_NATIVE_EXT_MSG_TRANSPORT_WINDOW");
+  // One extra physical slot keeps a FIFO completion marker independent from
+  // the bounded message window; it is not part of the logical transfer cap.
+  const auto transport_message_capacity = consensus::select_native_ext_msg_transport_capacity(
+      native_streaming, queue_capacity,
+      native_transport_window ? std::string_view{native_transport_window} : std::string_view{});
+  const auto physical_queue_capacity = transport_message_capacity + (native_streaming ? 1 : 0);
+  ext_msg_queue_ = ExtMsgQueue("ext_msg_queue", physical_queue_capacity);
+  ext_msg_queue_state_ = std::make_shared<ExtMsgQueueState>();
+  if (native_streaming) {
+    LOG(DEBUG) << "native Collator BackpressureQueue logical_capacity=" << queue_capacity
+               << " transport_message_capacity=" << transport_message_capacity
+               << " configured_transport_window="
+               << (native_transport_window ? native_transport_window : "default");
+  }
+  auto callback = std::make_unique<ExtMsgCallback>();
+  callback->shard = shard_;
+  callback->queue_capacity = queue_capacity;
+  callback->transport_message_capacity = transport_message_capacity;
+  callback->queue_state = ext_msg_queue_state_;
+  callback->cancellation_token = ext_msg_cancellation_.get_cancellation_token();
+  auto callback_until =
+      params_.ext_msg_callback_until ? params_.ext_msg_callback_until : params_.wait_externals_until;
+  callback->timeout = callback_until ? callback_until : td::Timestamp::now();
+  callback->sync_only = !callback_until;
+  callback->native_streaming = native_streaming;
+  callback->excluded_messages = params_.excluded_ext_messages;
+  // Keep the immutable branch snapshot in params_ as well: fatal_error()
+  // may clone CollateParams for a retry after this callback has been handed
+  // to the pool. Moving here made that retry fall back to canonical-only
+  // probing and rescan every excluded ancestor interval.
+  callback->native_source_nonce_floors = params_.native_source_nonce_floors;
+  callback->queue = ext_msg_queue_;
+  if (native_streaming) {
+    ext_msg_queue_state_->record_callback_install_request(td::Time::now());
+    stats_.native_delivery.record_callback_install_request(eager);
+  }
+  // A work-driven native candidate is latency-sensitive: its first useful
+  // item otherwise waits through the Collator -> Manager -> Pool mailbox
+  // chain before the bounded producer can prefill. Use the actor runtime's
+  // guarded immediate dispatch only for this isolated native streaming
+  // path. It still falls back to the mailbox whenever a target actor is
+  // active, so it cannot re-enter a busy Manager or pool actor.
+  if (native_streaming) {
+    td::actor::send_closure_immediate(manager, &ValidatorManager::get_external_messages, shard_,
+                                      std::move(callback));
+  } else {
+    td::actor::send_closure_later(manager, &ValidatorManager::get_external_messages, shard_, std::move(callback));
+  }
 }
 
 /**
@@ -9030,6 +9050,11 @@ td::uint32 Collator::get_skip_externals_queue_size() {
 }
 
 void Collator::finalize_stats() {
+  if (ext_msg_queue_state_) {
+    const auto install = ext_msg_queue_state_->callback_install_timestamps();
+    stats_.native_delivery.finalize_callback_install(install.requested_at, install.manager_forwarded_at,
+                                                     install.pool_entered_at, install.first_epoch_at);
+  }
   auto work_time = stats_.work_time.total;
   LOG(WARNING) << "Collate query work time = " << work_time.real << "s, cpu time = " << work_time.cpu << "s";
   if (block_candidate) {

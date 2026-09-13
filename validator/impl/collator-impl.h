@@ -125,6 +125,7 @@ class Collator final : public td::actor::Actor {
 
  private:
   void start_up() override;
+  void install_external_message_queue(bool eager);
   void load_prev_states_blocks();
   void alarm() override;
 

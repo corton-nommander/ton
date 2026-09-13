@@ -78,6 +78,36 @@ dispatch and early installation work; post-epoch time can include prefill,
 pump scheduling and eligible ingress. It is not an installation-complete
 timestamp, and elapsed time before the first-work await is not measured here.
 
+`TON_NATIVE_EAGER_COLLATOR_CALLBACK=1` is a default-off scheduling experiment
+for work-driven native shard collation. It submits the unchanged external
+callback before `load_prev_states_blocks()` schedules previous-state and
+previous-block completion work. An absent value, `0`, and every value other
+than the literal `1` preserve the existing order. Masterchain, hardfork and
+non-work-driven callbacks are unchanged. The callback keeps its per-attempt
+cancellation source, absolute timeout, exact branch exclusions and nonce
+floors; retries create a fresh Collator and callback as before. Work-driven
+consensus currently supplies both previous-state roots and block data, so this
+reorder advances the callback only past Collator-local completion messages in
+that path. It is primarily a diagnostic for deployments whose Collator must
+request those inputs from the Manager.
+
+Each native candidate reports
+`external_delivery_callback_install_requests`,
+`external_delivery_callback_install_eager_requests`, and four monotonic wall
+intervals: `request_to_manager_s`, `manager_to_pool_s`, `pool_to_epoch_s`, and
+`request_to_epoch_s`. The first timestamp is taken immediately before the
+Collator dispatches the callback, the second immediately before the Manager
+forwards it, the third on entry to `ExtMessagePool::install_collator_queue()`,
+and the fourth when the pool opens the first producer epoch. Every timestamp is
+published once through `ExtMsgQueueState`; negative differences are clamped to
+zero. The `manager_observed`, `pool_observed`, `epoch_observed`, and
+`epoch_unobserved` counters distinguish measured stages from a callback
+cancelled or finalized before installation. The stage counters report what was
+observed when Collator finalized its statistics; a callback still moving through
+the actor chain can therefore have only a prefix of stages present. These fields
+prove that an experimental arm selected the reordered path and identify which
+actor boundary accounts for the existing pre-epoch first-work interval.
+
 ## Already-published work
 
 Every nonblocking work-driven native probe records `_s`, `_calls` and

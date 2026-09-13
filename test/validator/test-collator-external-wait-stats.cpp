@@ -273,6 +273,69 @@ TEST(CollatorExternalWaitStats, FirstEpochOverlapClampsBothObservationRaces) {
   ASSERT_TRUE(stats.work_time_to_str(true).find("external_delivery_") == std::string::npos);
 }
 
+TEST(CollatorExternalWaitStats, CallbackInstallTelemetryProvesEagerActivationAndEpochLatency) {
+  using DeliveryStats = ton::validator::CollationStats::NativeDeliveryStats;
+  DeliveryStats eager;
+  eager.record_callback_install_request(true);
+  eager.finalize_callback_install(10.0, 10.125, 10.25, 10.5);
+  eager.finalize_callback_install(10.0, 10.25, 10.5, 11.0);
+  ASSERT_EQ(eager.callback_install().requests, 1u);
+  ASSERT_EQ(eager.callback_install().eager_requests, 1u);
+  ASSERT_EQ(eager.callback_install().manager_observed, 1u);
+  ASSERT_EQ(eager.callback_install().pool_observed, 1u);
+  ASSERT_EQ(eager.callback_install().epoch_observed, 1u);
+  ASSERT_EQ(eager.callback_install().epoch_unobserved, 0u);
+  ASSERT_EQ(eager.callback_install().request_to_manager_seconds, 0.125);
+  ASSERT_EQ(eager.callback_install().manager_to_pool_seconds, 0.125);
+  ASSERT_EQ(eager.callback_install().pool_to_epoch_seconds, 0.25);
+  ASSERT_EQ(eager.callback_install().request_to_epoch_seconds, 0.5);
+  const auto eager_text = eager.to_str();
+  ASSERT_TRUE(eager_text.find("external_delivery_callback_install_eager_requests=1") != std::string::npos);
+  ASSERT_TRUE(eager_text.find("external_delivery_callback_install_request_to_manager_s=0.125") != std::string::npos);
+  ASSERT_TRUE(eager_text.find("external_delivery_callback_install_manager_to_pool_s=0.125") != std::string::npos);
+  ASSERT_TRUE(eager_text.find("external_delivery_callback_install_pool_to_epoch_s=0.25") != std::string::npos);
+  ASSERT_TRUE(eager_text.find("external_delivery_callback_install_request_to_epoch_s=0.5") != std::string::npos);
+
+  DeliveryStats legacy_unobserved;
+  legacy_unobserved.record_callback_install_request(false);
+  legacy_unobserved.finalize_callback_install(20.0, 20.25, 0.0, 0.0);
+  ASSERT_EQ(legacy_unobserved.callback_install().requests, 1u);
+  ASSERT_EQ(legacy_unobserved.callback_install().eager_requests, 0u);
+  ASSERT_EQ(legacy_unobserved.callback_install().manager_observed, 1u);
+  ASSERT_EQ(legacy_unobserved.callback_install().pool_observed, 0u);
+  ASSERT_EQ(legacy_unobserved.callback_install().epoch_observed, 0u);
+  ASSERT_EQ(legacy_unobserved.callback_install().epoch_unobserved, 1u);
+  ASSERT_EQ(legacy_unobserved.callback_install().request_to_manager_seconds, 0.25);
+  ASSERT_EQ(legacy_unobserved.callback_install().manager_to_pool_seconds, 0.0);
+  ASSERT_EQ(legacy_unobserved.callback_install().pool_to_epoch_seconds, 0.0);
+  ASSERT_EQ(legacy_unobserved.callback_install().request_to_epoch_seconds, 0.0);
+}
+
+TEST(CollatorExternalWaitStats, CallbackInstallTimestampsArePublishedOnceAndNegativeDurationsClamp) {
+  ton::validator::ExtMsgQueueState state;
+  ASSERT_TRUE(state.record_callback_install_request(10.0));
+  ASSERT_TRUE(state.record_callback_install_manager_forward(11.0));
+  ASSERT_TRUE(state.record_callback_install_pool_entry(12.0));
+  ASSERT_TRUE(!state.record_callback_install_request(20.0));
+  ASSERT_TRUE(!state.record_callback_install_manager_forward(21.0));
+  ASSERT_TRUE(!state.record_callback_install_pool_entry(22.0));
+  const auto timestamps = state.callback_install_timestamps();
+  ASSERT_EQ(timestamps.requested_at, 10.0);
+  ASSERT_EQ(timestamps.manager_forwarded_at, 11.0);
+  ASSERT_EQ(timestamps.pool_entered_at, 12.0);
+  ASSERT_EQ(timestamps.first_epoch_at, 0.0);
+
+  using DeliveryStats = ton::validator::CollationStats::NativeDeliveryStats;
+  DeliveryStats clamped;
+  clamped.record_callback_install_request(false);
+  clamped.finalize_callback_install(10.0, 9.0, 8.0, 7.0);
+  ASSERT_EQ(clamped.callback_install().request_to_manager_seconds, 0.0);
+  ASSERT_EQ(clamped.callback_install().manager_to_pool_seconds, 0.0);
+  ASSERT_EQ(clamped.callback_install().pool_to_epoch_seconds, 0.0);
+  ASSERT_EQ(clamped.callback_install().request_to_epoch_seconds, 0.0);
+  ASSERT_EQ(clamped.callback_install().epoch_observed, 1u);
+}
+
 TEST(CollatorExternalWaitStats, PublishedLowerBoundDoesNotCountReservedOrAlreadyConsumedWork) {
   ton::validator::ExtMsgQueueState state;
   state.record_selected(8, 128);

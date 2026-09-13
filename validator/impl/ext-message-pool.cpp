@@ -3157,6 +3157,9 @@ std::size_t ExtMessagePool::reactivate_due_native_messages(td::Timestamp now) {
 }
 
 void ExtMessagePool::install_collator_queue(ShardIdFull shard, std::unique_ptr<ExtMsgCallback> callback) {
+  if (callback->native_streaming) {
+    callback->queue_state->record_callback_install_pool_entry(td::Time::now());
+  }
   std::sort(callback->excluded_messages.begin(), callback->excluded_messages.end());
   callback->excluded_messages.erase(
       std::unique(callback->excluded_messages.begin(), callback->excluded_messages.end()),

@@ -203,6 +203,19 @@ static_assert(!select_work_driven_max_tps_mode(false, false));
 static_assert(select_work_driven_max_tps_mode(true, false));
 static_assert(!select_work_driven_max_tps_mode(false, true));
 static_assert(!select_work_driven_max_tps_mode(true, true));
+static_assert(!parse_native_eager_collator_callback(""));
+static_assert(!parse_native_eager_collator_callback("0"));
+static_assert(!parse_native_eager_collator_callback("true"));
+static_assert(!parse_native_eager_collator_callback("2"));
+static_assert(parse_native_eager_collator_callback("1"));
+static_assert(select_native_callback_install_order(false, false) ==
+              NativeCallbackInstallOrder::after_previous_state_loads);
+static_assert(select_native_callback_install_order(false, true) ==
+              NativeCallbackInstallOrder::after_previous_state_loads);
+static_assert(select_native_callback_install_order(true, false) ==
+              NativeCallbackInstallOrder::after_previous_state_loads);
+static_assert(select_native_callback_install_order(true, true) ==
+              NativeCallbackInstallOrder::before_previous_state_loads);
 static_assert(bound_max_tps_candidate_finalize_reserve(std::chrono::milliseconds{4'000},
                                                        std::chrono::milliseconds{1'000}) ==
               std::chrono::milliseconds{1'000});

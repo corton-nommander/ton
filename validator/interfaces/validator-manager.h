@@ -197,6 +197,13 @@ struct CollationStats {
       double pre_epoch_seconds{0}, post_epoch_seconds{0};
       td::uint64 calls{0}, epoch_unobserved{0};
     };
+    struct CallbackInstall {
+      double request_to_manager_seconds{0}, manager_to_pool_seconds{0}, pool_to_epoch_seconds{0};
+      double request_to_epoch_seconds{0};
+      td::uint64 requests{0}, eager_requests{0}, manager_observed{0}, pool_observed{0};
+      td::uint64 epoch_observed{0}, epoch_unobserved{0};
+      bool finalized{false};
+    };
 
     void record_wait(ExternalWaitStats::Kind kind, bool producer_pending, double seconds, Outcome outcome,
                      bool producer_installed = true) {
@@ -229,6 +236,31 @@ struct CollationStats {
       install_overlap_.epoch_unobserved += first_epoch_at <= 0;
     }
 
+    void record_callback_install_request(bool eager) {
+      CHECK(callback_install_.requests == 0);
+      callback_install_.requests = 1;
+      callback_install_.eager_requests = eager;
+    }
+
+    void finalize_callback_install(double requested_at, double manager_forwarded_at, double pool_entered_at,
+                                   double first_epoch_at) {
+      if (callback_install_.requests == 0 || callback_install_.finalized) {
+        return;
+      }
+      callback_install_.finalized = true;
+      callback_install_.manager_observed = manager_forwarded_at > 0;
+      callback_install_.pool_observed = pool_entered_at > 0;
+      callback_install_.request_to_manager_seconds = elapsed_between(requested_at, manager_forwarded_at);
+      callback_install_.manager_to_pool_seconds = elapsed_between(manager_forwarded_at, pool_entered_at);
+      callback_install_.pool_to_epoch_seconds = elapsed_between(pool_entered_at, first_epoch_at);
+      callback_install_.request_to_epoch_seconds = elapsed_between(requested_at, first_epoch_at);
+      if (first_epoch_at > 0) {
+        callback_install_.epoch_observed = 1;
+      } else {
+        callback_install_.epoch_unobserved = 1;
+      }
+    }
+
     const WaitBucket& wait(ExternalWaitStats::Kind kind, bool producer_pending) const {
       return waits_[wait_index(kind)][producer_pending ? 1 : 0];
     }
@@ -240,6 +272,9 @@ struct CollationStats {
     }
     const InstallOverlap& install_overlap() const {
       return install_overlap_;
+    }
+    const CallbackInstall& callback_install() const {
+      return callback_install_;
     }
 
     std::string to_str() const {
@@ -263,6 +298,19 @@ struct CollationStats {
                           << install_prefix << "post_epoch_s=" << install_overlap_.post_epoch_seconds
                           << install_prefix << "split_calls=" << install_overlap_.calls
                           << install_prefix << "epoch_unobserved=" << install_overlap_.epoch_unobserved;
+      constexpr auto callback_prefix = " external_delivery_callback_install_";
+      result += PSTRING() << callback_prefix << "requests=" << callback_install_.requests
+                          << callback_prefix << "eager_requests=" << callback_install_.eager_requests
+                          << callback_prefix << "manager_observed=" << callback_install_.manager_observed
+                          << callback_prefix << "pool_observed=" << callback_install_.pool_observed
+                          << callback_prefix << "epoch_observed=" << callback_install_.epoch_observed
+                          << callback_prefix << "epoch_unobserved=" << callback_install_.epoch_unobserved
+                          << callback_prefix << "request_to_manager_s="
+                          << callback_install_.request_to_manager_seconds
+                          << callback_prefix << "manager_to_pool_s=" << callback_install_.manager_to_pool_seconds
+                          << callback_prefix << "pool_to_epoch_s=" << callback_install_.pool_to_epoch_seconds
+                          << callback_prefix << "request_to_epoch_s="
+                          << callback_install_.request_to_epoch_seconds;
       for (std::size_t i = 0; i < probes_.size(); ++i) {
         const auto& bucket = probes_[i];
         const auto prefix = PSTRING() << " external_delivery_probe_" << (i ? "published" : "unconfirmed");
@@ -273,6 +321,9 @@ struct CollationStats {
     }
 
    private:
+    static double elapsed_between(double started_at, double finished_at) {
+      return started_at > 0 && finished_at > 0 ? std::max(0.0, finished_at - started_at) : 0.0;
+    }
     static void record_bucket(WaitBucket& bucket, double seconds, Outcome outcome) {
       bucket.seconds += seconds;
       ++bucket.calls;
@@ -313,6 +364,7 @@ struct CollationStats {
     std::array<ProbeBucket, 2> probes_{};
     std::array<WaitBucket, 2> first_work_idle_{};
     InstallOverlap install_overlap_{};
+    CallbackInstall callback_install_{};
   };
 
   // Logical-entry reasons are mutually exclusive and reconcile exactly to
@@ -902,6 +954,37 @@ struct ExtMsgQueueState {
     td::uint64 epoch{0};
     bool pending{false};
   };
+  struct CallbackInstallTimestamps {
+    double requested_at{0};
+    double manager_forwarded_at{0};
+    double pool_entered_at{0};
+    double first_epoch_at{0};
+  };
+
+  bool record_callback_install_request(double at) {
+    return callback_install_requested_at_.record(at);
+  }
+  bool record_callback_install_manager_forward(double at) {
+    return callback_install_manager_forwarded_at_.record(at);
+  }
+  bool record_callback_install_pool_entry(double at) {
+    return callback_install_pool_entered_at_.record(at);
+  }
+  CallbackInstallTimestamps callback_install_timestamps() const {
+    // Acquire the epoch first. Its release publication follows the three
+    // actor-boundary timestamps in a normally installed callback. If no epoch
+    // exists yet, sample the stages in reverse order so observing a later
+    // release also publishes the earlier stages before they are read.
+    const auto first_epoch_at = first_producer_epoch_at();
+    const auto pool_entered_at = callback_install_pool_entered_at_.get();
+    const auto manager_forwarded_at = callback_install_manager_forwarded_at_.get();
+    const auto requested_at = callback_install_requested_at_.get();
+    return {.requested_at = requested_at,
+            .manager_forwarded_at = manager_forwarded_at,
+            .pool_entered_at = pool_entered_at,
+            .first_epoch_at = first_epoch_at};
+  }
+
   td::uint64 begin_producer_epoch() {
     // Epochs are opened only by the serialized pool producer. The immutable
     // first timestamp is published with the first release increment; readers
@@ -1120,12 +1203,30 @@ struct ExtMsgQueueState {
   }
 
  private:
+  class OneShotTimestamp {
+   public:
+    bool record(double at) {
+      CHECK(at > 0);
+      double empty = 0;
+      return value_.compare_exchange_strong(empty, at, std::memory_order_release, std::memory_order_relaxed);
+    }
+    double get() const {
+      return value_.load(std::memory_order_acquire);
+    }
+
+   private:
+    std::atomic<double> value_{0};
+  };
+
   std::shared_ptr<ExtMsgQueueTelemetry> load_telemetry() const {
     return std::atomic_load_explicit(&telemetry_, std::memory_order_acquire);
   }
 
   std::atomic<td::uint64> producer_epoch_{0};
   double first_producer_epoch_at_{0};
+  OneShotTimestamp callback_install_requested_at_;
+  OneShotTimestamp callback_install_manager_forwarded_at_;
+  OneShotTimestamp callback_install_pool_entered_at_;
   std::atomic<td::uint64> observed_completion_epoch_{0};
   std::mutex accounting_mutex_;
   td::uint64 native_selected_{0};

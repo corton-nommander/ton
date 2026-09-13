@@ -1244,6 +1244,7 @@ void ValidatorManagerImpl::get_external_messages(ShardIdFull shard, std::unique_
   // and generic callbacks retain their existing deferred dispatch path; an
   // occupied pool also falls back to normal mailbox delivery.
   if (callback && callback->native_streaming) {
+    callback->queue_state->record_callback_install_manager_forward(td::Time::now());
     td::actor::send_closure_immediate(ext_message_pool_, &ExtMessagePool::install_collator_queue, shard,
                                       std::move(callback));
   } else {

@@ -43,15 +43,22 @@ not establish maximum capacity.
 
 ## Immediate controlled experiment
 
-Before another source redesign, compare `TON_NATIVE_COLLATOR_QUEUE_LIMIT=18432`
-against `8192` in a fresh ABBA using the selected owners = 0, domains = 0,
-preparation = 0 profile. Keep the physical transport window at 1,024, client
-window at 32,768/65,536, batch/query limit at 64, 24,576 sources and 60/600/180
-timing fixed. Both caps align with the 512-transfer scheduler fragment and
-16-transfer signed-run quantum, and require only
-container recreation with the existing image. The smaller cap must improve
-canonical TPS, not merely blocks/s or latency. Add 12,288 only if 8,192 improves
-cadence and write tails but loses throughput.
+Before another source redesign, use the callback-stage telemetry to split the
+existing 56.661/62.225 ms mean pre-epoch wait into Collator-to-Manager,
+Manager-to-pool and pool-entry-to-first-epoch intervals. The two saved arms spent
+213.896304/184.745156 seconds before the first producer epoch across 3,775/2,969
+uninstalled waits. Their final ExtMessagePool actor-type load was 0.930228/0.903469,
+with maximum turns of 1.572621/1.359085 seconds, but five actors shared that type;
+the stage split is needed before attributing the delay to the main pool actor.
+
+If Manager-to-pool or pool-to-epoch dominates, compare the generator's existing
+64-query per-client cap with 12 in a same-process 64/12/12/64 sequence. Ten clients
+give 120 credits. At the observed roughly 225/202 ms admission residence this is
+about 533/595 queries/s of capacity, still 38%/64% above the measured 386.2/363.3
+queries/s, while the observed per-client maxima of 23/22 ensure that 12 exercises
+the bound. Stop if stage latency does not fall, offered load falls, or either
+treatment loses canonical TPS. This experiment changes only the generator and can
+reuse one validator process and image.
 
 ## Ranked architecture directions
 
@@ -79,16 +86,19 @@ and are not TPS forecasts.
 2. **Coordinate durable writes and cohort commits across validator stores.**
    Accepted state waits through CellDb and synchronous RocksDB writes; consensus
    namespaces also commit through synchronous transactions. More memory does not
-   remove this durability wait. Instrument enqueue-to-actor delay, immutable prepare
-   CPU, commit wall/thread CPU, `fsync`/`fdatasync`, WAL bytes, mutex/write stalls and
-   records per sync. A throwaway-chain `sync=false` run is a ceiling diagnostic: if
+   remove this durability wait. The default-off CellDb probe now reports queue wait,
+   immutable prepare CPU, write-batch construction, blocking `DB::Write`, RocksDB
+   WAL sync/bytes/stalls and end-to-end scheduling for successful regular stores.
+   A throwaway-chain `sync=false` run is a ceiling diagnostic: if
    canonical TPS does not move, stop. If it does, add one ordered WAL coordinator,
    queue records for a bounded 250–1,000 µs or byte-count window, sync once, and
-   resolve each promise only after its LSN is durable. A1's final 10-minute rolling
-   `celldb_store_cell.load` was 0.317879. This scoped wall-load counter is neither
-   CPU attribution nor an established serial fraction. Treating all of it as serial
-   gives optimistic conditional bounds of **1.313×** at fourfold acceleration and
-   1.466× at ideal removal.
+   resolve each promise only after its LSN is durable. A1/B1 final 10-minute
+   `celldb_store_cell` load was 0.306049/0.385831 at 7.800954/6.623238 calls/s,
+   implying 39.23/58.25 ms of scoped wall time per call. The CellDb actor-type load
+   was 0.439251/0.524598 and its maximum turns were 1.721064/1.305125 seconds. These
+   scoped wall counters are neither CPU attribution nor established serial
+   fractions. Treating A1's 0.306049 as serial gives optimistic conditional bounds
+   of **1.298×** at fourfold acceleration and 1.441× at ideal removal.
 
 3. **Publish complete immutable canonical epochs and application-time deltas.**
    Admission should pin one epoch containing the masterchain/config identity, all
@@ -123,15 +133,27 @@ and are not TPS forecasts.
    bit-identical roots/proofs for repeated accounts, shared paths, rollback, size
    boundaries and branch changes.
 
+6. **Measure duplicate local candidate BOC decoding before attempting a handoff.**
+   Every A1/B1 validation matched a candidate collated by the same validator.
+   Native candidate unpack averaged 20.628/25.158 ms wall and 19.678/24.048 ms CPU,
+   but its aggregate CPU was only about 0.148 core per run and the timer includes
+   work beyond BOC deserialization. Add an exclusive timer around the validator's
+   second deserialize first. If material, pass only an immutable decoded root with
+   full block ID, file-hash and root-hash checks through the transient validation
+   request. Never retain a decoded batch or reuse replay results; missing or
+   mismatched artifacts must take the existing decode path.
+
 A 2×2 owners/domains experiment (0/0,4/0,0/4,4/4) can identify which switch caused
 the combined loss. Lane-homogeneous admission batches can separately test whether
 the slowest-owner join barrier matters. Both are diagnostics; neither addresses
 the shared validation and durability paths that now have stronger evidence.
 
-Implementation order: keep the persistent executor disabled; run the callback-cap
-ABBA as a separate treatment; instrument durability and run the unsafe
-ceiling test; then prototype ready epochs and the work-stealing arena. Keep each
-treatment separate. Every live gate requires repeated 600-second strict-image comparisons,
+Implementation order: keep the persistent executor disabled; collect the callback
+stage split and run the 64-versus-12 query-credit ABBA only if the pool boundary
+dominates; run the three-arm CellDb profile-off/profile-on/sync-false ceiling;
+then run the 18,432-versus-8,192 callback-cap ABBA. Prototype ready epochs and the
+work-stealing arena only after those screens. Keep each treatment separate. Every
+live gate requires repeated 600-second strict-image comparisons,
 complete canonical proofs, zero residual drain, stable identities and at least 5%
 useful offered-load surplus before a capacity claim. A 200k claim must use full-window
 proof-observed canonical throughput with a load source capable of at least ~210k

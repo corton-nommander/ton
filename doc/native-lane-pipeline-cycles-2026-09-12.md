@@ -196,25 +196,42 @@ controls.
    The two arms have different call totals, so these counters are mechanism evidence,
    not a normalized efficiency gain. The exact decision and artifact hashes are in
    the [signature-pool result](benchmarks/results/native-signature-pool-20260913.json).
-2. Run a fresh 18,432-versus-8,192 callback-limit ABBA with owners/domains/preparation
+2. Collect the new Collator-to-Manager, Manager-to-pool and pool-to-first-epoch
+   timestamps before changing callback order. The existing pre-epoch interval
+   averaged 56.661/62.225 ms across A1/B1, while the ExtMessagePool actor type ran
+   at 0.930228/0.903469 load and included five actors. If a pool boundary dominates,
+   run a same-process 64/12/12/64 admission-query-credit comparison. Cap 12 gives
+   120 aggregate credits, above observed admission demand but below the measured
+   per-client maxima of 23/22. Require positive credit stalls and both treatment
+   TPS values above both controls; stop on lower offered load or unchanged stage tails.
+3. Run the default-off CellDb durability attribution in three same-image arms:
+   profile off with sync true, profile on with sync true, then profile on with the
+   explicitly unsafe sync-false ceiling on a disposable database. The saved A1/B1
+   `celldb_store_cell` scopes averaged 39.23/58.25 ms per call, and the single CellDb
+   actor's maximum turns reached 1.721064/1.305125 seconds. If sync false does not
+   move canonical TPS and commit tails, stop. If it does, prototype a bounded cohort
+   commit that resolves promises only after durability.
+4. Run a fresh 18,432-versus-8,192 callback-limit ABBA with owners/domains/preparation
    off and producer on. Keep the physical transport window at 1,024 and client window
    65,536 fixed. The smaller cap needs to improve canonical TPS as well as cadence;
    use 12,288 only if 8,192 improves tails but loses throughput.
-3. Split CellDb preparation from synchronous durable-write waiting. Instrument
-   enqueue-to-actor delay, commit wall/thread CPU, `fsync`/`fdatasync`, RocksDB
-   stalls and durable acknowledgements. A throwaway-chain `sync=false` run is only
-   a ceiling diagnostic; if it does not move canonical TPS, stop. If it does,
-   prototype a bounded cohort commit that resolves promises only after durability.
-4. Publish one immutable, complete canonical state epoch and an application-time
+5. Publish one immutable, complete canonical state epoch and an application-time
    account change feed. This must remove hot-path state waits, full tracked-source
    walks and replacement-vector publication; the failed post-hoc journal already
    showed that fewer lookups alone do not guarantee more TPS.
-5. Move pure collation and validation work to a lane-aware global work-stealing
+6. Move pure collation and validation work to a lane-aware global work-stealing
    arena while keeping mutation and root publication ordered per lane. Aggregate
    CPU headroom is consistent with underused fixed scheduler islands, but per-group
    utilization was not measured. A separate 2×2
    owners/domains test can identify which switch caused that loss, but it is a
    diagnostic rather than the leading scaling path.
+7. Before reusing locally decoded candidate data, add an exclusive timer around
+   the validator's second BOC deserialize. All A1/B1 validations matched local
+   candidates, and native unpack averaged 20.628/25.158 ms wall, but the whole
+   stage consumed only about 0.148 CPU core. If the exclusive decode is material,
+   hand off only an immutable root under exact block/file/root identity checks and
+   fall back on every mismatch. Do not retain decoded batches or reuse replay
+   results across the independent validator boundary.
 
 These are hypotheses from the saved diagnostics, including the valid balanced
 comparison. They are not performance gains or a forecast of 200,000 TPS. Additional

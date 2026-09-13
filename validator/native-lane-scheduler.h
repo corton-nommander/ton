@@ -36,10 +36,14 @@ struct NativeLaneSchedulerPlan {
     if (total < 8) {
       return td::Status::Error("four native lane schedulers require at least 8 configured engine CPU threads");
     }
-    plan.cpu_threads[0] = 4;
-    const auto remaining = total - plan.cpu_threads[0];
+    // The main group owns shared database, archive, overlay, manager and
+    // masterchain work. Keep one guaranteed worker per isolated lane and leave
+    // the remaining capacity available to that shared work instead of
+    // stranding it in quiet lanes.
+    constexpr unsigned workers_per_lane = 1;
+    plan.cpu_threads[0] = total - lanes * workers_per_lane;
     for (unsigned lane = 0; lane < 4; ++lane) {
-      plan.cpu_threads[lane + 1] = remaining / 4 + (lane < remaining % 4);
+      plan.cpu_threads[lane + 1] = workers_per_lane;
     }
     return plan;
   }

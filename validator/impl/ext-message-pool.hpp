@@ -125,6 +125,9 @@ class ExtMessagePool : public td::actor::Actor {
   void start_up() override;
   void alarm() override;
   void tear_down() override;
+  td::uint32 mailbox_message_quantum() const override {
+    return mailbox_message_quantum_;
+  }
 
  private:
   class NativeSignatureVerifier;
@@ -303,6 +306,8 @@ class ExtMessagePool : public td::actor::Actor {
 
   td::Ref<ValidatorManagerOptions> opts_;
   td::actor::ActorId<ValidatorManager> manager_;
+  // Zero preserves the actor runtime's historical unbounded mailbox drain.
+  td::uint32 mailbox_message_quantum_{0};
   td::Ref<MasterchainState> last_masterchain_state_;
   std::vector<td::actor::ActorOwn<NativeSignatureVerifier>> native_signature_verifiers_;
   bool native_prepare_enabled_{false}, native_prepare_profile_enabled_{false};
@@ -1159,6 +1164,10 @@ class ExtMessagePool : public td::actor::Actor {
   friend class NativeProducerActorTestAccess;
   friend class NativeAdmissionPreparationTestAccess;
   friend class NativePreparedLaneOwnerTestAccess;
+
+  static constexpr td::uint32 MAX_EXT_MESSAGE_POOL_MAILBOX_QUANTUM = 1024;
+  static td::Result<td::uint32> parse_mailbox_message_quantum(td::Slice value);
+  td::Status configure_mailbox_message_quantum(td::Slice value);
 
   static constexpr double MAX_EXT_MSG_PER_ADDR_TIME_WINDOW = 10.0;
   static constexpr size_t MAX_EXT_MSG_PER_ADDR = 4096;

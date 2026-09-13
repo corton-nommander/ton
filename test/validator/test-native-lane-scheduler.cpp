@@ -99,13 +99,14 @@ TEST(NativeLaneScheduler, EnabledConservesWorkersIncludingUnevenRemainders) {
   for (unsigned threads = 8; threads <= 127; ++threads) {
     auto plan = NativeLaneSchedulerPlan::make(threads, 4).move_as_ok();
     ASSERT_EQ(std::accumulate(plan.cpu_threads.begin(), plan.cpu_threads.end(), 0u), threads);
-    ASSERT_EQ(plan.cpu_threads[0], 4u);
+    ASSERT_EQ(plan.cpu_threads[0], threads - 4u);
     unsigned smallest = plan.cpu_threads[4];
     unsigned largest = plan.cpu_threads[1];
-    ASSERT_TRUE(smallest >= 1 && largest <= smallest + 1);
+    ASSERT_EQ(smallest, 1u);
+    ASSERT_EQ(largest, 1u);
   }
   auto plan = NativeLaneSchedulerPlan::make(16, 4).move_as_ok();
-  ASSERT_EQ(plan.cpu_threads, (std::array<unsigned, 5>{4, 3, 3, 3, 3}));
+  ASSERT_EQ(plan.cpu_threads, (std::array<unsigned, 5>{12, 1, 1, 1, 1}));
 }
 
 TEST(NativeLaneScheduler, OnlyCompleteExactFourLeafTopologyCanRoute) {

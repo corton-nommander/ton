@@ -21,6 +21,7 @@
 #include "block/block.h"
 #include "block/mc-config.h"
 #include "td/actor/SharedFuture.h"
+#include "td/utils/misc.h"
 #include "td/utils/StringBuilder.h"
 #include "td/utils/Timer.h"
 #include "tl/tlblib.hpp"
@@ -188,7 +189,31 @@ td::actor::Task<td::optional<ExtMessagePool::PreparedBatch>> ExtMessagePool::pre
   co_return td::optional<PreparedBatch>{std::move(prepared)};
 }
 
+td::Result<td::uint32> ExtMessagePool::parse_mailbox_message_quantum(td::Slice value) {
+  auto parsed = td::to_integer_safe<td::uint32>(value);
+  if (parsed.is_error()) {
+    return td::Status::Error(PSTRING() << "TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM must be an integer in 0.."
+                                       << MAX_EXT_MESSAGE_POOL_MAILBOX_QUANTUM << ", got '" << value << "'");
+  }
+  auto quantum = parsed.move_as_ok();
+  if (quantum > MAX_EXT_MESSAGE_POOL_MAILBOX_QUANTUM) {
+    return td::Status::Error(PSTRING() << "TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM must be an integer in 0.."
+                                       << MAX_EXT_MESSAGE_POOL_MAILBOX_QUANTUM << ", got '" << value << "'");
+  }
+  return quantum;
+}
+
+td::Status ExtMessagePool::configure_mailbox_message_quantum(td::Slice value) {
+  TRY_RESULT(quantum, parse_mailbox_message_quantum(value));
+  mailbox_message_quantum_ = quantum;
+  return td::Status::OK();
+}
+
 void ExtMessagePool::start_up() {
+  if (const char *value = std::getenv("TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM")) {
+    auto status = configure_mailbox_message_quantum(td::Slice(value));
+    LOG_CHECK(status.is_ok()) << status;
+  }
   if (native_producer_only_) {
     return;
   }
@@ -280,6 +305,7 @@ void ExtMessagePool::start_up() {
                << " admission_config_cache=" << native_config_cache_enabled_
                << " admission_shard_sharing=" << native_admission_shard_sharing_enabled_
                << " admission_snapshot_refresh=" << native_admission_snapshot_refresh_enabled_
+               << " mailbox_message_quantum=" << mailbox_message_quantum_
                << " collator_queue_limit=" << native_collator_queue_limit_
                << " max_retention_s=" << native_mempool_max_ttl_
                << " generic_retention_s=" << MempoolMsg::GENERIC_MEMPOOL_TTL_SECONDS;
@@ -4305,9 +4331,9 @@ std::vector<std::pair<std::string, std::string>> ExtMessagePool::prepare_stats()
                 << " nonce_mismatch_sources:" << head_nonce_mismatch_sources
                 << " stale_revision_sources:" << head_stale_revision_sources
                 << " max_nonce_gap:" << max_nonce_gap);
-  vec.emplace_back("total.ext_msg_native_config", PSTRING() << "collator_queue_limit:"
-                                                            << native_collator_queue_limit_ << " max_retention_s:"
-                                                            << native_mempool_max_ttl_);
+  vec.emplace_back("total.ext_msg_native_config", PSTRING() << "collator_queue_limit:" << native_collator_queue_limit_
+                                                            << " max_retention_s:" << native_mempool_max_ttl_
+                                                            << " mailbox_message_quantum:" << mailbox_message_quantum_);
   vec.emplace_back(
       "total.ext_msg_batch_admission",
       PSTRING() << "batches:" << native_batch_count_ << " messages:" << native_batch_messages_

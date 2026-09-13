@@ -116,6 +116,22 @@ class ExtMessagePoolTestAccess {
     return ExtMessagePool({}, {});
   }
 
+  static td::Result<td::uint32> configure_mailbox_message_quantum(ExtMessagePool &pool, td::Slice value) {
+    auto status = pool.configure_mailbox_message_quantum(value);
+    if (status.is_error()) {
+      return std::move(status);
+    }
+    return pool.mailbox_message_quantum();
+  }
+
+  static td::uint32 mailbox_message_quantum(const ExtMessagePool &pool) {
+    return pool.mailbox_message_quantum();
+  }
+
+  static constexpr td::uint32 max_mailbox_message_quantum() {
+    return ExtMessagePool::MAX_EXT_MESSAGE_POOL_MAILBOX_QUANTUM;
+  }
+
   static void publish_producer_source(ExtMessagePool &owner, ExtMessagePool &producer,
                                       NativeAddress source, bool invalidate = false) {
     producer.native_producer_only_ = true;
@@ -991,6 +1007,27 @@ class ExtMessagePoolTestAccess {
 static_assert(ExtMessagePoolTestAccess::max_native_queue_limit() == 65'536);
 static_assert(ExtMessagePoolTestAccess::max_native_queue_limit() == block::NativeTransferBatch::max_entries);
 static_assert(ExtMessagePoolTestAccess::native_delivery_chunk() == 512);
+static_assert(ExtMessagePoolTestAccess::max_mailbox_message_quantum() == 1024);
+
+TEST(ExtMessagePoolScheduler, MailboxMessageQuantumConfigurationIsStrictAndDefaultOff) {
+  auto pool = ExtMessagePoolTestAccess::make_pool();
+  ASSERT_EQ(ExtMessagePoolTestAccess::mailbox_message_quantum(pool), 0u);
+
+  auto enabled = ExtMessagePoolTestAccess::configure_mailbox_message_quantum(pool, "64");
+  ASSERT_TRUE(enabled.is_ok());
+  ASSERT_EQ(enabled.ok(), 64u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::mailbox_message_quantum(pool), 64u);
+
+  auto disabled = ExtMessagePoolTestAccess::configure_mailbox_message_quantum(pool, "0");
+  ASSERT_TRUE(disabled.is_ok());
+  ASSERT_EQ(disabled.ok(), 0u);
+  ASSERT_EQ(ExtMessagePoolTestAccess::mailbox_message_quantum(pool), 0u);
+
+  for (auto malformed : {td::Slice{}, td::Slice{"-1"}, td::Slice{"64x"}, td::Slice{"1025"}}) {
+    ASSERT_TRUE(ExtMessagePoolTestAccess::configure_mailbox_message_quantum(pool, malformed).is_error());
+    ASSERT_EQ(ExtMessagePoolTestAccess::mailbox_message_quantum(pool), 0u);
+  }
+}
 
 TEST(ExtMessagePoolScheduler, MalformedConfigurationDoesNotPopulateAdmissionCache) {
   ASSERT_TRUE(ExtMessagePoolTestAccess::malformed_config_is_never_cached());

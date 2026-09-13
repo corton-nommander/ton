@@ -59,19 +59,20 @@ The following bounds are conditional latency or work envelopes from saved
 diagnostics. They use different, overlapping denominators, cannot be multiplied,
 and are not TPS forecasts.
 
-1. **Use one persistent native validation executor, then parallelize independent
-   replay components.** Validation currently creates and joins OS threads for each
-   signature batch. A1 recorded 3,607 calls, 26,280 created threads and 82.16 seconds
-   in launch scopes. Native replay averaged 51.70 ms inside 113.15 ms total validation.
-   A default-off prototype now replaces only thread creation with a process-lifetime
-   bounded executor. It preserves synchronous completion, acceptance behavior and
-   deterministic lowest-failing-index reporting; its stress test covers 48 concurrent
-   callers and the bounded queue. A separate fresh-process corpus confirms identical
-   golden batch, BOC and replay-state digests with the executor off and on across 256
-   signed runs and 4,096 logical transfers. It still needs a same-image live ABBA.
-   Then build per-account dependency components so
+1. **Keep the persistent executor default-off; isolate replay components before
+   changing their scheduling.** The same-image live first pair reached
+   55,654.19699499165 canonical TPS with the executor off and 55,089.33555926544
+   with it on (−1.014948%). Because strict promotion requires every treatment arm
+   above every control arm, B1 below A1 makes promotion impossible. B2 was excluded
+   before generator launch by the inner physical-memory preflight, so there is no
+   completed-ABBA mean or capacity claim. The mechanism was active: B1 used eight
+   persistent threads for 29,128 tickets across 3,641 pool calls, with zero
+   contended submits, while A1 created 34,936 threads across a different helper-call
+   total. The exact evidence and hashes are in the
+   [signature-pool result](benchmarks/results/native-signature-pool-20260913.json).
+   Build per-account dependency components so
    independent source/destination chains execute concurrently and commit in stable
-   original order. Replay was
+   original order. In the earlier balanced-control diagnostics, replay was
    45.69% of validation residence; fourfold replay acceleration gives a conditional
    **1.521× validation-latency** bound and ideal removal of 1.841×.
 
@@ -127,8 +128,8 @@ the combined loss. Lane-homogeneous admission batches can separately test whethe
 the slowest-owner join barrier matters. Both are diagnostics; neither addresses
 the shared validation and durability paths that now have stronger evidence.
 
-Implementation order: finish the persistent-executor image and ABBA; run the
-callback-cap ABBA as a separate treatment; instrument durability and run the unsafe
+Implementation order: keep the persistent executor disabled; run the callback-cap
+ABBA as a separate treatment; instrument durability and run the unsafe
 ceiling test; then prototype ready epochs and the work-stealing arena. Keep each
 treatment separate. Every live gate requires repeated 600-second strict-image comparisons,
 complete canonical proofs, zero residual drain, stable identities and at least 5%

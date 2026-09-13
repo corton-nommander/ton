@@ -177,14 +177,25 @@ controls.
 
 ## Follow-up experiments after the ownership comparison
 
-1. The new default-off prototype replaces per-validation signature thread creation
-   with one persistent bounded executor, without changing replay order. A1 recorded
-   3,607 helper calls, 26,280 created threads and 82.16 seconds in launch scopes;
-   validation replay averaged 51.70 ms inside 113.15 ms total validation. Its unit
-   gate covers concurrent callers, queue backpressure, worker reuse and deterministic
-   rejection indices. A 256-run fresh-process corpus now fixes and matches the exact
-   batch root, serialized BOC digest and replay-state digest in flag-off and flag-on
-   processes. Next run a same-image flag-off/flag-on ABBA.
+1. Keep the validation signature executor default-off. Its same-image live sequence
+   completed valid 600-second A1 and B1 arms: flag-off A1 reached
+   55,654.19699499165 canonical TPS and flag-on B1 reached 55,089.33555926544,
+   1.014948% below A1. The frozen promotion rule requires every treatment above
+   every control, so this ordering makes promotion impossible. B2 then failed the
+   inner `physical_host_memory_below_24_gib` preflight before the generator launched;
+   A2 was not run. The incomplete sides are not averaged, and there is no capacity
+   claim.
+
+   The mechanism did work. A1 observed 5,000 helper calls, 2,373,081 parents,
+   34,936 created threads, 126.291207 seconds of launch, 22.567329 seconds of join
+   and 149.004354 seconds of executor residence. B1 observed 4,119 calls and
+   2,349,492 parents; 3,641 pool calls submitted 29,128 tickets to eight persistent
+   threads, with zero launch/join sums, 10.556876 seconds of residence, zero
+   contended submits, peak active/queue gauges of 8/24 and final active/queue
+   gauges of 0/0.
+   The two arms have different call totals, so these counters are mechanism evidence,
+   not a normalized efficiency gain. The exact decision and artifact hashes are in
+   the [signature-pool result](benchmarks/results/native-signature-pool-20260913.json).
 2. Run a fresh 18,432-versus-8,192 callback-limit ABBA with owners/domains/preparation
    off and producer on. Keep the physical transport window at 1,024 and client window
    65,536 fixed. The smaller cap needs to improve canonical TPS as well as cadence;

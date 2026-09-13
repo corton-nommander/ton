@@ -1,0 +1,273 @@
+{
+  "schema": "native-signature-pool-evaluation-v1",
+  "recorded_date": "2026-09-13",
+  "source_revision": "53131233e2fb494cdcf20ae4c5d6b54cea0d2bd6",
+  "validator_image": "sha256:65e5783482fee019cc8f32e85062915490d3b56915bd9c450a8ef27e44184d57",
+  "treatment": {
+    "flag": "TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL",
+    "control_value": "0",
+    "treatment_value": "1",
+    "default_value": "0",
+    "selected_value": "0",
+    "same_image_sequence": true,
+    "same_image_abba_completed": false,
+    "declared_only_variant": true
+  },
+  "planned_order": [
+    "A1",
+    "B1",
+    "B2",
+    "A2"
+  ],
+  "completed_performance_arms": [
+    "A1",
+    "B1"
+  ],
+  "comparison_complete": false,
+  "promotion_policy": {
+    "rule": "Require all four valid proof-complete arms, both B canonical rates above both A rates, pool mechanism activation, no correctness or resource regression, and no automatic promotion.",
+    "automatic_promotion_allowed": false,
+    "strict_promotion_possible": false,
+    "decisive_observation": "B1 canonical TPS is below A1 canonical TPS.",
+    "remaining_arms_can_change_promotion_decision": false
+  },
+  "decision": {
+    "treatment_promoted": false,
+    "selected_value": "0",
+    "selected_value_semantics": "Keep the persistent signature executor disabled by default.",
+    "control_mean_tps": null,
+    "treatment_mean_tps": null,
+    "mean_claim_allowed": false,
+    "capacity_claim_allowed": false,
+    "reason": "The first valid pair made strict promotion impossible; the sequence then ended before load in B2. Incomplete sides are not averaged."
+  },
+  "arms": [
+    {
+      "order": "A1",
+      "arm": "01-stage1-A1",
+      "flag_value": "0",
+      "status": "valid_observed_run",
+      "valid_run": true,
+      "capacity_claim_allowed": false,
+      "measurement": {
+        "measure_seconds": 600,
+        "canonical_bucket_seconds": 599,
+        "canonical_transfers": 33336864,
+        "canonical_tps": 55654.19699499165,
+        "offered_tps": 55658.77333333333,
+        "offered_over_canonical": 1.0000822280904007
+      },
+      "signature_executor": {
+        "calls": 5000,
+        "parents": 2373081,
+        "serial_calls": 633,
+        "threads_created": 34936,
+        "launch_sum_s": 126.291207,
+        "join_sum_s": 22.567329,
+        "residence_sum_s": 149.004354,
+        "pool_calls": 0,
+        "pool_tickets": 0,
+        "pool_threads_created": 0,
+        "pool_contended_submits": 0,
+        "pool_queue_wait_sum_s": 0.0,
+        "pool_completion_wait_sum_s": 0.0,
+        "pool_worker_cpu_sum_s": 0.0,
+        "pool_threads_at_endpoints": [
+          0,
+          0
+        ],
+        "pool_active_at_endpoints": [
+          0,
+          0
+        ],
+        "pool_queue_at_endpoints": [
+          0,
+          0
+        ],
+        "pool_active_peak_at_endpoints": [
+          0,
+          0
+        ],
+        "pool_queue_peak_at_endpoints": [
+          0,
+          0
+        ],
+        "pool_queue_capacity": 128
+      },
+      "artifacts": {
+        "strict_validation": {
+          "path": "build/benchmarks/native-signature-pool-abba-20260913/01-stage1-A1-strict-validation.json",
+          "sha256": "31bf1818766be52f2bdeae9981f24c9128cbf9abf6ac6270828aa115fe629e3c"
+        },
+        "execution": {
+          "path": "build/benchmarks/native-signature-pool-abba-20260913/01-stage1-A1/execution.json",
+          "sha256": "914d77352d2e44a009591cf42e90b0e74e4c4735d7800bfb56e2e5db5b0f2315"
+        },
+        "diagnostics_summary": {
+          "path": "build/benchmarks/native-signature-pool-abba-20260913/01-stage1-A1/diagnostics-summary.json",
+          "sha256": "7bd393e0f17eaf222c96ac26c029cca5be820d88ae692bf00f2a0b3dba224f30"
+        }
+      }
+    },
+    {
+      "order": "B1",
+      "arm": "02-stage1-B1",
+      "flag_value": "1",
+      "status": "valid_observed_run",
+      "valid_run": true,
+      "capacity_claim_allowed": false,
+      "measurement": {
+        "measure_seconds": 600,
+        "canonical_bucket_seconds": 599,
+        "canonical_transfers": 32998512,
+        "canonical_tps": 55089.33555926544,
+        "offered_tps": 55014.08,
+        "offered_over_canonical": 0.998633935978689
+      },
+      "signature_executor": {
+        "calls": 4119,
+        "parents": 2349492,
+        "serial_calls": 478,
+        "threads_created": 8,
+        "launch_sum_s": 0.0,
+        "join_sum_s": 0.0,
+        "residence_sum_s": 10.556876,
+        "pool_calls": 3641,
+        "pool_tickets": 29128,
+        "pool_threads_created": 8,
+        "pool_contended_submits": 0,
+        "pool_queue_wait_sum_s": 0.0,
+        "pool_completion_wait_sum_s": 10.44628,
+        "pool_worker_cpu_sum_s": 19.168684,
+        "pool_threads_at_endpoints": [
+          0,
+          8
+        ],
+        "pool_active_at_endpoints": [
+          0,
+          0
+        ],
+        "pool_queue_at_endpoints": [
+          0,
+          0
+        ],
+        "pool_active_peak_at_endpoints": [
+          0,
+          8
+        ],
+        "pool_queue_peak_at_endpoints": [
+          0,
+          24
+        ],
+        "pool_queue_capacity": 128
+      },
+      "artifacts": {
+        "strict_validation": {
+          "path": "build/benchmarks/native-signature-pool-abba-20260913/02-stage1-B1-strict-validation.json",
+          "sha256": "62097cfc38f9efcf2dbac88174ab6e994269f561c089a8ef9ed186fb66625415"
+        },
+        "execution": {
+          "path": "build/benchmarks/native-signature-pool-abba-20260913/02-stage1-B1/execution.json",
+          "sha256": "071f1ea3a23c518eb4df5522a6b55a05d2a1e5d90c88cc9078c01e8695e36d87"
+        },
+        "diagnostics_summary": {
+          "path": "build/benchmarks/native-signature-pool-abba-20260913/02-stage1-B1/diagnostics-summary.json",
+          "sha256": "d8499fd5750dfd037adc08f626b2c8acd86286587ee8c6147f6c85f87fe6fb37"
+        }
+      }
+    },
+    {
+      "order": "B2",
+      "arm": "03-stage1-B2",
+      "flag_value": "1",
+      "status": "excluded_before_generator_launch",
+      "valid_run": false,
+      "excluded_from_tps_comparisons": true,
+      "generator_launch_attempted": false,
+      "measurement": null,
+      "failure_scope": "inner_controller_physical_memory_preflight",
+      "failure_reasons": [
+        "ValueError: storage preflight failed: physical_host_memory_below_24_gib"
+      ],
+      "artifacts": {
+        "execution": {
+          "path": "build/benchmarks/native-signature-pool-abba-20260913/03-stage1-B2/execution.json",
+          "sha256": "602db8945ee1fcde350a28e75525babbc6346139dea6d3d0eaf584fdfc18b607"
+        },
+        "controller_safety": {
+          "path": "build/benchmarks/native-signature-pool-abba-20260913/03-stage1-B2/controller-safety.json",
+          "sha256": "6b2ff6b87e75493a0df2d9fed9166fa06f563495fcb91291eaf86ada2d333efa"
+        },
+        "owned_reclaim_launch": {
+          "path": "build/benchmarks/native-signature-pool-abba-20260913/runtime/supplemental-owned-reclaim-launches/03-stage1-B2.json",
+          "sha256": "51fb8aa0aade2773e3ae814e8c39fc08d1245e4e76f60eba7611e633289bd8b3"
+        },
+        "runtime_launch": {
+          "path": "build/benchmarks/native-signature-pool-abba-20260913/runtime/launches/03-stage1-B2/execution.json",
+          "sha256": "40aed38c0f79bc3b351666c2d3d254ab75b3d250118e037d0180dd6335519007"
+        }
+      }
+    },
+    {
+      "order": "A2",
+      "arm": "04-stage1-A2",
+      "flag_value": "0",
+      "status": "not_run",
+      "valid_run": false,
+      "measurement": null
+    }
+  ],
+  "first_pair": {
+    "b1_minus_a1_canonical_tps": -564.8614357262122,
+    "b1_over_a1_ratio": 0.9898505150334477,
+    "b1_relative_to_a1_percent": -1.0149484966552325,
+    "interpretation": "This observed first-pair ordering is sufficient to reject strict promotion. It is not a completed-ABBA treatment estimate."
+  },
+  "mechanism_observation": {
+    "confirmed": true,
+    "summary": "B1 used eight persistent pool threads for 29,128 tickets across 3,641 pool calls, with zero contended submits, zero summed queue wait, peak active workers 8, peak queue 24, and idle active/queue endpoint gauges. A1 used the legacy path and created 34,936 threads. Arm totals are reported independently and are not normalized into a causal efficiency percentage.",
+    "semantic_limitations": [
+      "Pool completion wait is wall time summed across calls.",
+      "Pool worker CPU is summed across tickets and can exceed wall time.",
+      "The two arms observed different helper-call and parent totals."
+    ]
+  },
+  "correctness_and_identity": {
+    "same_validator_image": true,
+    "equivalence_corpus": {
+      "signed_runs": 256,
+      "logical_transfers": 4096,
+      "root": "FA8659F8740AB5D0D718FEA765493F6D5DCD1B37AAB13FCECFEE753789C67D2E",
+      "boc_sha256": "8B8EB324BF58A2D51067BCBBBE0721A4D1CA5A3A0669A26D4C8CBF3E9E96DB05",
+      "state_sha256": "10BB7103529A1B6D5BDD7A66EEA9F98C48F425FBF1289D35DDD6A65924EEAF80",
+      "matched_with_flag_off_and_on": true
+    },
+    "frozen_runtime_targets": 7,
+    "frozen_runtime_cases": 144
+  },
+  "evidence": {
+    "integration_verification": {
+      "path": "build/benchmarks/native-signature-pool-abba-20260913/integration-verification-53131233.json",
+      "sha256": "1dcfc19d7e27902b941dc8c55588b03bd5b12b07c135a2796c39b3f30ceef710"
+    },
+    "frozen_runtime_gates": {
+      "path": "build/benchmarks/native-signature-pool-abba-20260913/frozen-runtime-gates-53131233.json",
+      "sha256": "d9821bf4ca20da3630f44382556656ca396609aeb0ec7ad7a5ba02c0a91e20e3"
+    },
+    "harness_freeze": {
+      "path": "build/benchmarks/native-signature-pool-abba-20260913/runtime/harness-freeze-before-pool-stage1.json",
+      "sha256": "094493f1bfe1234f73cd61156e81a620405a8dc147be649556d566b9e26f89e4"
+    },
+    "image_provenance": {
+      "path": "build/benchmarks/native-lane-next-stage-tooling-20260912/split-startup-refresh/candidate-53131233e2fb/provenance.json",
+      "sha256": "066060d69c45344e4dbbdbbb1d6d49e9159b934a46f61bc7ec8caa6618551dd3"
+    },
+    "validator_binary_sha256": "1ed8e796ea06ff6b0daac276eb5f801baadf45a6f1e718fee2d921b141ef4c75"
+  },
+  "limitations": [
+    "The planned A1/B1/B2/A2 sequence did not complete, so no control or treatment mean is reported.",
+    "Neither valid arm supplied at least 5% useful offered-load surplus; no capacity conclusion is allowed.",
+    "B2 contains no performance observation because its inner physical-memory preflight failed before the load generator launched.",
+    "The mechanism counters demonstrate worker reuse but do not by themselves establish a throughput gain."
+  ]
+}

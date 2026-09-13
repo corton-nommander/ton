@@ -496,6 +496,11 @@ void AcceptBlockQuery::got_prev_state(td::Ref<ShardState> state) {
   state_ = std::move(state);
 
   state_keep_old_hash_ = state_->root_hash();
+  if (state_keep_old_hash_ != state_old_hash_) {
+    fatal_error(PSTRING() << "invalid previous state hash in newly-created proof: expected "
+                          << state_keep_old_hash_.to_hex() << ", found in update " << state_old_hash_.to_hex());
+    return;
+  }
   td::actor::send_closure(manager_, &ValidatorManager::set_block_state_from_data, handle_, data_,
                           [SelfId = actor_id(this)](td::Result<td::Ref<ShardState>> R) {
                             check_send_error(SelfId, R) ||
@@ -506,12 +511,6 @@ void AcceptBlockQuery::got_prev_state(td::Ref<ShardState> state) {
 void AcceptBlockQuery::written_state(td::Ref<ShardState> upd_state) {
   VLOG(VALIDATOR_DEBUG) << "written state";
   state_ = std::move(upd_state);
-
-  if (apply_ && state_keep_old_hash_ != state_old_hash_) {
-    fatal_error(PSTRING() << "invalid previous state hash in newly-created proof: expected "
-                          << state_->root_hash().to_hex() << ", found in update " << state_old_hash_.to_hex());
-    return;
-  }
 
   //handle_->set_masterchain_block(prev_[0]);
   handle_->set_split(before_split_);

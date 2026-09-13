@@ -32,6 +32,7 @@
 #include "td/utils/Random.h"
 #include "ton/ton-io.hpp"
 #include "ton/ton-tl.hpp"
+#include "validator/validated-state-handoff.h"
 #include "vm/boc.h"
 #include "vm/cells/MerkleProof.h"
 #include "vm/cells/MerkleUpdate.h"
@@ -114,6 +115,12 @@ ValidateQuery::ValidateQuery(BlockCandidate candidate, ValidateParams params,
  * Raises an error when timeout is reached.
  */
 void ValidateQuery::alarm() {
+  if (validated_state_handoff_pending_) {
+    validated_state_handoff_pending_ = false;
+    finish_query_after_validated_state_handoff(
+        td::Status::Error(ErrorCode::timeout, "validated-state handoff acknowledgement timed out"));
+    return;
+  }
   if (!parallel_accounts_validation_pending_) {
     abort_query(td::Status::Error(ErrorCode::timeout, "timeout"));
   }
@@ -256,15 +263,51 @@ bool ValidateQuery::fatal_error(std::string err_msg, int err_code) {
  */
 void ValidateQuery::finish_query() {
   if (main_promise) {
+    // Validation is complete. The optional manager acknowledgement must not
+    // turn a successful result into a timeout while its mailbox is busy.
+    alarm_timestamp() = td::Timestamp::never();
     if (!storage_stat_cache_update_.empty()) {
       td::actor::send_closure(manager, &ValidatorManager::update_storage_stat_cache,
                               std::move(storage_stat_cache_update_));
     }
-    td::actor::send_closure(actor_id(this), &ValidateQuery::record_stats_and_stop, true, "");
-    LOG(WARNING) << "validate query done";
-    double ok_from_utime = now_ms_ ? (double)now_ms_.value() / 1000.0 : (double)now_;
-    main_promise.set_result(CandidateAccept{.ok_from_utime = ok_from_utime});
+    // Full-collated-data validation may leave the result rooted in a
+    // virtualized Merkle proof. CellDb intentionally does not persist
+    // virtualized roots, so only publish a materialized state. Acceptance will
+    // reconstruct the state through its existing path for every other case.
+    if (validated_state_handoff_enabled() && state_root_.not_null() && !state_root_->is_virtualized()) {
+      auto state = create_shard_state(id_, state_root_);
+      if (state.is_ok()) {
+        validated_state_handoff_pending_ = true;
+        alarm_timestamp() = td::Timestamp::in(validated_state_handoff_ack_timeout_seconds_);
+        auto promise = td::PromiseCreator::lambda([SelfId = actor_id(this)](td::Result<td::Unit> result) mutable {
+          td::actor::send_closure(SelfId, &ValidateQuery::finish_query_after_validated_state_handoff,
+                                  std::move(result));
+        });
+        td::actor::send_closure(manager, &ValidatorManager::cache_validated_state, id_, state.move_as_ok(), state_hash_,
+                                std::move(promise));
+        return;
+      } else {
+        LOG(ERROR) << "failed to prepare validated-state handoff for " << id_ << ": " << state.move_as_error();
+      }
+    }
+    finish_query_after_validated_state_handoff(td::Unit{});
   }
+}
+
+void ValidateQuery::finish_query_after_validated_state_handoff(td::Result<td::Unit> result) {
+  if (!main_promise) {
+    return;
+  }
+  validated_state_handoff_pending_ = false;
+  alarm_timestamp() = td::Timestamp::never();
+  if (result.is_error()) {
+    LOG(ERROR) << "validated-state handoff failed for " << id_
+               << "; acceptance will rebuild the state: " << result.move_as_error();
+  }
+  td::actor::send_closure(actor_id(this), &ValidateQuery::record_stats_and_stop, true, "");
+  LOG(WARNING) << "validate query done";
+  double ok_from_utime = now_ms_ ? (double)now_ms_.value() / 1000.0 : (double)now_;
+  main_promise.set_result(CandidateAccept{.ok_from_utime = ok_from_utime});
 }
 
 /*

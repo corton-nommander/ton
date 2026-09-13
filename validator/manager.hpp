@@ -49,6 +49,7 @@
 #include "state-serializer.hpp"
 #include "storage-stat-cache.hpp"
 #include "token-manager.h"
+#include "validated-state-handoff.h"
 #include "validator-group.hpp"
 
 namespace ton {
@@ -162,6 +163,15 @@ class ValidatorManagerImpl : public ValidatorManager {
     td::Timestamp ttl_;
   };
   std::map<BlockIdExt, CachedBlockState> block_state_cache_;
+
+  struct ValidatedStateHandoff {
+    td::Ref<ShardState> state;
+  };
+  static constexpr size_t validated_state_handoff_max_entries_ = 32;
+  static constexpr double validated_state_handoff_ttl_seconds_ = 30.0;
+  ValidatedStateHandoffCache<ValidatedStateHandoff> validated_state_handoff_cache_{
+      validated_state_handoff_max_entries_, validated_state_handoff_ttl_seconds_};
+  bool validated_state_handoff_enabled_{false};
 
   struct WaitBlockHandle {
     std::vector<td::Promise<BlockHandle>> waiting_;
@@ -374,6 +384,8 @@ class ValidatorManagerImpl : public ValidatorManager {
 
   void set_block_state(BlockHandle handle, td::Ref<ShardState> state, vm::StoreCellHint hint,
                        td::Promise<td::Ref<ShardState>> promise) override;
+  void cache_validated_state(BlockIdExt block_id, td::Ref<ShardState> state, RootHash validated_state_root_hash,
+                             td::Promise<td::Unit> promise) override;
   void store_block_state_part(BlockId effective_block, td::Ref<vm::Cell> cell,
                               td::Promise<td::Ref<vm::DataCell>> promise) override;
   void set_block_state_from_data(BlockHandle handle, td::Ref<BlockData> block,

@@ -104,6 +104,11 @@ target_include_directories(test-native-lane-scheduler PRIVATE ${CMAKE_SOURCE_DIR
 target_link_libraries(test-native-lane-scheduler PRIVATE td-test-main tdactor tdutils)
 ton_test(test-native-lane-scheduler)
 
+add_executable(test-validated-state-handoff test-validated-state-handoff.cpp)
+target_include_directories(test-validated-state-handoff PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/crypto)
+target_link_libraries(test-validated-state-handoff PRIVATE td-test-main tdutils)
+ton_test(test-validated-state-handoff)
+
 add_executable(test-native-prepared-lane-owners test-native-prepared-lane-owners.cpp)
 target_include_directories(test-native-prepared-lane-owners PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
                                                                        ${CMAKE_SOURCE_DIR}/common

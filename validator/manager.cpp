@@ -1495,6 +1495,23 @@ void ValidatorManagerImpl::set_block_state(BlockHandle handle, td::Ref<ShardStat
   td::actor::send_closure(db_, &Db::store_block_state, handle, state, std::move(hint), std::move(P));
 }
 
+void ValidatorManagerImpl::cache_validated_state(BlockIdExt block_id, td::Ref<ShardState> state,
+                                                 RootHash validated_state_root_hash, td::Promise<td::Unit> promise) {
+  if (!validated_state_handoff_enabled_) {
+    promise.set_value(td::Unit{});
+    return;
+  }
+  auto state_root = state.not_null() ? state->root_cell() : td::Ref<vm::Cell>{};
+  if (state_root.is_null() || state_root->is_virtualized() ||
+      !validated_state_handoff_identity_matches(block_id, state->get_block_id(), state->root_hash(),
+                                                validated_state_root_hash)) {
+    promise.set_error(td::Status::Error("validated-state handoff identity mismatch"));
+    return;
+  }
+  validated_state_handoff_cache_.insert(block_id, ValidatedStateHandoff{std::move(state)});
+  promise.set_value(td::Unit{});
+}
+
 void ValidatorManagerImpl::store_block_state_part(BlockId effective_block, td::Ref<vm::Cell> cell,
                                                   td::Promise<td::Ref<vm::DataCell>> promise) {
   td::actor::send_closure(db_, &Db::store_block_state_part, effective_block, cell, std::move(promise));
@@ -1502,6 +1519,17 @@ void ValidatorManagerImpl::store_block_state_part(BlockId effective_block, td::R
 
 void ValidatorManagerImpl::set_block_state_from_data(BlockHandle handle, td::Ref<BlockData> block,
                                                      td::Promise<td::Ref<ShardState>> promise) {
+  if (validated_state_handoff_enabled_ && handle && block.not_null()) {
+    auto block_root = block->root_cell();
+    if (block_root.not_null() && validated_state_handoff_block_matches(handle->id(), block->block_id(),
+                                                                       RootHash{block_root->get_hash().bits()})) {
+      auto handoff = validated_state_handoff_cache_.take(block->block_id());
+      if (handoff) {
+        set_block_state(std::move(handle), std::move(handoff->state), vm::StoreCellHint{}, std::move(promise));
+        return;
+      }
+    }
+  }
   td::actor::send_closure(db_, &Db::store_block_state_from_data, handle, block, std::move(promise));
 }
 
@@ -2133,6 +2161,7 @@ class StatsCallback final : public ton::stats::Callback {
 }  // namespace
 
 void ValidatorManagerImpl::start_up() {
+  validated_state_handoff_enabled_ = validated_state_handoff_enabled();
   stats::install_callback(std::make_unique<StatsCallback>(actor_id(this)));
 
   db_ = create_db_actor(actor_id(this), db_root_, opts_);
@@ -3151,6 +3180,7 @@ void ValidatorManagerImpl::state_serializer_update(BlockSeqno seqno) {
 
 void ValidatorManagerImpl::alarm() {
   try_advance_gc_masterchain_block();
+  validated_state_handoff_cache_.expire();
   alarm_timestamp() = td::Timestamp::in(1.0);
   if (shard_client_state_.not_null() && gc_masterchain_handle_) {
     td::actor::send_closure(db_, &Db::run_gc, shard_client_state_, gc_masterchain_handle_->unix_time(),
@@ -3383,6 +3413,15 @@ void ValidatorManagerImpl::prepare_stats(td::Promise<std::vector<std::pair<std::
   auto merger = StatsMerger::create(std::move(promise));
 
   std::vector<std::pair<std::string, std::string>> vec;
+  validated_state_handoff_cache_.expire();
+  const auto &handoff_stats = validated_state_handoff_cache_.stats();
+  vec.emplace_back("total.native_validated_state_handoff",
+                   PSTRING() << "enabled:" << static_cast<int>(validated_state_handoff_enabled_)
+                             << " hits:" << handoff_stats.hits << " misses:" << handoff_stats.misses
+                             << " inserts:" << handoff_stats.inserts << " evictions:" << handoff_stats.evictions
+                             << " expirations:" << handoff_stats.expirations
+                             << " entries:" << validated_state_handoff_cache_.size()
+                             << " capacity:" << validated_state_handoff_max_entries_);
   vec.emplace_back("unixtime", td::to_string(static_cast<UnixTime>(td::Clocks::system())));
   if (last_masterchain_block_handle_) {
     vec.emplace_back("masterchainblock", last_masterchain_block_id_.to_str());

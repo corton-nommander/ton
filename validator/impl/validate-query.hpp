@@ -277,6 +277,9 @@ class ValidateQuery : public td::actor::Actor {
 
   td::PerfWarningTimer perf_timer_;
   td::PerfLog perf_log_;
+  bool validated_state_handoff_pending_{false};
+
+  static constexpr double validated_state_handoff_ack_timeout_seconds_ = 1.0;
 
   static constexpr td::uint32 priority() {
     return 2;
@@ -286,6 +289,7 @@ class ValidateQuery : public td::actor::Actor {
   }
 
   void finish_query();
+  void finish_query_after_validated_state_handoff(td::Result<td::Unit> result);
   void abort_query(td::Status error);
   bool reject_query(std::string error, td::BufferSlice reason = {});
   bool reject_query(std::string err_msg, td::Status error, td::BufferSlice reason = {});

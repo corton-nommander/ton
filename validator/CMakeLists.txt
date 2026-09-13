@@ -32,6 +32,7 @@ set(VALIDATOR_DB_SOURCE
 
 set(VALIDATOR_HEADERS
   native-lane-scheduler.h
+  validated-state-handoff.h
   types.h
   block-handle.hpp
   get-next-key-blocks.h

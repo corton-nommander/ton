@@ -1,6 +1,6 @@
 {
   "schema": "native-lane-pipeline-cycles-summary-v1",
-  "status": "partial roadmap: balanced ownership comparison pending",
+  "status": "completed roadmap: persistent producer retained; preparation, journal and combined owners/domains rejected or not promoted",
   "selected_experimental_flags": {
     "TON_NATIVE_PERSISTENT_PRODUCER": "1",
     "TON_NATIVE_ADMISSION_PREPARE": "0",
@@ -182,10 +182,61 @@
     "actual_client_signers": 6,
     "client_revision": "bc15f97615a4014b7a65e51b4370bfcda51b74a5",
     "client_image": "sha256:02819cb504e5db07eb8816ded24f844294adedb62133a7bf4f1ffa6dba3acd3b",
-    "next_context": "Fresh chain; split-only startup fix; engine16 planned for equal three-worker lane domains plus main4. Client remains6workers6signers; manifest assigns lane=index%4, not one lane per client worker. No results yet."
+    "next_context": "Superseded by the completed fresh 16-worker balanced ABBA. The old lane-imbalanced control remains invalid and is not reused."
   },
   "balanced_context": {
-    "status": "pending physical-memory/startup preflight; no balanced validator or measurement started",
+    "status": "complete valid four-arm ABBA; combined owners4/domains4 treatment rejected",
+    "sequence": "ABBA",
+    "arms": [
+      {
+        "label": "A1",
+        "arm": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/01-stage1-A1",
+        "owners": 0,
+        "scheduler_domains": 0,
+        "valid_600s": true,
+        "offered_tps": 58047.706666666665,
+        "admitted_tps": 58047.706666666665,
+        "canonical_tps": 59149.38230383973,
+        "canonical_native_blocks_per_s": 6.290484140233723,
+        "canonical_transfers_per_block": 9402.993630573248
+      },
+      {
+        "label": "B1",
+        "arm": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/02-stage1-B1",
+        "owners": 4,
+        "scheduler_domains": 4,
+        "valid_600s": true,
+        "offered_tps": 52181.973333333335,
+        "admitted_tps": 52181.973333333335,
+        "canonical_tps": 52410.20367278798,
+        "canonical_native_blocks_per_s": 3.2504173622704506,
+        "canonical_transfers_per_block": 16124.145865434
+      },
+      {
+        "label": "B2",
+        "arm": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/03-stage1-B2",
+        "owners": 4,
+        "scheduler_domains": 4,
+        "valid_600s": true,
+        "offered_tps": 52514.586666666626,
+        "admitted_tps": 52514.586666666626,
+        "canonical_tps": 52542.74457429048,
+        "canonical_native_blocks_per_s": 3.639398998330551,
+        "canonical_transfers_per_block": 14437.203669724771
+      },
+      {
+        "label": "A2",
+        "arm": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/04-stage1-A2",
+        "owners": 0,
+        "scheduler_domains": 0,
+        "valid_600s": true,
+        "offered_tps": 55181.76,
+        "admitted_tps": 55181.76,
+        "canonical_tps": 56212.06010016694,
+        "canonical_native_blocks_per_s": 4.656093489148581,
+        "canonical_transfers_per_block": 12072.794550017927
+      }
+    ],
     "engine_threads": 16,
     "generator_workers": 6,
     "generator_signers": 6,
@@ -226,9 +277,31 @@
         4
       ]
     },
+    "comparison": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/stage1-comparison.json",
+    "comparison_sha256": "7bbe03cfe7dfb2089584dd7c5454fb73a759f8002d05dd842fd8bf385f828994",
+    "decision_record": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/stage1-decisions.json",
+    "decision_record_sha256": "e671288666d88d3f085493cc8709db003986960c3379005fc42a593c3527b329",
+    "final_report_json": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/balanced-stage1-final-report.json",
+    "final_report_json_sha256": "59ebf8ea08b96414e5937cb58db2c110b05c56561cafd6ee85b1dc196710d3af",
+    "final_report_markdown": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/balanced-stage1-final-report.md",
+    "final_report_markdown_sha256": "17718dfe9c2a47569c62bde8b5437e78d4247721010af01048296d625ae7e21e",
+    "valid_four_arm_comparison": true,
     "canonical_tps": null,
-    "gain_percent": null,
+    "control_mean_canonical_tps": 57680.72120200333,
+    "treatment_mean_canonical_tps": 52476.47412353923,
+    "gain_percent": -9.022506948618659,
+    "control_drift_percent": -4.965938931676906,
+    "treatment_drift_percent": 0.25289140704354285,
+    "both_candidates_above_both_controls": false,
+    "canonical_transfers_per_block_change_percent": 42.30606708432105,
+    "canonical_native_blocks_per_s_change_percent": -37.05963092877841,
+    "capacity_claim_allowed": false,
+    "promotion_candidate": false,
     "promotion_allowed": false,
+    "decision": "reject combined owners4/domains4 treatment; promote no stage1 arm",
+    "treatment_scope": "ownership and scheduler placement changed together; the result does not isolate either switch",
+    "preparation_scope": "preparation1 was a common owner dependency; the selected complete profile remains preparation0",
+    "startup_scope": "reported four-leaf readiness with zero observed native work passed; independent split ancestry was not established",
     "physical_memory_startup_floor_GiB": 24,
     "resource_gate_unchanged": true
   },
@@ -240,7 +313,7 @@
     "frozen_runtime_targets_passed": 7,
     "counts_not_additive": true,
     "ordinary_idle_mock_manager_regression_passed": true,
-    "real_zero_ingress_split_gate": "pending",
+    "real_zero_ingress_split_gate": "reported four-leaf readiness with two advancing masterchain samples and all 28 native/live counters at zero passed; independent split-ancestry proof remains false",
     "queued_parent_runtime_fixture": "not newly exercised",
     "corrected_client_revision": "bc15f97615a4014b7a65e51b4370bfcda51b74a5",
     "client_policy_cases_passed": 66,
@@ -280,6 +353,17 @@
     "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-next-stage-tooling-20260912/split-startup-refresh/test-native-prepared-owner-coordination.frozen-runtime-095bc0de.log": "bc1b56db74a3686966cc9c38b08c694f3f78611faa7b47d088e4303176011109",
     "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-next-stage-tooling-20260912/split-startup-refresh/full-native-publication-gate.log": "866b8adbd0326ecc16c6905d7c6105f9a8f419c6fdc592493f16d78599a480b2",
     "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-next-stage-tooling-20260912/split-startup-refresh/ordinary-idle-regression.log": "1cc2eb66e7a08167c152a5323b570144db616d7cf7707ed0324213183672167b",
-    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-next-stage-tooling-20260912/split-startup-refresh/build.log": "b4734a46dc771d229afbe0f48bf3a8fe35f452de974b366b83d852391fefbc70"
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-next-stage-tooling-20260912/split-startup-refresh/build.log": "b4734a46dc771d229afbe0f48bf3a8fe35f452de974b366b83d852391fefbc70",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/stage1-comparison.json": "7bbe03cfe7dfb2089584dd7c5454fb73a759f8002d05dd842fd8bf385f828994",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/01-stage1-A1-report.json": "4b4df87bf9b49d9faedb4ad17ff20e057816c7b536092c8096a60cf8ccea1093",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/02-stage1-B1-report.json": "f41fb42a07fd5a377ecc9df75eae439619ae4e401af860ba3dd089fce4f84401",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/03-stage1-B2-report.json": "1222c244e40605758ef2d0b3088245be585eb15d5f3769cfc7601edcfef9d0ee",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/04-stage1-A2-report.json": "c150c9da48fdca79ed64f1966a0cb1c65ca613ec01cc2af5024c75673d0e1569",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/stage1-decisions.json": "e671288666d88d3f085493cc8709db003986960c3379005fc42a593c3527b329",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/balanced-stage1-final-report.json": "59ebf8ea08b96414e5937cb58db2c110b05c56561cafd6ee85b1dc196710d3af",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/balanced-stage1-final-report.md": "17718dfe9c2a47569c62bde8b5437e78d4247721010af01048296d625ae7e21e",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/runtime/zero-ingress-startup.json": "bae053b717c889edf654f5a321b2f5a425061d4b0d7d82ec2afd966168f56aa6",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/runtime/bootstrap-operation-completion-20260913.json": "a97bca09d12848c58199bc3539d5220064c6c8814df571a986756f7ee21b2783",
+    "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-lane-pipeline-stage1-balanced-20260912/runtime/harness-freeze-before-balanced-stage1.json": "6816aed333984b86eccb33ca960992ef2e572ad4dd9dd20619e5c67c46033173"
   }
 }

@@ -55,8 +55,9 @@ test and log hashes are in
 and the [frozen runtime gates](../build/benchmarks/native-lane-pipeline-20260912/frozen-runtime-gates-52a20df0.json).
 The later split-startup build `095bc0de` repeated the 144 focused cases,
 21 publication-gate invocations and seven frozen-runtime checks. Its existing
-mock-manager ordinary-idle regression also passed; a real fresh zero-ingress
-split transition remains a separate pending gate. See the
+mock-manager ordinary-idle regression also passed. A later fresh no-load startup
+reported four depth-two leaves and zero native/live counters; it did not
+independently prove split ancestry. See the
 [cycle report](native-lane-pipeline-cycles-2026-09-12.md#validation-and-next-context).
 
 Performance result: four proof-complete 600-second stage2 ABBA arms produced
@@ -69,15 +70,17 @@ and [12 September cycle report](native-lane-pipeline-cycles-2026-09-12.md).
 
 ## Selected benchmark reference
 
-Pending the corrected ownership result, retain producer1/preparation0/journal0
-with owners0/domains0 and broad checkpoint retention0. Keep four lanes, 20ms
+The completed balanced comparison rejected combined owners = 4 / domains = 4. Retain
+producer = 1, preparation = 0, journal = 0 with owners = 0 / domains = 0 and broad
+checkpoint retention = 0. Keep four lanes and 20 ms
 coalescing and a 65,536 maximum logical window for matched follow-up tests; these
 are the measured desktop context, not a new production hardware optimum. The
-owner experiment needs preparation1 on both sides, so an owner improvement alone
-would still need a complete-profile comparison against this reference.
+owner experiment used preparation = 1 on both sides and promoted no stage 1 arm.
 
 An empty-shard startup diagnosis found that native idle suppression can delay
 structural split candidates. Readiness eventually completed without a patch.
-The split-only fix is committed as `095bc0de`; real zero-ingress verification
-and any performance result remain pending. It excludes after-merge transitions;
-keep proof-checked four-lane readiness separate from the measured load window.
+The split-only fix is committed as `095bc0de`. A later fresh no-load startup
+reported four depth-two leaves and advancing masterchain state with every required
+native/live counter at zero. That observation is not an independent split-ancestry
+proof. It excludes after-merge transitions; keep startup readiness separate from
+the measured load window.

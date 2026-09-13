@@ -591,20 +591,20 @@ remain outstanding before considering the separately gated lane-owned redesign.
 
 The [architecture roadmap](native-architecture-roadmap-2026-09-12.md) reviews the
 retained 61,959 TPS reference, rejected owner/refresh/trie treatments and the latest
-collation diagnostic. It prioritizes complete lane ownership, persistent useful-work
-publication, short exact-state admission commits, canonical account deltas and
-incremental authenticated state construction. Multi-fold numbers are prototype
-targets or conditional models, not measured TPS gains. The current recovered series
-has two complete 600s whole-image controls and an interrupted context arm; no new
-feature is promoted. See the [updated experiment report](native-collation-experiments-2026-09-11.md).
+balanced evidence. It now prioritizes a persistent validation executor, measured
+durability/cohort commits, atomic canonical epochs, lane-aware work stealing and
+incremental authenticated state construction. Its component bounds are conditional
+models, not measured TPS gains. See the
+[updated experiment report](native-collation-experiments-2026-09-11.md).
 
 ## Lane-pipeline outcome and current measurement — 12 September
 
 The [lane-pipeline experiment report](native-lane-pipeline-cycles-2026-09-12.md)
 retains persistent producer publication at +2.2254% mean canonical TPS in its own
 ABBA comparison. Preparation was inconclusive; the journal demonstrated no
-repeatable gain. Both the incompatible ownership treatment and the corrected
-lane-imbalanced control remain invalid for feature selection. A fresh balanced
-ownership comparison is pending. The historical 61,959.20 TPS reference and the
-64,716.77 TPS storage diagnostic retain their distinct contexts and do not
-establish a cross-chain winner, combined gain or production capacity.
+repeatable gain. The fresh balanced ownership comparison then completed: combined
+owners = 4 / domains = 4 averaged 52,476.47 canonical TPS against 57,680.72 controls
+(−9.0225%) and was rejected. All four arms were valid, but the two switches cannot
+be attributed separately. The historical 61,959.20 TPS reference and 64,716.77 TPS
+storage diagnostic retain their distinct contexts and do not establish a
+cross-chain winner, combined gain or production capacity.

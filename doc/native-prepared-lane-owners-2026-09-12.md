@@ -2,9 +2,9 @@
 
 The four-owner implementation is present and passed the frozen correctness gates.
 It builds on the producer and preparation boundaries; the canonical journal is
-optional and remains off in the current comparison. Owners are disabled by default,
-and their performance decision remains unestablished after the corrected control
-failed lane balance. A fresh balanced comparison is pending. The previous owner prototype lost throughput: its corrected-client
+optional and remained off in the comparison. Owners are disabled by default. The
+fresh balanced comparison completed and rejected owners = 4 plus scheduler domains = 4
+as one combined treatment. The previous owner prototype also lost throughput: its corrected-client
 long screen reached 46,119 canonical TPS versus 55,913 and 53,300 controls, with
 higher RTT and CPU. This implementation must earn its own repeatable result.
 See [lane scheduler domains](native-lane-schedulers-2026-09-12.md) for that prior
@@ -166,18 +166,20 @@ test and log hashes are in
 and the [frozen runtime gates](../build/benchmarks/native-lane-pipeline-20260912/frozen-runtime-gates-52a20df0.json).
 The later split-startup build `095bc0de` repeated the 144 focused cases,
 21 publication-gate invocations and seven frozen-runtime checks. Its existing
-mock-manager ordinary-idle regression also passed; a real fresh zero-ingress
-split transition remains a separate pending gate. See the
+mock-manager ordinary-idle regression also passed. A fresh no-load startup later
+reported four depth-two leaves and masterchain progress with all 28 native/live
+counters at zero; this did not independently prove split ancestry. See the
 [cycle report](native-lane-pipeline-cycles-2026-09-12.md#validation-and-next-context).
 
-Performance result: **not established**. The first corrected control failed the
-fixed lane-balance gate after complete proof/drain; a new balanced context is pending. The comparison tests owners4
-plus domains4 against owners0/domains0, with preparation1 on both sides as an
-owner dependency. Preparation alone was inconclusive and remains off in the
-selected reference; the journal showed no demonstrated TPS gain and also remains
-off. A conditional owner/domain result must therefore be distinguished from a
-complete-profile comparison against that reference. No owner/domain throughput
-or capacity improvement is claimed. See the [12 September cycle report](native-lane-pipeline-cycles-2026-09-12.md).
+Performance result: the fresh balanced A1/B1/B2/A2 comparison was valid. Combined
+owners = 4 / domains = 4 averaged **52,476.47 canonical TPS** versus **57,680.72** for
+owners = 0 / domains = 0 controls, an observed **−9.0225%**. Both treatment repeats were
+below both controls; all four arms passed the 600-second, image, proof, drain,
+cleanup and lane-balance gates. Reject the combined configuration and keep owners = 0.
+The experiment changed ownership and scheduler placement together, so it does not
+assign the loss to owners alone. Preparation = 1 was fixed on both sides as an owner
+dependency; preparation remains off in the selected complete profile. No capacity
+improvement was established. See the [12 September cycle report](native-lane-pipeline-cycles-2026-09-12.md).
 
 Keep one frozen validator image and the unchanged client image within every
 paired comparison. The stage1 comparison retains producer1, journal0 and broad

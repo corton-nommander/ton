@@ -5,8 +5,9 @@ complete fixed four-leaf basechain topology. The default, `0`, retains the exist
 single scheduler and all configured CPU workers. This flag controls execution
 scheduling. Independent admission/reservation ownership is implemented separately
 by the [prepared lane-owner prototype](native-prepared-lane-owners-2026-09-12.md).
-Neither flag shards storage or adds validators; their performance result remains
-pending.
+Neither flag shards storage or adds validators. The completed balanced comparison
+changed scheduler domains and prepared lane owners together; that combined
+configuration regressed and was rejected.
 
 The engine conserves its configured CPU-worker total. Four workers remain in the
 main scheduler; the rest are divided evenly across four lane schedulers, assigning
@@ -65,8 +66,9 @@ test and log hashes are in
 and the [frozen runtime gates](../build/benchmarks/native-lane-pipeline-20260912/frozen-runtime-gates-52a20df0.json).
 The later split-startup build `095bc0de` repeated the 144 focused cases,
 21 publication-gate invocations and seven frozen-runtime checks. Its existing
-mock-manager ordinary-idle regression also passed; a real fresh zero-ingress
-split transition remains a separate pending gate. See the
+mock-manager ordinary-idle regression also passed. A fresh no-load startup later
+reported four depth-two leaves and masterchain progress with all 28 native/live
+counters at zero; this did not independently prove split ancestry. See the
 [cycle report](native-lane-pipeline-cycles-2026-09-12.md#validation-and-next-context).
 
 Keep preparation, producer and journal flags fixed across a comparison. A
@@ -83,10 +85,14 @@ observer `e04b96f` on both sides; see [client compatibility](native-prepared-lan
 The initial incompatible-client pair and the later lane-imbalanced corrected
 control are excluded from feature selection; the tolerance was not widened.
 
-Performance result: **not established**. The first corrected control failed the
-fixed lane-balance gate after complete proof/drain; a new balanced context is pending. No scheduler or combined owner/domain
-TPS improvement is claimed. The result and final profile decision will be recorded
-in the [12 September cycle report](native-lane-pipeline-cycles-2026-09-12.md).
+Performance result: the fresh balanced A1/B1/B2/A2 comparison was valid. Combined
+owners = 4 / domains = 4 averaged **52,476.47 canonical TPS** versus **57,680.72** for
+owners = 0 / domains = 0 controls, an observed **−9.0225%**. All four arms passed the
+600-second, image, proof, drain, cleanup and lane-balance gates. Treatment density
+rose 42.306% while native-block cadence fell 37.060%. Reject the combined
+configuration and keep domains = 0. Because ownership changed at the same time, this
+does not establish an isolated scheduler percentage. See the
+[12 September cycle report](native-lane-pipeline-cycles-2026-09-12.md).
 
 ## Implemented ownership and prior evidence
 

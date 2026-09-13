@@ -118,6 +118,15 @@ class RocksDb : public KeyValue {
   Status commit_transaction() override;
   Status abort_transaction() override;
   Status flush() override;
+  // Flush the manual WAL buffer and optionally sync it to durable storage.
+  // This is a storage barrier, not an application-level cohort boundary:
+  // callers must serialize racing writes with this call before acknowledging
+  // an exact set of sync=false writes as durable.
+  //
+  // RocksDB does not add explicit FlushWAL time to WAL_FILE_SYNC_MICROS, so
+  // WriteBatchStats::wal_sync_micros does not time this call. Callers that need
+  // flush latency must time the call directly.
+  Status flush_wal(bool sync, WriteBatchStats *stats = nullptr);
 
   Status begin_snapshot();
   Status end_snapshot();

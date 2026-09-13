@@ -16,7 +16,21 @@
 
     Copyright 2017-2020 Telegram Systems LLP
 */
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
 #include <map>
+
+#include "td/utils/port/platform.h"
+
+#if TD_DARWIN_MAC || TD_LINUX
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
+#if TD_DARWIN_MAC
+#include <mach-o/dyld.h>
+#endif
 
 #include "rocksdb/statistics.h"
 #include "td/actor/TestScheduler.h"
@@ -107,6 +121,50 @@ class FailingWriteBatchKeyValue final : public td::MemoryKeyValue {
   bool batch_active_{false};
   std::map<std::string, std::string> staged_;
 };
+
+#if TD_DARWIN_MAC || TD_LINUX
+constexpr char MANUAL_WAL_FLUSH_CHILD_ENV[] = "TON_TEST_MANUAL_WAL_FLUSH_CHILD";
+
+std::string current_test_executable_path() {
+#if TD_LINUX
+  return "/proc/self/exe";
+#else
+  uint32_t size = 0;
+  CHECK(_NSGetExecutablePath(nullptr, &size) == -1);
+  std::string path(size, '\0');
+  CHECK(_NSGetExecutablePath(path.data(), &size) == 0);
+  path.resize(std::strlen(path.c_str()));
+  return path;
+#endif
+}
+
+[[noreturn]] void run_manual_wal_flush_child(td::Slice db_name, bool no_transactions) {
+  td::RocksDbOptions options;
+  options.no_transactions = no_transactions;
+  auto db = td::RocksDb::open(db_name.str(), std::move(options)).move_as_ok();
+
+  db.begin_write_batch().ensure();
+  db.set("first-key", "first-value").ensure();
+  db.commit_write_batch(false, nullptr).ensure();
+
+  db.begin_write_batch().ensure();
+  db.set("second-key", "second-value").ensure();
+  db.commit_write_batch(false, nullptr).ensure();
+
+  db.flush_wal(true).ensure();
+  // Simulate process termination without RocksDb or DB destructors. Recovery
+  // must therefore rely on the explicit WAL buffer flush above.
+  ::_exit(0);
+}
+
+void restore_child_environment(const char *old_value) {
+  if (old_value) {
+    CHECK(::setenv(MANUAL_WAL_FLUSH_CHILD_ENV, old_value, 1) == 0);
+  } else {
+    CHECK(::unsetenv(MANUAL_WAL_FLUSH_CHILD_ENV) == 0);
+  }
+}
+#endif
 
 }  // namespace
 
@@ -416,6 +474,14 @@ TEST(KeyValue, rocksdb_write_batch_explicit_sync_and_stats) {
     ASSERT_EQ(async_stats.wal_sync_count, 0u);
     ASSERT_EQ(async_stats.wal_sync_micros, 0u);
 
+    td::RocksDb::WriteBatchStats flush_stats;
+    db.flush_wal(true, &flush_stats).ensure();
+    ASSERT_TRUE(flush_stats.sync_requested);
+    ASSERT_TRUE(flush_stats.wal_enabled);
+    ASSERT_EQ(flush_stats.operations, 0u);
+    ASSERT_EQ(flush_stats.serialized_bytes, 0u);
+    ASSERT_TRUE(flush_stats.wal_sync_count > 0);
+
     std::string value;
     ASSERT_EQ(db.get("sync-key", value).move_as_ok(), td::KeyValue::GetStatus::Ok);
     ASSERT_EQ(value, "sync-value");
@@ -425,6 +491,71 @@ TEST(KeyValue, rocksdb_write_batch_explicit_sync_and_stats) {
 
   td::RocksDb::destroy(db_name).ignore();
 }
+
+#if TD_DARWIN_MAC || TD_LINUX
+TEST(KeyValue, rocksdb_manual_wal_flush_child) {
+  const char *mode = std::getenv(MANUAL_WAL_FLUSH_CHILD_ENV);
+  if (!mode) {
+    return;
+  }
+  if (std::strcmp(mode, "transactions") == 0) {
+    run_manual_wal_flush_child("testdb-manual-wal-flush-transactions", false);
+  }
+  if (std::strcmp(mode, "no-transactions") == 0) {
+    run_manual_wal_flush_child("testdb-manual-wal-flush-no-transactions", true);
+  }
+  LOG(FATAL) << "Unexpected manual WAL flush child mode: " << mode;
+}
+
+TEST(KeyValue, rocksdb_manual_wal_flush_is_durable_after_process_exit) {
+  const auto executable_path = current_test_executable_path();
+  const char *old_mode_ptr = std::getenv(MANUAL_WAL_FLUSH_CHILD_ENV);
+  const std::optional<std::string> old_mode = old_mode_ptr ? std::optional<std::string>(old_mode_ptr) : std::nullopt;
+
+  for (const auto &mode : {"transactions", "no-transactions"}) {
+    const td::Slice db_name = std::strcmp(mode, "transactions") == 0
+                                  ? td::Slice("testdb-manual-wal-flush-transactions")
+                                  : td::Slice("testdb-manual-wal-flush-no-transactions");
+    td::RocksDb::destroy(db_name).ignore();
+    ASSERT_EQ(::setenv(MANUAL_WAL_FLUSH_CHILD_ENV, mode, 1), 0);
+
+    const char *executable = executable_path.c_str();
+    char executable_arg[] = "test-tddb";
+    char filter_option[] = "--filter";
+    char filter_value[] = "+rocksdb_manual_wal_flush_child";
+    char *const arguments[] = {executable_arg, filter_option, filter_value, nullptr};
+    const auto child = ::fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0) {
+      ::execv(executable, arguments);
+      ::_exit(127);
+    }
+
+    restore_child_environment(old_mode ? old_mode->c_str() : nullptr);
+    int child_status = 0;
+    pid_t wait_result;
+    do {
+      wait_result = ::waitpid(child, &child_status, 0);
+    } while (wait_result == -1 && errno == EINTR);
+    ASSERT_EQ(wait_result, child);
+    ASSERT_TRUE(WIFEXITED(child_status));
+    ASSERT_EQ(WEXITSTATUS(child_status), 0);
+
+    {
+      td::RocksDbOptions options;
+      options.no_transactions = std::strcmp(mode, "no-transactions") == 0;
+      auto reopened = td::RocksDb::open(db_name.str(), std::move(options)).move_as_ok();
+      std::string value;
+      ASSERT_EQ(reopened.get("first-key", value).move_as_ok(), td::KeyValue::GetStatus::Ok);
+      ASSERT_EQ(value, "first-value");
+      ASSERT_EQ(reopened.get("second-key", value).move_as_ok(), td::KeyValue::GetStatus::Ok);
+      ASSERT_EQ(value, "second-value");
+    }
+
+    td::RocksDb::destroy(db_name).ensure();
+  }
+}
+#endif
 
 TEST(KeyValue, Stress) {
   return;

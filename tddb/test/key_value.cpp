@@ -16,6 +16,9 @@
 
     Copyright 2017-2020 Telegram Systems LLP
 */
+#include <map>
+
+#include "rocksdb/statistics.h"
 #include "td/actor/TestScheduler.h"
 #include "td/db/KeyValue.h"
 #include "td/db/KeyValueAsync.h"
@@ -26,8 +29,6 @@
 #include "td/utils/buffer.h"
 #include "td/utils/optional.h"
 #include "td/utils/tests.h"
-
-#include <map>
 
 namespace {
 
@@ -372,6 +373,56 @@ TEST(KeyValue, async_set_many_is_durable_after_reopen) {
     ASSERT_EQ(reopened.get("candidate-index", index).move_as_ok(), td::KeyValue::GetStatus::Ok);
     ASSERT_EQ(index, "");
   }
+  td::RocksDb::destroy(db_name).ignore();
+}
+
+TEST(KeyValue, rocksdb_write_batch_explicit_sync_and_stats) {
+  td::Slice db_name = "testdb-write-batch-stats";
+  td::RocksDb::destroy(db_name).ignore();
+
+  {
+    td::RocksDbOptions options;
+    auto statistics = td::RocksDb::create_statistics();
+    options.statistics = statistics;
+    auto db = td::RocksDb::open(db_name.str(), std::move(options)).move_as_ok();
+
+    const auto default_sync_count = statistics->getTickerCount(rocksdb::WAL_FILE_SYNCED);
+    db.begin_write_batch().ensure();
+    db.set("default-key", "default-value").ensure();
+    db.commit_write_batch().ensure();
+    ASSERT_TRUE(statistics->getTickerCount(rocksdb::WAL_FILE_SYNCED) > default_sync_count);
+
+    db.begin_write_batch().ensure();
+    db.set("sync-key", "sync-value").ensure();
+    td::RocksDb::WriteBatchStats sync_stats;
+    db.commit_write_batch(true, &sync_stats).ensure();
+    ASSERT_TRUE(sync_stats.sync_requested);
+    ASSERT_TRUE(sync_stats.wal_enabled);
+    ASSERT_EQ(sync_stats.operations, 1u);
+    ASSERT_TRUE(sync_stats.serialized_bytes > 0);
+    ASSERT_TRUE(sync_stats.wal_write_count > 0);
+    ASSERT_TRUE(sync_stats.wal_bytes > 0);
+    ASSERT_TRUE(sync_stats.wal_sync_count > 0);
+
+    db.begin_write_batch().ensure();
+    db.set("async-key", "async-value").ensure();
+    td::RocksDb::WriteBatchStats async_stats;
+    db.commit_write_batch(false, &async_stats).ensure();
+    ASSERT_TRUE(!async_stats.sync_requested);
+    ASSERT_TRUE(async_stats.wal_enabled);
+    ASSERT_EQ(async_stats.operations, 1u);
+    ASSERT_TRUE(async_stats.serialized_bytes > 0);
+    ASSERT_TRUE(async_stats.wal_write_count > 0);
+    ASSERT_EQ(async_stats.wal_sync_count, 0u);
+    ASSERT_EQ(async_stats.wal_sync_micros, 0u);
+
+    std::string value;
+    ASSERT_EQ(db.get("sync-key", value).move_as_ok(), td::KeyValue::GetStatus::Ok);
+    ASSERT_EQ(value, "sync-value");
+    ASSERT_EQ(db.get("async-key", value).move_as_ok(), td::KeyValue::GetStatus::Ok);
+    ASSERT_EQ(value, "async-value");
+  }
+
   td::RocksDb::destroy(db_name).ignore();
 }
 

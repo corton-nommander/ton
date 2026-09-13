@@ -18,6 +18,7 @@
 */
 #pragma once
 
+#include <algorithm>
 #include <optional>
 #include <queue>
 
@@ -102,6 +103,10 @@ class CellDbIn : public CellDbBase {
   };
   td::Result<DbEntry> get_block(KeyHash key);
   void set_block(KeyHash key, DbEntry e);
+  void store_cell_impl(BlockIdExt block_id, td::Ref<vm::Cell> cell, vm::StoreCellHint hint,
+                       td::Promise<td::Ref<vm::DataCell>> promise, double completion_started_at);
+  void store_block_state_from_data_impl(td::Ref<BlockData> block, td::Promise<td::Ref<vm::DataCell>> promise,
+                                        double completion_started_at);
 
   static std::string get_key(KeyHash key);
   static KeyHash get_key_hash(BlockIdExt block_id);
@@ -123,6 +128,7 @@ class CellDbIn : public CellDbBase {
 
   std::shared_ptr<vm::DynamicBagOfCellsDb> boc_;
   std::shared_ptr<vm::KeyValue> cell_db_;
+  td::RocksDb* cell_db_rocks_ = nullptr;
   std::shared_ptr<rocksdb::DB> rocks_db_;
 
   std::function<void(const vm::CellLoader::LoadResult&)> on_load_callback_;
@@ -146,6 +152,30 @@ class CellDbIn : public CellDbBase {
     PercentileStats store_cell_time_;
     PercentileStats store_cell_prepare_time_;
     PercentileStats store_cell_write_time_;
+    bool durability_profile_ = false;
+    bool durability_sync_writes_ = true;
+    PercentileStats durability_queue_wait_time_;
+    size_t durability_queue_waits_ = 0;
+    size_t durability_queue_max_depth_ = 0;
+    PercentileStats durability_prepare_wall_time_;
+    PercentileStats durability_prepare_cpu_time_;
+    PercentileStats durability_prepare_caller_cpu_time_;
+    PercentileStats durability_prepare_async_cpu_time_;
+    PercentileStats durability_write_batch_wall_time_;
+    PercentileStats durability_write_batch_cpu_time_;
+    PercentileStats durability_commit_wall_time_;
+    PercentileStats durability_commit_cpu_time_;
+    PercentileStats durability_rocksdb_write_time_;
+    PercentileStats durability_wal_sync_time_;
+    PercentileStats durability_completion_time_;
+    td::uint64 durability_commit_calls_ = 0;
+    td::uint64 durability_batch_operations_ = 0;
+    td::uint64 durability_batch_serialized_bytes_ = 0;
+    td::uint64 durability_db_write_count_ = 0;
+    td::uint64 durability_wal_write_count_ = 0;
+    td::uint64 durability_wal_bytes_ = 0;
+    td::uint64 durability_wal_sync_count_ = 0;
+    td::uint64 durability_stall_micros_ = 0;
     size_t store_cell_bulk_queries_ = 0;
     size_t store_cell_bulk_total_blocks_ = 0;
     PercentileStats gc_cell_time_;
@@ -165,10 +195,28 @@ class CellDbIn : public CellDbBase {
   td::Timestamp statistics_flush_at_ = td::Timestamp::never();
   BlockSeqno last_deleted_mc_state_ = 0;
   bool permanent_mode_ = false;
+  bool durability_profile_enabled_ = false;
+  bool durability_sync_writes_ = true;
 
   bool db_busy_ = false;
   std::deque<td::Promise<td::Unit>> action_queue_;
   size_t action_queue_cnt_store_ = 0, action_queue_cnt_load_ = 0;
+
+  td::Status commit_cell_db_write_batch(td::RocksDb::WriteBatchStats* stats = nullptr) {
+    if (durability_profile_enabled_) {
+      return cell_db_rocks_->commit_write_batch(durability_sync_writes_, stats);
+    }
+    return cell_db_->commit_write_batch();
+  }
+
+  void record_durability_queue_wait(double started_at, size_t depth) {
+    if (started_at == 0.0) {
+      return;
+    }
+    cell_db_statistics_.durability_queue_wait_time_.insert((td::Timestamp::now().at() - started_at) * 1e6);
+    ++cell_db_statistics_.durability_queue_waits_;
+    cell_db_statistics_.durability_queue_max_depth_ = std::max(cell_db_statistics_.durability_queue_max_depth_, depth);
+  }
 
   void release_db() {
     db_busy_ = false;

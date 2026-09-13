@@ -24,6 +24,10 @@
 #include "rocksdb/utilities/optimistic_transaction_db.h"
 #pragma GCC diagnostic pop
 
+#include <atomic>
+#include <cmath>
+#include <cstdlib>
+
 #include "block/block-auto.h"
 #include "common/delay.h"
 #include "td/actor/MultiPromise.h"
@@ -39,6 +43,72 @@
 namespace ton {
 
 namespace validator {
+namespace {
+
+struct CellDbPrepareCpuProfile {
+  static td::uint64 to_nanoseconds(double seconds) {
+    return static_cast<td::uint64>(std::llround(seconds * 1e9));
+  }
+
+  void add_caller(double seconds) {
+    caller_cpu_nanoseconds.fetch_add(to_nanoseconds(seconds), std::memory_order_relaxed);
+  }
+
+  void add_async(double seconds) {
+    async_cpu_nanoseconds.fetch_add(to_nanoseconds(seconds), std::memory_order_relaxed);
+  }
+
+  static double to_micros(const std::atomic<td::uint64>& nanoseconds) {
+    return static_cast<double>(nanoseconds.load(std::memory_order_relaxed)) / 1e3;
+  }
+
+  double caller_micros() const {
+    return to_micros(caller_cpu_nanoseconds);
+  }
+
+  double async_micros() const {
+    return to_micros(async_cpu_nanoseconds);
+  }
+
+  double total_micros() const {
+    return caller_micros() + async_micros();
+  }
+
+  std::atomic<td::uint64> caller_cpu_nanoseconds{0};
+  std::atomic<td::uint64> async_cpu_nanoseconds{0};
+};
+
+class CellDbPrepareProfilingExecutor final : public vm::DynamicBagOfCellsDb::AsyncExecutor {
+ public:
+  CellDbPrepareProfilingExecutor(std::shared_ptr<vm::DynamicBagOfCellsDb::AsyncExecutor> executor,
+                                 std::shared_ptr<CellDbPrepareCpuProfile> profile)
+      : executor_(std::move(executor)), profile_(std::move(profile)) {
+  }
+
+  void execute_async(std::function<void()> f) override {
+    executor_->execute_async([profile = profile_, f = std::move(f)]() mutable {
+      td::ThreadCpuTimer timer;
+      f();
+      profile->add_async(timer.elapsed());
+    });
+  }
+
+  void execute_sync(std::function<void()> f) override {
+    executor_->execute_sync(std::move(f));
+  }
+
+ private:
+  std::shared_ptr<vm::DynamicBagOfCellsDb::AsyncExecutor> executor_;
+  std::shared_ptr<CellDbPrepareCpuProfile> profile_;
+};
+
+bool exact_env_one(const char* name) {
+  const char* value = std::getenv(name);
+  return value != nullptr && td::Slice(value) == "1";
+}
+
+}  // namespace
+
 class CellDbAsyncExecutor : public vm::DynamicBagOfCellsDb::AsyncExecutor {
  public:
   explicit CellDbAsyncExecutor(td::actor::ActorId<CellDbBase> cell_db) : cell_db_(std::move(cell_db)) {
@@ -159,7 +229,7 @@ void CellDbIn::validate_meta() {
         cell_db_->begin_write_batch().ensure();
         boc_->dec(root);
         boc_->commit(stor).ensure();
-        cell_db_->commit_write_batch().ensure();
+        commit_cell_db_write_batch().ensure();
         if (!opts_->get_celldb_in_memory()) {
           boc_->set_loader(std::make_unique<vm::CellLoader>(cell_db_->snapshot(), on_load_callback_)).ensure();
         }
@@ -177,6 +247,18 @@ void CellDbIn::validate_meta() {
 }
 
 void CellDbIn::start_up() {
+  durability_profile_enabled_ = exact_env_one("TON_NATIVE_CELLDB_DURABILITY_PROFILE");
+  const bool unsafe_sync_false_requested = exact_env_one("TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE");
+  durability_sync_writes_ = !(durability_profile_enabled_ && unsafe_sync_false_requested);
+  if (unsafe_sync_false_requested && !durability_profile_enabled_) {
+    LOG(WARNING) << "Ignoring TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE without TON_NATIVE_CELLDB_DURABILITY_PROFILE=1";
+  }
+  if (durability_profile_enabled_) {
+    LOG(WARNING) << "CellDb durability attribution enabled, sync_writes=" << durability_sync_writes_;
+  }
+  cell_db_statistics_.durability_profile_ = durability_profile_enabled_;
+  cell_db_statistics_.durability_sync_writes_ = durability_sync_writes_;
+
   on_load_callback_ = [actor = std::make_shared<td::actor::ActorOwn<MigrationProxy>>(
                            td::actor::create_actor<MigrationProxy>("celldbmigration", actor_id(this))),
                        compress_depth = opts_->get_celldb_compress_depth()](const vm::CellLoader::LoadResult& res) {
@@ -192,8 +274,10 @@ void CellDbIn::start_up() {
 
   CellDbBase::start_up();
   td::RocksDbOptions db_options;
-  if (!opts_->get_disable_rocksdb_stats()) {
+  if (!opts_->get_disable_rocksdb_stats() || durability_profile_enabled_) {
     statistics_ = td::RocksDb::create_statistics();
+  }
+  if (!opts_->get_disable_rocksdb_stats()) {
     statistics_flush_at_ = td::Timestamp::in(60.0);
     snapshot_statistics_ = std::make_shared<td::RocksDbSnapshotStatistics>();
     db_options.snapshot_statistics = snapshot_statistics_;
@@ -269,6 +353,8 @@ void CellDbIn::start_up() {
 
   auto rocks_db = std::make_shared<td::RocksDb>(td::RocksDb::open(path_, std::move(db_options)).move_as_ok());
   rocks_db_ = rocks_db->raw_db();
+  // cell_db_ retains ownership for this concrete view for the lifetime of CellDb.
+  cell_db_rocks_ = rocks_db.get();
   cell_db_ = std::move(rocks_db);
   if (!opts_->get_celldb_in_memory()) {
     if (opts_->get_celldb_v2()) {
@@ -291,7 +377,7 @@ void CellDbIn::start_up() {
     cell_db_->begin_write_batch().ensure();
     set_block(empty, std::move(e));
     boc_->commit(stor);
-    cell_db_->commit_write_batch().ensure();
+    commit_cell_db_write_batch().ensure();
     if (!opts_->get_celldb_in_memory()) {
       boc_->set_loader(std::make_unique<vm::CellLoader>(cell_db_->snapshot(), on_load_callback_)).ensure();
     }
@@ -353,7 +439,7 @@ void CellDbIn::start_up() {
         vm::CellStorer stor{*cell_db_};
         boc_->meta_set(td::as_slice(key), td::as_slice(value));
         boc_->commit(stor).ensure();
-        cell_db_->commit_write_batch().ensure();
+        commit_cell_db_write_batch().ensure();
         if (!opts_->get_celldb_in_memory()) {
           boc_->set_loader(std::make_unique<vm::CellLoader>(cell_db_->snapshot(), on_load_callback_)).ensure();
         }
@@ -388,13 +474,23 @@ void CellDbIn::load_cell(RootHash hash, td::Promise<td::Ref<vm::DataCell>> promi
 
 void CellDbIn::store_cell(BlockIdExt block_id, td::Ref<vm::Cell> cell, vm::StoreCellHint hint,
                           td::Promise<td::Ref<vm::DataCell>> promise) {
+  const double completion_started_at = durability_profile_enabled_ ? td::Timestamp::now().at() : 0.0;
+  store_cell_impl(block_id, std::move(cell), std::move(hint), std::move(promise), completion_started_at);
+}
+
+void CellDbIn::store_cell_impl(BlockIdExt block_id, td::Ref<vm::Cell> cell, vm::StoreCellHint hint,
+                               td::Promise<td::Ref<vm::DataCell>> promise, double completion_started_at) {
   if (db_busy_) {
+    const double queue_started_at = durability_profile_enabled_ ? td::Timestamp::now().at() : 0.0;
+    const size_t queue_depth = action_queue_.size() + 1;
     ++action_queue_cnt_store_;
     action_queue_.push_back([self = this, block_id, cell = std::move(cell), hint = std::move(hint),
-                             promise = std::move(promise)](td::Result<td::Unit> R) mutable {
+                             promise = std::move(promise), queue_started_at, queue_depth,
+                             completion_started_at](td::Result<td::Unit> R) mutable {
       R.ensure();
       --self->action_queue_cnt_store_;
-      self->store_cell(block_id, std::move(cell), std::move(hint), std::move(promise));
+      self->record_durability_queue_wait(queue_started_at, queue_depth);
+      self->store_cell_impl(block_id, std::move(cell), std::move(hint), std::move(promise), completion_started_at);
     });
     return;
   }
@@ -411,8 +507,16 @@ void CellDbIn::store_cell(BlockIdExt block_id, td::Ref<vm::Cell> cell, vm::Store
 
   boc_->inc(cell);
   db_busy_ = true;
+  std::shared_ptr<CellDbPrepareCpuProfile> durability_prepare_profile;
+  std::shared_ptr<vm::DynamicBagOfCellsDb::AsyncExecutor> prepare_executor = async_executor;
+  std::optional<td::ThreadCpuTimer> prepare_caller_cpu_timer;
+  if (durability_profile_enabled_) {
+    durability_prepare_profile = std::make_shared<CellDbPrepareCpuProfile>();
+    prepare_executor = std::make_shared<CellDbPrepareProfilingExecutor>(async_executor, durability_prepare_profile);
+    prepare_caller_cpu_timer.emplace();
+  }
   boc_->prepare_commit_async(
-      async_executor, std::move(hint),
+      std::move(prepare_executor), std::move(hint),
       [=, this, SelfId = actor_id(this), timer = std::move(timer), timer_prepare = td::Timer{},
        promise = std::move(promise), cell = std::move(cell)](td::Result<td::Unit> Res) mutable {
         Res.ensure();
@@ -440,13 +544,35 @@ void CellDbIn::store_cell(BlockIdExt block_id, td::Ref<vm::Cell> cell, vm::Store
             P.prev = key_hash;
           }
           td::Timer timer_write;
+          std::optional<td::RealCpuTimer> durability_write_batch_timer;
+          if (durability_profile_enabled_) {
+            durability_write_batch_timer.emplace();
+          }
           vm::CellStorer stor{*cell_db_};
           cell_db_->begin_write_batch().ensure();
           set_block(get_empty_key_hash(), std::move(E));
           set_block(D.prev, std::move(P));
           set_block(key_hash, std::move(D));
           boc_->commit(stor).ensure();
-          cell_db_->commit_write_batch().ensure();
+          td::RealCpuTimer::Time durability_write_batch_time;
+          if (durability_write_batch_timer) {
+            durability_write_batch_timer->pause();
+            durability_write_batch_time = durability_write_batch_timer->elapsed_both();
+          }
+
+          std::optional<td::RealCpuTimer> durability_commit_timer;
+          td::RocksDb::WriteBatchStats durability_rocksdb_stats;
+          if (durability_profile_enabled_) {
+            durability_commit_timer.emplace();
+          }
+          auto commit_status =
+              commit_cell_db_write_batch(durability_profile_enabled_ ? &durability_rocksdb_stats : nullptr);
+          td::RealCpuTimer::Time durability_commit_time;
+          if (durability_commit_timer) {
+            durability_commit_timer->pause();
+            durability_commit_time = durability_commit_timer->elapsed_both();
+          }
+          commit_status.ensure();
           timer_write.pause();
 
           if (!opts_->get_celldb_in_memory()) {
@@ -457,15 +583,43 @@ void CellDbIn::store_cell(BlockIdExt block_id, td::Ref<vm::Cell> cell, vm::Store
           delay_action([cell = boc_->load_cell(cell->get_hash().as_slice()),
                         promise = std::move(promise)]() mutable { promise.set_result(std::move(cell)); },
                        td::Timestamp::now());
-          if (!opts_->get_disable_rocksdb_stats()) {
+          if (!opts_->get_disable_rocksdb_stats() || durability_profile_enabled_) {
             cell_db_statistics_.store_cell_time_.insert(timer.elapsed() * 1e6);
             cell_db_statistics_.store_cell_prepare_time_.insert(timer_prepare.elapsed() * 1e6);
             cell_db_statistics_.store_cell_write_time_.insert(timer_write.elapsed() * 1e6);
+          }
+          if (durability_profile_enabled_) {
+            cell_db_statistics_.durability_prepare_wall_time_.insert(timer_prepare.elapsed() * 1e6);
+            cell_db_statistics_.durability_prepare_cpu_time_.insert(durability_prepare_profile->total_micros());
+            cell_db_statistics_.durability_prepare_caller_cpu_time_.insert(durability_prepare_profile->caller_micros());
+            cell_db_statistics_.durability_prepare_async_cpu_time_.insert(durability_prepare_profile->async_micros());
+            cell_db_statistics_.durability_write_batch_wall_time_.insert(durability_write_batch_time.real * 1e6);
+            cell_db_statistics_.durability_write_batch_cpu_time_.insert(durability_write_batch_time.cpu * 1e6);
+            cell_db_statistics_.durability_commit_wall_time_.insert(durability_commit_time.real * 1e6);
+            cell_db_statistics_.durability_commit_cpu_time_.insert(durability_commit_time.cpu * 1e6);
+            cell_db_statistics_.durability_rocksdb_write_time_.insert(
+                static_cast<double>(durability_rocksdb_stats.db_write_micros));
+            cell_db_statistics_.durability_wal_sync_time_.insert(
+                static_cast<double>(durability_rocksdb_stats.wal_sync_micros));
+            cell_db_statistics_.durability_completion_time_.insert((td::Timestamp::now().at() - completion_started_at) *
+                                                                   1e6);
+            ++cell_db_statistics_.durability_commit_calls_;
+            cell_db_statistics_.durability_batch_operations_ += durability_rocksdb_stats.operations;
+            cell_db_statistics_.durability_batch_serialized_bytes_ += durability_rocksdb_stats.serialized_bytes;
+            cell_db_statistics_.durability_db_write_count_ += durability_rocksdb_stats.db_write_count;
+            cell_db_statistics_.durability_wal_write_count_ += durability_rocksdb_stats.wal_write_count;
+            cell_db_statistics_.durability_wal_bytes_ += durability_rocksdb_stats.wal_bytes;
+            cell_db_statistics_.durability_wal_sync_count_ += durability_rocksdb_stats.wal_sync_count;
+            cell_db_statistics_.durability_stall_micros_ += durability_rocksdb_stats.stall_micros;
           }
           LOG(DEBUG) << "Stored state " << block_id;
           release_db();
         });
       });
+  if (prepare_caller_cpu_timer) {
+    prepare_caller_cpu_timer->pause();
+    durability_prepare_profile->add_caller(prepare_caller_cpu_timer->elapsed());
+  }
 }
 
 void CellDbIn::get_cell_db_reader(td::Promise<std::shared_ptr<vm::CellDbReader>> promise) {
@@ -480,14 +634,23 @@ void CellDbIn::get_cell_db_reader(td::Promise<std::shared_ptr<vm::CellDbReader>>
 }
 
 void CellDbIn::store_block_state_from_data(td::Ref<BlockData> block, td::Promise<td::Ref<vm::DataCell>> promise) {
+  const double completion_started_at = durability_profile_enabled_ ? td::Timestamp::now().at() : 0.0;
+  store_block_state_from_data_impl(std::move(block), std::move(promise), completion_started_at);
+}
+
+void CellDbIn::store_block_state_from_data_impl(td::Ref<BlockData> block, td::Promise<td::Ref<vm::DataCell>> promise,
+                                                double completion_started_at) {
   if (db_busy_) {
+    const double queue_started_at = durability_profile_enabled_ ? td::Timestamp::now().at() : 0.0;
+    const size_t queue_depth = action_queue_.size() + 1;
     ++action_queue_cnt_store_;
-    action_queue_.push_back(
-        [self = this, block = std::move(block), promise = std::move(promise)](td::Result<td::Unit> R) mutable {
-          R.ensure();
-          --self->action_queue_cnt_store_;
-          self->store_block_state_from_data(std::move(block), std::move(promise));
-        });
+    action_queue_.push_back([self = this, block = std::move(block), promise = std::move(promise), queue_started_at,
+                             queue_depth, completion_started_at](td::Result<td::Unit> R) mutable {
+      R.ensure();
+      --self->action_queue_cnt_store_;
+      self->record_durability_queue_wait(queue_started_at, queue_depth);
+      self->store_block_state_from_data_impl(std::move(block), std::move(promise), completion_started_at);
+    });
     return;
   }
   auto key_hash = get_key_hash(block->block_id());
@@ -528,7 +691,7 @@ void CellDbIn::store_block_state_from_data(td::Ref<BlockData> block, td::Promise
   } else {
     new_root = build_next_state(block, *boc_->get_cell_db_reader(), std::move(prev_roots), &hint);
   }
-  store_cell(block->block_id(), std::move(new_root), std::move(hint), std::move(promise));
+  store_cell_impl(block->block_id(), std::move(new_root), std::move(hint), std::move(promise), completion_started_at);
 }
 
 void CellDbIn::store_block_state_permanent_bulk(std::vector<td::Ref<BlockData>> blocks,
@@ -538,13 +701,16 @@ void CellDbIn::store_block_state_permanent_bulk(std::vector<td::Ref<BlockData>> 
     return;
   }
   if (db_busy_) {
+    const double queue_started_at = durability_profile_enabled_ ? td::Timestamp::now().at() : 0.0;
+    const size_t queue_depth = action_queue_.size() + 1;
     ++action_queue_cnt_store_;
-    action_queue_.push_back(
-        [self = this, blocks = std::move(blocks), promise = std::move(promise)](td::Result<td::Unit> R) mutable {
-          R.ensure();
-          --self->action_queue_cnt_store_;
-          self->store_block_state_permanent_bulk(std::move(blocks), std::move(promise));
-        });
+    action_queue_.push_back([self = this, blocks = std::move(blocks), promise = std::move(promise), queue_started_at,
+                             queue_depth](td::Result<td::Unit> R) mutable {
+      R.ensure();
+      --self->action_queue_cnt_store_;
+      self->record_durability_queue_wait(queue_started_at, queue_depth);
+      self->store_block_state_permanent_bulk(std::move(blocks), std::move(promise));
+    });
     return;
   }
   td::PerfWarningTimer timer{"storecellbulk", 0.1};
@@ -619,7 +785,7 @@ void CellDbIn::store_block_state_permanent_bulk(std::vector<td::Ref<BlockData>> 
               set_block(empty, std::move(E));
 
               boc_->commit(stor).ensure();  // Save meta
-              cell_db_->commit_write_batch().ensure();
+              commit_cell_db_write_batch().ensure();
               timer_write.pause();
 
               if (!opts_->get_celldb_in_memory()) {
@@ -699,6 +865,8 @@ void CellDbIn::flush_db_stats() {
   td::RocksDb::reset_statistics(statistics_);
   cell_db_statistics_.clear();
   cell_db_statistics_.permanent_mode_ = permanent_mode_;
+  cell_db_statistics_.durability_profile_ = durability_profile_enabled_;
+  cell_db_statistics_.durability_sync_writes_ = durability_sync_writes_;
 }
 
 void CellDbIn::alarm() {
@@ -839,7 +1007,7 @@ void CellDbIn::gc_cont2(BlockIdExt block_id) {
               }
 
               boc_->commit(stor).ensure();
-              cell_db_->commit_write_batch().ensure();
+              commit_cell_db_write_batch().ensure();
 
               alarm_timestamp() = td::Timestamp::now();
               timer_write_batch.reset();
@@ -969,7 +1137,7 @@ void CellDbIn::migrate_cells() {
       stor.set(R.ok().refcnt(), R.ok().cell_, expected_stored_boc).ensure();
     }
   }
-  cell_db_->commit_write_batch().ensure();
+  commit_cell_db_write_batch().ensure();
   boc_->set_loader(std::make_unique<vm::CellLoader>(cell_db_->snapshot(), on_load_callback_)).ensure();
   td::actor::send_closure(parent_, &CellDb::update_snapshot, cell_db_->snapshot());
 
@@ -1115,6 +1283,36 @@ std::vector<std::pair<std::string, std::string>> CellDbIn::CellDbStatistics::pre
   stats.emplace_back("store_cell.micros", PSTRING() << store_cell_time_.to_string());
   stats.emplace_back("store_cell.prepare.micros", PSTRING() << store_cell_prepare_time_.to_string());
   stats.emplace_back("store_cell.write.micros", PSTRING() << store_cell_write_time_.to_string());
+  if (durability_profile_) {
+    stats.emplace_back("durability.enabled", "true");
+    stats.emplace_back("durability.sync_writes", PSTRING() << durability_sync_writes_);
+    stats.emplace_back("durability.wal_enabled", "true");
+    stats.emplace_back("durability.queue_wait.micros", PSTRING() << durability_queue_wait_time_.to_string());
+    stats.emplace_back("durability.queue_wait.count", td::to_string(durability_queue_waits_));
+    stats.emplace_back("durability.queue.max_depth", td::to_string(durability_queue_max_depth_));
+    stats.emplace_back("durability.prepare.wall.micros", PSTRING() << durability_prepare_wall_time_.to_string());
+    stats.emplace_back("durability.prepare.cpu.micros", PSTRING() << durability_prepare_cpu_time_.to_string());
+    stats.emplace_back("durability.prepare.caller_cpu.micros", PSTRING()
+                                                                   << durability_prepare_caller_cpu_time_.to_string());
+    stats.emplace_back("durability.prepare.async_cpu.micros", PSTRING()
+                                                                  << durability_prepare_async_cpu_time_.to_string());
+    stats.emplace_back("durability.write_batch.wall.micros", PSTRING()
+                                                                 << durability_write_batch_wall_time_.to_string());
+    stats.emplace_back("durability.write_batch.cpu.micros", PSTRING() << durability_write_batch_cpu_time_.to_string());
+    stats.emplace_back("durability.commit.wall.micros", PSTRING() << durability_commit_wall_time_.to_string());
+    stats.emplace_back("durability.commit.cpu.micros", PSTRING() << durability_commit_cpu_time_.to_string());
+    stats.emplace_back("durability.rocksdb.db_write.micros", PSTRING() << durability_rocksdb_write_time_.to_string());
+    stats.emplace_back("durability.rocksdb.wal_sync.micros", PSTRING() << durability_wal_sync_time_.to_string());
+    stats.emplace_back("durability.completion.wall.micros", PSTRING() << durability_completion_time_.to_string());
+    stats.emplace_back("durability.commit.calls", td::to_string(durability_commit_calls_));
+    stats.emplace_back("durability.write_batch.operations", td::to_string(durability_batch_operations_));
+    stats.emplace_back("durability.write_batch.serialized_bytes", td::to_string(durability_batch_serialized_bytes_));
+    stats.emplace_back("durability.rocksdb.db_write.count", td::to_string(durability_db_write_count_));
+    stats.emplace_back("durability.rocksdb.wal_write.count", td::to_string(durability_wal_write_count_));
+    stats.emplace_back("durability.rocksdb.wal.bytes", td::to_string(durability_wal_bytes_));
+    stats.emplace_back("durability.rocksdb.wal_sync.count", td::to_string(durability_wal_sync_count_));
+    stats.emplace_back("durability.rocksdb.stall.micros", td::to_string(durability_stall_micros_));
+  }
   if (permanent_mode_) {
     stats.emplace_back("store_cell.bulk.queries", PSTRING() << store_cell_bulk_queries_);
     stats.emplace_back("store_cell.bulk.total_blocks", PSTRING() << store_cell_bulk_total_blocks_);

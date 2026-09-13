@@ -367,6 +367,68 @@ Status RocksDb::commit_write_batch() {
   return from_rocksdb(db_->Write(options, write_batch.get()));
 }
 
+Status RocksDb::commit_write_batch(bool sync, WriteBatchStats *stats) {
+  CHECK(write_batch_);
+  auto write_batch = std::move(write_batch_);
+  if (!stats) {
+    rocksdb::WriteOptions options;
+    options.sync = sync;
+    options.disableWAL = false;
+    return from_rocksdb(db_->Write(options, write_batch.get()));
+  }
+
+  struct StatisticsSnapshot {
+    td::uint64 db_write_count = 0;
+    td::uint64 db_write_micros = 0;
+    td::uint64 wal_write_count = 0;
+    td::uint64 wal_bytes = 0;
+    td::uint64 wal_sync_count = 0;
+    td::uint64 wal_sync_micros = 0;
+    td::uint64 stall_micros = 0;
+  };
+  auto take_statistics_snapshot = [&]() {
+    StatisticsSnapshot result;
+    if (!options_.statistics) {
+      return result;
+    }
+    rocksdb::HistogramData histogram;
+    options_.statistics->histogramData(rocksdb::DB_WRITE, &histogram);
+    result.db_write_count = histogram.count;
+    result.db_write_micros = histogram.sum;
+    result.wal_write_count = options_.statistics->getTickerCount(rocksdb::WRITE_WITH_WAL);
+    result.wal_bytes = options_.statistics->getTickerCount(rocksdb::WAL_FILE_BYTES);
+    result.wal_sync_count = options_.statistics->getTickerCount(rocksdb::WAL_FILE_SYNCED);
+    histogram = {};
+    options_.statistics->histogramData(rocksdb::WAL_FILE_SYNC_MICROS, &histogram);
+    result.wal_sync_micros = histogram.sum;
+    result.stall_micros = options_.statistics->getTickerCount(rocksdb::STALL_MICROS);
+    return result;
+  };
+  auto before = take_statistics_snapshot();
+
+  rocksdb::WriteOptions options;
+  options.sync = sync;
+  options.disableWAL = false;
+  auto status = from_rocksdb(db_->Write(options, write_batch.get()));
+
+  auto after = take_statistics_snapshot();
+  auto delta = [](td::uint64 lhs, td::uint64 rhs) { return lhs >= rhs ? lhs - rhs : 0; };
+  *stats = WriteBatchStats{
+      .sync_requested = sync,
+      .wal_enabled = !options.disableWAL,
+      .operations = write_batch->Count(),
+      .serialized_bytes = static_cast<td::uint64>(write_batch->GetDataSize()),
+      .db_write_count = delta(after.db_write_count, before.db_write_count),
+      .db_write_micros = delta(after.db_write_micros, before.db_write_micros),
+      .wal_write_count = delta(after.wal_write_count, before.wal_write_count),
+      .wal_bytes = delta(after.wal_bytes, before.wal_bytes),
+      .wal_sync_count = delta(after.wal_sync_count, before.wal_sync_count),
+      .wal_sync_micros = delta(after.wal_sync_micros, before.wal_sync_micros),
+      .stall_micros = delta(after.stall_micros, before.stall_micros),
+  };
+  return status;
+}
+
 Status RocksDb::commit_transaction() {
   CHECK(transaction_);
   auto transaction = std::move(transaction_);

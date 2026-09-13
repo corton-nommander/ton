@@ -79,6 +79,20 @@ struct RocksDbOptions {
 
 class RocksDb : public KeyValue {
  public:
+  struct WriteBatchStats {
+    bool sync_requested = true;
+    bool wal_enabled = true;
+    td::uint32 operations = 0;
+    td::uint64 serialized_bytes = 0;
+    td::uint64 db_write_count = 0;
+    td::uint64 db_write_micros = 0;
+    td::uint64 wal_write_count = 0;
+    td::uint64 wal_bytes = 0;
+    td::uint64 wal_sync_count = 0;
+    td::uint64 wal_sync_micros = 0;
+    td::uint64 stall_micros = 0;
+  };
+
   static Status destroy(Slice path);
   RocksDb clone() const;
   static Result<RocksDb> open(std::string path, RocksDbOptions options = {});
@@ -95,6 +109,9 @@ class RocksDb : public KeyValue {
 
   Status begin_write_batch() override;
   Status commit_write_batch() override;
+  // Commit the current batch with an explicit durability policy. The virtual
+  // KeyValue API above retains its historical sync=true behavior.
+  Status commit_write_batch(bool sync, WriteBatchStats *stats);
   Status abort_write_batch() override;
 
   Status begin_transaction() override;

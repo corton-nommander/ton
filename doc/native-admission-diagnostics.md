@@ -124,17 +124,39 @@ It contains `calls`, `parents`, `threads_created`, `serial_calls`,
 `parents_lt64`, `parents_64_127`, `parents_128_255`, `parents_ge256`, and actual
 worker-count buckets `workers_1`, `workers_2`, `workers_4`, `workers_8`, `workers_other`.
 Values are relaxed atomic snapshots and may briefly be mutually inconsistent.
+`threads_created` counts actual OS threads: every ephemeral helper plus each
+persistent-pool worker once when it is created.
 Thread launch wall time overlaps verification already running on launched threads;
 join measures remaining wait. Neither is exclusive CPU cost. Empty invocations
 are excluded. Existing per-block validation replay/materialization/dictionary
 and collation execution/commit timers remain available through Session Stats.
 
+Validators containing the persistent-executor experiment add monotonic
+`pool_calls`, `pool_tickets`, `pool_threads_created`, `pool_contended_submits`,
+`pool_queue_wait_sum_s`, `pool_completion_wait_sum_s` and
+`pool_worker_cpu_sum_s`. `pool_threads`, `pool_active` and `pool_queue` are current
+gauges; `pool_active_peak`, `pool_queue_peak`, `pool_queue_wait_max_s` and
+`pool_completion_wait_max_s` are process-lifetime maxima. `pool_queue_capacity`
+is fixed configuration.
+Tickets are worker opportunities, not verified parents. Worker CPU is summed
+across tickets and can exceed elapsed wall time. On platforms where
+`ThreadCpuTimer` has no thread CPU clock, `pool_worker_cpu_sum_s` remains zero and
+is unavailable rather than a measurement of zero CPU cost. The profiler reports
+the current gauges and lifetime maxima at both endpoints instead of subtracting them.
+
 `TON_NATIVE_VALIDATION_SIGNATURE_THREADS=1..64` overrides NTRN block-signature
 fanout only. Unset retains `TON_NATIVE_EXECUTOR_THREADS`; explicit function
 arguments take precedence. Fewer than 64 signed parents still use one worker.
 The physical preset explicitly retains 8. Compare 1/2/4/8 individually with
-admission workers and workload fixed before selecting a winner. No reusable
-thread-pool rewrite is promoted without profiling evidence.
+admission workers and workload fixed before selecting a winner.
+
+`TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL=0|1` selects the default-off
+process-lifetime executor for parallel NTRN block-signature work. The pool grows
+to the requested fanout, remains bounded to 64 workers and accepts at most 128
+queued worker tickets. Calls with fewer than 64 parents remain serial and do not
+initialize it. Invalid values fail when an eligible verification first reads the
+setting. Recreate the validator for each arm and compare 0/1 with signature
+fanout, image, workload and all other feature flags fixed.
 
 Use MyLocalTonDocker's `benchmark/remote/profile-native-validator.py` on A for
 counter deltas, stage means, per-thread CPU/runqueue samples, resource limits,

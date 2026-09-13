@@ -177,15 +177,17 @@ controls.
 
 ## Follow-up experiments after the ownership comparison
 
-1. Run a fresh 18,432-versus-8,192 callback-limit ABBA with owners/domains/preparation
+1. The new default-off prototype replaces per-validation signature thread creation
+   with one persistent bounded executor, without changing replay order. A1 recorded
+   3,607 helper calls, 26,280 created threads and 82.16 seconds in launch scopes;
+   validation replay averaged 51.70 ms inside 113.15 ms total validation. Its unit
+   gate covers concurrent callers, queue backpressure, worker reuse and deterministic
+   rejection indices. Require identical roots and serialized outputs on a fixed
+   candidate corpus, then run a same-image flag-off/flag-on ABBA.
+2. Run a fresh 18,432-versus-8,192 callback-limit ABBA with owners/domains/preparation
    off and producer on. Keep the physical transport window at 1,024 and client window
    65,536 fixed. The smaller cap needs to improve canonical TPS as well as cadence;
    use 12,288 only if 8,192 improves tails but loses throughput.
-2. Replace per-validation signature thread creation with one persistent bounded
-   executor, before changing replay order. A1 recorded 3,607 helper calls, 26,280
-   created threads and 82.16 seconds in launch scopes; validation replay averaged
-   51.70 ms inside 113.15 ms total validation. Require identical rejection index,
-   roots and serialized outputs on a fixed candidate corpus before live ABBA.
 3. Split CellDb preparation from synchronous durable-write waiting. Instrument
    enqueue-to-actor delay, commit wall/thread CPU, `fsync`/`fdatasync`, RocksDB
    stalls and durable acknowledgements. A throwaway-chain `sync=false` run is only

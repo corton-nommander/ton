@@ -596,6 +596,12 @@ Local candidate flags are:
   reconciliation, default 0. Enable it before starting both diagnostic arms;
   always-on outcome counters distinguish unchanged accounts from necessary
   nonce/balance updates and expiry work. It changes measurement, not scheduling.
+- `TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL=0|1`: default-off reuse of a
+  bounded process-lifetime worker set for parallel NTRN block-signature checks.
+  Keep `TON_NATIVE_VALIDATION_SIGNATURE_THREADS` fixed when comparing it. The
+  executor reports monotonic work/wait/CPU counters, endpoint gauges and lifetime
+  peaks through `total.native_signature_executor`. A zero worker CPU sum is
+  unavailable where `ThreadCpuTimer` lacks a thread CPU clock.
 
 These variables take effect at validator startup. Set them in A's selected env
 file and recreate/settle genesis before measurement, using the same prebuilt
@@ -625,9 +631,10 @@ Prepare the new published TON image and derived wrappers once on A using
 that new bundle on B. Stop/drain the existing test before upgrading. Both arms of
 each comparison must reuse this prebuilt image; do not pull/build between paired measurements.
 
-A now accepts `TON_NATIVE_ADMISSION_CONFIG_CACHE=0|1` (default 1) and
+A now accepts `TON_NATIVE_ADMISSION_CONFIG_CACHE=0|1` (default 1),
+`TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL=0|1` (default 0), and
 `TON_NATIVE_VALIDATION_SIGNATURE_THREADS=1..64` (physical preset 8; fewer than 64 signed
-parents remain serial). The latter tunes NTRN block-signature fanout independently of
+parents remain serial). The thread setting tunes NTRN block-signature fanout independently of
 `TON_NATIVE_EXECUTOR_THREADS=8` used by admission/state helpers. Existing eight-lane depth/split
 values and candidate timeout/reserve remain unchanged. These are starting settings to test,
 not an established optimum.

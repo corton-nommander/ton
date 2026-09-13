@@ -1827,6 +1827,168 @@ TEST(NativeStateEngine, native_transfer_run_is_domain_signed_and_canonical) {
   ASSERT_TRUE(decoded.verify_signature(domain_a).is_error());
 }
 
+TEST(NativeStateEngine, native_transfer_run_persistent_signature_executor_is_bounded_and_concurrent) {
+  static constexpr const char* pool_flag = "TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL";
+  const char* previous_value = std::getenv(pool_flag);
+  const bool had_previous_value = previous_value != nullptr;
+  const std::string saved_value = previous_value ? previous_value : "";
+  auto set_pool_flag = [&](const char* value) {
+#if defined(_WIN32)
+    CHECK(_putenv_s(pool_flag, value ? value : "") == 0);
+#else
+    CHECK(value ? setenv(pool_flag, value, 1) == 0 : unsetenv(pool_flag) == 0);
+#endif
+  };
+  SCOPE_EXIT {
+    set_pool_flag(had_previous_value ? saved_value.c_str() : nullptr);
+  };
+
+  auto stat_value = [](const std::string& stats, const char* key) {
+    const auto marker = std::string(key) + ':';
+    auto offset = stats.find(marker);
+    CHECK(offset != std::string::npos);
+    offset += marker.size();
+    char* end = nullptr;
+    auto value = std::strtoull(stats.c_str() + offset, &end, 10);
+    CHECK(end != stats.c_str() + offset && (*end == ' ' || *end == '\0'));
+    return static_cast<td::uint64>(value);
+  };
+
+  auto source_key = td::Ed25519::generate_private_key().move_as_ok();
+  auto destination_key = td::Ed25519::generate_private_key().move_as_ok();
+  block::NativeTransferRun run;
+  run.src.as_slice().copy_from(source_key.get_public_key().move_as_ok().as_octet_string());
+  run.first_nonce = 900;
+  run.valid_until = std::numeric_limits<ton::UnixTime>::max();
+  run.outputs.resize(1);
+  run.outputs[0].dst.as_slice().copy_from(destination_key.get_public_key().move_as_ok().as_octet_string());
+  run.outputs[0].amount = 11;
+  run.outputs[0].fee = 2;
+  ton::Bits256 domain;
+  domain.as_slice().copy_from(std::string(32, '\x51'));
+  run.signature = source_key.sign(run.signing_payload(domain)).move_as_ok().as_slice().str();
+
+  std::vector<const block::NativeTransferRun*> signed_runs(64, &run);
+  set_pool_flag("0");
+  auto ephemeral_before = block::native_signature_executor_stats();
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain, 4).is_ok());
+  auto ephemeral_after = block::native_signature_executor_stats();
+  ASSERT_EQ(stat_value(ephemeral_after, "pool_calls"), stat_value(ephemeral_before, "pool_calls"));
+  ASSERT_EQ(stat_value(ephemeral_after, "threads_created") - stat_value(ephemeral_before, "threads_created"), 4u);
+
+  set_pool_flag("1");
+  auto pool_before = block::native_signature_executor_stats();
+  std::vector<const block::NativeTransferRun*> small_batch(63, &run);
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(small_batch, domain, 4).is_ok());
+  auto after_serial_cutoff = block::native_signature_executor_stats();
+  ASSERT_EQ(stat_value(after_serial_cutoff, "pool_calls"), stat_value(pool_before, "pool_calls"));
+
+  const auto pool_threads_before = stat_value(pool_before, "pool_threads");
+  const auto pool_threads_created_before = stat_value(pool_before, "pool_threads_created");
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain, 4).is_ok());
+  auto after_pool_creation = block::native_signature_executor_stats();
+  const auto expected_pool_threads = std::max<td::uint64>(pool_threads_before, 4);
+  ASSERT_EQ(stat_value(after_pool_creation, "pool_threads"), expected_pool_threads);
+  ASSERT_EQ(stat_value(after_pool_creation, "pool_threads_created") - pool_threads_created_before,
+            expected_pool_threads - pool_threads_before);
+
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain, 4).is_ok());
+  auto after_pool_reuse = block::native_signature_executor_stats();
+  ASSERT_EQ(stat_value(after_pool_reuse, "pool_threads"), stat_value(after_pool_creation, "pool_threads"));
+  ASSERT_EQ(stat_value(after_pool_reuse, "pool_threads_created"),
+            stat_value(after_pool_creation, "pool_threads_created"));
+
+  auto invalid_run = run;
+  invalid_run.signature[0] ^= 1;
+  std::vector<const block::NativeTransferRun*> invalid_batch(64, &run);
+  invalid_batch[0] = &invalid_run;
+  invalid_batch[1] = nullptr;
+  auto invalid_status = block::verify_native_transfer_run_signatures_parallel(invalid_batch, domain, 4);
+  ASSERT_TRUE(invalid_status.is_error());
+  ASSERT_EQ(invalid_status.message().str(),
+            "native transfer run domain signature verification failed at batch index 0");
+
+  set_pool_flag("0");
+  auto ephemeral_invalid_status = block::verify_native_transfer_run_signatures_parallel(invalid_batch, domain, 4);
+  ASSERT_TRUE(ephemeral_invalid_status.is_error());
+  ASSERT_EQ(ephemeral_invalid_status.message().str(),
+            "native transfer run domain signature verification failed at batch index 0");
+  set_pool_flag("1");
+
+  static constexpr unsigned caller_count = 48;
+  static constexpr unsigned batch_size = 64;
+  std::vector<std::vector<block::NativeTransferRun>> uncached_runs(caller_count);
+  std::vector<std::vector<const block::NativeTransferRun*>> uncached_batches(caller_count);
+  for (unsigned caller = 0; caller < caller_count; ++caller) {
+    auto& caller_runs = uncached_runs[caller];
+    auto& caller_batch = uncached_batches[caller];
+    caller_runs.reserve(batch_size);
+    caller_batch.reserve(batch_size);
+    for (unsigned index = 0; index < batch_size; ++index) {
+      auto candidate = run;
+      candidate.first_nonce = 10'000 + caller * batch_size + index;
+      candidate.signature = source_key.sign(candidate.signing_payload(domain)).move_as_ok().as_slice().str();
+      caller_runs.push_back(std::move(candidate));
+    }
+    for (auto& candidate : caller_runs) {
+      caller_batch.push_back(&candidate);
+    }
+    if ((caller & 1) == 0) {
+      caller_runs[2 + caller % 16].signature[0] ^= 1;
+      caller_batch[48 + caller % 16] = nullptr;
+    }
+  }
+
+  auto before_concurrency = block::native_signature_executor_stats();
+  std::atomic<unsigned> ready{0};
+  std::atomic<bool> start{false};
+  std::vector<std::string> results(caller_count);
+  std::vector<std::thread> callers;
+  callers.reserve(caller_count);
+  for (unsigned caller = 0; caller < caller_count; ++caller) {
+    callers.emplace_back([&, caller] {
+      ready.fetch_add(1, std::memory_order_release);
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+      auto status = block::verify_native_transfer_run_signatures_parallel(uncached_batches[caller], domain, 4);
+      results[caller] = status.is_ok() ? "ok" : status.message().str();
+    });
+  }
+  while (ready.load(std::memory_order_acquire) != caller_count) {
+    std::this_thread::yield();
+  }
+  start.store(true, std::memory_order_release);
+  for (auto& caller : callers) {
+    caller.join();
+  }
+  for (unsigned caller = 0; caller < caller_count; ++caller) {
+    if (caller & 1) {
+      ASSERT_EQ(results[caller], "ok");
+    } else {
+      ASSERT_EQ(results[caller], PSTRING() << "native transfer run domain signature verification failed at batch index "
+                                           << (2 + caller % 16));
+    }
+  }
+
+  auto pool_after = block::native_signature_executor_stats();
+  ASSERT_EQ(stat_value(pool_after, "pool_calls") - stat_value(pool_before, "pool_calls"), caller_count + 3);
+  ASSERT_EQ(stat_value(pool_after, "pool_tickets") - stat_value(pool_before, "pool_tickets"), (caller_count + 3) * 4);
+  ASSERT_TRUE(stat_value(pool_after, "pool_threads") >= 4u);
+  ASSERT_TRUE(stat_value(pool_after, "pool_active_peak") >= 2u);
+  ASSERT_TRUE(stat_value(pool_after, "pool_active_peak") <= stat_value(pool_after, "pool_threads"));
+  ASSERT_TRUE(stat_value(pool_after, "pool_queue_peak") > 0u);
+  ASSERT_EQ(stat_value(pool_after, "pool_queue_capacity"), 128u);
+  ASSERT_TRUE(stat_value(pool_after, "pool_queue_peak") <= stat_value(pool_after, "pool_queue_capacity"));
+  if (stat_value(before_concurrency, "pool_threads") == 4) {
+    ASSERT_TRUE(stat_value(pool_after, "pool_contended_submits") >
+                stat_value(before_concurrency, "pool_contended_submits"));
+  }
+  ASSERT_TRUE(pool_after.find("pool_completion_wait_max_s:") != std::string::npos);
+  ASSERT_EQ(stat_value(pool_after, "pool_active"), 0u);
+  ASSERT_EQ(stat_value(pool_after, "pool_queue"), 0u);
+}
+
 TEST(NativeStateEngine, native_transfer_run_rejects_invalid_ranges_and_output_tree) {
   auto source_key = td::Ed25519::generate_private_key().move_as_ok();
   auto destination_key = td::Ed25519::generate_private_key().move_as_ok();

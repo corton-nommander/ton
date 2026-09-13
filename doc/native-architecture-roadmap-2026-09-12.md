@@ -63,10 +63,13 @@ and are not TPS forecasts.
    replay components.** Validation currently creates and joins OS threads for each
    signature batch. A1 recorded 3,607 calls, 26,280 created threads and 82.16 seconds
    in launch scopes. Native replay averaged 51.70 ms inside 113.15 ms total validation.
-   First replace only thread creation with a process-lifetime bounded executor and
-   preserve exact input order, first failing index, acceptance, roots and serialized
-   output. Then build per-account dependency components so independent source/destination
-   chains execute concurrently and commit in stable original order. Replay was
+   A default-off prototype now replaces only thread creation with a process-lifetime
+   bounded executor. It preserves synchronous completion, acceptance behavior and
+   deterministic lowest-failing-index reporting; its stress test covers 48 concurrent
+   callers and the bounded queue. It still needs a same-image live ABBA and exact
+   candidate-output comparison. Then build per-account dependency components so
+   independent source/destination chains execute concurrently and commit in stable
+   original order. Replay was
    45.69% of validation residence; fourfold replay acceleration gives a conditional
    **1.521× validation-latency** bound and ideal removal of 1.841×.
 
@@ -122,10 +125,10 @@ the combined loss. Lane-homogeneous admission batches can separately test whethe
 the slowest-owner join barrier matters. Both are diagnostics; neither addresses
 the shared validation and durability paths that now have stronger evidence.
 
-Implementation order: run the callback-cap ABBA; implement the persistent executor
-without replay reordering; instrument durability and run the unsafe ceiling test;
-then prototype ready epochs and the work-stealing arena. Keep each treatment
-separate. Every live gate requires repeated 600-second strict-image comparisons,
+Implementation order: finish the persistent-executor image and ABBA; run the
+callback-cap ABBA as a separate treatment; instrument durability and run the unsafe
+ceiling test; then prototype ready epochs and the work-stealing arena. Keep each
+treatment separate. Every live gate requires repeated 600-second strict-image comparisons,
 complete canonical proofs, zero residual drain, stable identities and at least 5%
 useful offered-load surplus before a capacity claim. A 200k claim must use full-window
 proof-observed canonical throughput with a load source capable of at least ~210k

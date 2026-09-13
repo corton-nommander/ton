@@ -26,16 +26,19 @@
 #include "td/utils/Timer.h"
 #include "td/utils/StringBuilder.h"
 #include "td/utils/bits.h"
+#include "td/utils/port/thread.h"
 #include "td/utils/uint128.h"
 #include "ton/ton-shard.h"
 #include "vm/vm.h"
 
-#include <deque>
 #include <atomic>
 #include <array>
+#include <condition_variable>
 #include <cstdlib>
+#include <deque>
 #include <limits>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -1575,6 +1578,11 @@ namespace {
 struct NativeSignatureExecutorTelemetry {
   std::atomic<td::uint64> calls{0}, parents{0}, threads{0}, serial{0};
   std::atomic<td::uint64> launch_ns{0}, join_ns{0}, residence_ns{0};
+  std::atomic<td::uint64> pool_calls{0}, pool_tickets{0}, pool_threads{0}, pool_threads_created{0};
+  std::atomic<td::uint64> pool_contended_submits{0}, pool_queue_wait_ns{0}, pool_queue_wait_max_ns{0};
+  std::atomic<td::uint64> pool_completion_wait_ns{0}, pool_completion_wait_max_ns{0};
+  std::atomic<td::uint64> pool_worker_cpu_ns{0}, pool_active{0}, pool_active_peak{0};
+  std::atomic<td::uint64> pool_queue{0}, pool_queue_peak{0};
   std::array<std::atomic<td::uint64>, 4> sizes{};
   std::array<std::atomic<td::uint64>, 5> workers{};
 } native_signature_telemetry;
@@ -1582,22 +1590,248 @@ struct NativeSignatureExecutorTelemetry {
 td::uint64 native_wall_ns(double seconds) {
   return static_cast<td::uint64>(std::max(0.0, seconds) * 1e9);
 }
+
+double native_wall_seconds(td::uint64 nanoseconds) {
+  return static_cast<double>(nanoseconds) * 1e-9;
+}
+
+void update_native_signature_peak(std::atomic<td::uint64>& peak, td::uint64 value) {
+  auto observed = peak.load(std::memory_order_relaxed);
+  while (observed < value &&
+         !peak.compare_exchange_weak(observed, value, std::memory_order_relaxed, std::memory_order_relaxed)) {
+  }
+}
+
+struct NativeRunSignatureWork {
+  NativeRunSignatureWork(const std::vector<const NativeTransferRun*>& runs, ton::Bits256 chain_domain)
+      : runs(runs), chain_domain(std::move(chain_domain)), first_failure(runs.size()) {
+  }
+
+  void run() {
+    while (true) {
+      auto index = cursor.fetch_add(1, std::memory_order_relaxed);
+      if (index >= runs.size()) {
+        return;
+      }
+      if (!runs[index] || runs[index]->verify_signature(chain_domain).is_error()) {
+        auto observed = first_failure.load(std::memory_order_relaxed);
+        while (index < observed && !first_failure.compare_exchange_weak(observed, index, std::memory_order_relaxed,
+                                                                        std::memory_order_relaxed)) {
+        }
+      }
+    }
+  }
+
+  const std::vector<const NativeTransferRun*>& runs;
+  const ton::Bits256 chain_domain;
+  std::atomic<std::size_t> cursor{0};
+  std::atomic<std::size_t> first_failure;
+};
+
+class NativeRunSignatureJob {
+ public:
+  NativeRunSignatureJob(const std::vector<const NativeTransferRun*>& runs, ton::Bits256 chain_domain, unsigned tickets)
+      : work_(runs, std::move(chain_domain)), remaining_tickets_(tickets) {
+    CHECK(tickets > 1);
+  }
+
+  void run_ticket() {
+    work_.run();
+  }
+
+  void complete_ticket() {
+    bool completed = false;
+    {
+      std::lock_guard<std::mutex> lock(completion_mutex_);
+      CHECK(remaining_tickets_ > 0);
+      completed = --remaining_tickets_ == 0;
+    }
+    if (completed) {
+      completion_condition_.notify_one();
+    }
+  }
+
+  void wait() {
+    std::unique_lock<std::mutex> lock(completion_mutex_);
+    completion_condition_.wait(lock, [&] { return remaining_tickets_ == 0; });
+  }
+
+  std::size_t first_failure() const {
+    return work_.first_failure.load(std::memory_order_relaxed);
+  }
+
+ private:
+  NativeRunSignatureWork work_;
+  std::mutex completion_mutex_;
+  std::condition_variable completion_condition_;
+  unsigned remaining_tickets_;
+};
+
+thread_local bool native_signature_pool_worker = false;
+
+class NativeSignatureExecutor {
+ public:
+  static constexpr unsigned max_workers = 64;
+  static constexpr std::size_t max_queue_size = 2 * max_workers;
+
+  NativeSignatureExecutor() = default;
+  NativeSignatureExecutor(const NativeSignatureExecutor&) = delete;
+  NativeSignatureExecutor& operator=(const NativeSignatureExecutor&) = delete;
+
+  ~NativeSignatureExecutor() {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      stopping_ = true;
+    }
+    work_condition_.notify_all();
+    queue_space_condition_.notify_all();
+    for (auto& worker : workers_) {
+      worker.join();
+    }
+  }
+
+  void execute(const std::shared_ptr<NativeRunSignatureJob>& job, unsigned tickets) {
+    CHECK(tickets > 1 && tickets <= max_workers);
+    ensure_workers(tickets);
+
+    const double queue_started = td::Time::now();
+    double completion_started = 0;
+    bool contended = false;
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      if (queue_.size() + tickets > max_queue_size) {
+        contended = true;
+      }
+      queue_space_condition_.wait(lock, [&] { return stopping_ || queue_.size() + tickets <= max_queue_size; });
+      CHECK(!stopping_);
+      completion_started = td::Time::now();
+      for (unsigned i = 0; i < tickets; ++i) {
+        queue_.push_back(job);
+      }
+      const auto queue_size = static_cast<td::uint64>(queue_.size());
+      native_signature_telemetry.pool_queue.store(queue_size, std::memory_order_relaxed);
+      update_native_signature_peak(native_signature_telemetry.pool_queue_peak, queue_size);
+    }
+    if (contended) {
+      const auto queue_wait_ns = native_wall_ns(td::Time::now() - queue_started);
+      native_signature_telemetry.pool_contended_submits.fetch_add(1, std::memory_order_relaxed);
+      native_signature_telemetry.pool_queue_wait_ns.fetch_add(queue_wait_ns, std::memory_order_relaxed);
+      update_native_signature_peak(native_signature_telemetry.pool_queue_wait_max_ns, queue_wait_ns);
+    }
+    native_signature_telemetry.pool_tickets.fetch_add(tickets, std::memory_order_relaxed);
+    work_condition_.notify_all();
+
+    job->wait();
+    const auto completion_wait_ns = native_wall_ns(td::Time::now() - completion_started);
+    native_signature_telemetry.pool_completion_wait_ns.fetch_add(completion_wait_ns, std::memory_order_relaxed);
+    update_native_signature_peak(native_signature_telemetry.pool_completion_wait_max_ns, completion_wait_ns);
+  }
+
+  static bool is_worker_thread() {
+    return native_signature_pool_worker;
+  }
+
+ private:
+  void ensure_workers(unsigned requested) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    CHECK(!stopping_);
+    while (workers_.size() < requested) {
+      const auto worker_id = workers_.size();
+      workers_.emplace_back([this] { worker_loop(); });
+      workers_.back().set_name(PSTRING() << "native-sig#" << worker_id);
+      native_signature_telemetry.threads.fetch_add(1, std::memory_order_relaxed);
+      native_signature_telemetry.pool_threads_created.fetch_add(1, std::memory_order_relaxed);
+      native_signature_telemetry.pool_threads.store(workers_.size(), std::memory_order_relaxed);
+    }
+  }
+
+  void worker_loop() {
+    CHECK(!native_signature_pool_worker);
+    native_signature_pool_worker = true;
+    SCOPE_EXIT {
+      native_signature_pool_worker = false;
+    };
+    while (true) {
+      std::shared_ptr<NativeRunSignatureJob> job;
+      {
+        std::unique_lock<std::mutex> lock(mutex_);
+        work_condition_.wait(lock, [&] { return stopping_ || !queue_.empty(); });
+        if (queue_.empty()) {
+          CHECK(stopping_);
+          return;
+        }
+        job = std::move(queue_.front());
+        queue_.pop_front();
+        native_signature_telemetry.pool_queue.store(queue_.size(), std::memory_order_relaxed);
+      }
+      queue_space_condition_.notify_all();
+
+      const auto active = native_signature_telemetry.pool_active.fetch_add(1, std::memory_order_relaxed) + 1;
+      update_native_signature_peak(native_signature_telemetry.pool_active_peak, active);
+      td::ThreadCpuTimer cpu_timer;
+      job->run_ticket();
+      native_signature_telemetry.pool_worker_cpu_ns.fetch_add(native_wall_ns(cpu_timer.elapsed()),
+                                                              std::memory_order_relaxed);
+      native_signature_telemetry.pool_active.fetch_sub(1, std::memory_order_relaxed);
+      job->complete_ticket();
+    }
+  }
+
+  std::mutex mutex_;
+  std::condition_variable work_condition_;
+  std::condition_variable queue_space_condition_;
+  std::deque<std::shared_ptr<NativeRunSignatureJob>> queue_;
+  std::vector<td::thread> workers_;
+  bool stopping_{false};
+};
+
+NativeSignatureExecutor& native_signature_executor() {
+  static NativeSignatureExecutor executor;
+  return executor;
+}
+
+bool native_signature_persistent_pool_enabled() {
+  const char* value = std::getenv("TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL");
+  if (!value) {
+    return false;
+  }
+  CHECK(td::Slice(value) == "0" || td::Slice(value) == "1");
+  return value[0] == '1';
+}
 }  // namespace
 
 std::string native_signature_executor_stats() {
   const auto& t = native_signature_telemetry;
   td::StringBuilder out;
-  out << "calls:" << t.calls.load(std::memory_order_relaxed)
-      << " parents:" << t.parents.load(std::memory_order_relaxed)
+  out << "calls:" << t.calls.load(std::memory_order_relaxed) << " parents:" << t.parents.load(std::memory_order_relaxed)
       << " threads_created:" << t.threads.load(std::memory_order_relaxed)
       << " serial_calls:" << t.serial.load(std::memory_order_relaxed)
-      << " launch_sum_s:" << t.launch_ns.load(std::memory_order_relaxed) * 1e-9
-      << " join_sum_s:" << t.join_ns.load(std::memory_order_relaxed) * 1e-9
-      << " residence_sum_s:" << t.residence_ns.load(std::memory_order_relaxed) * 1e-9;
+      << " launch_sum_s:" << native_wall_seconds(t.launch_ns.load(std::memory_order_relaxed))
+      << " join_sum_s:" << native_wall_seconds(t.join_ns.load(std::memory_order_relaxed))
+      << " residence_sum_s:" << native_wall_seconds(t.residence_ns.load(std::memory_order_relaxed))
+      << " pool_calls:" << t.pool_calls.load(std::memory_order_relaxed)
+      << " pool_tickets:" << t.pool_tickets.load(std::memory_order_relaxed)
+      << " pool_threads:" << t.pool_threads.load(std::memory_order_relaxed)
+      << " pool_threads_created:" << t.pool_threads_created.load(std::memory_order_relaxed)
+      << " pool_contended_submits:" << t.pool_contended_submits.load(std::memory_order_relaxed)
+      << " pool_queue_wait_sum_s:" << native_wall_seconds(t.pool_queue_wait_ns.load(std::memory_order_relaxed))
+      << " pool_queue_wait_max_s:" << native_wall_seconds(t.pool_queue_wait_max_ns.load(std::memory_order_relaxed))
+      << " pool_completion_wait_sum_s:"
+      << native_wall_seconds(t.pool_completion_wait_ns.load(std::memory_order_relaxed))
+      << " pool_completion_wait_max_s:"
+      << native_wall_seconds(t.pool_completion_wait_max_ns.load(std::memory_order_relaxed))
+      << " pool_worker_cpu_sum_s:" << native_wall_seconds(t.pool_worker_cpu_ns.load(std::memory_order_relaxed))
+      << " pool_active:" << t.pool_active.load(std::memory_order_relaxed)
+      << " pool_active_peak:" << t.pool_active_peak.load(std::memory_order_relaxed)
+      << " pool_queue:" << t.pool_queue.load(std::memory_order_relaxed)
+      << " pool_queue_peak:" << t.pool_queue_peak.load(std::memory_order_relaxed)
+      << " pool_queue_capacity:" << NativeSignatureExecutor::max_queue_size;
   const char* sizes[] = {"lt64", "64_127", "128_255", "ge256"};
   const char* workers[] = {"1", "2", "4", "8", "other"};
-  for (unsigned i = 0; i < 4; ++i) out << " parents_" << sizes[i] << ':' << t.sizes[i].load(std::memory_order_relaxed);
-  for (unsigned i = 0; i < 5; ++i) out << " workers_" << workers[i] << ':' << t.workers[i].load(std::memory_order_relaxed);
+  for (unsigned i = 0; i < 4; ++i)
+    out << " parents_" << sizes[i] << ':' << t.sizes[i].load(std::memory_order_relaxed);
+  for (unsigned i = 0; i < 5; ++i)
+    out << " workers_" << workers[i] << ':' << t.workers[i].load(std::memory_order_relaxed);
   return out.as_cslice().str();
 }
 
@@ -1622,37 +1856,45 @@ td::Status verify_native_transfer_run_signatures_parallel(const std::vector<cons
   SCOPE_EXIT {
     auto& t = native_signature_telemetry;
     t.parents.fetch_add(runs.size(), std::memory_order_relaxed);
-    t.threads.fetch_add(workers > 1 ? workers : 0, std::memory_order_relaxed);
     t.serial.fetch_add(workers == 1, std::memory_order_relaxed);
     t.launch_ns.fetch_add(native_wall_ns(launch_seconds), std::memory_order_relaxed);
     t.join_ns.fetch_add(native_wall_ns(join_seconds), std::memory_order_relaxed);
     t.residence_ns.fetch_add(native_wall_ns(td::Time::now() - started), std::memory_order_relaxed);
-    t.sizes[runs.size() < 64 ? 0 : runs.size() < 128 ? 1 : runs.size() < 256 ? 2 : 3].fetch_add(1, std::memory_order_relaxed);
-    t.workers[workers == 1 ? 0 : workers == 2 ? 1 : workers == 4 ? 2 : workers == 8 ? 3 : 4].fetch_add(1, std::memory_order_relaxed);
+    t.sizes[runs.size() < 64    ? 0
+            : runs.size() < 128 ? 1
+            : runs.size() < 256 ? 2
+                                : 3]
+        .fetch_add(1, std::memory_order_relaxed);
+    t.workers[workers == 1   ? 0
+              : workers == 2 ? 1
+              : workers == 4 ? 2
+              : workers == 8 ? 3
+                             : 4]
+        .fetch_add(1, std::memory_order_relaxed);
     t.calls.fetch_add(1, std::memory_order_relaxed);
   };
-  std::atomic<std::size_t> cursor{0};
-  std::atomic<std::size_t> first_failure{runs.size()};
-  auto run = [&] {
-    while (true) {
-      auto index = cursor.fetch_add(1, std::memory_order_relaxed);
-      if (index >= runs.size()) {
-        return;
-      }
-      if (!runs[index] || runs[index]->verify_signature(chain_domain).is_error()) {
-        auto expected = runs.size();
-        first_failure.compare_exchange_strong(expected, index, std::memory_order_relaxed);
-      }
-    }
-  };
+  NativeRunSignatureWork work{runs, chain_domain};
   if (workers == 1) {
-    run();
+    work.run();
+  } else if (native_signature_persistent_pool_enabled() && workers <= NativeSignatureExecutor::max_workers) {
+    if (NativeSignatureExecutor::is_worker_thread()) {
+      work.run();
+    } else {
+      // Construct the cache before the function-local executor so static teardown
+      // always joins persistent workers while cache storage is still alive.
+      (void)native_transfer_signature_cache();
+      auto job = std::make_shared<NativeRunSignatureJob>(runs, chain_domain, workers);
+      native_signature_telemetry.pool_calls.fetch_add(1, std::memory_order_relaxed);
+      native_signature_executor().execute(job, workers);
+      work.first_failure.store(job->first_failure(), std::memory_order_relaxed);
+    }
   } else {
+    native_signature_telemetry.threads.fetch_add(workers, std::memory_order_relaxed);
     std::vector<std::thread> threads;
     threads.reserve(workers);
     const double launch_started = td::Time::now();
     for (unsigned i = 0; i < workers; ++i) {
-      threads.emplace_back(run);
+      threads.emplace_back([&] { work.run(); });
     }
     launch_seconds = td::Time::now() - launch_started;
     const double join_started = td::Time::now();
@@ -1661,7 +1903,7 @@ td::Status verify_native_transfer_run_signatures_parallel(const std::vector<cons
     }
     join_seconds = td::Time::now() - join_started;
   }
-  auto failure = first_failure.load(std::memory_order_relaxed);
+  auto failure = work.first_failure.load(std::memory_order_relaxed);
   if (failure != runs.size()) {
     return td::Status::Error(PSTRING() << "native transfer run domain signature verification failed at batch index "
                                        << failure);

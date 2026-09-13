@@ -75,3 +75,13 @@ Compare arm 2 with arm 1 before interpreting the probe. Compare arm 3 with arm 2
 available from removing the WAL durability wait. A negligible arm-3 gain rules out synchronous CellDb WAL persistence
 as the useful next optimization target; a gain only identifies the cost ceiling and does not make sync-false safe to
 ship.
+
+The RocksDB wrapper now also exposes `flush_wal(sync)` as the durability
+primitive needed by a future ordered cohort writer. A recovery test commits two
+WAL-enabled `sync=false` batches, calls `flush_wal(true)` once, exits without
+running database destructors, and verifies both records after reopening. No
+production CellDb caller uses this primitive yet: ordinary writes remain
+`sync=true`, and the unsafe ceiling retains its existing diagnostic semantics.
+Introducing group commit still requires a bounded coordinator that preserves
+write order and resolves every acknowledgement only after the shared WAL flush
+succeeds.

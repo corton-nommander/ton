@@ -131,6 +131,23 @@ join measures remaining wait. Neither is exclusive CPU cost. Empty invocations
 are excluded. Existing per-block validation replay/materialization/dictionary
 and collation execution/commit timers remain available through Session Stats.
 
+Before choosing a serial, ephemeral-thread, or persistent-pool executor, each
+parallel signature helper now checks the same process-wide positive cache used by
+the scalar verifier. If every item is non-null, structurally valid, and cached
+under its full signing payload, signature, and exact chain domain, the helper
+returns without launching or waking workers. The first null, invalid, or cache
+miss takes the complete existing verification path. This preserves signature
+acceptance while removing executor setup for the common admission-then-validation
+flow. `cache_fast_checks`, `cache_fast_hits`, `cache_fast_misses`,
+`cache_fast_scanned_items`, and `cache_fast_cached_items` expose the shortcut.
+The hit/miss counters classify whole helper calls; scanned items include the
+prefix examined before a miss, and cached items count only complete all-hit calls.
+`cache_fast_enabled` records the effective configuration. The strict
+`TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH=0|1` control defaults to `1`
+when unset; any other value fails at the first helper or stats read. Compare
+`0/1` in the same image with the persistent executor disabled so the two
+executor treatments are not conflated.
+
 Validators containing the persistent-executor experiment add monotonic
 `pool_calls`, `pool_tickets`, `pool_threads_created`, `pool_contended_submits`,
 `pool_queue_wait_sum_s`, `pool_completion_wait_sum_s` and
@@ -157,6 +174,14 @@ queued worker tickets. Calls with fewer than 64 parents remain serial and do not
 initialize it. Invalid values fail when an eligible verification first reads the
 setting. Recreate the validator for each arm and compare 0/1 with signature
 fanout, image, workload and all other feature flags fixed.
+
+`TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM=0..1024` is a separate,
+default-off scheduler-latency experiment. Zero retains the actor runtime's
+historical unbounded mailbox drain. A positive value makes the shared
+`ExtMessagePool` yield after that many queued messages in one executor turn;
+it cannot interrupt one long message handler. The effective value appears as
+`mailbox_message_quantum` in `total.ext_msg_native_config`. Test it only when
+actor/runqueue samples show that pool turns delay other main-scheduler work.
 
 Use MyLocalTonDocker's `benchmark/remote/profile-native-validator.py` on A for
 counter deltas, stage means, per-thread CPU/runqueue samples, resource limits,

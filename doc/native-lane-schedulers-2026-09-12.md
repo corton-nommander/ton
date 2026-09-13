@@ -9,16 +9,18 @@ Neither flag shards storage or adds validators. The completed balanced compariso
 changed scheduler domains and prepared lane owners together; that combined
 configuration regressed and was rejected.
 
-The engine conserves its configured CPU-worker total. Four workers remain in the
-main scheduler; the rest are divided evenly across four lane schedulers, assigning
-remainder workers to the lower lane indexes. Examples:
+The engine conserves its configured CPU-worker total. The revised experiment
+reserves one worker for each lane scheduler and leaves every remaining worker in
+the main scheduler, which owns database, archive, overlay, manager and masterchain
+work. This directly tests the scheduler-starvation diagnosis from the rejected
+balanced run. Examples:
 
 | Engine CPU workers | Main | Lane 0 | Lane 1 | Lane 2 | Lane 3 |
 |---:|---:|---:|---:|---:|---:|
 | 8 | 4 | 1 | 1 | 1 | 1 |
-| 16 | 4 | 3 | 3 | 3 | 3 |
-| 17 | 4 | 4 | 3 | 3 | 3 |
-| 48 | 4 | 11 | 11 | 11 | 11 |
+| 16 | 12 | 1 | 1 | 1 | 1 |
+| 17 | 13 | 1 | 1 | 1 | 1 |
+| 48 | 44 | 1 | 1 | 1 | 1 |
 
 The enabled mode requires at least eight configured CPU workers. TD additionally
 creates one I/O/event-loop thread for each added scheduler group. Those four
@@ -40,7 +42,8 @@ Unsupported, incomplete, split/merged and eight-leaf topologies route **new**
 placements to main. Existing actors retain their assigned scheduler until normal
 session retirement; no live actor migration or reservation transfer is attempted.
 Scheduler groups are fixed at engine startup, so unsupported-topology fallback
-can leave lane workers idle and main with only four CPU workers. Disable the
+can leave lane workers idle, though the revised plan leaves all but four CPU
+workers in main. Disable the
 feature and restart to restore the full original shared scheduler on such a
 chain. Do not enable it on the current eight-lane diagnostic chain expecting
 unchanged resource distribution.
@@ -85,13 +88,15 @@ observer `e04b96f` on both sides; see [client compatibility](native-prepared-lan
 The initial incompatible-client pair and the later lane-imbalanced corrected
 control are excluded from feature selection; the tolerance was not widened.
 
-Performance result: the fresh balanced A1/B1/B2/A2 comparison was valid. Combined
+Performance result for the old 4/3/3/3/3 layout: the fresh balanced A1/B1/B2/A2 comparison was valid. Combined
 owners = 4 / domains = 4 averaged **52,476.47 canonical TPS** versus **57,680.72** for
 owners = 0 / domains = 0 controls, an observed **−9.0225%**. All four arms passed the
 600-second, image, proof, drain, cleanup and lane-balance gates. Treatment density
 rose 42.306% while native-block cadence fell 37.060%. Reject the combined
 configuration and keep domains = 0. Because ownership changed at the same time, this
-does not establish an isolated scheduler percentage. See the
+does not establish an isolated scheduler percentage. The revised 12/1/1/1/1
+layout is unmeasured and remains behind the same default-off flag. Compare it with
+owners = 0 so scheduler placement is the only treatment. See the
 [12 September cycle report](native-lane-pipeline-cycles-2026-09-12.md).
 
 ## Implemented ownership and prior evidence

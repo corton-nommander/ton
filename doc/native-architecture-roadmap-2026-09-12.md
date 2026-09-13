@@ -77,6 +77,12 @@ and are not TPS forecasts.
    contended submits, while A1 created 34,936 threads across a different helper-call
    total. The exact evidence and hashes are in the
    [signature-pool result](benchmarks/results/native-signature-pool-20260913.json).
+   An exact positive-cache preflight is now implemented separately. It avoids a
+   worker cohort only when every immutable signed payload already passed the
+   same domain-bound verification during admission; every miss takes the full
+   verifier path. It defaults on, has a strict same-image control, and reports
+   checks, hits, misses and item coverage. Its end-to-end effect remains
+   unmeasured.
    Build per-account dependency components so
    independent source/destination chains execute concurrently and commit in stable
    original order. In the earlier balanced-control diagnostics, replay was
@@ -89,6 +95,13 @@ and are not TPS forecasts.
    remove this durability wait. The default-off CellDb probe now reports queue wait,
    immutable prepare CPU, write-batch construction, blocking `DB::Write`, RocksDB
    WAL sync/bytes/stalls and end-to-end scheduling for successful regular stores.
+   The RocksDB wrapper now exposes a tested `flush_wal(true)` durability barrier
+   for a future coordinator; no production caller batches acknowledgements yet.
+   A separate default-off validated-state handoff can reuse validation's exact,
+   materialized next-state root during acceptance and skip the second Merkle
+   update. It requires full block/state identity and hash checks, consumes each
+   entry once, rejects virtualized proof roots, and preserves the existing
+   reconstruction and durable store path on every miss.
    A throwaway-chain `sync=false` run is a ceiling diagnostic: if
    canonical TPS does not move, stop. If it does, add one ordered WAL coordinator,
    queue records for a bounded 250–1,000 µs or byte-count window, sync once, and
@@ -124,6 +137,11 @@ and are not TPS forecasts.
    14.43% of measured collator residence;
    fourfold acceleration gives a conditional **1.121× collator-latency** bound and
    ideal removal of 1.169×.
+   The existing default-off four-lane scheduler now reserves one worker for each
+   isolated lane and leaves the other workers in the shared main group; with 16
+   configured threads this is 12/1/1/1/1 instead of the rejected 4/3/3/3/3
+   layout. A separate mailbox quantum can bound ExtMessagePool messages per actor
+   turn. Both are measurement controls, not promoted throughput results.
 
 5. **Construct authenticated state incrementally from changed paths.** Retain an
    immutable exact-parent root, dirty-path journal and reversible subtree/UsageTree
@@ -148,11 +166,13 @@ the combined loss. Lane-homogeneous admission batches can separately test whethe
 the slowest-owner join barrier matters. Both are diagnostics; neither addresses
 the shared validation and durability paths that now have stronger evidence.
 
-Implementation order: keep the persistent executor disabled; collect the callback
-stage split and run the 64-versus-12 query-credit ABBA only if the pool boundary
-dominates; run the three-arm CellDb profile-off/profile-on/sync-false ceiling;
-then run the 18,432-versus-8,192 callback-cap ABBA. Prototype ready epochs and the
-work-stealing arena only after those screens. Keep each treatment separate. Every
+Implementation order: keep the persistent executor disabled; screen the exact
+signature-cache preflight and validated-state handoff independently; collect the
+callback stage split and test the mailbox quantum only if the pool boundary
+dominates; then run the three-arm CellDb profile-off/profile-on/sync-false ceiling
+before adding a durability coordinator. Compare the revised lane scheduler only
+with lane ownership disabled so placement is the sole treatment. Prototype ready
+epochs and the work-stealing arena after those screens. Keep each treatment separate. Every
 live gate requires repeated 600-second strict-image comparisons,
 complete canonical proofs, zero residual drain, stable identities and at least 5%
 useful offered-load surplus before a capacity claim. A 200k claim must use full-window

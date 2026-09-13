@@ -1756,6 +1756,15 @@ TEST(NativeStateEngine, native_signature_is_bound_to_zerostate_domain) {
   ASSERT_TRUE(transfer.verify_signature(domain_a).is_ok());
   ASSERT_TRUE(transfer.verify_signature(domain_b).is_error());
   ASSERT_TRUE(transfer.verify_signature().is_error());
+
+  std::vector<const block::NativeTransfer*> transfers(64, &transfer);
+  ASSERT_TRUE(block::verify_native_transfer_signatures_parallel(transfers, domain_a, 4).is_ok());
+  ASSERT_TRUE(block::verify_native_transfer_signatures_parallel(transfers, domain_b, 4).is_error());
+
+  auto mutated = transfer;
+  ++mutated.amount;
+  std::vector<const block::NativeTransfer*> partial{&transfer, &mutated};
+  ASSERT_TRUE(block::verify_native_transfer_signatures_parallel(partial, domain_a, 2).is_error());
 }
 
 TEST(NativeStateEngine, native_transfer_run_is_domain_signed_and_canonical) {
@@ -1784,6 +1793,7 @@ TEST(NativeStateEngine, native_transfer_run_is_domain_signed_and_canonical) {
   std::vector<const block::NativeTransferRun*> signed_runs{&run};
   ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain_a).is_ok());
   ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain_b).is_error());
+
   // Exercise both executor paths without changing signature acceptance, and
   // keep telemetry observational even for rejected/null signed parents.
   signed_runs.assign(64, &run);
@@ -1825,6 +1835,84 @@ TEST(NativeStateEngine, native_transfer_run_is_domain_signed_and_canonical) {
 
   decoded.outputs[1].amount++;
   ASSERT_TRUE(decoded.verify_signature(domain_a).is_error());
+}
+
+TEST(NativeStateEngine, native_signature_cache_fast_path_has_strict_control_and_fallback) {
+  static constexpr const char* fast_flag = "TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH";
+  static constexpr const char* pool_flag = "TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL";
+  const char* previous_fast = std::getenv(fast_flag);
+  const bool had_previous_fast = previous_fast != nullptr;
+  const std::string saved_fast = previous_fast ? previous_fast : "";
+  const char* previous_pool = std::getenv(pool_flag);
+  const bool had_previous_pool = previous_pool != nullptr;
+  const std::string saved_pool = previous_pool ? previous_pool : "";
+  auto set_flag = [](const char* name, const char* value) {
+#if defined(_WIN32)
+    CHECK(_putenv_s(name, value ? value : "") == 0);
+#else
+    CHECK(value ? setenv(name, value, 1) == 0 : unsetenv(name) == 0);
+#endif
+  };
+  SCOPE_EXIT {
+    set_flag(fast_flag, had_previous_fast ? saved_fast.c_str() : nullptr);
+    set_flag(pool_flag, had_previous_pool ? saved_pool.c_str() : nullptr);
+  };
+  auto stat_value = [](const std::string& stats, const char* key) {
+    const auto marker = std::string(key) + ':';
+    auto offset = stats.find(marker);
+    CHECK(offset != std::string::npos);
+    offset += marker.size();
+    char* end = nullptr;
+    auto value = std::strtoull(stats.c_str() + offset, &end, 10);
+    CHECK(end != stats.c_str() + offset && (*end == ' ' || *end == '\0'));
+    return static_cast<td::uint64>(value);
+  };
+
+  auto source_key = td::Ed25519::generate_private_key().move_as_ok();
+  auto destination_key = td::Ed25519::generate_private_key().move_as_ok();
+  block::NativeTransferRun run;
+  run.src.as_slice().copy_from(source_key.get_public_key().move_as_ok().as_octet_string());
+  run.first_nonce = 800;
+  run.valid_until = std::numeric_limits<ton::UnixTime>::max();
+  run.outputs.resize(1);
+  run.outputs[0].dst.as_slice().copy_from(destination_key.get_public_key().move_as_ok().as_octet_string());
+  run.outputs[0].amount = 11;
+  run.outputs[0].fee = 2;
+  ton::Bits256 domain;
+  domain.as_slice().copy_from(std::string(32, '\x41'));
+  run.signature = source_key.sign(run.signing_payload(domain)).move_as_ok().as_slice().str();
+  ASSERT_TRUE(run.verify_signature(domain).is_ok());
+  std::vector<const block::NativeTransferRun*> runs(64, &run);
+
+  set_flag(pool_flag, "0");
+  set_flag(fast_flag, nullptr);
+  ASSERT_EQ(stat_value(block::native_signature_executor_stats(), "cache_fast_enabled"), 1u);
+  set_flag(fast_flag, "0");
+  auto disabled_before = block::native_signature_executor_stats();
+  ASSERT_EQ(stat_value(disabled_before, "cache_fast_enabled"), 0u);
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(runs, domain, 4).is_ok());
+  auto disabled_after = block::native_signature_executor_stats();
+  ASSERT_EQ(stat_value(disabled_after, "cache_fast_checks"), stat_value(disabled_before, "cache_fast_checks"));
+  ASSERT_EQ(stat_value(disabled_after, "threads_created") - stat_value(disabled_before, "threads_created"), 4u);
+
+  set_flag(fast_flag, "1");
+  auto enabled_before = block::native_signature_executor_stats();
+  ASSERT_EQ(stat_value(enabled_before, "cache_fast_enabled"), 1u);
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(runs, domain, 4).is_ok());
+  auto enabled_after = block::native_signature_executor_stats();
+  ASSERT_EQ(stat_value(enabled_after, "cache_fast_checks") - stat_value(enabled_before, "cache_fast_checks"), 1u);
+  ASSERT_EQ(stat_value(enabled_after, "cache_fast_hits") - stat_value(enabled_before, "cache_fast_hits"), 1u);
+  ASSERT_EQ(
+      stat_value(enabled_after, "cache_fast_cached_items") - stat_value(enabled_before, "cache_fast_cached_items"),
+      runs.size());
+  ASSERT_EQ(stat_value(enabled_after, "threads_created"), stat_value(enabled_before, "threads_created"));
+
+  auto wrong_domain = domain;
+  wrong_domain.as_slice().back() ^= 1;
+  auto fallback_before = block::native_signature_executor_stats();
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(runs, wrong_domain, 4).is_error());
+  auto fallback_after = block::native_signature_executor_stats();
+  ASSERT_EQ(stat_value(fallback_after, "cache_fast_misses") - stat_value(fallback_before, "cache_fast_misses"), 1u);
 }
 
 TEST(NativeStateEngine, native_transfer_run_persistent_signature_executor_is_bounded_and_concurrent) {
@@ -1883,16 +1971,24 @@ TEST(NativeStateEngine, native_transfer_run_persistent_signature_executor_is_bou
   auto after_serial_cutoff = block::native_signature_executor_stats();
   ASSERT_EQ(stat_value(after_serial_cutoff, "pool_calls"), stat_value(pool_before, "pool_calls"));
 
+  auto pool_run = run;
+  pool_run.first_nonce = 901;
+  pool_run.signature = source_key.sign(pool_run.signing_payload(domain)).move_as_ok().as_slice().str();
+  std::vector<const block::NativeTransferRun*> pool_runs(64, &pool_run);
   const auto pool_threads_before = stat_value(pool_before, "pool_threads");
   const auto pool_threads_created_before = stat_value(pool_before, "pool_threads_created");
-  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain, 4).is_ok());
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(pool_runs, domain, 4).is_ok());
   auto after_pool_creation = block::native_signature_executor_stats();
   const auto expected_pool_threads = std::max<td::uint64>(pool_threads_before, 4);
   ASSERT_EQ(stat_value(after_pool_creation, "pool_threads"), expected_pool_threads);
   ASSERT_EQ(stat_value(after_pool_creation, "pool_threads_created") - pool_threads_created_before,
             expected_pool_threads - pool_threads_before);
 
-  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(signed_runs, domain, 4).is_ok());
+  auto pool_reuse_run = run;
+  pool_reuse_run.first_nonce = 902;
+  pool_reuse_run.signature = source_key.sign(pool_reuse_run.signing_payload(domain)).move_as_ok().as_slice().str();
+  std::vector<const block::NativeTransferRun*> pool_reuse_runs(64, &pool_reuse_run);
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(pool_reuse_runs, domain, 4).is_ok());
   auto after_pool_reuse = block::native_signature_executor_stats();
   ASSERT_EQ(stat_value(after_pool_reuse, "pool_threads"), stat_value(after_pool_creation, "pool_threads"));
   ASSERT_EQ(stat_value(after_pool_reuse, "pool_threads_created"),

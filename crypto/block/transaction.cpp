@@ -41,6 +41,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <string_view>
 #include <thread>
 
 #define FAIL_UNLESS_MSG(condition, msg) \
@@ -1032,6 +1033,41 @@ NativeTransferSignatureCache& native_transfer_signature_cache() {
   return cache;
 }
 
+enum class NativeSignatureCacheFastPathMode { invalid, disabled, enabled };
+
+constexpr NativeSignatureCacheFastPathMode parse_native_signature_cache_fast_path(std::string_view value) {
+  if (value == "0") {
+    return NativeSignatureCacheFastPathMode::disabled;
+  }
+  if (value == "1") {
+    return NativeSignatureCacheFastPathMode::enabled;
+  }
+  return NativeSignatureCacheFastPathMode::invalid;
+}
+
+static_assert(parse_native_signature_cache_fast_path("0") == NativeSignatureCacheFastPathMode::disabled);
+static_assert(parse_native_signature_cache_fast_path("1") == NativeSignatureCacheFastPathMode::enabled);
+static_assert(parse_native_signature_cache_fast_path("") == NativeSignatureCacheFastPathMode::invalid);
+static_assert(parse_native_signature_cache_fast_path("true") == NativeSignatureCacheFastPathMode::invalid);
+
+bool native_signature_cache_fast_path_enabled() {
+  const char* value = std::getenv("TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH");
+  if (!value) {
+    return true;
+  }
+  const auto mode = parse_native_signature_cache_fast_path(value);
+  CHECK(mode != NativeSignatureCacheFastPathMode::invalid);
+  return mode == NativeSignatureCacheFastPathMode::enabled;
+}
+
+struct NativeSignatureCacheFastPathTelemetry {
+  std::atomic<td::uint64> checks{0};
+  std::atomic<td::uint64> hits{0};
+  std::atomic<td::uint64> misses{0};
+  std::atomic<td::uint64> scanned_items{0};
+  std::atomic<td::uint64> cached_items{0};
+} native_signature_cache_fast_path_telemetry;
+
 td::Bits256 native_transfer_signature_cache_key(const NativeTransfer& transfer, const ton::Bits256* chain_domain) {
   auto payload = chain_domain ? transfer.signing_payload(*chain_domain) : transfer.signing_payload();
   payload.append(transfer.signature);
@@ -1042,6 +1078,46 @@ td::Bits256 native_transfer_run_signature_cache_key(const NativeTransferRun& run
   auto payload = chain_domain ? run.signing_payload(*chain_domain) : run.signing_payload();
   payload.append(run.signature);
   return td::sha256_bits256(td::Slice(payload));
+}
+
+bool all_native_transfer_signatures_cached(const std::vector<const NativeTransfer*>& transfers,
+                                           const ton::Bits256* chain_domain) {
+  auto& telemetry = native_signature_cache_fast_path_telemetry;
+  telemetry.checks.fetch_add(1, std::memory_order_relaxed);
+  std::size_t scanned = 0;
+  for (const auto* transfer : transfers) {
+    ++scanned;
+    if (!transfer || !transfer->is_valid() ||
+        !native_transfer_signature_cache().contains(native_transfer_signature_cache_key(*transfer, chain_domain))) {
+      telemetry.scanned_items.fetch_add(scanned, std::memory_order_relaxed);
+      telemetry.misses.fetch_add(1, std::memory_order_relaxed);
+      return false;
+    }
+  }
+  telemetry.scanned_items.fetch_add(scanned, std::memory_order_relaxed);
+  telemetry.cached_items.fetch_add(transfers.size(), std::memory_order_relaxed);
+  telemetry.hits.fetch_add(1, std::memory_order_relaxed);
+  return true;
+}
+
+bool all_native_transfer_run_signatures_cached(const std::vector<const NativeTransferRun*>& runs,
+                                               const ton::Bits256& chain_domain) {
+  auto& telemetry = native_signature_cache_fast_path_telemetry;
+  telemetry.checks.fetch_add(1, std::memory_order_relaxed);
+  std::size_t scanned = 0;
+  for (const auto* run : runs) {
+    ++scanned;
+    if (!run || !run->is_valid() ||
+        !native_transfer_signature_cache().contains(native_transfer_run_signature_cache_key(*run, &chain_domain))) {
+      telemetry.scanned_items.fetch_add(scanned, std::memory_order_relaxed);
+      telemetry.misses.fetch_add(1, std::memory_order_relaxed);
+      return false;
+    }
+  }
+  telemetry.scanned_items.fetch_add(scanned, std::memory_order_relaxed);
+  telemetry.cached_items.fetch_add(runs.size(), std::memory_order_relaxed);
+  telemetry.hits.fetch_add(1, std::memory_order_relaxed);
+  return true;
 }
 
 td::optional<td::uint64> native_balance_to_uint64(const block::CurrencyCollection& balance) {
@@ -1501,6 +1577,13 @@ td::Status verify_native_transfer_signatures_parallel(const std::vector<const Na
   if (!workers) {
     return td::Status::OK();
   }
+  // Admission and validation share the exact positive cache below. Avoid
+  // creating a worker cohort when every immutable signed payload has already
+  // passed the same verification. A null, invalid, or uncached item takes the
+  // unchanged verifier path and therefore cannot be accepted by this shortcut.
+  if (native_signature_cache_fast_path_enabled() && all_native_transfer_signatures_cached(transfers, nullptr)) {
+    return td::Status::OK();
+  }
   std::atomic<std::size_t> cursor{0};
   std::atomic<std::size_t> first_failure{transfers.size()};
   auto run = [&] {
@@ -1538,6 +1621,9 @@ td::Status verify_native_transfer_signatures_parallel(const std::vector<const Na
                                                       const ton::Bits256& chain_domain, unsigned workers) {
   workers = native_executor_workers(workers, transfers.size());
   if (!workers) {
+    return td::Status::OK();
+  }
+  if (native_signature_cache_fast_path_enabled() && all_native_transfer_signatures_cached(transfers, &chain_domain)) {
     return td::Status::OK();
   }
   std::atomic<std::size_t> cursor{0};
@@ -1802,8 +1888,11 @@ bool native_signature_persistent_pool_enabled() {
 
 std::string native_signature_executor_stats() {
   const auto& t = native_signature_telemetry;
+  const auto& cache = native_signature_cache_fast_path_telemetry;
   td::StringBuilder out;
-  out << "calls:" << t.calls.load(std::memory_order_relaxed) << " parents:" << t.parents.load(std::memory_order_relaxed)
+  out << "cache_fast_enabled:" << static_cast<int>(native_signature_cache_fast_path_enabled())
+      << " calls:" << t.calls.load(std::memory_order_relaxed)
+      << " parents:" << t.parents.load(std::memory_order_relaxed)
       << " threads_created:" << t.threads.load(std::memory_order_relaxed)
       << " serial_calls:" << t.serial.load(std::memory_order_relaxed)
       << " launch_sum_s:" << native_wall_seconds(t.launch_ns.load(std::memory_order_relaxed))
@@ -1825,7 +1914,12 @@ std::string native_signature_executor_stats() {
       << " pool_active_peak:" << t.pool_active_peak.load(std::memory_order_relaxed)
       << " pool_queue:" << t.pool_queue.load(std::memory_order_relaxed)
       << " pool_queue_peak:" << t.pool_queue_peak.load(std::memory_order_relaxed)
-      << " pool_queue_capacity:" << NativeSignatureExecutor::max_queue_size;
+      << " pool_queue_capacity:" << NativeSignatureExecutor::max_queue_size
+      << " cache_fast_checks:" << cache.checks.load(std::memory_order_relaxed)
+      << " cache_fast_hits:" << cache.hits.load(std::memory_order_relaxed)
+      << " cache_fast_misses:" << cache.misses.load(std::memory_order_relaxed)
+      << " cache_fast_scanned_items:" << cache.scanned_items.load(std::memory_order_relaxed)
+      << " cache_fast_cached_items:" << cache.cached_items.load(std::memory_order_relaxed);
   const char* sizes[] = {"lt64", "64_127", "128_255", "ge256"};
   const char* workers[] = {"1", "2", "4", "8", "other"};
   for (unsigned i = 0; i < 4; ++i)
@@ -1873,6 +1967,9 @@ td::Status verify_native_transfer_run_signatures_parallel(const std::vector<cons
         .fetch_add(1, std::memory_order_relaxed);
     t.calls.fetch_add(1, std::memory_order_relaxed);
   };
+  if (native_signature_cache_fast_path_enabled() && all_native_transfer_run_signatures_cached(runs, chain_domain)) {
+    return td::Status::OK();
+  }
   NativeRunSignatureWork work{runs, chain_domain};
   if (workers == 1) {
     work.run();

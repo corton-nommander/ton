@@ -650,9 +650,12 @@ std::vector<Ref<vm::Cell>> build_native_account_state_cells_parallel(
 // same resource policy.
 unsigned native_executor_workers(unsigned requested, std::size_t work_items);
 
-// Verifies a block batch on a bounded number of CPU workers.  The worker count
+// Verifies a block batch on a bounded number of CPU workers. The worker count
 // defaults to TON_NATIVE_EXECUTOR_THREADS, or a laptop-safe hardware-derived
-// value when the variable is unset.
+// value when the variable is unset. An all-positive-cache preflight avoids the
+// worker cohort by default. Strict
+// TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH=0|1 provides a same-image
+// benchmark control.
 td::Status verify_native_transfer_signatures_parallel(const std::vector<const NativeTransfer*>& transfers,
                                                       unsigned workers = 0);
 td::Status verify_native_transfer_signatures_parallel(const std::vector<const NativeTransfer*>& transfers,

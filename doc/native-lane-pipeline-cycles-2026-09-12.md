@@ -182,8 +182,9 @@ controls.
    3,607 helper calls, 26,280 created threads and 82.16 seconds in launch scopes;
    validation replay averaged 51.70 ms inside 113.15 ms total validation. Its unit
    gate covers concurrent callers, queue backpressure, worker reuse and deterministic
-   rejection indices. Require identical roots and serialized outputs on a fixed
-   candidate corpus, then run a same-image flag-off/flag-on ABBA.
+   rejection indices. A 256-run fresh-process corpus now fixes and matches the exact
+   batch root, serialized BOC digest and replay-state digest in flag-off and flag-on
+   processes. Next run a same-image flag-off/flag-on ABBA.
 2. Run a fresh 18,432-versus-8,192 callback-limit ABBA with owners/domains/preparation
    off and producer on. Keep the physical transport window at 1,024 and client window
    65,536 fixed. The smaller cap needs to improve canonical TPS as well as cadence;

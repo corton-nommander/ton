@@ -1989,6 +1989,179 @@ TEST(NativeStateEngine, native_transfer_run_persistent_signature_executor_is_bou
   ASSERT_EQ(stat_value(pool_after, "pool_queue"), 0u);
 }
 
+TEST(NativeSignatureCorpus, fixed_candidate_is_identical_for_ephemeral_and_persistent_executors) {
+  static constexpr unsigned run_count = 256;
+  static constexpr unsigned outputs_per_run = 16;
+  static constexpr unsigned workers = 8;
+
+  std::string source_seed(32, '\0');
+  for (unsigned index = 0; index < source_seed.size(); ++index) {
+    source_seed[index] = static_cast<char>(index + 1);
+  }
+  td::Ed25519::PrivateKey source_key{td::SecureString(td::Slice(source_seed))};
+  auto source_public = source_key.get_public_key().move_as_ok().as_octet_string();
+  ton::Bits256 domain;
+  std::string domain_bytes(32, '\0');
+  for (unsigned index = 0; index < domain_bytes.size(); ++index) {
+    domain_bytes[index] = static_cast<char>(0x80 + index);
+  }
+  domain.as_slice().copy_from(domain_bytes);
+
+  block::NativeTransferBatch batch;
+  batch.version = block::NativeTransferBatch::runs_version;
+  batch.runs.reserve(run_count);
+  for (unsigned run_index = 0; run_index < run_count; ++run_index) {
+    block::NativeTransferRun run;
+    run.src.as_slice().copy_from(source_public);
+    run.first_nonce = static_cast<td::uint64>(run_index) * outputs_per_run;
+    run.valid_until = std::numeric_limits<ton::UnixTime>::max();
+    run.outputs.reserve(outputs_per_run);
+    for (unsigned output_index = 0; output_index < outputs_per_run; ++output_index) {
+      const td::uint64 logical_index = run.first_nonce + output_index;
+      block::NativeTransferRunOutput output;
+      std::string destination(32, '\x37');
+      for (unsigned byte = 0; byte < sizeof(logical_index); ++byte) {
+        destination[destination.size() - 1 - byte] = static_cast<char>(logical_index >> (byte * 8));
+      }
+      output.dst.as_slice().copy_from(destination);
+      output.amount = 1 + logical_index % 23;
+      output.fee = logical_index % 5;
+      run.outputs.push_back(std::move(output));
+    }
+    run.signature = source_key.sign(run.signing_payload(domain)).move_as_ok().as_slice().str();
+    batch.runs.push_back(std::move(run));
+  }
+
+  // Serializing and decoding must not seed the positive signature cache. Each
+  // externally selected mode therefore verifies this same corpus from cold in
+  // its own test process.
+  vm::CellBuilder builder;
+  ASSERT_TRUE(batch.store(builder));
+  auto root = builder.finalize();
+  auto boc = vm::std_boc_serialize(root).move_as_ok();
+  auto decoded = block::NativeTransferBatch::unpack(root).move_as_ok();
+  ASSERT_EQ(decoded.runs.size(), run_count);
+  ASSERT_EQ(decoded.entries.size(), run_count * outputs_per_run);
+  std::vector<const block::NativeTransferRun*> run_pointers;
+  run_pointers.reserve(decoded.runs.size());
+  for (const auto& run : decoded.runs) {
+    run_pointers.push_back(&run);
+  }
+
+  auto stat_value = [](const std::string& stats, const char* key) {
+    const auto marker = std::string(key) + ':';
+    auto offset = stats.find(marker);
+    CHECK(offset != std::string::npos);
+    offset += marker.size();
+    char* end = nullptr;
+    auto value = std::strtoull(stats.c_str() + offset, &end, 10);
+    CHECK(end != stats.c_str() + offset && (*end == ' ' || *end == '\0'));
+    return static_cast<td::uint64>(value);
+  };
+  auto before = block::native_signature_executor_stats();
+  ASSERT_TRUE(block::verify_native_transfer_run_signatures_parallel(run_pointers, domain, workers).is_ok());
+
+  auto wrong_domain = domain;
+  wrong_domain.as_slice().back() ^= 1;
+  auto wrong_domain_status = block::verify_native_transfer_run_signatures_parallel(run_pointers, wrong_domain, workers);
+  ASSERT_TRUE(wrong_domain_status.is_error());
+  ASSERT_EQ(wrong_domain_status.message().str(),
+            "native transfer run domain signature verification failed at batch index 0");
+
+  auto corrupted = decoded.runs;
+  for (auto index : {9u, 128u, 240u}) {
+    corrupted[index].signature[0] ^= 1;
+  }
+  std::vector<const block::NativeTransferRun*> corrupted_pointers;
+  corrupted_pointers.reserve(corrupted.size());
+  for (const auto& run : corrupted) {
+    corrupted_pointers.push_back(&run);
+  }
+  corrupted_pointers[200] = nullptr;
+  auto corrupted_status = block::verify_native_transfer_run_signatures_parallel(corrupted_pointers, domain, workers);
+  ASSERT_TRUE(corrupted_status.is_error());
+  ASSERT_EQ(corrupted_status.message().str(),
+            "native transfer run domain signature verification failed at batch index 9");
+
+  const char* flag = std::getenv("TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL");
+  ASSERT_TRUE(!flag || td::Slice(flag) == "0" || td::Slice(flag) == "1");
+  const bool persistent = flag && flag[0] == '1';
+  auto after = block::native_signature_executor_stats();
+  if (persistent) {
+    ASSERT_EQ(stat_value(after, "pool_calls") - stat_value(before, "pool_calls"), 3u);
+    ASSERT_EQ(stat_value(after, "pool_tickets") - stat_value(before, "pool_tickets"), 3u * workers);
+    ASSERT_TRUE(stat_value(after, "pool_threads") >= workers);
+    ASSERT_EQ(stat_value(after, "pool_active"), 0u);
+    ASSERT_EQ(stat_value(after, "pool_queue"), 0u);
+  } else {
+    ASSERT_EQ(stat_value(after, "pool_calls"), stat_value(before, "pool_calls"));
+    ASSERT_EQ(stat_value(after, "threads_created") - stat_value(before, "threads_created"), 3u * workers);
+  }
+
+  td::uint64 source_balance = 1'000'000'000;
+  td::uint64 source_nonce = 0;
+  std::map<ton::StdSmcAddress, td::uint64> destination_balances;
+  for (const auto& entry : decoded.entries) {
+    auto& destination_balance = destination_balances[entry.transfer.dst];
+    block::NativeTransferStateInput input{
+        .transfer = &entry.transfer,
+        .src_balance = source_balance,
+        .src_nonce = source_nonce,
+        .src_status = block::Account::acc_uninit,
+        .src_is_native = true,
+        .dst_balance = destination_balance,
+        .dst_status = block::Account::acc_nonexist,
+        .dst_is_native = false,
+    };
+    auto result = block::execute_native_transfer_state(input, entry.transfer.valid_until - 1,
+                                                       /*verify_signature=*/false);
+    ASSERT_EQ(result.code, block::NativeTransferStateResult::ok);
+    source_balance = result.src_balance;
+    source_nonce = result.src_nonce;
+    destination_balance = result.dst_balance;
+  }
+  ASSERT_EQ(source_nonce, run_count * outputs_per_run);
+  ASSERT_EQ(destination_balances.size(), run_count * outputs_per_run);
+
+  std::vector<ton::StdSmcAddress> state_addresses;
+  std::vector<block::NativeAccountStateCellInput> state_inputs;
+  state_addresses.reserve(destination_balances.size() + 1);
+  state_inputs.reserve(destination_balances.size() + 1);
+  state_addresses.push_back(decoded.runs.front().src);
+  state_inputs.push_back({.balance = source_balance, .nonce = source_nonce, .flags = 0});
+  for (const auto& [address, balance] : destination_balances) {
+    state_addresses.push_back(address);
+    state_inputs.push_back({.balance = balance, .nonce = 0, .flags = 0});
+  }
+  auto state_cells = block::build_native_account_state_cells_parallel(state_inputs, 1);
+  ASSERT_EQ(state_cells.size(), state_inputs.size());
+  std::string state_material;
+  state_material.reserve(state_cells.size() * 64);
+  for (std::size_t index = 0; index < state_cells.size(); ++index) {
+    ASSERT_TRUE(!state_cells[index].is_null());
+    state_material.append(state_addresses[index].as_slice().data(), state_addresses[index].as_slice().size());
+    state_material.append(state_cells[index]->get_hash().as_slice().data(),
+                          state_cells[index]->get_hash().as_slice().size());
+  }
+
+  vm::CellBuilder roundtrip_builder;
+  ASSERT_TRUE(decoded.store(roundtrip_builder));
+  auto roundtrip_root = roundtrip_builder.finalize();
+  auto roundtrip_boc = vm::std_boc_serialize(roundtrip_root).move_as_ok();
+  ASSERT_EQ(roundtrip_root->get_hash(), root->get_hash());
+  ASSERT_TRUE(roundtrip_boc.as_slice() == boc.as_slice());
+  const auto root_hex = td::buffer_to_hex(root->get_hash().as_slice());
+  const auto boc_hex = td::buffer_to_hex(td::sha256_bits256(boc.as_slice()).as_slice());
+  const auto state_hex = td::buffer_to_hex(td::sha256_bits256(state_material).as_slice());
+  ASSERT_EQ(root_hex, "FA8659F8740AB5D0D718FEA765493F6D5DCD1B37AAB13FCECFEE753789C67D2E");
+  ASSERT_EQ(boc_hex, "8B8EB324BF58A2D51067BCBBBE0721A4D1CA5A3A0669A26D4C8CBF3E9E96DB05");
+  ASSERT_EQ(state_hex, "10BB7103529A1B6D5BDD7A66EEA9F98C48F425FBF1289D35DDD6A65924EEAF80");
+  ASSERT_EQ(source_balance, 999'942'679u);
+  std::cout << "native_signature_corpus_v1 root=" << root_hex << " boc_sha256=" << boc_hex
+            << " state_sha256=" << state_hex << " source_balance=" << source_balance << " source_nonce=" << source_nonce
+            << "\n";
+}
+
 TEST(NativeStateEngine, native_transfer_run_rejects_invalid_ranges_and_output_tree) {
   auto source_key = td::Ed25519::generate_private_key().move_as_ok();
   auto destination_key = td::Ed25519::generate_private_key().move_as_ok();

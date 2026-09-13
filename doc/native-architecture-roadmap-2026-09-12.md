@@ -66,8 +66,10 @@ and are not TPS forecasts.
    A default-off prototype now replaces only thread creation with a process-lifetime
    bounded executor. It preserves synchronous completion, acceptance behavior and
    deterministic lowest-failing-index reporting; its stress test covers 48 concurrent
-   callers and the bounded queue. It still needs a same-image live ABBA and exact
-   candidate-output comparison. Then build per-account dependency components so
+   callers and the bounded queue. A separate fresh-process corpus confirms identical
+   golden batch, BOC and replay-state digests with the executor off and on across 256
+   signed runs and 4,096 logical transfers. It still needs a same-image live ABBA.
+   Then build per-account dependency components so
    independent source/destination chains execute concurrently and commit in stable
    original order. Replay was
    45.69% of validation residence; fourfold replay acceleration gives a conditional

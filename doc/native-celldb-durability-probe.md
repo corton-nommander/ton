@@ -28,6 +28,8 @@ queue, including a request that later resolves as a duplicate or error.
 | `durability.enabled` | Always `true` when the profile is active; absent otherwise. |
 | `durability.sync_writes` | Effective RocksDB `WriteOptions::sync` value. |
 | `durability.wal_enabled` | `true`; the probe never disables the WAL. |
+| `durability.periodic_reset_enabled` | Whether the ordinary 60-second RocksDB statistics flush also clears these probe accumulators. The physical benchmark disables that flush. |
+| `durability.reset_generation` | Number of accumulator clears since CellDb startup. Before/after deltas are complete only when this value is unchanged. |
 | `durability.queue_wait.micros` | Time spent by store requests that actually waited in CellDb's serialized action queue. Immediate requests are omitted. |
 | `durability.queue_wait.count` | Number of store requests represented by the queue-wait distribution. |
 | `durability.queue.max_depth` | Largest total CellDb action-queue depth observed when a store request was enqueued. |
@@ -55,6 +57,13 @@ With ordinary RocksDB statistics enabled, interval statistics are flushed and re
 `--disable-rocksdb-stats`, enabling this probe creates only the statistics object needed for per-commit attribution;
 it does not enable periodic full RocksDB stats output, and the reported distributions accumulate for the process
 lifetime.
+
+Validator `getstats` reads CellDb's view from a cache refreshed every two
+seconds. The harness snapshots also include its small setup and final-report
+margins around the generator. A before/after delta can therefore include
+margin activity and omit a small cache boundary interval even when
+`reset_generation` is unchanged; treat it as a run-level diagnostic rather
+than an exact canonical measurement-window counter.
 
 Use three arms to interpret the result:
 

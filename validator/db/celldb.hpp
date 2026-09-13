@@ -154,6 +154,8 @@ class CellDbIn : public CellDbBase {
     PercentileStats store_cell_write_time_;
     bool durability_profile_ = false;
     bool durability_sync_writes_ = true;
+    bool durability_periodic_reset_enabled_ = false;
+    td::uint64 durability_reset_generation_ = 0;
     PercentileStats durability_queue_wait_time_;
     size_t durability_queue_waits_ = 0;
     size_t durability_queue_max_depth_ = 0;
@@ -197,6 +199,7 @@ class CellDbIn : public CellDbBase {
   bool permanent_mode_ = false;
   bool durability_profile_enabled_ = false;
   bool durability_sync_writes_ = true;
+  td::uint64 durability_stats_reset_generation_ = 0;
 
   bool db_busy_ = false;
   std::deque<td::Promise<td::Unit>> action_queue_;

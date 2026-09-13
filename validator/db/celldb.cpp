@@ -258,6 +258,8 @@ void CellDbIn::start_up() {
   }
   cell_db_statistics_.durability_profile_ = durability_profile_enabled_;
   cell_db_statistics_.durability_sync_writes_ = durability_sync_writes_;
+  cell_db_statistics_.durability_periodic_reset_enabled_ = !opts_->get_disable_rocksdb_stats();
+  cell_db_statistics_.durability_reset_generation_ = durability_stats_reset_generation_;
 
   on_load_callback_ = [actor = std::make_shared<td::actor::ActorOwn<MigrationProxy>>(
                            td::actor::create_actor<MigrationProxy>("celldbmigration", actor_id(this))),
@@ -863,10 +865,13 @@ void CellDbIn::flush_db_stats() {
       td::RocksDb::statistics_to_string(statistics_) + snapshot_statistics_->to_string() + ss.as_cslice().str();
   td::actor::send_closure(parent_, &CellDb::flush_db_stats, std::move(stats));
   td::RocksDb::reset_statistics(statistics_);
+  ++durability_stats_reset_generation_;
   cell_db_statistics_.clear();
   cell_db_statistics_.permanent_mode_ = permanent_mode_;
   cell_db_statistics_.durability_profile_ = durability_profile_enabled_;
   cell_db_statistics_.durability_sync_writes_ = durability_sync_writes_;
+  cell_db_statistics_.durability_periodic_reset_enabled_ = !opts_->get_disable_rocksdb_stats();
+  cell_db_statistics_.durability_reset_generation_ = durability_stats_reset_generation_;
 }
 
 void CellDbIn::alarm() {
@@ -1287,6 +1292,8 @@ std::vector<std::pair<std::string, std::string>> CellDbIn::CellDbStatistics::pre
     stats.emplace_back("durability.enabled", "true");
     stats.emplace_back("durability.sync_writes", PSTRING() << durability_sync_writes_);
     stats.emplace_back("durability.wal_enabled", "true");
+    stats.emplace_back("durability.periodic_reset_enabled", PSTRING() << durability_periodic_reset_enabled_);
+    stats.emplace_back("durability.reset_generation", td::to_string(durability_reset_generation_));
     stats.emplace_back("durability.queue_wait.micros", PSTRING() << durability_queue_wait_time_.to_string());
     stats.emplace_back("durability.queue_wait.count", td::to_string(durability_queue_waits_));
     stats.emplace_back("durability.queue.max_depth", td::to_string(durability_queue_max_depth_));

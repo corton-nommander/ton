@@ -20,6 +20,23 @@ B1 versus A1 is −2.35%; B2 versus A2 is +2.15%. The mean difference is small
 relative to this drift. Four observations on one advancing chain do not establish
 statistical significance or isolate the gain from all historical changes.
 
+The earlier [metadata-projection reference](native-master-reference-2026-09-11.md)
+really averaged **61,959.20 canonical TPS** across two ten-minute runs. The
+current default mean is **8.21% lower**; the rooted mean is **8.36% lower**. This
+historical deficit remains unexplained. The latest ABBA isolates the rooted
+switch within the current build and cannot exclude regressions in intervening
+changes. Metadata projection, overlay signature reuse and admission configuration
+caching were enabled in both the historical winner and the current configuration.
+
+The broad workload and CPU allocations matched, but the historical validator used
+**14 threads versus 16 now**, reconciliation profiling was on versus off now,
+the Docker VM had 64 versus 80 GiB RAM, and the code/images and chain history
+differed. Both used named-volume databases with in-memory CellDb and a 16 GiB
+cache. None of these differences has been established as the cause. Resolving
+the deficit requires the historical and current builds to be compared under the
+same thread count, workload and host conditions, starting from equivalent chain
+snapshots, before attributing the loss to code or claiming cumulative improvement.
+
 All four runs passed canonical proof, completion, signed-run quantum, batching,
 lane-balance, image-reuse and validator-cleanup checks. Together their canonical
 measurement windows contain **136,157,360 outputs**. Final backlog, nonce gaps,

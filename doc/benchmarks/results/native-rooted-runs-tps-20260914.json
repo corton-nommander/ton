@@ -1643,5 +1643,45 @@
       "genesis": 143
     },
     "data_volumes_retained": true
+  },
+  "historical_comparison": {
+    "reference": "doc/native-master-reference-2026-09-11.md",
+    "source_revision": "7b73cdb157a1f5e621e420e1e5c913726b267cf5",
+    "published_canonical_mean_tps": 61959.2,
+    "current_default_change_percent": -8.206274834184047,
+    "current_rooted_change_percent": -8.36028861989443,
+    "causal_comparison": false,
+    "deficit_explained": false,
+    "historical_validator_threads": 14,
+    "current_validator_threads": 16,
+    "historical_vm_nominal_gib": 64,
+    "current_vm_nominal_gib": 80,
+    "historical_reconciliation_profile": 1,
+    "current_reconciliation_profile": 0,
+    "retained_metadata_overlay_and_config_cache_enabled_in_both": true,
+    "database_mount_type_in_both": "named_volume",
+    "celldb_cache_gib_in_both": 16,
+    "limitations": [
+      "The latest ABBA compares a switch within the current build; it does not exclude regressions introduced by intervening changes.",
+      "Code/images and chain history differ. Thread count, profiling and VM memory also differ; no cause of the historical deficit has been isolated."
+    ],
+    "evidence_artifacts": [
+      {
+        "path": "doc/native-master-reference-2026-09-11.md",
+        "sha256": "497209d4e153f368ec6a3fa083e4dffe3c7fa17b68eb280050875985ae7915e5"
+      },
+      {
+        "path": "build/benchmarks/candidate-metadata-cycles-20260909/02-metadata-projection/identity.json",
+        "sha256": "c183a08aa32dfb3cb94c69ef053033fda5c1675ee0f18634eac2d952f6efb581"
+      },
+      {
+        "path": "build/benchmarks/candidate-metadata-cycles-20260909/02-metadata-projection/comparison-environment.json",
+        "sha256": "6c3e72d07f87171aeb796306c56bad25a5f955240dcbfb301af3903321b882dc"
+      },
+      {
+        "path": "build/benchmarks/candidate-metadata-cycles-20260909/02-metadata-projection/sweep/01-10-connections/run-metadata.json",
+        "sha256": "6b0c68948c46244cc4db87ac648ce7d9e7a1ebe391bbe7a1222787717d2a8085"
+      }
+    ]
   }
 }

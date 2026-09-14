@@ -4,7 +4,9 @@
 for v5/v6 signed NTRN batches. It is **off by default**. The collator and validator
 retain strictly decoded parents and their canonical cells, avoiding the expanded
 `NativeTransferBatchEntry` vector and its 64-byte signature copy for each logical
-output. This implements a work reduction; it has not established a live TPS gain.
+output. This implements a work reduction. The completed
+[live ABBA test](native-rooted-runs-tps-2026-09-14.md) found no repeatable TPS gain:
+56,875 TPS with the default representation versus 56,779 TPS with rooted runs.
 
 The compact [result record](benchmarks/results/native-rooted-runs-20260914.json)
 records validation and microbenchmark evidence. Raw artifacts
@@ -122,8 +124,13 @@ result, and all eight new representation populations correctly marked the old
 image's missing telemetry unavailable. This extends the earlier byte-identical
 indexed-parser check with the new additive reporting fields.
 
-An actual native Collator runtime comparison has not been completed. Keep the
-flag off until a bounded runtime correctness check covers checkpoint commit and
-rollback, then measure a separate repeated comparison with complete canonical
-proofs, zero residual drain and fixed workload/runtime identities. A capacity
-claim also requires independent useful offered-load headroom.
+The live calibration, rooted smoke and four ten-minute ABBA arms completed with
+canonical proofs, zero residual drain and fixed workload/runtime identities.
+Both rooted arms exercised actual Collator/ValidateQuery handling and checkpoint
+commits with complete representation/replay counters. No checkpoint rollback
+occurred, so that runtime branch remains unobserved. Rooted serialization and
+decoding used less candidate wall time, but the TPS mean changed by only −0.17%
+while the controls drifted by −6.18%. Keep the flag off. No arm established the
+independent useful offered-load headroom needed for a capacity claim. See the
+[live result record](benchmarks/results/native-rooted-runs-tps-20260914.json) for
+the complete comparison and its separate correctness/capacity decisions.

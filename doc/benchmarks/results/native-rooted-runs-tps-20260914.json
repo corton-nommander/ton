@@ -1,0 +1,1647 @@
+{
+  "schema": "native-rooted-tps-final-report-data-v1",
+  "created_at": "2026-09-14T08:31:38.921189+00:00",
+  "experiment_dir": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z",
+  "valid_comparison": true,
+  "source_revision": "925ee0721c5b691debe3a2e37dba83d3daaae581",
+  "harness_revision": "e77de07689323e2a2439d24ddbd76fe2a878a1e1",
+  "images": {
+    "genesis": "sha256:a8b2487d61ec396df9f512cf2ab0441b3533379c34c2b871e280dd20f449594a",
+    "native-load-generator": "sha256:72da1be441c506d21acee55145dc918aa738188e9d6f32bd7f134595b07f4b3a",
+    "session-stats": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67"
+  },
+  "host": {
+    "host_boot_id": "c7655073-7fd6-410f-b95c-bcdee0a5041a",
+    "host_memory_kib": 131820728,
+    "host_cpu_online": 24,
+    "docker_resources": {
+      "ncpu": 24,
+      "memory_total_bytes": 85918482432
+    },
+    "min_host_available_kib": 25165824,
+    "min_vm_available_kib": 8388608
+  },
+  "workload": {
+    "NATIVE_LOAD_TARGET_TPS": "0",
+    "NATIVE_LOAD_WARMUP_SECONDS": "60",
+    "NATIVE_LOAD_DURATION_SECONDS": "600",
+    "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+    "NATIVE_LOAD_RAMP_SECONDS": "0",
+    "NATIVE_LOAD_SOURCES": "24576",
+    "NATIVE_LOAD_CONNECTIONS": "10",
+    "NATIVE_LOAD_WORKERS": "6",
+    "NATIVE_LOAD_SIGNERS": "6",
+    "NATIVE_LOAD_INFLIGHT": "262144",
+    "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+    "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+    "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+    "NATIVE_LOAD_PAYMENT_LANE_DEPTH": "2",
+    "NATIVE_LOAD_AUTO_NONCE": "1",
+    "NATIVE_LOAD_SOURCE_OFFSET": "0",
+    "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+    "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "1",
+    "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+    "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+    "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+    "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND": "32768",
+    "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+    "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+    "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+    "NATIVE_LOAD_AMOUNT": "0.000000001",
+    "NATIVE_LOAD_FEE": "0",
+    "NATIVE_LOAD_RETRY_HORIZON_SECONDS": "180",
+    "GENESIS_CPU_QUOTE": "16",
+    "GENESIS_CPUSET": "0-7,12-19",
+    "NATIVE_LOAD_CPU_QUOTE": "6",
+    "NATIVE_LOAD_CPUSET": "8-10,20-22",
+    "NATIVE_LOAD_MEMORY_LIMIT": "8g",
+    "SESSION_STATS_CPU_QUOTE": "1",
+    "SESSION_STATS_CPUSET": "11,23",
+    "NATIVE_PAYMENT_LANES_ENABLED": "1",
+    "NATIVE_PAYMENT_LANE_DEPTH": "2",
+    "ACTUAL_MIN_SPLIT": "2",
+    "MIN_SPLIT": "2",
+    "MAX_SPLIT": "2",
+    "TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH": "0",
+    "TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL": "0",
+    "TON_NATIVE_VALIDATED_STATE_HANDOFF": "0",
+    "TON_NATIVE_LANE_SCHEDULERS": "0",
+    "TON_NATIVE_ADMISSION_LANE_OWNERS": "0",
+    "TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM": "0",
+    "TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH": "0",
+    "TON_NATIVE_POOL_OWNERS": "1",
+    "CUSTOM_PARAMETERS": "--state-ttl 315360000 --archive-ttl 315360000 -f /usr/share/ton/smartcont/ --session-logs /var/ton-work/db/log.session-stats --threads 16 --mempool-num 1500000 --celldb-in-memory --celldb-cache-size 17179869184 --disable-rocksdb-stats --disable-state-serializer --broadcast-speed-catchain 128"
+  },
+  "experiment_switch": {
+    "name": "TON_NATIVE_DIRECT_RUN_ZERO_COPY",
+    "sequence": [
+      0,
+      1,
+      1,
+      0
+    ]
+  },
+  "chain_identity": {
+    "global_config_sha256": "e0c8c5db2b806d7bceace3465cf9786f4dda5faa5af4674f29a7042cc689efd6",
+    "lane_manifest_sha256": "aec57c247cdb6a0328e5c3db8d17c078a5a30a57911e9925f26f43dcea5512a2",
+    "genesis_env_sha256": "219c892aa97678ce49e28da66ce6fb08918d2943625658a572892a358294e462"
+  },
+  "arms": [
+    {
+      "arm": "01-A1",
+      "rooted_runs_enabled": 0,
+      "rates": {
+        "offered_logical_tps": 58216.48,
+        "admitted_logical_tps": 58216.48,
+        "canonical_logical_tps": 58688.24040066778,
+        "offered_over_canonical": 0.9919615855331998
+      },
+      "window": {
+        "offering_start_unix_ms": 1789371188745,
+        "offering_end_unix_ms_exclusive": 1789371788745,
+        "offering_duration_s": 600.0,
+        "canonical_bucket_start_unix_s": 1789371189,
+        "canonical_bucket_end_unix_s_exclusive": 1789371788,
+        "canonical_bucket_duration_s": 599,
+        "canonical_logical_transfers": 35154256
+      },
+      "checked_acceptance": {
+        "wrapper_and_generator_success": true,
+        "uninterrupted": true,
+        "final_proof_flags": true,
+        "final_proof_and_retry_zero_counters": true,
+        "drain_completed": true,
+        "canonical_run_valid": true,
+        "acceptance_flags": true,
+        "strict_runtime_reuse": true,
+        "clean_frozen_harness": true,
+        "same_images": true,
+        "no_oom_or_restarts": true,
+        "rooted_mode": true,
+        "zero_rejected_validation_candidates": true
+      },
+      "acceptance": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": true,
+        "ingress_capacity_invalid_reasons": [],
+        "chain_capacity_valid": false,
+        "chain_capacity_invalid_reasons": [
+          "insufficient_load_over_canonical_throughput",
+          "offered_load_not_above_canonical_throughput"
+        ],
+        "capacity_load": {
+          "measured_offered_avg_tps": 58216.48,
+          "measured_canonical_chain_avg_tps": 58688.24040066778,
+          "offered_above_canonical": false,
+          "invalid_reasons": [
+            "offered_load_not_above_canonical_throughput"
+          ]
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_valid": true,
+        "native_run_batching_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      },
+      "capacity": {
+        "ingress_valid": true,
+        "chain_valid": false,
+        "load_level": {
+          "valid": false,
+          "classification": "rejected",
+          "capacity_claim_allowed": false,
+          "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+        },
+        "useful_offered_headroom": false,
+        "claim_allowed": false
+      },
+      "load_level_acceptance": {
+        "valid": false,
+        "classification": "rejected",
+        "capacity_claim_allowed": false,
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+      },
+      "final_proof_flags": {
+        "final": true,
+        "benchmark_result_valid": true,
+        "chain_correctness_valid": true,
+        "canonical_result_valid": true,
+        "canonical_follower_final_catchup_complete": true
+      },
+      "final_zero_counters": {
+        "nonce_gaps": 0,
+        "duplicate_nonce_conflicts": 0,
+        "external_nonce_conflicts": 0,
+        "canonical_hash_conflicts": 0,
+        "canonical_follower_errors": 0,
+        "canonical_follower_retry_exhausted": 0,
+        "canonical_follower_reorgs": 0,
+        "canonical_total_backlog_after_drain": 0,
+        "canonical_backlog_after_drain": 0,
+        "retry_exhausted": 0,
+        "retry_horizon_exhausted": 0,
+        "retry_exhausted_sources": 0,
+        "canonical_state_lag_retry_exhausted": 0
+      },
+      "admission_retry_diagnostics": {
+        "scope": "full generator lifetime including warmup, measurement and drain; one physical parent task per failed attempt, not logical outputs or unique failed transfers",
+        "created_parents": 2427680,
+        "normal_parents": 2427680,
+        "repair_parents": 0,
+        "parent_submission_attempts": 3169395,
+        "task_errors_by_reason": {
+          "timeout": 82,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 49,
+          "not_ready": 741584,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "not_ready_by_reason": {
+          "snapshot_revision": 741584,
+          "other": 0
+        },
+        "retries": 741715,
+        "retries_by_reason": {
+          "timeout": 82,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 49,
+          "not_ready": 741584,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "attempts_equal_created_parents_plus_failed_results": true,
+        "snapshot_revision_failure_fraction_of_attempts": 0.2339828263753808,
+        "validator_not_ready_causes": {
+          "not_ready_total": 741633,
+          "not_ready_snapshot_changed": 741584,
+          "not_ready_account_changed_verification": 0,
+          "not_ready_account_changed_insertion": 0,
+          "not_ready_account_changed_commit": 0,
+          "not_ready_canonical_watermark_lag": 49,
+          "not_ready_masterchain_unavailable": 0,
+          "not_ready_shard_unavailable": 0,
+          "not_ready_mempool_full": 0,
+          "not_ready_per_address_limit": 0,
+          "not_ready_other": 0
+        },
+        "generator_validator_reconciliation": {
+          "generator_not_ready_split": true,
+          "generator_validator_snapshot_revision": true,
+          "generator_validator_canonical_watermark": true,
+          "generator_validator_not_ready_total": true
+        }
+      },
+      "measured_representation": {
+        "collated": {
+          "candidates": 6436,
+          "native_rooted_run_parents": 0,
+          "native_rooted_run_outputs": 0,
+          "native_expanded_entries": 35615808,
+          "reconciliation": {
+            "valid": true,
+            "representation_exclusive": true,
+            "rooted_output_bounds": true,
+            "replay_complete": null
+          }
+        },
+        "validated": {
+          "candidates": 6429,
+          "native_rooted_run_parents": 0,
+          "native_rooted_run_outputs": 0,
+          "native_expanded_entries": 35558032,
+          "native_replayed_outputs": 35558032,
+          "reconciliation": {
+            "valid": true,
+            "representation_exclusive": true,
+            "rooted_output_bounds": true,
+            "replay_complete": true
+          }
+        }
+      },
+      "measured_checkpoints": {
+        "capture_complete": true,
+        "native_checkpoint_groups": 27186,
+        "native_checkpoint_group_entries": 35615808,
+        "native_checkpoint_rollbacks": 0,
+        "native_checkpoint_rollback_entries": 0,
+        "native_checkpoint_flush_capacity": 13517,
+        "native_checkpoint_flush_deadline": 0
+      },
+      "artifacts": {
+        "summary": {
+          "path": "01-A1/benchmark-summary.json",
+          "sha256": "2df9e4b34c7e8399b84c2fbbad35fcfa222fe58adfc896609fed936e6bce48ae",
+          "bytes": 314835
+        },
+        "verdict": {
+          "path": "01-A1/arm-verdict.json",
+          "sha256": "9bdf0310b85cb8de016edaeb97152434695d33a4214fbcebea2c190f8c553693",
+          "bytes": 15236
+        },
+        "rooted_profile": {
+          "path": "01-A1/rooted-run-profile.json",
+          "sha256": "b027121b7282f97d6fcf2183288edc1d353a98686c4a0605f835409086a86b22",
+          "bytes": 4349
+        },
+        "activation": {
+          "path": "01-A1-activation.json",
+          "sha256": "b1659545a58829a98506413a08f1b0703ad0a630c02785924810f4bae251f730",
+          "bytes": 5283
+        },
+        "resources_before": {
+          "path": "01-A1-resources-before.json",
+          "sha256": "a631f7ed9160654b65ae11f1de85c374accd1afc82c53f926c1972c3784eafcb",
+          "bytes": 367
+        },
+        "resources_after": {
+          "path": "01-A1-resources-after.json",
+          "sha256": "b21ec0dfc293bead7d9495835d0489d88ab91a35f5013e1db67182582c6be923",
+          "bytes": 367
+        },
+        "generator_raw": {
+          "path": "01-A1/native-load-generator.log",
+          "sha256": "618ba0587aaba3fb2010b5627f8132c4900c484e7d7cbccdf972551440804786",
+          "bytes": 14949085
+        },
+        "generator_records": {
+          "path": "01-A1/native-load-generator-records.jsonl",
+          "sha256": "ec021b7413384ada1edf0ddf44e383bceb5312eb157ec5a696805624ebb8455a",
+          "bytes": 14947258
+        },
+        "generator_extraction_receipt": {
+          "path": "01-A1/native-load-generator-records.json",
+          "sha256": "de1144d910fceb3299902f39bd6c0ee4c82f65411162f7853d19bffb516668da",
+          "bytes": 1824
+        }
+      }
+    },
+    {
+      "arm": "02-B1",
+      "rooted_runs_enabled": 1,
+      "rates": {
+        "offered_logical_tps": 56742.21333333333,
+        "admitted_logical_tps": 56742.21333333333,
+        "canonical_logical_tps": 57310.904841402335,
+        "offered_over_canonical": 0.9900770802756865
+      },
+      "window": {
+        "offering_start_unix_ms": 1789372108684,
+        "offering_end_unix_ms_exclusive": 1789372708684,
+        "offering_duration_s": 600.0,
+        "canonical_bucket_start_unix_s": 1789372109,
+        "canonical_bucket_end_unix_s_exclusive": 1789372708,
+        "canonical_bucket_duration_s": 599,
+        "canonical_logical_transfers": 34329232
+      },
+      "checked_acceptance": {
+        "wrapper_and_generator_success": true,
+        "uninterrupted": true,
+        "final_proof_flags": true,
+        "final_proof_and_retry_zero_counters": true,
+        "drain_completed": true,
+        "canonical_run_valid": true,
+        "acceptance_flags": true,
+        "strict_runtime_reuse": true,
+        "clean_frozen_harness": true,
+        "same_images": true,
+        "no_oom_or_restarts": true,
+        "rooted_mode": true,
+        "zero_rejected_validation_candidates": true
+      },
+      "acceptance": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": true,
+        "ingress_capacity_invalid_reasons": [],
+        "chain_capacity_valid": false,
+        "chain_capacity_invalid_reasons": [
+          "insufficient_load_over_canonical_throughput",
+          "offered_load_not_above_canonical_throughput"
+        ],
+        "capacity_load": {
+          "measured_offered_avg_tps": 56742.21333333333,
+          "measured_canonical_chain_avg_tps": 57310.904841402335,
+          "offered_above_canonical": false,
+          "invalid_reasons": [
+            "offered_load_not_above_canonical_throughput"
+          ]
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_valid": true,
+        "native_run_batching_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      },
+      "capacity": {
+        "ingress_valid": true,
+        "chain_valid": false,
+        "load_level": {
+          "valid": false,
+          "classification": "rejected",
+          "capacity_claim_allowed": false,
+          "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+        },
+        "useful_offered_headroom": false,
+        "claim_allowed": false
+      },
+      "load_level_acceptance": {
+        "valid": false,
+        "classification": "rejected",
+        "capacity_claim_allowed": false,
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+      },
+      "final_proof_flags": {
+        "final": true,
+        "benchmark_result_valid": true,
+        "chain_correctness_valid": true,
+        "canonical_result_valid": true,
+        "canonical_follower_final_catchup_complete": true
+      },
+      "final_zero_counters": {
+        "nonce_gaps": 0,
+        "duplicate_nonce_conflicts": 0,
+        "external_nonce_conflicts": 0,
+        "canonical_hash_conflicts": 0,
+        "canonical_follower_errors": 0,
+        "canonical_follower_retry_exhausted": 0,
+        "canonical_follower_reorgs": 0,
+        "canonical_total_backlog_after_drain": 0,
+        "canonical_backlog_after_drain": 0,
+        "retry_exhausted": 0,
+        "retry_horizon_exhausted": 0,
+        "retry_exhausted_sources": 0,
+        "canonical_state_lag_retry_exhausted": 0
+      },
+      "admission_retry_diagnostics": {
+        "scope": "full generator lifetime including warmup, measurement and drain; one physical parent task per failed attempt, not logical outputs or unique failed transfers",
+        "created_parents": 2361430,
+        "normal_parents": 2361430,
+        "repair_parents": 0,
+        "parent_submission_attempts": 3137187,
+        "task_errors_by_reason": {
+          "timeout": 95,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 340,
+          "not_ready": 775322,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "not_ready_by_reason": {
+          "snapshot_revision": 775322,
+          "other": 0
+        },
+        "retries": 775757,
+        "retries_by_reason": {
+          "timeout": 95,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 340,
+          "not_ready": 775322,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "attempts_equal_created_parents_plus_failed_results": true,
+        "snapshot_revision_failure_fraction_of_attempts": 0.24713923651985042,
+        "validator_not_ready_causes": {
+          "not_ready_total": 775662,
+          "not_ready_snapshot_changed": 775322,
+          "not_ready_account_changed_verification": 0,
+          "not_ready_account_changed_insertion": 0,
+          "not_ready_account_changed_commit": 0,
+          "not_ready_canonical_watermark_lag": 340,
+          "not_ready_masterchain_unavailable": 0,
+          "not_ready_shard_unavailable": 0,
+          "not_ready_mempool_full": 0,
+          "not_ready_per_address_limit": 0,
+          "not_ready_other": 0
+        },
+        "generator_validator_reconciliation": {
+          "generator_not_ready_split": true,
+          "generator_validator_snapshot_revision": true,
+          "generator_validator_canonical_watermark": true,
+          "generator_validator_not_ready_total": true
+        }
+      },
+      "measured_representation": {
+        "collated": {
+          "candidates": 5675,
+          "native_rooted_run_parents": 2192433,
+          "native_rooted_run_outputs": 35078928,
+          "native_expanded_entries": 0,
+          "reconciliation": {
+            "valid": true,
+            "representation_exclusive": true,
+            "rooted_output_bounds": true,
+            "replay_complete": null
+          }
+        },
+        "validated": {
+          "candidates": 5673,
+          "native_rooted_run_parents": 2189719,
+          "native_rooted_run_outputs": 35035504,
+          "native_expanded_entries": 0,
+          "native_replayed_outputs": 35035504,
+          "reconciliation": {
+            "valid": true,
+            "representation_exclusive": true,
+            "rooted_output_bounds": true,
+            "replay_complete": true
+          }
+        }
+      },
+      "measured_checkpoints": {
+        "capture_complete": true,
+        "native_checkpoint_groups": 25118,
+        "native_checkpoint_group_entries": 35078928,
+        "native_checkpoint_rollbacks": 0,
+        "native_checkpoint_rollback_entries": 0,
+        "native_checkpoint_flush_capacity": 13856,
+        "native_checkpoint_flush_deadline": 0
+      },
+      "artifacts": {
+        "summary": {
+          "path": "02-B1/benchmark-summary.json",
+          "sha256": "dabe2ecddd85e53336bfcaeb14c6ace98d65a9e1982029d7d75786a13661d81c",
+          "bytes": 314798
+        },
+        "verdict": {
+          "path": "02-B1/arm-verdict.json",
+          "sha256": "da6468e28f7b5b7729731b21c73ce0a86b2f1347d675be1fc3392f5673ed4a42",
+          "bytes": 15260
+        },
+        "rooted_profile": {
+          "path": "02-B1/rooted-run-profile.json",
+          "sha256": "1b0fc09e5afc7780dba9bf301c6d96f4340e5ede32ca61b73cb41405f41fd074",
+          "bytes": 4373
+        },
+        "activation": {
+          "path": "02-B1-activation.json",
+          "sha256": "69eccbde67a7d4215d894a32e322a5685843e901dfa870b4e72a28b8569270de",
+          "bytes": 5283
+        },
+        "resources_before": {
+          "path": "02-B1-resources-before.json",
+          "sha256": "81dcab37fbd53436474b2f90112e3f9441a346ab88052cb8832e238c35aeba30",
+          "bytes": 367
+        },
+        "resources_after": {
+          "path": "02-B1-resources-after.json",
+          "sha256": "bddf992d374fa6aa8265c3ab852b0c708045bdf648045217dbde247a926866b2",
+          "bytes": 367
+        },
+        "generator_raw": {
+          "path": "02-B1/native-load-generator.log",
+          "sha256": "49128f8d73169543af6d422a1ddf73ab005275264b714a09f9fc73737cf4ad09",
+          "bytes": 14978801
+        },
+        "generator_records": {
+          "path": "02-B1/native-load-generator-records.jsonl",
+          "sha256": "dda32fd111a437855fa5358e6dc396097d6c57bfe3c645a6d5b9fae030c7d244",
+          "bytes": 14976974
+        },
+        "generator_extraction_receipt": {
+          "path": "02-B1/native-load-generator-records.json",
+          "sha256": "67aa2054e2540b14953ca1beac4c7a70b1e2d34d072c484e4dc19931f98a1059",
+          "bytes": 1824
+        }
+      }
+    },
+    {
+      "arm": "03-B2",
+      "rooted_runs_enabled": 1,
+      "rates": {
+        "offered_logical_tps": 55877.013333333336,
+        "admitted_logical_tps": 55877.013333333336,
+        "canonical_logical_tps": 56247.5592654424,
+        "offered_over_canonical": 0.9934122309136936
+      },
+      "window": {
+        "offering_start_unix_ms": 1789373035173,
+        "offering_end_unix_ms_exclusive": 1789373635173,
+        "offering_duration_s": 600.0,
+        "canonical_bucket_start_unix_s": 1789373036,
+        "canonical_bucket_end_unix_s_exclusive": 1789373635,
+        "canonical_bucket_duration_s": 599,
+        "canonical_logical_transfers": 33692288
+      },
+      "checked_acceptance": {
+        "wrapper_and_generator_success": true,
+        "uninterrupted": true,
+        "final_proof_flags": true,
+        "final_proof_and_retry_zero_counters": true,
+        "drain_completed": true,
+        "canonical_run_valid": true,
+        "acceptance_flags": true,
+        "strict_runtime_reuse": true,
+        "clean_frozen_harness": true,
+        "same_images": true,
+        "no_oom_or_restarts": true,
+        "rooted_mode": true,
+        "zero_rejected_validation_candidates": true
+      },
+      "acceptance": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": true,
+        "ingress_capacity_invalid_reasons": [],
+        "chain_capacity_valid": false,
+        "chain_capacity_invalid_reasons": [
+          "insufficient_load_over_canonical_throughput",
+          "offered_load_not_above_canonical_throughput"
+        ],
+        "capacity_load": {
+          "measured_offered_avg_tps": 55877.013333333336,
+          "measured_canonical_chain_avg_tps": 56247.5592654424,
+          "offered_above_canonical": false,
+          "invalid_reasons": [
+            "offered_load_not_above_canonical_throughput"
+          ]
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_valid": true,
+        "native_run_batching_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      },
+      "capacity": {
+        "ingress_valid": true,
+        "chain_valid": false,
+        "load_level": {
+          "valid": false,
+          "classification": "rejected",
+          "capacity_claim_allowed": false,
+          "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+        },
+        "useful_offered_headroom": false,
+        "claim_allowed": false
+      },
+      "load_level_acceptance": {
+        "valid": false,
+        "classification": "rejected",
+        "capacity_claim_allowed": false,
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+      },
+      "final_proof_flags": {
+        "final": true,
+        "benchmark_result_valid": true,
+        "chain_correctness_valid": true,
+        "canonical_result_valid": true,
+        "canonical_follower_final_catchup_complete": true
+      },
+      "final_zero_counters": {
+        "nonce_gaps": 0,
+        "duplicate_nonce_conflicts": 0,
+        "external_nonce_conflicts": 0,
+        "canonical_hash_conflicts": 0,
+        "canonical_follower_errors": 0,
+        "canonical_follower_retry_exhausted": 0,
+        "canonical_follower_reorgs": 0,
+        "canonical_total_backlog_after_drain": 0,
+        "canonical_backlog_after_drain": 0,
+        "retry_exhausted": 0,
+        "retry_horizon_exhausted": 0,
+        "retry_exhausted_sources": 0,
+        "canonical_state_lag_retry_exhausted": 0
+      },
+      "admission_retry_diagnostics": {
+        "scope": "full generator lifetime including warmup, measurement and drain; one physical parent task per failed attempt, not logical outputs or unique failed transfers",
+        "created_parents": 2338660,
+        "normal_parents": 2338660,
+        "repair_parents": 0,
+        "parent_submission_attempts": 2924201,
+        "task_errors_by_reason": {
+          "timeout": 104,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 0,
+          "not_ready": 585437,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "not_ready_by_reason": {
+          "snapshot_revision": 585437,
+          "other": 0
+        },
+        "retries": 585541,
+        "retries_by_reason": {
+          "timeout": 104,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 0,
+          "not_ready": 585437,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "attempts_equal_created_parents_plus_failed_results": true,
+        "snapshot_revision_failure_fraction_of_attempts": 0.20020408993773,
+        "validator_not_ready_causes": {
+          "not_ready_total": 585437,
+          "not_ready_snapshot_changed": 585437,
+          "not_ready_account_changed_verification": 0,
+          "not_ready_account_changed_insertion": 0,
+          "not_ready_account_changed_commit": 0,
+          "not_ready_canonical_watermark_lag": 0,
+          "not_ready_masterchain_unavailable": 0,
+          "not_ready_shard_unavailable": 0,
+          "not_ready_mempool_full": 0,
+          "not_ready_per_address_limit": 0,
+          "not_ready_other": 0
+        },
+        "generator_validator_reconciliation": {
+          "generator_not_ready_split": true,
+          "generator_validator_snapshot_revision": true,
+          "generator_validator_canonical_watermark": true,
+          "generator_validator_not_ready_total": true
+        }
+      },
+      "measured_representation": {
+        "collated": {
+          "candidates": 5300,
+          "native_rooted_run_parents": 2152527,
+          "native_rooted_run_outputs": 34440432,
+          "native_expanded_entries": 0,
+          "reconciliation": {
+            "valid": true,
+            "representation_exclusive": true,
+            "rooted_output_bounds": true,
+            "replay_complete": null
+          }
+        },
+        "validated": {
+          "candidates": 5300,
+          "native_rooted_run_parents": 2151532,
+          "native_rooted_run_outputs": 34424512,
+          "native_expanded_entries": 0,
+          "native_replayed_outputs": 34424512,
+          "reconciliation": {
+            "valid": true,
+            "representation_exclusive": true,
+            "rooted_output_bounds": true,
+            "replay_complete": true
+          }
+        }
+      },
+      "measured_checkpoints": {
+        "capture_complete": true,
+        "native_checkpoint_groups": 24599,
+        "native_checkpoint_group_entries": 34440432,
+        "native_checkpoint_rollbacks": 0,
+        "native_checkpoint_rollback_entries": 0,
+        "native_checkpoint_flush_capacity": 13563,
+        "native_checkpoint_flush_deadline": 0
+      },
+      "artifacts": {
+        "summary": {
+          "path": "03-B2/benchmark-summary.json",
+          "sha256": "f2f20830e864a9164a27e3e24060fd0cdac7a48c6eca3bd8b8ca13c20208abf3",
+          "bytes": 322073
+        },
+        "verdict": {
+          "path": "03-B2/arm-verdict.json",
+          "sha256": "7088ee949f9712684a425fe38aecab1384e6bf19c872024dd5eb9a7d3f4759ad",
+          "bytes": 15181
+        },
+        "rooted_profile": {
+          "path": "03-B2/rooted-run-profile.json",
+          "sha256": "5710bbbd0d0f23c14db63900fe96d4c19e91bd47e6f3ec1283a942b5c97ba8c3",
+          "bytes": 4368
+        },
+        "activation": {
+          "path": "03-B2-activation.json",
+          "sha256": "408124e457c3686d09ef8b63b49d49bf16608f4aff9be02c39b9e83e89cc35c7",
+          "bytes": 5283
+        },
+        "resources_before": {
+          "path": "03-B2-resources-before.json",
+          "sha256": "536f0f3b492824496f9fb7cccfe464af7ab0e1bdd7dee6707fb133a732404935",
+          "bytes": 367
+        },
+        "resources_after": {
+          "path": "03-B2-resources-after.json",
+          "sha256": "559d088436d0c28cfe55dae83e330db9be627b05b49dbce98a2d8ed92a8db546",
+          "bytes": 367
+        },
+        "generator_raw": {
+          "path": "03-B2/native-load-generator.log",
+          "sha256": "e125f226e2dc3dcee111d5f72bdce0af4593024bfe82c045cb26585326863364",
+          "bytes": 14922532
+        },
+        "generator_records": {
+          "path": "03-B2/native-load-generator-records.jsonl",
+          "sha256": "c865816972d1553aadac5b6ace52dedec6124d5256dfd0d779e4be643c1e5b43",
+          "bytes": 14920705
+        },
+        "generator_extraction_receipt": {
+          "path": "03-B2/native-load-generator-records.json",
+          "sha256": "aec083e2a2096bd17d5506ff85797684497a744b1a4522ef6f8fc3f1766af8f6",
+          "bytes": 1824
+        }
+      }
+    },
+    {
+      "arm": "04-A2",
+      "rooted_runs_enabled": 0,
+      "rates": {
+        "offered_logical_tps": 54282.64,
+        "admitted_logical_tps": 54282.64,
+        "canonical_logical_tps": 55061.075125208685,
+        "offered_over_canonical": 0.985862333355487
+      },
+      "window": {
+        "offering_start_unix_ms": 1789373971924,
+        "offering_end_unix_ms_exclusive": 1789374571924,
+        "offering_duration_s": 600.0,
+        "canonical_bucket_start_unix_s": 1789373972,
+        "canonical_bucket_end_unix_s_exclusive": 1789374571,
+        "canonical_bucket_duration_s": 599,
+        "canonical_logical_transfers": 32981584
+      },
+      "checked_acceptance": {
+        "wrapper_and_generator_success": true,
+        "uninterrupted": true,
+        "final_proof_flags": true,
+        "final_proof_and_retry_zero_counters": true,
+        "drain_completed": true,
+        "canonical_run_valid": true,
+        "acceptance_flags": true,
+        "strict_runtime_reuse": true,
+        "clean_frozen_harness": true,
+        "same_images": true,
+        "no_oom_or_restarts": true,
+        "rooted_mode": true,
+        "zero_rejected_validation_candidates": true
+      },
+      "acceptance": {
+        "chain_correctness_valid": true,
+        "correctness_invalid_reasons": [],
+        "run_complete": true,
+        "run_incomplete_reasons": [],
+        "ingress_capacity_valid": true,
+        "ingress_capacity_invalid_reasons": [],
+        "chain_capacity_valid": false,
+        "chain_capacity_invalid_reasons": [
+          "insufficient_load_over_canonical_throughput",
+          "offered_load_not_above_canonical_throughput"
+        ],
+        "capacity_load": {
+          "measured_offered_avg_tps": 54282.64,
+          "measured_canonical_chain_avg_tps": 55061.075125208685,
+          "offered_above_canonical": false,
+          "invalid_reasons": [
+            "offered_load_not_above_canonical_throughput"
+          ]
+        },
+        "native_signed_run_quantum_required": true,
+        "native_signed_run_quantum_valid": true,
+        "native_signed_run_quantum_telemetry_contract_valid": true,
+        "native_signed_run_quantum_benchmark_profile_valid": true,
+        "native_signed_run_quantum_invalid_reasons": [],
+        "canonical_lane_balance_required": true,
+        "canonical_lane_balance_valid": true,
+        "canonical_lane_balance_invalid_reasons": [],
+        "native_run_batching_required": true,
+        "native_run_batching_enforced": true,
+        "native_run_batching_valid": true,
+        "native_run_batching_invalid_reasons": [],
+        "strict_image_reuse_required": true,
+        "strict_image_reuse_valid": true,
+        "validator_cleanup_valid": true,
+        "validator_cleanup_invalid_reasons": [],
+        "reproducible": false,
+        "reproducibility_reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ],
+        "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      },
+      "capacity": {
+        "ingress_valid": true,
+        "chain_valid": false,
+        "load_level": {
+          "valid": false,
+          "classification": "rejected",
+          "capacity_claim_allowed": false,
+          "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+        },
+        "useful_offered_headroom": false,
+        "claim_allowed": false
+      },
+      "load_level_acceptance": {
+        "valid": false,
+        "classification": "rejected",
+        "capacity_claim_allowed": false,
+        "semantics": "load_validation proves the offered level only; it does not establish chain capacity"
+      },
+      "final_proof_flags": {
+        "final": true,
+        "benchmark_result_valid": true,
+        "chain_correctness_valid": true,
+        "canonical_result_valid": true,
+        "canonical_follower_final_catchup_complete": true
+      },
+      "final_zero_counters": {
+        "nonce_gaps": 0,
+        "duplicate_nonce_conflicts": 0,
+        "external_nonce_conflicts": 0,
+        "canonical_hash_conflicts": 0,
+        "canonical_follower_errors": 0,
+        "canonical_follower_retry_exhausted": 0,
+        "canonical_follower_reorgs": 0,
+        "canonical_total_backlog_after_drain": 0,
+        "canonical_backlog_after_drain": 0,
+        "retry_exhausted": 0,
+        "retry_horizon_exhausted": 0,
+        "retry_exhausted_sources": 0,
+        "canonical_state_lag_retry_exhausted": 0
+      },
+      "admission_retry_diagnostics": {
+        "scope": "full generator lifetime including warmup, measurement and drain; one physical parent task per failed attempt, not logical outputs or unique failed transfers",
+        "created_parents": 2275526,
+        "normal_parents": 2275526,
+        "repair_parents": 0,
+        "parent_submission_attempts": 2856143,
+        "task_errors_by_reason": {
+          "timeout": 103,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 0,
+          "not_ready": 580514,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "not_ready_by_reason": {
+          "snapshot_revision": 580514,
+          "other": 0
+        },
+        "retries": 580617,
+        "retries_by_reason": {
+          "timeout": 103,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 0,
+          "not_ready": 580514,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "attempts_equal_created_parents_plus_failed_results": true,
+        "snapshot_revision_failure_fraction_of_attempts": 0.20325102769714262,
+        "validator_not_ready_causes": {
+          "not_ready_total": 580514,
+          "not_ready_snapshot_changed": 580514,
+          "not_ready_account_changed_verification": 0,
+          "not_ready_account_changed_insertion": 0,
+          "not_ready_account_changed_commit": 0,
+          "not_ready_canonical_watermark_lag": 0,
+          "not_ready_masterchain_unavailable": 0,
+          "not_ready_shard_unavailable": 0,
+          "not_ready_mempool_full": 0,
+          "not_ready_per_address_limit": 0,
+          "not_ready_other": 0
+        },
+        "generator_validator_reconciliation": {
+          "generator_not_ready_split": true,
+          "generator_validator_snapshot_revision": true,
+          "generator_validator_canonical_watermark": true,
+          "generator_validator_not_ready_total": true
+        }
+      },
+      "measured_representation": {
+        "collated": {
+          "candidates": 4955,
+          "native_rooted_run_parents": 0,
+          "native_rooted_run_outputs": 0,
+          "native_expanded_entries": 33537920,
+          "reconciliation": {
+            "valid": true,
+            "representation_exclusive": true,
+            "rooted_output_bounds": true,
+            "replay_complete": null
+          }
+        },
+        "validated": {
+          "candidates": 4951,
+          "native_rooted_run_parents": 0,
+          "native_rooted_run_outputs": 0,
+          "native_expanded_entries": 33470400,
+          "native_replayed_outputs": 33470400,
+          "reconciliation": {
+            "valid": true,
+            "representation_exclusive": true,
+            "rooted_output_bounds": true,
+            "replay_complete": true
+          }
+        }
+      },
+      "measured_checkpoints": {
+        "capture_complete": true,
+        "native_checkpoint_groups": 23745,
+        "native_checkpoint_group_entries": 33537920,
+        "native_checkpoint_rollbacks": 0,
+        "native_checkpoint_rollback_entries": 0,
+        "native_checkpoint_flush_capacity": 13291,
+        "native_checkpoint_flush_deadline": 0
+      },
+      "artifacts": {
+        "summary": {
+          "path": "04-A2/benchmark-summary.json",
+          "sha256": "e4934b5c1e83f066dfe36dbecbc8091c9e6d5b6b31289f3128cce4a12615357e",
+          "bytes": 314468
+        },
+        "verdict": {
+          "path": "04-A2/arm-verdict.json",
+          "sha256": "db148679afcb0716d755fd238a1b6d271ade84ffc8dfc1560207f8241a021812",
+          "bytes": 15155
+        },
+        "rooted_profile": {
+          "path": "04-A2/rooted-run-profile.json",
+          "sha256": "384d5502f9b5258af952752bf1071e1fba37787ef628d294a001f63bdf1a3962",
+          "bytes": 4348
+        },
+        "activation": {
+          "path": "04-A2-activation.json",
+          "sha256": "20ed3e1e6af8452ba55fb8e8fd55e63f08e746b109e03ca9d30d942db5241395",
+          "bytes": 5283
+        },
+        "resources_before": {
+          "path": "04-A2-resources-before.json",
+          "sha256": "b49d2c704aef3357781c51b07ea83bc32628ff55dae71746f614b699a76e4116",
+          "bytes": 367
+        },
+        "resources_after": {
+          "path": "04-A2-resources-after.json",
+          "sha256": "e782919aea40f464090fef1978045403171cdf5f4ebfc8156543b868ab3fb942",
+          "bytes": 367
+        },
+        "generator_raw": {
+          "path": "04-A2/native-load-generator.log",
+          "sha256": "1b40bdf7a19ef67361202c6dcd510608f6dd7fd3b7c10bd6012177bcfd804b94",
+          "bytes": 14878961
+        },
+        "generator_records": {
+          "path": "04-A2/native-load-generator-records.jsonl",
+          "sha256": "d7be36f40ea7da73747f556e4902787d90e5c57be98ba2a17f8e9291e95393cd",
+          "bytes": 14877134
+        },
+        "generator_extraction_receipt": {
+          "path": "04-A2/native-load-generator-records.json",
+          "sha256": "7fe6956318dc072c5ffdc5016b43517fc2012c6b5c56c77a3debcca19c428dbc",
+          "bytes": 1824
+        }
+      }
+    }
+  ],
+  "comparison": {
+    "A1": 58688.24040066778,
+    "B1": 57310.904841402335,
+    "B2": 56247.5592654424,
+    "A2": 55061.075125208685,
+    "control_mean": 56874.65776293824,
+    "treatment_mean": 56779.23205342237,
+    "mean_change_percent": -0.16778247688735703,
+    "control_drift_percent": -6.1803953410363714,
+    "treatment_drift_percent": -1.855398338069425,
+    "pair_1_change_percent": -2.346868043516559,
+    "pair_2_change_percent": 2.1548510223159623,
+    "both_treatments_above_both_controls": false
+  },
+  "capacity_claim_allowed": false,
+  "promotion_candidate": false,
+  "promotion_automatic": false,
+  "decision": "do_not_promote_from_this_abba",
+  "artifacts": {
+    "contract": {
+      "path": "abba-contract.json",
+      "sha256": "068379d01e734e342f0a821347edb27e3ece8a3363421dc2ecd75247c246d504",
+      "bytes": 26019
+    },
+    "abba_summary": {
+      "path": "abba-summary.json",
+      "sha256": "fcbc550952606d63c38b652d59585800e41acf5b1afc30c6d6f3c027ac169650",
+      "bytes": 70259
+    },
+    "driver_completion": {
+      "path": "driver-status.json",
+      "sha256": "2e15f8ac424c772111da788b0bae50ba80fa35ff321cdb4b4e1ba345b74cffb7",
+      "bytes": 230
+    },
+    "frozen_hash_manifest": {
+      "path": "abba-harness-sha256.txt",
+      "sha256": "0baca524923746ee8957294a5ef56634087702dc1ff8bd279420bd79f5b951ec",
+      "bytes": 2330
+    },
+    "environments": {
+      "A": {
+        "path": "env.A",
+        "sha256": "9a2fbda28f12f25c1cb5cea4242fddc6769b46c829454217846c73d414e9f455",
+        "bytes": 9320
+      },
+      "B": {
+        "path": "env.B",
+        "sha256": "0c8f82a5b587da98a35d40d8508cc8762e762f8da5b02c65c260de98ca229b3e",
+        "bytes": 9320
+      }
+    },
+    "measured_docker_resources": {
+      "path": "measured-docker-resources.json",
+      "sha256": "138973632de0e64b35b4bf39562ab179e4b124af9a6907d313cb08699b627174",
+      "bytes": 17420
+    },
+    "measured_stage_costs": {
+      "path": "measured-stage-costs.json",
+      "sha256": "73418fa05e7ac3bc5f3f9aa6c45e1907c70ac71a049e0b7a9fa502ca20cc8c8a",
+      "bytes": 16000
+    },
+    "collector": {
+      "path": "collect-report-data.py",
+      "sha256": "f3cd87d8f561dc1d632f40a8dabb085529a2bd0df317d5428555ff8c4a59babb",
+      "bytes": 17868
+    }
+  },
+  "limitations": [
+    "Same current image, rooted representation disabled/enabled; this does not isolate the combined gain from every historical change.",
+    "Four arms use one advancing chain. ABBA exposes order drift but does not establish statistical significance.",
+    "Canonical TPS uses fully contained integer gen_utime buckets, typically 599 seconds within each 600-second offering window.",
+    "Capacity, proof correctness, cleanup and reproducibility are separate decisions; require the recorded capacity verdict, not merely successful execution.",
+    "Session-stats is frozen by image ID but lacks a source-revision label, so harness reproducibility remains false.",
+    "Docker Desktop host-PID-derived cgroup, thread and device attribution is excluded. Docker stats are approximate sampled diagnostics; host metrics describe the whole host.",
+    "Candidate representation counts and normalized stage wall times are not canonical TPS or CPU time; concurrent and nested timers overlap.",
+    "Admission error counters count full-run physical parent attempts, including retries. Snapshot-change retries identify overhead, not lost transactions or a proven sole bottleneck.",
+    "Zero checkpoint rollback counters leave that runtime branch unobserved. SIGTERM exit143 confirms termination without SIGKILL, not graceful database flushing."
+  ],
+  "human_report": "doc/native-rooted-runs-tps-2026-09-14.md",
+  "measured_stage_costs": {
+    "collator_native_batch_serialize": {
+      "control": {
+        "arms": [
+          "01-A1",
+          "04-A2"
+        ],
+        "cumulative_wall_seconds": 62.89532099999995,
+        "candidate_logical_outputs": 69153728,
+        "pooled_microseconds_per_candidate_logical_output": 0.9095000778555272
+      },
+      "treatment": {
+        "arms": [
+          "02-B1",
+          "03-B2"
+        ],
+        "cumulative_wall_seconds": 3.6988059999999967,
+        "candidate_logical_outputs": 69519360,
+        "pooled_microseconds_per_candidate_logical_output": 0.053205409255781363
+      },
+      "treatment_cost_change_percent": -94.1500379657765,
+      "normalized_cost_speedup": 17.094128032793957,
+      "both_treatments_below_both_controls": true
+    },
+    "validator_native_batch_decode": {
+      "control": {
+        "arms": [
+          "01-A1",
+          "04-A2"
+        ],
+        "cumulative_wall_seconds": 93.66117200000002,
+        "candidate_logical_outputs": 69028432,
+        "pooled_microseconds_per_candidate_logical_output": 1.3568491893311443
+      },
+      "treatment": {
+        "arms": [
+          "02-B1",
+          "03-B2"
+        ],
+        "cumulative_wall_seconds": 55.263661000000084,
+        "candidate_logical_outputs": 69460016,
+        "pooled_microseconds_per_candidate_logical_output": 0.7956183165866256
+      },
+      "treatment_cost_change_percent": -41.3628041463603,
+      "normalized_cost_speedup": 1.7054021520674891,
+      "both_treatments_below_both_controls": true
+    },
+    "validator_native_batch_replay": {
+      "control": {
+        "arms": [
+          "01-A1",
+          "04-A2"
+        ],
+        "cumulative_wall_seconds": 340.464402,
+        "candidate_logical_outputs": 69028432,
+        "pooled_microseconds_per_candidate_logical_output": 4.932234329181923
+      },
+      "treatment": {
+        "arms": [
+          "02-B1",
+          "03-B2"
+        ],
+        "cumulative_wall_seconds": 308.2221350000002,
+        "candidate_logical_outputs": 69460016,
+        "pooled_microseconds_per_candidate_logical_output": 4.437403743183707
+      },
+      "treatment_cost_change_percent": -10.032584686224544,
+      "normalized_cost_speedup": 1.1115135368870421,
+      "both_treatments_below_both_controls": true
+    }
+  },
+  "measured_docker_resources": {
+    "01-A1": [
+      {
+        "name": "genesis",
+        "sample_count": 292,
+        "sampled_container_ids": [
+          "a9b24badc09f"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789371189,
+        "last_sample_unix_s": 1789371786,
+        "cpu_cores": {
+          "mean": 9.171612671232877,
+          "p50": 9.18305,
+          "p95": 11.285485,
+          "max": 12.6951
+        },
+        "memory_gib": {
+          "mean": 9.214773972602739,
+          "max": 14.12
+        }
+      },
+      {
+        "name": "native-load-generator",
+        "sample_count": 292,
+        "sampled_container_ids": [
+          "aacbe720ece6"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789371189,
+        "last_sample_unix_s": 1789371786,
+        "cpu_cores": {
+          "mean": 0.8664202054794521,
+          "p50": 0.8779,
+          "p95": 1.3451799999999998,
+          "max": 1.7501
+        },
+        "memory_gib": {
+          "mean": 0.45314205639982874,
+          "max": 0.521875
+        }
+      },
+      {
+        "name": "session-stats",
+        "sample_count": 292,
+        "sampled_container_ids": [
+          "743c789c4adc"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789371189,
+        "last_sample_unix_s": 1789371786,
+        "cpu_cores": {
+          "mean": 0.5768821917808219,
+          "p50": 0.80705,
+          "p95": 1.06399,
+          "max": 1.1215000000000002
+        },
+        "memory_gib": {
+          "mean": 0.44510113441780824,
+          "max": 0.9546875
+        }
+      }
+    ],
+    "02-B1": [
+      {
+        "name": "genesis",
+        "sample_count": 291,
+        "sampled_container_ids": [
+          "ab06c057692b"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789372110,
+        "last_sample_unix_s": 1789372707,
+        "cpu_cores": {
+          "mean": 8.857131958762887,
+          "p50": 8.8416,
+          "p95": 10.974200000000002,
+          "max": 12.5108
+        },
+        "memory_gib": {
+          "mean": 11.996058419243987,
+          "max": 17.22
+        }
+      },
+      {
+        "name": "native-load-generator",
+        "sample_count": 291,
+        "sampled_container_ids": [
+          "8aa80aa5b849"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789372110,
+        "last_sample_unix_s": 1789372707,
+        "cpu_cores": {
+          "mean": 0.853,
+          "p50": 0.8686,
+          "p95": 1.2993000000000001,
+          "max": 1.7156
+        },
+        "memory_gib": {
+          "mean": 0.49991643846649486,
+          "max": 0.57041015625
+        }
+      },
+      {
+        "name": "session-stats",
+        "sample_count": 291,
+        "sampled_container_ids": [
+          "40acfcb5de6b"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789372110,
+        "last_sample_unix_s": 1789372707,
+        "cpu_cores": {
+          "mean": 0.7220398625429554,
+          "p50": 1.021,
+          "p95": 1.06195,
+          "max": 1.1198000000000001
+        },
+        "memory_gib": {
+          "mean": 0.713782310459622,
+          "max": 1.392
+        }
+      }
+    ],
+    "03-B2": [
+      {
+        "name": "genesis",
+        "sample_count": 291,
+        "sampled_container_ids": [
+          "e2b5cf46e601"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789373037,
+        "last_sample_unix_s": 1789373633,
+        "cpu_cores": {
+          "mean": 9.109240206185566,
+          "p50": 9.0721,
+          "p95": 11.2009,
+          "max": 13.5908
+        },
+        "memory_gib": {
+          "mean": 14.570364261168384,
+          "max": 18.72
+        }
+      },
+      {
+        "name": "native-load-generator",
+        "sample_count": 291,
+        "sampled_container_ids": [
+          "d1c51ef9f423"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789373037,
+        "last_sample_unix_s": 1789373633,
+        "cpu_cores": {
+          "mean": 0.8529876288659793,
+          "p50": 0.863,
+          "p95": 1.3768,
+          "max": 1.8611000000000002
+        },
+        "memory_gib": {
+          "mean": 0.4978307560137457,
+          "max": 0.55107421875
+        }
+      },
+      {
+        "name": "session-stats",
+        "sample_count": 291,
+        "sampled_container_ids": [
+          "ace6d88b1ab7"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789373037,
+        "last_sample_unix_s": 1789373633,
+        "cpu_cores": {
+          "mean": 0.8060536082474227,
+          "p50": 1.0277,
+          "p95": 1.07535,
+          "max": 1.1629
+        },
+        "memory_gib": {
+          "mean": 0.9803104730455326,
+          "max": 1.791
+        }
+      }
+    ],
+    "04-A2": [
+      {
+        "name": "genesis",
+        "sample_count": 290,
+        "sampled_container_ids": [
+          "c24219de439f"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789373972,
+        "last_sample_unix_s": 1789374571,
+        "cpu_cores": {
+          "mean": 9.270134137931034,
+          "p50": 9.28905,
+          "p95": 11.566699999999999,
+          "max": 15.656500000000001
+        },
+        "memory_gib": {
+          "mean": 17.168275862068967,
+          "max": 20.94
+        }
+      },
+      {
+        "name": "native-load-generator",
+        "sample_count": 290,
+        "sampled_container_ids": [
+          "a79ca7f0c5aa"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789373972,
+        "last_sample_unix_s": 1789374571,
+        "cpu_cores": {
+          "mean": 0.8685879310344827,
+          "p50": 0.8632,
+          "p95": 1.3551850000000003,
+          "max": 1.8909
+        },
+        "memory_gib": {
+          "mean": 0.5123407192887931,
+          "max": 0.55673828125
+        }
+      },
+      {
+        "name": "session-stats",
+        "sample_count": 290,
+        "sampled_container_ids": [
+          "e2f707c33143"
+        ],
+        "single_container_id_observed": true,
+        "first_sample_unix_s": 1789373972,
+        "last_sample_unix_s": 1789374571,
+        "cpu_cores": {
+          "mean": 0.8517965517241379,
+          "p50": 1.0305,
+          "p95": 1.091865,
+          "max": 1.3084
+        },
+        "memory_gib": {
+          "mean": 1.2294887257543103,
+          "max": 2.167
+        }
+      }
+    ]
+  },
+  "resource_sampling_limitations": [
+    "Docker stats timestamps are integer seconds captured before the sampling call, at approximately two-second cadence; measurement-boundary attribution is approximate.",
+    "CPU percent is an interval sample, while memory is Docker's rounded used-memory display; these are sampled diagnostics, not exact CPU-time or RSS accounting.",
+    "Statistics weight each selected sample equally, not by elapsed time, and exclude samples timestamped outside the offering measurement window.",
+    "The offering measurement window can differ from the fully contained integer gen_utime buckets used for canonical TPS.",
+    "Missing unfinished-arm summaries are listed as skipped; source acceptance flags are preserved, not recomputed."
+  ],
+  "resource_guard": {
+    "samples": 604,
+    "min_host_available_gib": 26.30423355102539,
+    "min_vm_available_gib": 52.55009078979492,
+    "tripped": false,
+    "completed": true
+  },
+  "validation": {
+    "fresh_image_build": "passed",
+    "image_publication_test_invocations": 21,
+    "companion_reporting_suite": "passed",
+    "calibration_canonical_tps": 4009.762711864407,
+    "rooted_smoke_canonical_tps": 3992.135593220339,
+    "abba_measured_canonical_outputs": 136157360,
+    "checkpoint_rollback_branch_observed": false
+  },
+  "preparation_fix": {
+    "harness_commit": "e77de07689323e2a2439d24ddbd76fe2a878a1e1",
+    "change": "Enable Docker init for genesis and validator services; the actual validator has no SIGTERM handler and would otherwise be PID 1.",
+    "probe": "Default-handler probe stopped with exit143 under init; without init stop timed out and forced exit137. Actual experiment transitions passed without OOM/SIGKILL.",
+    "limitation": "Does not prove graceful validator database flushing."
+  },
+  "completion_artifacts": {
+    "report-data.json": {
+      "path": "build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z/report-data.json",
+      "sha256": "a97ef7f19e610f8f7d969a459fefbc694d837d425bdf041f497e498cfde0cbee"
+    },
+    "measured-stage-costs.json": {
+      "path": "build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z/measured-stage-costs.json",
+      "sha256": "73418fa05e7ac3bc5f3f9aa6c45e1907c70ac71a049e0b7a9fa502ca20cc8c8a"
+    },
+    "measured-docker-resources.json": {
+      "path": "build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z/measured-docker-resources.json",
+      "sha256": "138973632de0e64b35b4bf39562ab179e4b124af9a6907d313cb08699b627174"
+    },
+    "resource-guard.jsonl": {
+      "path": "build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z/resource-guard.jsonl",
+      "sha256": "4ed7f32f007e82c144a0f13e10d3aefa3006d4fda8996a396983ba586febab28"
+    },
+    "final-runtime.json": {
+      "path": "build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z/final-runtime.json",
+      "sha256": "d3953060fe5b65dbcf7351b61c58a9b6048443d1d29e1e875f6375fc8e2620a3"
+    },
+    "driver-status.json": {
+      "path": "build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z/driver-status.json",
+      "sha256": "2e15f8ac424c772111da788b0bae50ba80fa35ff321cdb4b4e1ba345b74cffb7"
+    },
+    "build-base-receipt.json": {
+      "path": "build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z/build-base-receipt.json",
+      "sha256": "c0ea5b53889d86a0d4951ffb9d8439ba44e07cd7de801998d4dc94bbc93daccb"
+    },
+    "build-derived-exit.json": {
+      "path": "build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z/build-derived-exit.json",
+      "sha256": "52ddc41f9bb8a42e3385856ec114f37471b7ff8df1167a4a3c237ef2a966844f"
+    },
+    "default-signal-init-probe.json": {
+      "path": "build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z/default-signal-init-probe.json",
+      "sha256": "c7ad59198bfd9310e15c3743c44cd8f0189ccabd9e6f9c32c24b99d28d32e41a"
+    },
+    "reporting-suite-init.log": {
+      "path": "build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z/reporting-suite-init.log",
+      "sha256": "7818dc6ee288aeb03445c273b40334634bea0cda7809ea45aaa2b40a25dd4edc"
+    },
+    "post-test-cleanup.json": {
+      "path": "build/benchmarks/native-rooted-runs-tps-925ee0721c5b-20260914T064649Z/post-test-cleanup.json",
+      "sha256": "e3f3c41db99beb03a3ee55455901563fc286fbc05be509ab8f37551df97355d7"
+    }
+  },
+  "runtime_at_comparison_completion": {
+    "rooted_flag": 0,
+    "genesis": "running_healthy",
+    "generator_exit_code": 0,
+    "oom_killed": false,
+    "container_restarts": 0,
+    "guard_exit_code": 0,
+    "driver_exit_code": 0
+  },
+  "post_test_cleanup": {
+    "benchmark_services_stopped": true,
+    "exit_codes": {
+      "session-stats": 143,
+      "genesis": 143
+    },
+    "data_volumes_retained": true
+  }
+}

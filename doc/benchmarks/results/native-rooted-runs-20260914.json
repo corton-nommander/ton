@@ -8,6 +8,8 @@
   "selected_value": 0,
   "signature_cache_preflight_selected_value": 0,
   "live_native_comparison_complete": false,
+  "record_scope": "Component checkpoint before the subsequent live TPS experiment; statuses below describe that checkpoint.",
+  "subsequent_live_comparison": "native-rooted-runs-tps-20260914.json",
   "treatment_promoted": false,
   "capacity_claim_allowed": false,
   "representation": {

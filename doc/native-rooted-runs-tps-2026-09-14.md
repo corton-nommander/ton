@@ -32,12 +32,16 @@ The broad workload and CPU allocations matched, but the historical validator use
 **14 threads versus 16 now**, reconciliation profiling was on versus off now,
 the Docker VM had 64 versus 80 GiB RAM, and the code/images and chain history
 differed. Both used named-volume databases with in-memory CellDb and a 16 GiB
-cache. None of these differences has been established as the cause. Resolving
-the deficit requires the historical and current builds to be compared under the
-same thread count, workload and host conditions, starting from equivalent chain
-snapshots, before attributing the loss to code or claiming cumulative improvement.
+cache. None of these differences has been established as the cause. The subsequent
+[actual-build comparison](native-historical-current-tps-2026-09-14.md) used the
+preserved historical binary and current build with 14 threads, a common generator
+and verified copies of the same stopped seed. Historical A1 reached 38,111.68 TPS;
+current B1 reached 42,458.28 TPS but failed lane balance, and current B2 passed at
+37,434.10 TPS. The final historical repeat hit the host-memory guard and remained
+incomplete. The old binary did not restore 61k in that setup, and the incomplete
+comparison establishes neither a cumulative gain nor a code-only explanation.
 
-All four runs passed canonical proof, completion, signed-run quantum, batching,
+All four rooted-switch runs passed canonical proof, completion, signed-run quantum, batching,
 lane-balance, image-reuse and validator-cleanup checks. Together their canonical
 measurement windows contain **136,157,360 outputs**. Final backlog, nonce gaps,
 hash conflicts, fatal follower errors, retry exhaustion and rejected basechain

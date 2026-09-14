@@ -1,0 +1,1493 @@
+{
+  "accepted_completed_measurements": 2,
+  "artifact_sha256": {
+    "00-smoke-current-snapshot/receipt.json": "5abe63dcdc8f7795e7bb5a7701fd3da4d5ee0802c922d3616a7d56fff301d262",
+    "00-smoke-current.env": "4e6ab8eeedc496cbb5543f68dc8d07cddc199ac89e4929d44d06e44399cffe75",
+    "00-smoke-current/arm-verdict.json": "645770d0061a27293b4f930975ecd460eb552e29963948c09fd5e08cfd27a9ef",
+    "00-smoke-current/benchmark-summary.json": "fae7ee63148f30e2b160b54b1cf37a908ada8a7be03e5d4e2733bca67d140a76",
+    "00-smoke-current/container-runtime.json": "97bc0a2d3d8e0358a0f6152916cec848083f48849e13a2c758a2c515435b2f71",
+    "00-smoke-current/native-load-generator-records.jsonl": "24ef4f8485302fba440a462409bf4e9c3e3dca6844d783659571fe38355770ce",
+    "00-smoke-current/session-stats-canonical-rate.json": "5a98e4124cc221183afe6962549f828028d10612899395931cc2b4aeb47d3d69",
+    "00-smoke-current/strict-image-reuse.json": "f3c555058aa5d8383e94d5ce8814c5105ecbd82e7bcc085f1e632ac28e86993f",
+    "00-smoke-old-snapshot/receipt.json": "95ed8ac85f1cca5bb0342a7881e17055114cd15e0fb4132529aaee2418e80224",
+    "00-smoke-old.env": "d6686e9a537ce1eb81f08b1f6570462517b577e76560c25c0309f316b037af4a",
+    "00-smoke-old/arm-verdict.json": "7f5ade3ba30fbc3cc1b665389b3beb4dd895eda9d11b759c8d15deaed4771a05",
+    "00-smoke-old/benchmark-summary.json": "350b7aacc6155811bafb2da1f14a4f0fcd892895561a1ff4fc9ad46ced9fdd9c",
+    "00-smoke-old/container-runtime.json": "10afce6dbf1f6f4fb913dc768842717bca436da6307dc4e765db53d177f420cd",
+    "00-smoke-old/native-load-generator-records.jsonl": "09f1ce624e2daa881713ec58d10900389ed0296f7802f3889d21ab364873947e",
+    "00-smoke-old/session-stats-canonical-rate.json": "79e1213fdec981c213ef7ab8852946f93b93147cfaa2fe560ae71dff0f06f01d",
+    "00-smoke-old/strict-image-reuse.json": "e3de091519368d92da6949c9662a32fb3553e7427a5e43d47c30b93c6130efbd",
+    "01-A1-snapshot/receipt.json": "11da1773f530cd2ae3428d8d37eb87519e3df9837c76e075d0beac004f7d6dbb",
+    "01-A1.env": "c66f8133ef1b619a340a76270c946b0cf78f35157e71a07bf880753784b625a8",
+    "01-A1/arm-verdict.json": "abb841e1ef4b967e3d0ee714014c655c71dfebd8a582bc6194c6a9fbae46fb78",
+    "01-A1/benchmark-summary.json": "12a5a7c05462ad10e83adc02750ffcb99c5b0cbe1eac9106039d3d546b225586",
+    "01-A1/container-runtime.json": "47dca339a05004dda568ec9a2d0cfef735f0c1b0ccede9c92dcf6b87193b233b",
+    "01-A1/native-load-generator-records.jsonl": "68367c5f906e8e79a7345fb68218af04699de181b6d8bdcd4f8e88044a091855",
+    "01-A1/session-stats-canonical-rate.json": "d1f98a899a0e31d393cbb9a8086f3d39e67f733f08dbba203c2f2d67af5517df",
+    "01-A1/strict-image-reuse.json": "3b29d5531781bf7a95adb30d813f059493ae001c9297a30b30b24116982a8289",
+    "02-B1-snapshot/receipt.json": "7c7dbdea612f203d14ba60abf035d5a57aceb9e38290e2daad01e647bbdc7afc",
+    "02-B1.env": "4fc8a0bab4357f7000ab08120375c10a8601e18a89c0dff893c1e2e41de71e67",
+    "02-B1/benchmark-summary.json": "e244636004e88fba8aba2b36be403a84e9dab8dbe587675d99ef3911a3136543",
+    "02-B1/container-runtime.json": "302b505cf40166a06549566011b4d63eb843e1a28ee065788480dc37a6c7c5da",
+    "02-B1/native-load-generator-records.jsonl": "f0e56f1e24c60e1d1093627829e8c036d675790b41b9fd24678f3e66e02324d0",
+    "02-B1/session-stats-canonical-rate.json": "dd1b64154fd11e38739fd9a839ff11064cd476414b1a93a2dc3bcf42957984c9",
+    "02-B1/strict-image-reuse.json": "31fee634811245b69b9096d4323c84b345880cf3853e7af78893e3b18e77e4dd",
+    "03-B2-snapshot/receipt.json": "f51f551b3090bd610893a003d09c0b853d792dd2d8d3e5ceca34d6bbb0d2e8af",
+    "03-B2.env": "b184fd5d299ea7106051d761a5b6d949d080ddd8fdc2883f1d0be9c26180373e",
+    "03-B2/arm-verdict.json": "d1866199b514c264d57ab5842d0b64139a3852e2dd68e8c8fd44d13abdb35a00",
+    "03-B2/benchmark-summary.json": "758e5535d2e20f3f828518dea50f3e83234f4f273f8383ee926c3ca0c4eea4c6",
+    "03-B2/container-runtime.json": "18df224686ef608e898f52cc5411afabb83410f5396ebc9855390048cc585871",
+    "03-B2/native-load-generator-records.jsonl": "fa7775c1f9c3a590e02e1b3e2f88327b4ac68feb67e48ad72ff25e3f1350406c",
+    "03-B2/session-stats-canonical-rate.json": "f1b92b99660a7f2fb6e34c2febba952f5a131baf91b93e4fe1aa0722318c39d0",
+    "03-B2/strict-image-reuse.json": "3bb5033e12cd78a7eb0fe6369b2a5c036e043eec220e770e132922aca43d1c74",
+    "04-A2-snapshot/receipt.json": "a8550bff4090b47ad1338b92b7e985a596fa0f2231cbe5e0cbd8be0f0bad456a",
+    "04-A2.env": "1a4f494ac9814625d2b666d08311fa53cffe95cbc655d3a276e274d478abab5b",
+    "04-A2/benchmark-summary.json": "43779562ab421fbacf69a66e2befa1838b1cba429b0dc1ca921af2667cb8afb7",
+    "04-A2/container-runtime.json": "f35f163903cdaa26e979163a993383064774ba41ea27dc639d0f93f741cb36c7",
+    "04-A2/native-load-generator-records.jsonl": "b1974e458c36671309f0e0caac366c14317b7933345990e4b7fc6440b4e922f1",
+    "04-A2/session-stats-canonical-rate.json": "01f7671fe99032ce1ad030597b682f8cc0ec2e69a3f57ef080dd6d3f23917eb1",
+    "04-A2/strict-image-reuse.json": "9062b526a6a5e38422aa88f69720c30f5f91e4f5e7d853947f405b834e0defb4",
+    "bounded-copy-probe-result.json": "2d8171f1685edda14b428e2673a19a3b89f3f6a29b661955e8327757db977a97",
+    "comparison-contract.json": "a769dc154482f70938cad53ca8d3fdf5659f3b6b7efbbe0f228d231da950d0a6",
+    "continuation/00-smoke-current-observation.json": "1e5072b11381bb07134d2bd7ef247a91c06876b43d50f5d241c1005dc4b3c539",
+    "continuation/00-smoke-old-observation.json": "a6e0fc5dc63c268331b12d547fd07176c9dce9916e7cf6d080f661d1d7fb5088",
+    "continuation/01-A1-observation.json": "a4d23b7d12106915024644cb91eb154151d1c77887ccad07cf8f03c75fb2d1aa",
+    "continuation/02-B1-observation.json": "ffead4ccb9a59fb7210d48960390af794fc5f21685810b34195631c2edb0bc0e",
+    "continuation/03-B2-observation.json": "9730668dc6aa2a46b49fb3e893df24051bdadb35b57a1880365261bf2565f229",
+    "continuation/continuation-plan.json": "e1d8057d4377431c7b43876e33428127c87a26aa0e3414190baffae8feefc91b",
+    "continuation/continue-comparison.py": "6f540a86ec6e2156fbf64f49a3f77884e9cdb7dbcbaf0769310346a90f594b53",
+    "controller-config.json": "2bb342a152311f7e5193e03c8281a01ddaa014aef51f38413a3175776c073269",
+    "copy-tree.py": "386f63baa72b6fff2a4f2f313f6d1a27222a8531706a0739314ebdebee2b24f2",
+    "image-preparation/final-recovery-verification.json": "d73731f6d8b957d778aad2ba5235c3b022b6f6519c106198631e56dc995e3256",
+    "image-preparation/original-61k-image-provenance.json": "8aac0ec4679fa731160f5574633ff40565a74636830e20f124bcdc4b99b5db67",
+    "image-preparation/provenance.json": "7f6701d4bb6e1a0fba3365d0138e7cecbaeec8525545ff46b8852a8e4c4ed83e",
+    "post-run-audit/audit-observed-comparison.py": "093e8af367085c6c6d0f591e3a3a4b47a028ce772d19cf061a5bc8fea0b89b23",
+    "post-run-audit/audit-results.py": "dd878e4a823f153b1da135576fc473a3fa0b2564bb0ca9e04399594f6cd7430a",
+    "post-run-audit/final-incomplete-comparison-findings.json": "4691f6c2a47a3c43c8605dd113dad0d3c34919bc6c7ce731cddebcc2634c74f8",
+    "post-run-audit/final-incomplete-observed-audit.json": "11a3c9a8d28e5a61b698ffca195585f879bfb0e47c8095fdb6df01d0e08e8169",
+    "post-run-audit/final-resource-cleanup-audit.json": "82ac5dc9d4e754c3473576e192f4fce635d59a5f9ddc9a7d2aa647b813963131",
+    "post-run-audit/interrupted-A2-cleanup.json": "54e7fe0b305653a79c586c80b99d5a7741bf84a3a35c4f3c3db4a0af8be98857",
+    "post-run-audit/monitor-shutdown.json": "5588ae06b90f3f19b5a1d14a3b150f3a1eb6bd08c264ed8f0ece4beaa1f22643",
+    "resource-guard-stops.json": "11716f5dfbb9e152480f469e1cc57e8b0447e2f0bba3f77d654d81a6046fe824",
+    "resource-guard-tripped.json": "ec837841ad057b5baacc46dd7276ba0f50f141126d9824598538e00b010756fc",
+    "resource-guard.py": "993a74033a6a18ad1a224da7d0420532bec5e6a08c3c02d45f7e3dc614358ffe",
+    "run-matched-comparison.py": "8a470475b459f9d8aab13e6ea6bd40304cf14a006586d628a69dc4b0f8fe5726",
+    "seed-manifest.json": "553725f623a0023c34e53a8a28661c2791e41324e98a82a4fba5cf97ece175ab",
+    "summary-gate.py": "bda498f9954697ecd04699957b28a7085e1595c822acb7de6493c2e6a62a54bb"
+  },
+  "canonical_output_semantics": "Proof-checked logical native transfer outputs / 599 fully contained integer gen_utime seconds within 600 seconds of offering; can include warmup-offered work; not offered-cohort TPS.",
+  "comparison_accepted": false,
+  "comparison_complete": false,
+  "compatibility_smokes": [
+    {
+      "accepted_by_original_gate": true,
+      "canonical_seconds": 59,
+      "canonical_tps": 3614.64406779661,
+      "canonical_transfers": 213264,
+      "name": "00-smoke-old",
+      "original_gate_failures": [],
+      "variant": "historical"
+    },
+    {
+      "accepted_by_original_gate": true,
+      "canonical_seconds": 59,
+      "canonical_tps": 4037.1525423728813,
+      "canonical_transfers": 238192,
+      "name": "00-smoke-current",
+      "original_gate_failures": [],
+      "variant": "current"
+    }
+  ],
+  "completed_measurements": [
+    {
+      "accepted_by_original_gate": true,
+      "admitted_tps": 38458.666666666664,
+      "all_run_validation_rejections": 0,
+      "artifact_hashes": {
+        "observation": "a4d23b7d12106915024644cb91eb154151d1c77887ccad07cf8f03c75fb2d1aa",
+        "summary": "12a5a7c05462ad10e83adc02750ffcb99c5b0cbe1eac9106039d3d546b225586"
+      },
+      "background_resource_samples": {
+        "background_ids": [
+          "0ae79704f684e5fe609fa87532ebe95cd8d3ba8c9029e6342a7fbdb7773ab109",
+          "1bc6749a48cb307d2fa5f5302d6692ce0b7fbcfa06011e4a25a5f7b3b1cefad9",
+          "2a7b13b5278aa26f62a60ad2810f37dc03ce8a43fff637f8c7cdc1deaccdb823",
+          "3ad3adb376196ef21c48c7beb5be8c07ca888aef841cc5019bb00d083dff3031",
+          "3df7d6ebfa0f62e8248a1fd673a9368e69e45af0061a0bd549b009212fdfacca",
+          "3f1aba24413575e98173291bac6124f4c1a5470449e7e3743d7f84017129d6c3",
+          "4314bf403100b1b686d9ca6959d29b1fa053d0501eec74473358cd158019db63",
+          "621ea77362c0606ee2f09f3ca259640945e76cfad67c6f09ff9efc5273449d5c",
+          "64f809b079b689ed813e643ab93bc961a12a5973aba494eca527ce4799eb8fd8",
+          "659d6770f6b5b29fa123d469e74f40bc8d9580e836499f12a917612bb2c8c170",
+          "69797302b7b12eec856dd150449d1812fb1eb39f04d373aa0898b31c94361267",
+          "6d6d108da8fb74124a854a3f574a69d1142d9be4e0102c21f001ed8f48887de0",
+          "74d87a73f064f420d5260d470352117f1bd8378ebe7d32ef175a5465b20e511c",
+          "77b66f50833fd93481638cd920ceb0b627fb93983ee1fddd41f9ab712342731a",
+          "82a693c911cf1fbf1504dd095fd8a7f84d19b0f28ffb4659bcc9a11fa6328e5f",
+          "8665394c56545f8b6663e68e6f1ebc5c92f0816a2144bb6a04ed7e5b796bc1d6",
+          "87286e1907576b13c86734230f860169ce9ebf178023fa51a66681e4f8e33dd4",
+          "a95ac439a4983c44b44c92ac0ee046b2383fe8c5e7dd1d5ec81a7cd69026a2bc",
+          "b34337f5842e6fbfe492b6c18498cd38e23f6c498717a99ae1ca57b2149c4742",
+          "b73ec4ce54c59ef847b9b8d314b5946453bf8b20f4cc54ee13bca85f1d53cb84",
+          "b8f7ff4da229ed6f04c595210b1caacb91e7d4ba365f7550f60e52ab29b0de93",
+          "ba010cf2d54d10da6842509c4864bc8419880955e5f91ab0580007ac22ba5db4",
+          "bc9fea1b7f9aaa4ffc86c94387ec15d5276d0e746cb726e6c95cd291dd80f171",
+          "ccfea5f2782fb42a562030a6e34dfc5d744adf39941b7cff5b6216ead4cae119",
+          "ce8301c8f15e3b418fb7a2573732aa995acdbc814b28f954bd663b131e5184e7",
+          "d4ea1129fe6cbc647eb13f1a67049c5f64ccef89fadad71691c55a371f6a077c",
+          "f316329496d92e9cdfff4b6febbfb6d45fc96a4816e9877b13d988442ca6edb9",
+          "f69c74f404d142a9004534028b926ebc75ac4ee3637e8263b19cb14ff265b8d6"
+        ],
+        "background_max_cpu_cores": 2.2734,
+        "background_mean_cpu_cores": 0.5548296296296297,
+        "background_samples": 54,
+        "guard_disk_free_minimum_bytes": 489047502848,
+        "guard_host_available_minimum_bytes": 32945049600,
+        "guard_vm_available_minimum_bytes": 57757753344,
+        "observer_error_samples": 9
+      },
+      "canonical_seconds": 599,
+      "canonical_tps": 38111.679465776295,
+      "canonical_transfers": 22828896,
+      "capacity_claim_allowed": false,
+      "capacity_reasons": [
+        "canonical_backpressure_above_one_percent",
+        "insufficient_load_over_canonical_throughput"
+      ],
+      "diagnostic_only": false,
+      "full_run_diagnostics": {
+        "canonical_follower_max_lag_blocks": 12,
+        "native_signed_run_submission_attempts": 1936332,
+        "not_ready_by_reason": {
+          "other": 0,
+          "snapshot_revision": 192651
+        },
+        "rtt_ms": {
+          "max": 4702.105138996558,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50": 200,
+          "p50_in_overflow": false,
+          "p95": 1000,
+          "p95_in_overflow": false,
+          "p99": 2000,
+          "p99_in_overflow": false,
+          "samples": 30981312
+        },
+        "task_errors_by_reason": {
+          "balance": 0,
+          "canonical_state_lag": 0,
+          "duplicate": 0,
+          "expired": 0,
+          "full": 0,
+          "invalid": 0,
+          "not_ready": 192651,
+          "parse": 0,
+          "rate_limit": 0,
+          "server_other": 0,
+          "signing": 0,
+          "timeout": 23,
+          "too_new": 0,
+          "too_old": 881,
+          "transport": 0
+        },
+        "timeouts": 23
+      },
+      "host_interval_metrics": {
+        "available": true,
+        "boundary_intervals_excluded": 2,
+        "contained_intervals": 59,
+        "coverage_fraction": 0.9833581380449989,
+        "coverage_semantics": "Only recorded intervals with both endpoints inside the measurement window; omitted edges are not extrapolated.",
+        "covered_seconds": 590.0148828269994,
+        "cpu": {
+          "busy_percent": 65.62562574057182,
+          "covered_seconds": 590.0148828269994,
+          "iowait_percent": 2.4800678078500074,
+          "steal_percent": 0.0,
+          "valid_intervals": 59
+        },
+        "first_included_epoch": 1789383176.7478473,
+        "invalid_intervals": 0,
+        "last_included_epoch": 1789383766.7627668,
+        "maximum_swap_used_bytes": 8512385024,
+        "measurement_seconds": 600.0,
+        "memory_snapshot_count": 60,
+        "minimum_memory_available_bytes": 32908693504,
+        "observer_error_records_in_window": 0,
+        "psi": {
+          "cpu.some": {
+            "covered_seconds": 590.0148828269994,
+            "stall_microseconds": 128393170,
+            "stall_percent": 21.76100531308914,
+            "valid_intervals": 59
+          },
+          "io.full": {
+            "covered_seconds": 590.0148828269994,
+            "stall_microseconds": 19392979,
+            "stall_percent": 3.2868626816802338,
+            "valid_intervals": 59
+          },
+          "io.some": {
+            "covered_seconds": 590.0148828269994,
+            "stall_microseconds": 34779961,
+            "stall_percent": 5.894759947978799,
+            "valid_intervals": 59
+          },
+          "memory.full": {
+            "covered_seconds": 590.0148828269994,
+            "stall_microseconds": 733791,
+            "stall_percent": 0.12436821872765501,
+            "valid_intervals": 59
+          },
+          "memory.some": {
+            "covered_seconds": 590.0148828269994,
+            "stall_microseconds": 803996,
+            "stall_percent": 0.13626707111992342,
+            "valid_intervals": 59
+          }
+        },
+        "scope": "Whole physical host, including VM and all applications; no isolated host application CPU attribution.",
+        "swap": {
+          "covered_seconds": 590.0148828269994,
+          "in_bytes": 498618368,
+          "in_bytes_per_second": 845094.5603455259,
+          "out_bytes": 263827456,
+          "out_bytes_per_second": 447153.9001455289,
+          "valid_intervals": 59
+        }
+      },
+      "images": {
+        "genesis": "sha256:dbdc006ab24699316ec415245134fed42571513c6313b41c69304a961a80415f",
+        "native-load-generator": "sha256:b13570509302f52800f0c4d2e98a652eeb271c144eb326c020eb95a135f13527",
+        "session-stats": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67"
+      },
+      "lane_count_audit": {
+        "lanes": [
+          {
+            "equal_share_ratio": 0.9897435250482546,
+            "measured_native_blocks": 320,
+            "shard": "(0,2000000000000000)",
+            "share_percent": 24.743588126206365,
+            "transfers": 5648688,
+            "within_fixed_relative_five_percent_tolerance": true
+          },
+          {
+            "equal_share_ratio": 1.0020479308329233,
+            "measured_native_blocks": 323,
+            "shard": "(0,6000000000000000)",
+            "share_percent": 25.051198270823082,
+            "transfers": 5718912,
+            "within_fixed_relative_five_percent_tolerance": true
+          },
+          {
+            "equal_share_ratio": 0.9984230512066812,
+            "measured_native_blocks": 322,
+            "shard": "(0,a000000000000000)",
+            "share_percent": 24.96057628016703,
+            "transfers": 5698224,
+            "within_fixed_relative_five_percent_tolerance": true
+          },
+          {
+            "equal_share_ratio": 1.0097854929121408,
+            "measured_native_blocks": 325,
+            "shard": "(0,e000000000000000)",
+            "share_percent": 25.24463732280352,
+            "transfers": 5763072,
+            "within_fixed_relative_five_percent_tolerance": true
+          }
+        ],
+        "method": "Exact integer cross-products: total*9500 <= lane_count*4*10000 <= total*10500",
+        "valid": true
+      },
+      "measured_backpressure": {
+        "canonical_backlog_sampled_peak": 2097120,
+        "measure_canonical_backpressure_fraction": 0.664655867461679,
+        "measure_canonical_backpressure_s": 398.7935204770074
+      },
+      "measured_resources": {
+        "genesis": {
+          "mean_cpu_cores": 6.0677317689530685,
+          "peak_cpu_cores": 13.9822,
+          "peak_memory_bytes": 20401094656.0,
+          "samples": 277
+        },
+        "native-load-generator": {
+          "mean_cpu_cores": 0.6569386281588447,
+          "peak_cpu_cores": 2.8243,
+          "peak_memory_bytes": 1089847951.36,
+          "samples": 277
+        },
+        "session-stats": {
+          "mean_cpu_cores": 0.8247321299638989,
+          "peak_cpu_cores": 1.3358,
+          "peak_memory_bytes": 2510408384.512,
+          "samples": 277
+        }
+      },
+      "measurement_completed": true,
+      "measurement_end": 1789383771.667,
+      "measurement_start": 1789383171.667,
+      "name": "01-A1",
+      "offered_tps": 38458.666666666664,
+      "original_gate_failures": [],
+      "persistent_producer": 0,
+      "planned_measurement_seconds": 600,
+      "proof_and_cleanup_zero_fields": {
+        "anchor_scan_errors": 0,
+        "canonical_backlog_after_drain": 0,
+        "canonical_follower_errors": 0,
+        "canonical_follower_reorgs": 0,
+        "canonical_follower_retry_exhausted": 0,
+        "canonical_hash_conflicts": 0,
+        "canonical_total_backlog_after_drain": 0,
+        "duplicate_nonce_conflicts": 0,
+        "external_nonce_conflicts": 0,
+        "nonce_gaps": 0,
+        "retry_exhausted": 0
+      },
+      "reproducibility": {
+        "flag": false,
+        "reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ]
+      },
+      "snapshot_inventory_hashes": {
+        "database": "8bfd84467457ab049fcf8eaaff4a3c61e2542d4605fad3d2e0427dfb7b2ec1d2",
+        "native-load-wallets": "5edb11ae2b44f46d2afb947bf9405bb8226e16526993357650d887b134756179",
+        "session-stats-data": "bc7ec0812c6d82ceea1e9aa34036fdc63dbb5a0b8ea1114b3cf367154c861dbb",
+        "shared-data": "def2074a13e742209353bf81e023775438d17574597318e04b94edd5e1b1df26"
+      },
+      "variant": "historical"
+    },
+    {
+      "accepted_by_original_gate": false,
+      "admitted_tps": 42816.85333333333,
+      "all_run_validation_rejections": 0,
+      "artifact_hashes": {
+        "observation": "ffead4ccb9a59fb7210d48960390af794fc5f21685810b34195631c2edb0bc0e",
+        "summary": "e244636004e88fba8aba2b36be403a84e9dab8dbe587675d99ef3911a3136543"
+      },
+      "background_resource_samples": {
+        "background_ids": [
+          "0ae79704f684e5fe609fa87532ebe95cd8d3ba8c9029e6342a7fbdb7773ab109",
+          "1bc6749a48cb307d2fa5f5302d6692ce0b7fbcfa06011e4a25a5f7b3b1cefad9",
+          "2a7b13b5278aa26f62a60ad2810f37dc03ce8a43fff637f8c7cdc1deaccdb823",
+          "3ad3adb376196ef21c48c7beb5be8c07ca888aef841cc5019bb00d083dff3031",
+          "3df7d6ebfa0f62e8248a1fd673a9368e69e45af0061a0bd549b009212fdfacca",
+          "3f1aba24413575e98173291bac6124f4c1a5470449e7e3743d7f84017129d6c3",
+          "4314bf403100b1b686d9ca6959d29b1fa053d0501eec74473358cd158019db63",
+          "621ea77362c0606ee2f09f3ca259640945e76cfad67c6f09ff9efc5273449d5c",
+          "64f809b079b689ed813e643ab93bc961a12a5973aba494eca527ce4799eb8fd8",
+          "69797302b7b12eec856dd150449d1812fb1eb39f04d373aa0898b31c94361267",
+          "74d87a73f064f420d5260d470352117f1bd8378ebe7d32ef175a5465b20e511c",
+          "77b66f50833fd93481638cd920ceb0b627fb93983ee1fddd41f9ab712342731a",
+          "8665394c56545f8b6663e68e6f1ebc5c92f0816a2144bb6a04ed7e5b796bc1d6",
+          "87286e1907576b13c86734230f860169ce9ebf178023fa51a66681e4f8e33dd4",
+          "a95ac439a4983c44b44c92ac0ee046b2383fe8c5e7dd1d5ec81a7cd69026a2bc",
+          "b34337f5842e6fbfe492b6c18498cd38e23f6c498717a99ae1ca57b2149c4742",
+          "b73ec4ce54c59ef847b9b8d314b5946453bf8b20f4cc54ee13bca85f1d53cb84",
+          "ba010cf2d54d10da6842509c4864bc8419880955e5f91ab0580007ac22ba5db4",
+          "bc9fea1b7f9aaa4ffc86c94387ec15d5276d0e746cb726e6c95cd291dd80f171",
+          "ccfea5f2782fb42a562030a6e34dfc5d744adf39941b7cff5b6216ead4cae119",
+          "ce8301c8f15e3b418fb7a2573732aa995acdbc814b28f954bd663b131e5184e7",
+          "d4ea1129fe6cbc647eb13f1a67049c5f64ccef89fadad71691c55a371f6a077c",
+          "f316329496d92e9cdfff4b6febbfb6d45fc96a4816e9877b13d988442ca6edb9",
+          "f69c74f404d142a9004534028b926ebc75ac4ee3637e8263b19cb14ff265b8d6"
+        ],
+        "background_max_cpu_cores": 2.2114000000000003,
+        "background_mean_cpu_cores": 0.5672,
+        "background_samples": 55,
+        "guard_disk_free_minimum_bytes": 468069560320,
+        "guard_host_available_minimum_bytes": 31190495232,
+        "guard_vm_available_minimum_bytes": 57116729344,
+        "observer_error_samples": 5
+      },
+      "canonical_seconds": 599,
+      "canonical_tps": 42458.283806343905,
+      "canonical_transfers": 25432512,
+      "capacity_claim_allowed": false,
+      "capacity_reasons": [
+        "canonical_backpressure_above_one_percent",
+        "insufficient_load_over_canonical_throughput",
+        "canonical_lane_imbalance",
+        "canonical_lane_balance_invalid",
+        "canonical_lane_balance_record_share_outside_tolerance"
+      ],
+      "diagnostic_only": true,
+      "full_run_diagnostics": {
+        "canonical_follower_max_lag_blocks": 20,
+        "native_signed_run_submission_attempts": 2239823,
+        "not_ready_by_reason": {
+          "other": 0,
+          "snapshot_revision": 295520
+        },
+        "rtt_ms": {
+          "max": 4263.884480998968,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50": 500,
+          "p50_in_overflow": false,
+          "p95": 2000,
+          "p95_in_overflow": false,
+          "p99": 2000,
+          "p99_in_overflow": false,
+          "samples": 35837168
+        },
+        "task_errors_by_reason": {
+          "balance": 0,
+          "canonical_state_lag": 406,
+          "duplicate": 0,
+          "expired": 0,
+          "full": 0,
+          "invalid": 0,
+          "not_ready": 295520,
+          "parse": 0,
+          "rate_limit": 0,
+          "server_other": 0,
+          "signing": 0,
+          "timeout": 19,
+          "too_new": 0,
+          "too_old": 0,
+          "transport": 0
+        },
+        "timeouts": 19
+      },
+      "host_interval_metrics": {
+        "available": true,
+        "boundary_intervals_excluded": 2,
+        "contained_intervals": 59,
+        "coverage_fraction": 0.9834023792400027,
+        "coverage_semantics": "Only recorded intervals with both endpoints inside the measurement window; omitted edges are not extrapolated.",
+        "covered_seconds": 590.0414275440016,
+        "cpu": {
+          "busy_percent": 67.14034837368962,
+          "covered_seconds": 590.0414275440016,
+          "iowait_percent": 1.961009281216633,
+          "steal_percent": 0.0,
+          "valid_intervals": 59
+        },
+        "first_included_epoch": 1789384776.7938938,
+        "invalid_intervals": 0,
+        "last_included_epoch": 1789385366.8354063,
+        "maximum_swap_used_bytes": 8589930496,
+        "measurement_seconds": 600.0,
+        "memory_snapshot_count": 60,
+        "minimum_memory_available_bytes": 31157620736,
+        "observer_error_records_in_window": 0,
+        "psi": {
+          "cpu.some": {
+            "covered_seconds": 590.0414275440016,
+            "stall_microseconds": 126396946,
+            "stall_percent": 21.421707036083344,
+            "valid_intervals": 59
+          },
+          "io.full": {
+            "covered_seconds": 590.0414275440016,
+            "stall_microseconds": 15476311,
+            "stall_percent": 2.6229193879519372,
+            "valid_intervals": 59
+          },
+          "io.some": {
+            "covered_seconds": 590.0414275440016,
+            "stall_microseconds": 28937954,
+            "stall_percent": 4.904393598336278,
+            "valid_intervals": 59
+          },
+          "memory.full": {
+            "covered_seconds": 590.0414275440016,
+            "stall_microseconds": 2867917,
+            "stall_percent": 0.4860534983005288,
+            "valid_intervals": 59
+          },
+          "memory.some": {
+            "covered_seconds": 590.0414275440016,
+            "stall_microseconds": 3098054,
+            "stall_percent": 0.5250570308080557,
+            "valid_intervals": 59
+          }
+        },
+        "scope": "Whole physical host, including VM and all applications; no isolated host application CPU attribution.",
+        "swap": {
+          "covered_seconds": 590.0414275440016,
+          "in_bytes": 243052544,
+          "in_bytes_per_second": 411924.5406406225,
+          "out_bytes": 214876160,
+          "out_bytes_per_second": 364171.3106389905,
+          "valid_intervals": 59
+        }
+      },
+      "images": {
+        "genesis": "sha256:53ec44c24a5ebd638b676fed9d82844cbe838751d1aa991761bffcd5395352aa",
+        "native-load-generator": "sha256:b13570509302f52800f0c4d2e98a652eeb271c144eb326c020eb95a135f13527",
+        "session-stats": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67"
+      },
+      "lane_count_audit": {
+        "lanes": [
+          {
+            "equal_share_ratio": 1.0321629259429819,
+            "measured_native_blocks": 358,
+            "shard": "(0,2000000000000000)",
+            "share_percent": 25.80407314857455,
+            "transfers": 6562624,
+            "within_fixed_relative_five_percent_tolerance": true
+          },
+          {
+            "equal_share_ratio": 1.0762236935148206,
+            "measured_native_blocks": 374,
+            "shard": "(0,6000000000000000)",
+            "share_percent": 26.90559233787052,
+            "transfers": 6842768,
+            "within_fixed_relative_five_percent_tolerance": false
+          },
+          {
+            "equal_share_ratio": 0.9798104096048397,
+            "measured_native_blocks": 347,
+            "shard": "(0,a000000000000000)",
+            "share_percent": 24.49526024012099,
+            "transfers": 6229760,
+            "within_fixed_relative_five_percent_tolerance": true
+          },
+          {
+            "equal_share_ratio": 0.9118029709373576,
+            "measured_native_blocks": 320,
+            "shard": "(0,e000000000000000)",
+            "share_percent": 22.79507427343394,
+            "transfers": 5797360,
+            "within_fixed_relative_five_percent_tolerance": false
+          }
+        ],
+        "method": "Exact integer cross-products: total*9500 <= lane_count*4*10000 <= total*10500",
+        "valid": false
+      },
+      "measured_backpressure": {
+        "canonical_backlog_sampled_peak": 2097120,
+        "measure_canonical_backpressure_fraction": 0.6332535343816138,
+        "measure_canonical_backpressure_s": 379.95212062896826
+      },
+      "measured_resources": {
+        "genesis": {
+          "mean_cpu_cores": 6.400544366197183,
+          "peak_cpu_cores": 16.4343,
+          "peak_memory_bytes": 21002390077.44,
+          "samples": 284
+        },
+        "native-load-generator": {
+          "mean_cpu_cores": 0.7219926056338029,
+          "peak_cpu_cores": 3.0191000000000003,
+          "peak_memory_bytes": 1141387558.912,
+          "samples": 284
+        },
+        "session-stats": {
+          "mean_cpu_cores": 0.819987323943662,
+          "peak_cpu_cores": 1.2656,
+          "peak_memory_bytes": 2524367028.224,
+          "samples": 284
+        }
+      },
+      "measurement_completed": true,
+      "measurement_end": 1789385372.407,
+      "measurement_start": 1789384772.407,
+      "name": "02-B1",
+      "offered_tps": 42816.85333333333,
+      "original_gate_failures": [
+        "acceptance.canonical_lane_balance_valid"
+      ],
+      "persistent_producer": 1,
+      "planned_measurement_seconds": 600,
+      "proof_and_cleanup_zero_fields": {
+        "anchor_scan_errors": 0,
+        "canonical_backlog_after_drain": 0,
+        "canonical_follower_errors": 0,
+        "canonical_follower_reorgs": 0,
+        "canonical_follower_retry_exhausted": 0,
+        "canonical_hash_conflicts": 0,
+        "canonical_total_backlog_after_drain": 0,
+        "duplicate_nonce_conflicts": 0,
+        "external_nonce_conflicts": 0,
+        "nonce_gaps": 0,
+        "retry_exhausted": 0
+      },
+      "reproducibility": {
+        "flag": false,
+        "reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ]
+      },
+      "snapshot_inventory_hashes": {
+        "database": "8bfd84467457ab049fcf8eaaff4a3c61e2542d4605fad3d2e0427dfb7b2ec1d2",
+        "native-load-wallets": "5edb11ae2b44f46d2afb947bf9405bb8226e16526993357650d887b134756179",
+        "session-stats-data": "bc7ec0812c6d82ceea1e9aa34036fdc63dbb5a0b8ea1114b3cf367154c861dbb",
+        "shared-data": "def2074a13e742209353bf81e023775438d17574597318e04b94edd5e1b1df26"
+      },
+      "variant": "current"
+    },
+    {
+      "accepted_by_original_gate": true,
+      "admitted_tps": 37514.72,
+      "all_run_validation_rejections": 0,
+      "artifact_hashes": {
+        "observation": "9730668dc6aa2a46b49fb3e893df24051bdadb35b57a1880365261bf2565f229",
+        "summary": "758e5535d2e20f3f828518dea50f3e83234f4f273f8383ee926c3ca0c4eea4c6"
+      },
+      "background_resource_samples": {
+        "background_ids": [
+          "0ae79704f684e5fe609fa87532ebe95cd8d3ba8c9029e6342a7fbdb7773ab109",
+          "1bc6749a48cb307d2fa5f5302d6692ce0b7fbcfa06011e4a25a5f7b3b1cefad9",
+          "2a7b13b5278aa26f62a60ad2810f37dc03ce8a43fff637f8c7cdc1deaccdb823",
+          "3ad3adb376196ef21c48c7beb5be8c07ca888aef841cc5019bb00d083dff3031",
+          "3df7d6ebfa0f62e8248a1fd673a9368e69e45af0061a0bd549b009212fdfacca",
+          "3f1aba24413575e98173291bac6124f4c1a5470449e7e3743d7f84017129d6c3",
+          "4314bf403100b1b686d9ca6959d29b1fa053d0501eec74473358cd158019db63",
+          "621ea77362c0606ee2f09f3ca259640945e76cfad67c6f09ff9efc5273449d5c",
+          "64f809b079b689ed813e643ab93bc961a12a5973aba494eca527ce4799eb8fd8",
+          "69797302b7b12eec856dd150449d1812fb1eb39f04d373aa0898b31c94361267",
+          "74d87a73f064f420d5260d470352117f1bd8378ebe7d32ef175a5465b20e511c",
+          "77b66f50833fd93481638cd920ceb0b627fb93983ee1fddd41f9ab712342731a",
+          "8665394c56545f8b6663e68e6f1ebc5c92f0816a2144bb6a04ed7e5b796bc1d6",
+          "87286e1907576b13c86734230f860169ce9ebf178023fa51a66681e4f8e33dd4",
+          "a95ac439a4983c44b44c92ac0ee046b2383fe8c5e7dd1d5ec81a7cd69026a2bc",
+          "b34337f5842e6fbfe492b6c18498cd38e23f6c498717a99ae1ca57b2149c4742",
+          "b73ec4ce54c59ef847b9b8d314b5946453bf8b20f4cc54ee13bca85f1d53cb84",
+          "ba010cf2d54d10da6842509c4864bc8419880955e5f91ab0580007ac22ba5db4",
+          "bc9fea1b7f9aaa4ffc86c94387ec15d5276d0e746cb726e6c95cd291dd80f171",
+          "ccfea5f2782fb42a562030a6e34dfc5d744adf39941b7cff5b6216ead4cae119",
+          "ce8301c8f15e3b418fb7a2573732aa995acdbc814b28f954bd663b131e5184e7",
+          "d4ea1129fe6cbc647eb13f1a67049c5f64ccef89fadad71691c55a371f6a077c",
+          "f316329496d92e9cdfff4b6febbfb6d45fc96a4816e9877b13d988442ca6edb9",
+          "f69c74f404d142a9004534028b926ebc75ac4ee3637e8263b19cb14ff265b8d6"
+        ],
+        "background_max_cpu_cores": 2.3472,
+        "background_mean_cpu_cores": 0.6340196428571429,
+        "background_samples": 56,
+        "guard_disk_free_minimum_bytes": 437023436800,
+        "guard_host_available_minimum_bytes": 19206762496,
+        "guard_vm_available_minimum_bytes": 57770807296,
+        "observer_error_samples": 3
+      },
+      "canonical_seconds": 599,
+      "canonical_tps": 37434.09682804674,
+      "canonical_transfers": 22423024,
+      "capacity_claim_allowed": false,
+      "capacity_reasons": [
+        "canonical_backpressure_above_one_percent",
+        "insufficient_load_over_canonical_throughput"
+      ],
+      "diagnostic_only": false,
+      "full_run_diagnostics": {
+        "canonical_follower_max_lag_blocks": 12,
+        "native_signed_run_submission_attempts": 1873248,
+        "not_ready_by_reason": {
+          "other": 0,
+          "snapshot_revision": 147272
+        },
+        "rtt_ms": {
+          "max": 7103.447083001811,
+          "overflow": 0,
+          "overflow_lower_bound_ms": 86400000,
+          "p50": 200,
+          "p50_in_overflow": false,
+          "p95": 1000,
+          "p95_in_overflow": false,
+          "p99": 2000,
+          "p99_in_overflow": false,
+          "samples": 29971968
+        },
+        "task_errors_by_reason": {
+          "balance": 0,
+          "canonical_state_lag": 64,
+          "duplicate": 0,
+          "expired": 0,
+          "full": 0,
+          "invalid": 0,
+          "not_ready": 147272,
+          "parse": 0,
+          "rate_limit": 0,
+          "server_other": 0,
+          "signing": 0,
+          "timeout": 1024,
+          "too_new": 0,
+          "too_old": 66,
+          "transport": 0
+        },
+        "timeouts": 1024
+      },
+      "host_interval_metrics": {
+        "available": true,
+        "boundary_intervals_excluded": 2,
+        "contained_intervals": 59,
+        "coverage_fraction": 0.9833653424516706,
+        "coverage_semantics": "Only recorded intervals with both endpoints inside the measurement window; omitted edges are not extrapolated.",
+        "covered_seconds": 590.0192054710024,
+        "cpu": {
+          "busy_percent": 65.36244288555031,
+          "covered_seconds": 590.0192054710024,
+          "iowait_percent": 1.9972673952656834,
+          "steal_percent": 0.0,
+          "valid_intervals": 59
+        },
+        "first_included_epoch": 1789386946.8819141,
+        "invalid_intervals": 0,
+        "last_included_epoch": 1789387536.9011018,
+        "maximum_swap_used_bytes": 8589930496,
+        "measurement_seconds": 600.0,
+        "memory_snapshot_count": 60,
+        "minimum_memory_available_bytes": 19204784128,
+        "observer_error_records_in_window": 0,
+        "psi": {
+          "cpu.some": {
+            "covered_seconds": 590.0192054710024,
+            "stall_microseconds": 133727633,
+            "stall_percent": 22.664962726636585,
+            "valid_intervals": 59
+          },
+          "io.full": {
+            "covered_seconds": 590.0192054710024,
+            "stall_microseconds": 17295792,
+            "stall_percent": 2.9313947477680937,
+            "valid_intervals": 59
+          },
+          "io.some": {
+            "covered_seconds": 590.0192054710024,
+            "stall_microseconds": 31329282,
+            "stall_percent": 5.309874951441684,
+            "valid_intervals": 59
+          },
+          "memory.full": {
+            "covered_seconds": 590.0192054710024,
+            "stall_microseconds": 4064733,
+            "stall_percent": 0.6889153712810404,
+            "valid_intervals": 59
+          },
+          "memory.some": {
+            "covered_seconds": 590.0192054710024,
+            "stall_microseconds": 4405433,
+            "stall_percent": 0.7466592543344784,
+            "valid_intervals": 59
+          }
+        },
+        "scope": "Whole physical host, including VM and all applications; no isolated host application CPU attribution.",
+        "swap": {
+          "covered_seconds": 590.0192054710024,
+          "in_bytes": 369090560,
+          "in_bytes_per_second": 625556.857433753,
+          "out_bytes": 321290240,
+          "out_bytes_per_second": 544542.0030751701,
+          "valid_intervals": 59
+        }
+      },
+      "images": {
+        "genesis": "sha256:53ec44c24a5ebd638b676fed9d82844cbe838751d1aa991761bffcd5395352aa",
+        "native-load-generator": "sha256:b13570509302f52800f0c4d2e98a652eeb271c144eb326c020eb95a135f13527",
+        "session-stats": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67"
+      },
+      "lane_count_audit": {
+        "lanes": [
+          {
+            "equal_share_ratio": 1.0243299922436866,
+            "measured_native_blocks": 312,
+            "shard": "(0,2000000000000000)",
+            "share_percent": 25.608249806092168,
+            "transfers": 5742144,
+            "within_fixed_relative_five_percent_tolerance": true
+          },
+          {
+            "equal_share_ratio": 1.0096593572749153,
+            "measured_native_blocks": 309,
+            "shard": "(0,6000000000000000)",
+            "share_percent": 25.24148393187288,
+            "transfers": 5659904,
+            "within_fixed_relative_five_percent_tolerance": true
+          },
+          {
+            "equal_share_ratio": 0.9859294625024707,
+            "measured_native_blocks": 304,
+            "shard": "(0,a000000000000000)",
+            "share_percent": 24.648236562561767,
+            "transfers": 5526880,
+            "within_fixed_relative_five_percent_tolerance": true
+          },
+          {
+            "equal_share_ratio": 0.9800811879789274,
+            "measured_native_blocks": 304,
+            "shard": "(0,e000000000000000)",
+            "share_percent": 24.502029699473184,
+            "transfers": 5494096,
+            "within_fixed_relative_five_percent_tolerance": true
+          }
+        ],
+        "method": "Exact integer cross-products: total*9500 <= lane_count*4*10000 <= total*10500",
+        "valid": true
+      },
+      "measured_backpressure": {
+        "canonical_backlog_sampled_peak": 2097120,
+        "measure_canonical_backpressure_fraction": 0.7280893993317296,
+        "measure_canonical_backpressure_s": 436.8536395990377
+      },
+      "measured_resources": {
+        "genesis": {
+          "mean_cpu_cores": 6.133146830985916,
+          "peak_cpu_cores": 15.335899999999999,
+          "peak_memory_bytes": 20304457891.84,
+          "samples": 284
+        },
+        "native-load-generator": {
+          "mean_cpu_cores": 0.6620253521126761,
+          "peak_cpu_cores": 2.8349,
+          "peak_memory_bytes": 1130650140.672,
+          "samples": 284
+        },
+        "session-stats": {
+          "mean_cpu_cores": 0.8206007042253521,
+          "peak_cpu_cores": 1.3508000000000002,
+          "peak_memory_bytes": 2517924577.28,
+          "samples": 284
+        }
+      },
+      "measurement_completed": true,
+      "measurement_end": 1789387538.758,
+      "measurement_start": 1789386938.758,
+      "name": "03-B2",
+      "offered_tps": 37514.72,
+      "original_gate_failures": [],
+      "persistent_producer": 1,
+      "planned_measurement_seconds": 600,
+      "proof_and_cleanup_zero_fields": {
+        "anchor_scan_errors": 0,
+        "canonical_backlog_after_drain": 0,
+        "canonical_follower_errors": 0,
+        "canonical_follower_reorgs": 0,
+        "canonical_follower_retry_exhausted": 0,
+        "canonical_hash_conflicts": 0,
+        "canonical_total_backlog_after_drain": 0,
+        "duplicate_nonce_conflicts": 0,
+        "external_nonce_conflicts": 0,
+        "nonce_gaps": 0,
+        "retry_exhausted": 0
+      },
+      "reproducibility": {
+        "flag": false,
+        "reasons": [
+          "one_or_more_images_lack_source_revision_label"
+        ]
+      },
+      "snapshot_inventory_hashes": {
+        "database": "8bfd84467457ab049fcf8eaaff4a3c61e2542d4605fad3d2e0427dfb7b2ec1d2",
+        "native-load-wallets": "5edb11ae2b44f46d2afb947bf9405bb8226e16526993357650d887b134756179",
+        "session-stats-data": "bc7ec0812c6d82ceea1e9aa34036fdc63dbb5a0b8ea1114b3cf367154c861dbb",
+        "shared-data": "def2074a13e742209353bf81e023775438d17574597318e04b94edd5e1b1df26"
+      },
+      "variant": "current"
+    }
+  ],
+  "completed_ten_minute_measurements": 3,
+  "descriptive_arithmetic": {
+    "accepted_pair_descriptive_arithmetic": {
+      "current_B2_tps": 37434.09682804674,
+      "current_minus_old_tps": -677.5826377295525,
+      "current_vs_old_percent": -1.7778871128941276,
+      "old_A1_tps": 38111.679465776295,
+      "warning": "Only one accepted observation per build. This post-failure subset is descriptive and does not replace the planned ABBA comparison; B1 remains reported."
+    },
+    "all_completed_observations_descriptive_arithmetic": {
+      "current_B2_vs_B1_percent": -11.833231416542734,
+      "current_mean_including_lane_rejected_B1_tps": 39946.19031719532,
+      "current_minus_historical_tps": 1834.5108514190288,
+      "current_observation_count": 2,
+      "current_vs_historical_percent": 4.8135135400327655,
+      "historical_mean_tps": 38111.679465776295,
+      "historical_observation_count": 1,
+      "pooled_tps_all_three_build_mixed_observations": 39334.686700055645,
+      "warning": "Unequal repeat counts and a lane-rejected observation; arithmetic is not an accepted performance comparison. A2 partial data are excluded from all full-run means."
+    }
+  },
+  "evidence_integrity": {
+    "A2_final_proof_and_cleanup_established": false,
+    "B1_rejection_preserved_without_accepted_verdict": true,
+    "all_completed_and_A2_snapshot_inventories_match_same_frozen_seed": true,
+    "canonical_count_divided_by_599_seconds_checked_for_all_three": true,
+    "completed_observation_hashes_and_gate_replay_passed": true,
+    "continuation_plan_prior_files_rechecked": 313,
+    "limitation": "Artifact integrity passes; this does not make the interrupted A2 result complete or establish final proof and cleanup.",
+    "no_completed_controller_comparison_summary": true,
+    "original_frozen_inputs_and_prior_artifact_hashes_passed": true
+  },
+  "final_runtime_cleanup": {
+    "all_owned_runtime_oom_flags_false": true,
+    "all_owned_runtime_restart_counts_zero": true,
+    "all_owned_runtime_stopped": true,
+    "captured_epoch": 1789389366.1843228,
+    "containers": [
+      {
+        "exit_code": 137,
+        "finished_at": "2026-09-14T12:33:23.633053052Z",
+        "id": "ca6bdeb32cf544a0db3bc483b244a4366c4ebfbff6fe80933d627fb5cec04ef9",
+        "image_id": "sha256:b13570509302f52800f0c4d2e98a652eeb271c144eb326c020eb95a135f13527",
+        "name": "native-load-generator",
+        "oom_killed": false,
+        "project": "mlt-hist-current-retry-20260914t100023z-a2",
+        "restarts": 0,
+        "running": false,
+        "service": "native-load-generator",
+        "started_at": "2026-09-14T12:20:51.768999659Z",
+        "state": "exited"
+      },
+      {
+        "exit_code": 143,
+        "finished_at": "2026-09-14T12:36:08.487343184Z",
+        "id": "1a85e36cfb0ecd44ea04dafdbcdcc70c52d5c24c472b46a40e17d44271bc4b71",
+        "image_id": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67",
+        "name": "session-stats",
+        "oom_killed": false,
+        "project": "mlt-hist-current-retry-20260914t100023z-a2",
+        "restarts": 0,
+        "running": false,
+        "service": "session-stats",
+        "started_at": "2026-09-14T12:19:57.379312537Z",
+        "state": "exited"
+      },
+      {
+        "exit_code": 143,
+        "finished_at": "2026-09-14T12:33:26.741204149Z",
+        "id": "1ffc65c4ee3836d71049f058c1c0d6d51644355d2116f7db78c87af701441e4b",
+        "image_id": "sha256:dbdc006ab24699316ec415245134fed42571513c6313b41c69304a961a80415f",
+        "name": "genesis",
+        "oom_killed": false,
+        "project": "mlt-hist-current-retry-20260914t100023z-a2",
+        "restarts": 0,
+        "running": false,
+        "service": "genesis",
+        "started_at": "2026-09-14T12:18:35.773974585Z",
+        "state": "exited"
+      }
+    ],
+    "reason": "Original resource guard interrupted A2; generator was killed after guard stop timeout, not OOM. Controller stopped cleanup on unexpected generator exit 137; finish exact owned stats cleanup."
+  },
+  "host_memory_after_shutdown": {
+    "available_first_gib": 15.737560272216797,
+    "available_last_gib": 15.59280776977539,
+    "available_max_gib": 15.766555786132812,
+    "available_min_gib": 15.41091537475586,
+    "first_at": "2026-09-14T12:36:06.959648+00:00",
+    "last_at": "2026-09-14T12:44:56.971163+00:00",
+    "memory_psi_full_avg10_max": 0.72,
+    "memory_psi_full_avg10_mean": 0.020555555555555556,
+    "memory_psi_full_latest_avg10": 0.0,
+    "samples": 54,
+    "swap_in_mib": 9.203125,
+    "swap_out_mib": 7.64453125,
+    "swap_used_last_gib": 7.998439788818359
+  },
+  "interpretation_limits": [
+    "Rejected B1 remains in all-completed descriptive means and has no accepted verdict; accepted-pair arithmetic is separately labeled as a post-failure subset.",
+    "The comparison includes the selected historical producer=0 and current producer=1 build bundles.",
+    "The current generator, seed, memory allocation and host conditions differ from the original 61,959.20 TPS reference.",
+    "Canonical whole-second windows may count work offered during warmup; this is not offered-cohort throughput.",
+    "Candidate stage wall times overlap and are not exclusive CPU cost; historical validation output-normalized timers remain unavailable.",
+    "Backpressure seconds/fraction are maximum accumulated worker values, not all-worker pause time; other retry counters are full-run totals.",
+    "Docker CPU values are arithmetic snapshots. Host CPU, paging and PSI use only complete recorded intervals and include all host applications, VM and kernel.",
+    "Host-PID cgroup/thread/device attribution is invalid for this Docker Desktop topology.",
+    "Identical cloned bytes do not make wall clock, elections or external host load identical.",
+    "Only three complete sustained observations exist: one historical, two current with B1 lane-rejected. Original ABBA is incomplete.",
+    "A2 partial periodic canonical_result_valid does not establish final proof, completion, lane balance, batching, source reuse or cleanup.",
+    "Current versus historical accepted-pair arithmetic is a post-failure descriptive subset, not a replacement comparison.",
+    "Docker OOMKilled=false for interrupted A2 is not a system-wide no-OOM assertion."
+  ],
+  "interrupted_A2": {
+    "accepted_verdict_present": false,
+    "canonical_TPS_usable_as_full_result": false,
+    "canonical_rate_warning": "The last nonfinal displayed canonical rate divides partial discovered output by the preconfigured 599-second bucket. Final follower catch-up, drain and cleanup never completed; it is not a ten-minute benchmark result.",
+    "completed_observation_present": false,
+    "final_generator_record_present": false,
+    "first_interrupted_record": {
+      "elapsed_s": 613.7382407650002,
+      "interrupted": true,
+      "measure_elapsed_s": 552.6781154429991,
+      "phase": "drain"
+    },
+    "full_600_second_canonical_tps": null,
+    "generator_exit_code": 137,
+    "host_intervals_over_interrupted_offering": {
+      "04-A2-interrupted-offering": {
+        "available": true,
+        "boundary_intervals_excluded": 2,
+        "contained_intervals": 55,
+        "coverage_fraction": 0.9951997470243161,
+        "coverage_semantics": "Only recorded intervals with both endpoints inside the measurement window; omitted edges are not extrapolated.",
+        "covered_seconds": 550.0251205999994,
+        "cpu": {
+          "busy_percent": 65.41898547402141,
+          "covered_seconds": 550.0251205999994,
+          "iowait_percent": 1.7758589652259673,
+          "steal_percent": 0.0,
+          "valid_intervals": 55
+        },
+        "first_included_epoch": 1789388626.930271,
+        "invalid_intervals": 0,
+        "last_included_epoch": 1789389176.955382,
+        "maximum_swap_used_bytes": 8589930496,
+        "measurement_seconds": 552.6781153678894,
+        "memory_snapshot_count": 56,
+        "minimum_memory_available_bytes": 17159540736,
+        "observer_error_records_in_window": 0,
+        "psi": {
+          "cpu.some": {
+            "covered_seconds": 550.0251205999994,
+            "stall_microseconds": 125599300,
+            "stall_percent": 22.835193393165206,
+            "valid_intervals": 55
+          },
+          "io.full": {
+            "covered_seconds": 550.0251205999994,
+            "stall_microseconds": 13953908,
+            "stall_percent": 2.5369583092456334,
+            "valid_intervals": 55
+          },
+          "io.some": {
+            "covered_seconds": 550.0251205999994,
+            "stall_microseconds": 26047677,
+            "stall_percent": 4.735724974085853,
+            "valid_intervals": 55
+          },
+          "memory.full": {
+            "covered_seconds": 550.0251205999994,
+            "stall_microseconds": 3807104,
+            "stall_percent": 0.6921691132664977,
+            "valid_intervals": 55
+          },
+          "memory.some": {
+            "covered_seconds": 550.0251205999994,
+            "stall_microseconds": 4313774,
+            "stall_percent": 0.7842867240853082,
+            "valid_intervals": 55
+          }
+        },
+        "scope": "Whole physical host, including VM and all applications; no isolated host application CPU attribution.",
+        "swap": {
+          "covered_seconds": 550.0251205999994,
+          "in_bytes": 962494464,
+          "in_bytes_per_second": 1749910.0094738493,
+          "out_bytes": 740216832,
+          "out_bytes_per_second": 1345787.3182092637,
+          "valid_intervals": 55
+        }
+      }
+    },
+    "include_in_complete_run_means": false,
+    "last_record": {
+      "canonical_backlog": 1009632,
+      "canonical_chain_measure_avg_tps": 35614.63772954925,
+      "canonical_chain_measure_transfers": 21333168,
+      "canonical_follower_errors": 0,
+      "canonical_follower_retry_exhausted": 0,
+      "canonical_gen_utime_bucket_duration_s": 599,
+      "canonical_result_valid": true,
+      "canonical_total_backlog_after_drain": 1009632,
+      "drain_timed_out": false,
+      "elapsed_s": 635.6836168359987,
+      "interrupted": true,
+      "measure_canonical_backpressure_fraction": 0.7166706418228844,
+      "measure_canonical_backpressure_s": 396.0881797159964,
+      "measure_elapsed_s": 552.6781154429991,
+      "nonce_gaps": 1009632,
+      "phase": "drain",
+      "steady_offered": 21230608,
+      "steady_offered_avg_tps": 38414.05586139883
+    },
+    "measured_resources_over_interrupted_offering": {
+      "genesis": {
+        "mean_cpu_cores": 5.94246923076923,
+        "peak_cpu_cores": 14.798900000000001,
+        "peak_memory_bytes": 18564996136.96,
+        "samples": 260
+      },
+      "native-load-generator": {
+        "mean_cpu_cores": 0.6818361538461538,
+        "peak_cpu_cores": 2.4251,
+        "peak_memory_bytes": 1026765619.2,
+        "samples": 260
+      },
+      "session-stats": {
+        "mean_cpu_cores": 0.827193076923077,
+        "peak_cpu_cores": 1.375,
+        "peak_memory_bytes": 2509334642.688,
+        "samples": 260
+      }
+    },
+    "offering_elapsed_before_interruption_seconds": 552.6781154429991,
+    "periodic_record_count": 613,
+    "planned_measurement_seconds": 600,
+    "runtime_containers_at_summary": [
+      {
+        "exit_code": 143,
+        "name": "genesis",
+        "oom_killed": false,
+        "restart_count": 0
+      },
+      {
+        "exit_code": 137,
+        "name": "native-load-generator",
+        "oom_killed": false,
+        "restart_count": 0
+      },
+      {
+        "exit_code": 0,
+        "name": "session-stats",
+        "oom_killed": false,
+        "restart_count": 0
+      }
+    ],
+    "snapshot_matches_original_frozen_seed": true,
+    "summary_acceptance": {
+      "canonical_lane_balance_invalid_reasons": [
+        "missing_final_generator_record"
+      ],
+      "canonical_lane_balance_required": null,
+      "canonical_lane_balance_valid": null,
+      "chain_capacity_invalid_reasons": [
+        "generator_record_extraction_invalid",
+        "missing_final_generator_record",
+        "native_run_batching_requires_signed_runs",
+        "native_run_batching_telemetry_incomplete",
+        "strict_image_reuse_failed"
+      ],
+      "chain_capacity_valid": false,
+      "chain_correctness_valid": false,
+      "correctness_invalid_reasons": [
+        "generator_record_extraction_invalid",
+        "missing_final_generator_record"
+      ],
+      "ingress_capacity_invalid_reasons": [
+        "generator_record_extraction_invalid",
+        "missing_final_generator_record",
+        "native_run_batching_requires_signed_runs",
+        "native_run_batching_telemetry_incomplete"
+      ],
+      "ingress_capacity_valid": false,
+      "native_run_batching_enforced": true,
+      "native_run_batching_invalid_reasons": [
+        "missing_final_generator_record",
+        "native_run_batching_telemetry_incomplete",
+        "native_run_batching_requires_signed_runs"
+      ],
+      "native_run_batching_required": true,
+      "native_run_batching_valid": false,
+      "native_signed_run_quantum_benchmark_profile_valid": null,
+      "native_signed_run_quantum_invalid_reasons": [
+        "missing_final_generator_record"
+      ],
+      "native_signed_run_quantum_required": true,
+      "native_signed_run_quantum_telemetry_contract_valid": null,
+      "native_signed_run_quantum_valid": null,
+      "reproducibility_reasons": [
+        "one_or_more_images_lack_source_revision_label"
+      ],
+      "reproducible": false,
+      "run_complete": false,
+      "run_incomplete_reasons": [
+        "generator_record_extraction_invalid",
+        "missing_final_generator_record"
+      ],
+      "semantics": "proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions",
+      "strict_image_reuse_required": true,
+      "strict_image_reuse_valid": false,
+      "validator_cleanup_invalid_reasons": [
+        "canonical_reconciliation_capture_missing",
+        "native_pending_capture_missing",
+        "owner_0:canonical_reconciliation_capture_missing",
+        "owner_0:native_pending_capture_missing"
+      ],
+      "validator_cleanup_valid": false
+    },
+    "summary_final": null,
+    "wrapper_exit_code": 125
+  },
+  "interrupted_measurements": 1,
+  "lane_rejected_completed_measurements": 1,
+  "maximum_capacity_claim_allowed": false,
+  "monitor_shutdown": {
+    "all_data_retained": true,
+    "benchmark_observer_pids_exited": [
+      796489,
+      876637
+    ],
+    "benchmark_runtime_stopped": true,
+    "captured_epoch": 1789390100.4735498,
+    "matching_observers_still_running": [],
+    "runtime_cleanup_evidence": "post-run-audit/final-resource-cleanup-audit.json",
+    "stop_marker": "build/benchmarks/historical-current-tps-7b73-vs-925ee-20260914T100023Z/resource-guard-stop"
+  },
+  "original_historical_reference": {
+    "A1_change_percent": -38.48906976318089,
+    "canonical_tps_mean": 61959.19866444074,
+    "canonical_tps_observations": [
+      61380.86143572621,
+      62537.53589315526
+    ],
+    "conditions_reproduced_exactly": false,
+    "report": "doc/native-master-reference-2026-09-11.md",
+    "result": "doc/benchmarks/results/native-master-reference-20260911.json",
+    "revision": "7b73cdb157a1f5e621e420e1e5c913726b267cf5"
+  },
+  "performance_gain_claim_allowed": false,
+  "performance_regression_established": false,
+  "planned_order": [
+    "historical A1",
+    "current B1",
+    "current B2",
+    "historical A2"
+  ],
+  "preparation_failure": {
+    "evidence": "failed-copy-kernel-memory.txt",
+    "exit_code": 137,
+    "experiment": "build/benchmarks/historical-current-tps-7b73-vs-925ee-20260914T094224Z",
+    "replacement": "bounded copy with periodic fdatasync and clean-cache fadvise; original 16 GiB host guard unchanged",
+    "scope": "2 GiB copy-helper cgroup OOM from accumulated dirty file cache",
+    "stage": "before benchmark load"
+  },
+  "provenance": {
+    "common_startup_scripts_sha256": {
+      "start-genesis.sh": "996f066d478bd5f64f9bb4527957a2ece7c54e29d35e9836c2bb1090bd42d4b8",
+      "start-node.sh": "dfc17e896fb8996a351336c7bfe803da2a0e1ff4221854470ed53f5d168f6859",
+      "start-validator.sh": "de7262001106e4b99ca0b7afffa38bfc4779de1334367382e1dd27f49b12fa52"
+    },
+    "configuration": {
+      "current": {
+        "base_image_id": "sha256:472cc619cc24127b31b656abc35e3a860a6ae4df90123e4c2b8ca9a8d1bd195c",
+        "env_file": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/historical-current-tps-7b73-vs-925ee-20260914T100023Z/env.current",
+        "validator_image_id": "sha256:53ec44c24a5ebd638b676fed9d82844cbe838751d1aa991761bffcd5395352aa",
+        "validator_revision": "925ee0721c5b691debe3a2e37dba83d3daaae581"
+      },
+      "generator_image_id": "sha256:b13570509302f52800f0c4d2e98a652eeb271c144eb326c020eb95a135f13527",
+      "generator_revision": "925ee0721c5b691debe3a2e37dba83d3daaae581",
+      "harness_head": "e77de07689323e2a2439d24ddbd76fe2a878a1e1",
+      "harness_repo": "/home/neodix/gitProjects/MyLocalTonDocker",
+      "helper_image_id": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67",
+      "historical": {
+        "base_image_id": "sha256:3a7b1dcbcf1df8aac037249086006aaa00f41227eec343740535c34c1d254cca",
+        "env_file": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/historical-current-tps-7b73-vs-925ee-20260914T100023Z/env.historical",
+        "validator_image_id": "sha256:dbdc006ab24699316ec415245134fed42571513c6313b41c69304a961a80415f",
+        "validator_revision": "7b73cdb157a1f5e621e420e1e5c913726b267cf5"
+      },
+      "project_prefix": "mlt-hist-current-retry-20260914t100023z",
+      "seed_project": "mylocalton-desktop",
+      "seed_volumes": {
+        "database": "mylocalton-desktop_ton-db-val0",
+        "native-load-wallets": "mylocalton-desktop_native-load-wallets",
+        "session-stats-data": "mylocalton-desktop_session-stats-data",
+        "shared-data": "mylocalton-desktop_shared-data"
+      },
+      "stats_image_id": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67",
+      "ton_head": "8f902ce8d58e0d55a0fb617a4c97b9b389d93732",
+      "ton_repo": "/home/neodix/gitProjects/corton-nommander-ton-sidechain"
+    },
+    "continuation_plan_sha256": "e1d8057d4377431c7b43876e33428127c87a26aa0e3414190baffae8feefc91b",
+    "current_validator_binary_sha256": "4ba3542257977a860b70361a40d040e280c3d622a217343fbe0cc53e47ee6de0",
+    "declared_environment_differences": {
+      "TON_BASE_IMAGE": [
+        "mylocalton-ton:reference-recovered-7b73cdb1",
+        "mylocalton-ton:histcurrent-20260914-base"
+      ],
+      "TON_BRANCH": [
+        "histcurrent-20260914-old",
+        "histcurrent-20260914-current"
+      ],
+      "TON_NATIVE_PERSISTENT_PRODUCER": [
+        "0",
+        "1"
+      ]
+    },
+    "hardware": {
+      "boot_id": "c7655073-7fd6-410f-b95c-bcdee0a5041a",
+      "docker_context": "desktop-linux",
+      "docker_cpus": 24,
+      "docker_id": "8c08003a-ae6d-4ba3-a320-57e3a51d7a37",
+      "docker_memory": 85918482432,
+      "host_cpus": 24,
+      "host_memory": "MemTotal:       131820728 kB"
+    },
+    "historical_binary_and_private_libraries_repackaged_without_recompilation": true,
+    "historical_image_recovered": false,
+    "historical_payload_files_match_original_receipt": true,
+    "historical_payload_sha256": {
+      "ld-linux-x86-64.so.2": "cd4df4f3c7b83673d61189bf2eaebd33ca4f2853ab9772b8a25e025ef99b1e81",
+      "libblas.so.3": "e748efcae5753fe4a652877fccdb5895ac6f7605668a2db878b19c914e78e3a8",
+      "libc.so.6": "8db37cf3f2169f59a0f07ef1fea308c35656668c64c8ff294e1860f4121eb161",
+      "libgcc_s.so.1": "d93224d2b0dab4247598be683adca02f5cf00586f99c187579cd7e92058fb7cb",
+      "libgsl.so.27": "99a902f1c0df5c709ba20cb64f014eda51b978305c2923d9397f0b1b902eda18",
+      "libgslcblas.so.0": "cbaeb658d6d3fd2dc46695923083c0e8b5ceb5f9fb76b1f607a643e00cb2a1c5",
+      "libjemalloc.so.2": "567efa52ecf445d5966025e1dcfd6b927a986472d272be3742f74a4a373baf12",
+      "libm.so.6": "e9c4b28d340e415b8137480ec442662f981e1399386c5931dae0e886e3639e91",
+      "libstdc++.so.6": "1fd75fe70354a416d75aef22bcae68c47bd25d20e2d0568c30b1a9838cf62f11",
+      "native-load-generator": "4d15d034765ffa94bd3367aef49214d14ec051a96a0a7188ea2df291f67286d3",
+      "validator-engine": "457e3b1b1005fa5638a48ddb5bdd07c9c66d956f4a45b1514b39feb50ae35287"
+    },
+    "original_contract_sha256": "a769dc154482f70938cad53ca8d3fdf5659f3b6b7efbbe0f228d231da950d0a6"
+  },
+  "raw_artifact_directory": "build/benchmarks/historical-current-tps-7b73-vs-925ee-20260914T100023Z",
+  "reported_at": "2026-09-14T12:47:49.992218+00:00",
+  "resource_guard": {
+    "at": "2026-09-14T12:32:58.631492+00:00",
+    "docker_vm_available_gib": 56.118804931640625,
+    "docker_vm_swap_used_kib": 608,
+    "host_available_gib": 15.993816375732422,
+    "host_available_kib": 16770732,
+    "host_disk_free_gib": 381.24046325683594,
+    "host_swap_used_gib": 7.999935150146484,
+    "low_samples": {
+      "host_disk": 0,
+      "host_memory": 2,
+      "vm_memory": 0
+    },
+    "reasons": [
+      "host available memory below 16 GiB in two consecutive samples"
+    ],
+    "thresholds": {
+      "consecutive_samples": 2,
+      "docker_vm_memory_gib": 8,
+      "host_disk_free_gib": 64,
+      "host_emergency_gib": 8,
+      "host_memory_gib": 16
+    }
+  },
+  "schema": "native-historical-current-tps-report-v1",
+  "seed": {
+    "consistency": "Immutable stopped files including WAL and SST; recovery required.",
+    "database_clean_close_claimed": false,
+    "inventories": {
+      "database": {
+        "entries": 974,
+        "inventory_sha256": "8bfd84467457ab049fcf8eaaff4a3c61e2542d4605fad3d2e0427dfb7b2ec1d2",
+        "logical_bytes": 33402800611
+      },
+      "native-load-wallets": {
+        "entries": 196610,
+        "inventory_sha256": "5edb11ae2b44f46d2afb947bf9405bb8226e16526993357650d887b134756179",
+        "logical_bytes": 45454533
+      },
+      "session-stats-data": {
+        "entries": 5,
+        "inventory_sha256": "bc7ec0812c6d82ceea1e9aa34036fdc63dbb5a0b8ea1114b3cf367154c861dbb",
+        "logical_bytes": 73240400
+      },
+      "shared-data": {
+        "entries": 29,
+        "inventory_sha256": "def2074a13e742209353bf81e023775438d17574597318e04b94edd5e1b1df26",
+        "logical_bytes": 36988377
+      }
+    },
+    "volumes": {
+      "database": "mylocalton-desktop_ton-db-val0",
+      "native-load-wallets": "mylocalton-desktop_native-load-wallets",
+      "session-stats-data": "mylocalton-desktop_session-stats-data",
+      "shared-data": "mylocalton-desktop_shared-data"
+    }
+  },
+  "status": "incomplete_resource_guard_interruption",
+  "workload": {
+    "current_overrides": {
+      "TON_NATIVE_PERSISTENT_PRODUCER": "1"
+    },
+    "drain_seconds": 180,
+    "freshness_gate": "advancing masterchain across two samples with 0..30 second lag, followed by 30 second settle",
+    "historical_A1_frozen_load_and_runtime_environment": {
+      "CUSTOM_PARAMETERS": "--state-ttl 315360000 --archive-ttl 315360000 -f /usr/share/ton/smartcont/ --session-logs /var/ton-work/db/log.session-stats --threads 14 --mempool-num 1500000 --celldb-in-memory --celldb-cache-size 17179869184 --disable-rocksdb-stats --disable-state-serializer --broadcast-speed-catchain 128",
+      "GENESIS_CPUSET": "0-7,12-19",
+      "GENESIS_CPU_QUOTE": "16",
+      "NATIVE_LOAD_ADAPTIVE_INFLIGHT": "1",
+      "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND": "32768",
+      "NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS": "0.5",
+      "NATIVE_LOAD_ADAPTIVE_MAX_CWND": "65536",
+      "NATIVE_LOAD_AMOUNT": "0.000000001",
+      "NATIVE_LOAD_AUTO_NONCE": "1",
+      "NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER": "1",
+      "NATIVE_LOAD_CANONICAL_POLL_SECONDS": "0.25",
+      "NATIVE_LOAD_CANONICAL_QUERY_TIMEOUT_SECONDS": "30",
+      "NATIVE_LOAD_CANONICAL_RETRY_BACKOFF_SECONDS": "0.25",
+      "NATIVE_LOAD_CANONICAL_RETRY_LIMIT": "5",
+      "NATIVE_LOAD_CANONICAL_RETRY_MAX_BACKOFF_SECONDS": "5",
+      "NATIVE_LOAD_CONNECTIONS": "10",
+      "NATIVE_LOAD_CPUSET": "8-10,20-22",
+      "NATIVE_LOAD_CPU_QUOTE": "6",
+      "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180",
+      "NATIVE_LOAD_DURATION_SECONDS": "600",
+      "NATIVE_LOAD_FEE": "0",
+      "NATIVE_LOAD_FINALITY_POLL_SECONDS": "10",
+      "NATIVE_LOAD_FINALITY_SAMPLE_SOURCES": "256",
+      "NATIVE_LOAD_IMAGE": "mylocalton-native-load-generator:histcurrent-20260914-client",
+      "NATIVE_LOAD_INFLIGHT": "262144",
+      "NATIVE_LOAD_MAX_CANONICAL_BACKLOG": "2097120",
+      "NATIVE_LOAD_MAX_RETRIES": "3",
+      "NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG": "128",
+      "NATIVE_LOAD_MEMORY_LIMIT": "8g",
+      "NATIVE_LOAD_NATIVE_RUN_BATCHING": "1",
+      "NATIVE_LOAD_NATIVE_TRANSFER_RUNS": "1",
+      "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE": "16",
+      "NATIVE_LOAD_PAYMENT_LANE_DEPTH": "2",
+      "NATIVE_LOAD_PAYMENT_LANE_LITESERVER_TIMEOUT_SECONDS": "5",
+      "NATIVE_LOAD_PAYMENT_LANE_READY_POLL_SECONDS": "2",
+      "NATIVE_LOAD_PAYMENT_LANE_READY_STABLE_OBSERVATIONS": "2",
+      "NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS": "900",
+      "NATIVE_LOAD_QUERY_TIMEOUT_SECONDS": "10",
+      "NATIVE_LOAD_RAMP_SECONDS": "0",
+      "NATIVE_LOAD_REPAIR_COOLDOWN_SECONDS": "10",
+      "NATIVE_LOAD_REPORT_INTERVAL_SECONDS": "1",
+      "NATIVE_LOAD_RETRY_BACKOFF_MS": "10",
+      "NATIVE_LOAD_RETRY_HORIZON_SECONDS": "180",
+      "NATIVE_LOAD_SIGNERS": "6",
+      "NATIVE_LOAD_SOURCES": "24576",
+      "NATIVE_LOAD_SOURCE_OFFSET": "0",
+      "NATIVE_LOAD_START_NONCE": "0",
+      "NATIVE_LOAD_SUBMIT_BATCH_SIZE": "64",
+      "NATIVE_LOAD_SUBMIT_COALESCE_MS": "20",
+      "NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT": "64",
+      "NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE": "1",
+      "NATIVE_LOAD_TARGET_TPS": "0",
+      "NATIVE_LOAD_VALID_FOR_SECONDS": "7200",
+      "NATIVE_LOAD_WARMUP_SECONDS": "60",
+      "NATIVE_LOAD_WORKERS": "6",
+      "NATIVE_PAYMENT_LANE_DEPTH": "2",
+      "SESSION_STATS_CPUSET": "11,23",
+      "SESSION_STATS_CPU_QUOTE": "1",
+      "TON_NATIVE_ADMISSION_CONFIG_CACHE": "1",
+      "TON_NATIVE_ADMISSION_DISPATCH_PROFILE": "0",
+      "TON_NATIVE_ADMISSION_LANE_OWNERS": "0",
+      "TON_NATIVE_ADMISSION_LOCALITY_FASTPATH": "0",
+      "TON_NATIVE_ADMISSION_PREPARE": "0",
+      "TON_NATIVE_ADMISSION_SHARD_SHARING": "0",
+      "TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH": "0",
+      "TON_NATIVE_ADMISSION_VERIFIER_BATCH": "0",
+      "TON_NATIVE_CANDIDATE_METADATA_PROJECTION": "1",
+      "TON_NATIVE_CANONICAL_JOURNAL": "0",
+      "TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE": "0",
+      "TON_NATIVE_CHECKPOINT_PROOF_OVERLAY": "0",
+      "TON_NATIVE_CHECKPOINT_RETAIN_INGRESS": "0",
+      "TON_NATIVE_COLLATOR_QUEUE_LIMIT": "18432",
+      "TON_NATIVE_DIRECT_RUN_ZERO_COPY": "0",
+      "TON_NATIVE_EXECUTOR_THREADS": "8",
+      "TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM": "0",
+      "TON_NATIVE_EXT_MSG_TRANSPORT_WINDOW": "1024",
+      "TON_NATIVE_LANE_SCHEDULERS": "0",
+      "TON_NATIVE_MEMPOOL_MAX_TTL": "7200",
+      "TON_NATIVE_PERSISTENT_PRODUCER": "0",
+      "TON_NATIVE_POOL_OWNERS": "1",
+      "TON_NATIVE_PUBLICATION_GROUPING": "0",
+      "TON_NATIVE_RECONCILIATION_CHUNKS": "0",
+      "TON_NATIVE_RECONCILIATION_COALESCE": "0",
+      "TON_NATIVE_RECONCILIATION_PROFILE": "1",
+      "TON_NATIVE_STAGED_TRIE_DIRECT": "0",
+      "TON_NATIVE_VALIDATED_STATE_HANDOFF": "0",
+      "TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH": "0",
+      "TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL": "0",
+      "TON_NATIVE_VALIDATION_SIGNATURE_THREADS": "8",
+      "TON_OVERLAY_LOCAL_SIGNATURE_REUSE": "1"
+    },
+    "lane_count": 4,
+    "load_mode": "bounded_unpaced",
+    "measurement_seconds": 600,
+    "signed_run_outputs": 16,
+    "source_accounts": 24576,
+    "target_tps": 0,
+    "warmup_seconds": 60
+  }
+}

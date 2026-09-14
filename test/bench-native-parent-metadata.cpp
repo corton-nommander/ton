@@ -54,6 +54,9 @@ void benchmark(unsigned version, std::size_t count, unsigned repetitions, bool r
   auto root = native_metadata_test::serialize(batch);
   auto boc = vm::std_boc_serialize(root, 31).move_as_ok();
   auto full = NativeTransferBatch::unpack(root).move_as_ok();
+  auto rooted = NativeTransferBatch::unpack_rooted_runs(root).move_as_ok();
+  CHECK(rooted.logical_entry_count() == full.entries.size());
+  CHECK(native_metadata_test::serialize(rooted)->get_hash() == root->get_hash());
   auto expected = full_metadata(full);
   auto projection = NativeTransferBatch::unpack_external_metadata(root).move_as_ok();
   CHECK(expected.size() == projection.size());
@@ -74,12 +77,27 @@ void benchmark(unsigned version, std::size_t count, unsigned repetitions, bool r
   measure("strict_full_unpack", [&] {
     return NativeTransferBatch::unpack(root).move_as_ok().entries.size();
   });
+  measure("strict_rooted_unpack", [&] {
+    return NativeTransferBatch::unpack_rooted_runs(root).move_as_ok().logical_entry_count();
+  });
   measure("strict_parent_projection", [&] {
     return NativeTransferBatch::unpack_external_metadata(root).move_as_ok().size();
   });
   measure("flatten_entries_only", [&] {
     return NativeTransferBatch::flatten_runs(full.runs).move_as_ok().size();
   });
+  measure("rooted_visit_transfers_only", [&] {
+    td::uint64 sum = 0;
+    for (const auto& parent : rooted.rooted_runs) {
+      CHECK(parent.for_each_transfer([&](const block::NativeTransfer& transfer) {
+        sum += transfer.nonce + transfer.amount + transfer.fee + transfer.signature.size();
+        return true;
+      }));
+    }
+    return sum;
+  });
+  measure("expanded_store", [&] { return native_metadata_test::serialize(full)->get_depth(); });
+  measure("rooted_store", [&] { return native_metadata_test::serialize(rooted)->get_depth(); });
   measure("derive_accounts_only", [&] {
     std::set<ton::StdSmcAddress> known;
     std::vector<ton::StdSmcAddress> accounts;
@@ -99,6 +117,9 @@ void benchmark(unsigned version, std::size_t count, unsigned repetitions, bool r
   });
   measure("boc_and_parent_projection", [&] {
     return NativeTransferBatch::unpack_external_metadata(vm::std_boc_deserialize(boc).move_as_ok()).move_as_ok().size();
+  });
+  measure("boc_and_rooted_unpack", [&] {
+    return NativeTransferBatch::unpack_rooted_runs(vm::std_boc_deserialize(boc).move_as_ok()).move_as_ok().logical_entry_count();
   });
 }
 }  // namespace

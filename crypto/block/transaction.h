@@ -147,6 +147,56 @@ struct NativeTransferRun {
   static td::Result<NativeTransferRun> unpack_external(Ref<vm::Cell> cell, Ref<vm::Cell>* canonical_root_out);
 };
 
+// An owned, immutable pairing of strictly decoded fields and the parser's
+// rebuilt canonical root. Construction never accepts caller-supplied fields
+// beside a root. This seals wire identity, not cryptographic authentication:
+// consumers must still verify run().verify_signature() under the chain domain.
+class CanonicalNativeTransferRun {
+ public:
+  static td::Result<CanonicalNativeTransferRun> unpack_external(Ref<vm::Cell> cell);
+
+  const NativeTransferRun& run() const {
+    return run_;
+  }
+  Ref<vm::Cell> root() const {
+    return root_;
+  }
+  // The callback borrows one scratch transfer, valid only for that call; do
+  // not retain a reference. Its signature belongs to the complete parent.
+  // A consumer may skip child signature verification only after authenticating
+  // this parent under the applicable domain. State/nonce/expiry checks remain
+  // required for every output, in wire order, stopping at the first failure.
+  template <class F>
+  bool for_each_transfer(F&& callback) const {
+    if (root_.is_null()) {
+      return false;
+    }
+    NativeTransfer transfer;
+    transfer.src = run_.src;
+    transfer.valid_until = run_.valid_until;
+    transfer.signature = run_.signature;
+    for (std::size_t index = 0; index < run_.outputs.size(); ++index) {
+      const auto& output = run_.outputs[index];
+      transfer.dst = output.dst;
+      transfer.amount = output.amount;
+      transfer.fee = output.fee;
+      transfer.nonce = run_.first_nonce + static_cast<td::uint64>(index);
+      if (!callback(static_cast<const NativeTransfer&>(transfer))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+ private:
+  CanonicalNativeTransferRun(NativeTransferRun run, Ref<vm::Cell> root)
+      : run_(std::move(run)), root_(std::move(root)) {
+  }
+
+  NativeTransferRun run_;
+  Ref<vm::Cell> root_;
+};
+
 // A payment lane is a fixed-depth basechain shard selected solely by an
 // account's high address bits.  The policy deliberately has no mutable shard
 // state: callers bind it to a ConfigParam-12 workchain whose min/max split
@@ -284,11 +334,21 @@ struct NativeTransferBatch {
   // the enclosing run and must not be verified as individual-transfer
   // signatures; callers must verify NativeTransferRun instead.
   std::vector<NativeTransferRun> runs;
+  // Explicit alternative v5/v6 representation. These sealed parents retain
+  // their canonical cells without expanding logical children or accounts.
+  // store() rejects mixing this representation with any expanded vector.
+  std::vector<CanonicalNativeTransferRun> rooted_runs;
 
   static td::Result<std::vector<NativeTransferBatchEntry>> flatten_runs(
       const std::vector<NativeTransferRun>& runs);
+  // Counts logical outputs in the selected representation; it does not
+  // replace store/unpack validation of protocol bounds or mixed views.
+  std::size_t logical_entry_count() const;
   bool store(vm::CellBuilder& cb) const;
   static td::Result<NativeTransferBatch> unpack(Ref<vm::Cell> cell);
+  // The same strict wire checks as unpack. v5/v6 return only rooted_runs;
+  // v1-v4 preserve the existing expanded execution representation.
+  static td::Result<NativeTransferBatch> unpack_rooted_runs(Ref<vm::Cell> cell);
   // Preserve unpack's strict field/tree/canonical-format checks, but omit the
   // derived execution entries and account table for direct runs. Return wire
   // traversal order without deduplication. Like unpack, this does not verify
@@ -299,7 +359,8 @@ struct NativeTransferBatch {
   // A projection-only batch is private implementation scratch and must never
   // escape as a full execution object through the public unpack API.
   static td::Result<NativeTransferBatch> unpack_impl(Ref<vm::Cell> cell,
-                                                    std::vector<ExternalMessageMetadata>* external_metadata);
+                                                    std::vector<ExternalMessageMetadata>* external_metadata,
+                                                    bool retain_rooted_runs = false);
 };
 
 struct StoragePhaseConfig {

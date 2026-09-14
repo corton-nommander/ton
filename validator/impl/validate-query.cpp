@@ -33,6 +33,7 @@
 #include "ton/ton-io.hpp"
 #include "ton/ton-tl.hpp"
 #include "validator/validated-state-handoff.h"
+#include "validator/consensus/utils.h"
 #include "vm/boc.h"
 #include "vm/cells/MerkleProof.h"
 #include "vm/cells/MerkleUpdate.h"
@@ -690,7 +691,12 @@ bool ValidateQuery::init_parse() {
     new_shard_conf_ = std::make_unique<block::ShardConfig>(shard_hashes_->prefetch_ref());
     // NB: new_shard_conf_->mc_shard_hash_ is unset at this point
   } else if (extra.custom->size_refs()) {
-    auto batch_res = block::NativeTransferBatch::unpack(extra.custom->prefetch_ref());
+    auto batch_res = [&] {
+      td::ScopedRealCpuTimer decode_timer{stats_.work_time.native_batch_decode};
+      return consensus::native_direct_run_zero_copy_enabled()
+                 ? block::NativeTransferBatch::unpack_rooted_runs(extra.custom->prefetch_ref())
+                 : block::NativeTransferBatch::unpack(extra.custom->prefetch_ref());
+    }();
     if (batch_res.is_error()) {
       return reject_query("non-masterchain block custom payload must be a native transfer batch");
     }
@@ -700,8 +706,18 @@ bool ValidateQuery::init_parse() {
       native_compact_accounts_.insert(entry.transfer.src);
       native_compact_accounts_.insert(entry.transfer.dst);
     }
+    const auto& batch = native_transfer_batch_.value();
+    for (const auto& rooted : batch.rooted_runs) {
+      native_compact_accounts_.insert(rooted.run().src);
+      for (const auto& output : rooted.run().outputs) {
+        native_compact_accounts_.insert(output.dst);
+      }
+      stats_.work_time.native_rooted_run_outputs += rooted.run().outputs.size();
+    }
+    stats_.work_time.native_rooted_run_parents = batch.rooted_runs.size();
+    stats_.work_time.native_expanded_entries = batch.entries.size();
     LOG(DEBUG) << "native fast path compact batch: accounts=" << native_compact_accounts_.size()
-               << ", transfers=" << native_transfer_batch_.value().entries.size();
+               << ", transfers=" << batch.logical_entry_count();
   }
   // ...
   return true;
@@ -6798,6 +6814,11 @@ bool ValidateQuery::check_native_transfer_batch() {
         return reject_query("native transfer run destination is outside its source payment lane");
       }
     }
+    for (const auto& rooted : native_transfer_batch_.value().rooted_runs) {
+      if (!payment_lane_policy.contains(rooted.run())) {
+        return reject_query("native transfer run destination is outside its source payment lane");
+      }
+    }
   }
   td::ScopedRealCpuTimer replay_timer{stats_.work_time.native_batch_replay};
   struct NativeAddressHash {
@@ -6821,7 +6842,7 @@ bool ValidateQuery::check_native_transfer_batch() {
   std::unordered_map<StdSmcAddress, std::unique_ptr<block::Account>, NativeAddressHash> accounts;
   auto native_account_capacity =
       std::min<std::size_t>(block::NativeTransferBatch::max_accounts,
-                            native_transfer_batch_.value().entries.size() * 2);
+                            native_transfer_batch_.value().logical_entry_count() * 2);
   accounts.reserve(native_account_capacity);
   auto get_account = [&](const StdSmcAddress& addr, bool allow_create) -> block::Account* {
     auto it = accounts.find(addr);
@@ -6861,10 +6882,14 @@ bool ValidateQuery::check_native_transfer_batch() {
 
   if (block::NativeTransferBatch::is_direct_run_version(native_transfer_batch_.value().version)) {
     const auto& runs = native_transfer_batch_.value().runs;
+    const auto& rooted_runs = native_transfer_batch_.value().rooted_runs;
     std::vector<const block::NativeTransferRun*> signed_runs;
-    signed_runs.reserve(runs.size());
+    signed_runs.reserve(runs.size() + rooted_runs.size());
     for (const auto& run : runs) {
       signed_runs.push_back(&run);
+    }
+    for (const auto& rooted : rooted_runs) {
+      signed_runs.push_back(&rooted.run());
     }
     td::Status signature_status;
     {
@@ -6893,10 +6918,8 @@ bool ValidateQuery::check_native_transfer_batch() {
     }
   }
 
-  // Direct-run entries are the canonical flattened execution view of the signed
-  // runs. Their copied signature bytes are deliberately not individual NTFX
-  // authorizations, so signature verification above is one-per-run; the
-  // ordered state replay below is otherwise identical to v4.
+  // Direct runs are authorized once above. Expanded entries and rooted run
+  // outputs use the same state engine in their original wire order.
   if (native_transfer_batch_.value().version >= 4) {
     const auto& entries = native_transfer_batch_.value().entries;
     struct NativeAccountState {
@@ -6950,8 +6973,7 @@ bool ValidateQuery::check_native_transfer_batch() {
     auto account_load_before_replay = stats_.work_time.native_account_load;
     {
       td::ScopedRealCpuTimer state_replay_timer{stats_.work_time.native_state_replay};
-      for (const auto& entry : entries) {
-        const auto& transfer = entry.transfer;
+      auto replay_transfer = [&](const block::NativeTransfer& transfer) -> bool {
         auto* src = get_cached_state(transfer.src, false);
         if (src) {
           cached_src_address = transfer.src;
@@ -6999,7 +7021,25 @@ bool ValidateQuery::check_native_transfer_batch() {
         if (!transaction_fees_.is_valid()) {
           return reject_query("invalid total compact native state-engine fees");
         }
+        ++stats_.work_time.native_replayed_outputs;
+        return true;
+      };
+      if (!native_transfer_batch_.value().rooted_runs.empty()) {
+        for (const auto& rooted : native_transfer_batch_.value().rooted_runs) {
+          if (!rooted.for_each_transfer(replay_transfer)) {
+            return false;
+          }
+        }
+      } else {
+        for (const auto& entry : entries) {
+          if (!replay_transfer(entry.transfer)) {
+            return false;
+          }
+        }
       }
+    }
+    if (stats_.work_time.native_replayed_outputs != native_transfer_batch_.value().logical_entry_count()) {
+      return reject_query("native state-engine replay did not cover the complete logical batch");
     }
     stats_.work_time.native_state_replay -=
         stats_.work_time.native_account_load - account_load_before_replay;
@@ -7039,7 +7079,7 @@ bool ValidateQuery::check_native_transfer_batch() {
       }
     }
     LOG(INFO) << "replayed v" << static_cast<unsigned>(native_transfer_batch_.value().version)
-              << " native transfer batch: transfers=" << entries.size()
+              << " native transfer batch: transfers=" << native_transfer_batch_.value().logical_entry_count()
               << " accounts=" << states.size();
   } else if (native_transfer_batch_.value().version >= 2) {
     const auto& entries = native_transfer_batch_.value().entries;
@@ -7105,6 +7145,7 @@ bool ValidateQuery::check_native_transfer_batch() {
         if (!transaction_fees_.is_valid()) {
           return reject_query("invalid total native state-engine fees");
         }
+        ++stats_.work_time.native_replayed_outputs;
       }
       pending.swap(next_round);
     }
@@ -7171,6 +7212,7 @@ bool ValidateQuery::check_native_transfer_batch() {
       }
       total_burned_ += credit_trans.blackhole_burned;
       native_transfer_credits_.emplace(entry.transfer.src, entry.transfer.dst, entry.debit_lt, entry.transfer.amount);
+      ++stats_.work_time.native_replayed_outputs;
     }
   }
 

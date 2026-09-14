@@ -1886,7 +1886,7 @@ TEST(NativeStateEngine, native_signature_cache_fast_path_has_strict_control_and_
 
   set_flag(pool_flag, "0");
   set_flag(fast_flag, nullptr);
-  ASSERT_EQ(stat_value(block::native_signature_executor_stats(), "cache_fast_enabled"), 1u);
+  ASSERT_EQ(stat_value(block::native_signature_executor_stats(), "cache_fast_enabled"), 0u);
   set_flag(fast_flag, "0");
   auto disabled_before = block::native_signature_executor_stats();
   ASSERT_EQ(stat_value(disabled_before, "cache_fast_enabled"), 0u);

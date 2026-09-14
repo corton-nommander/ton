@@ -669,6 +669,9 @@ struct CollationStats {
   td::uint64 native_deadline_deferred = 0;
   td::uint64 native_deadline_first_fragment_commits = 0;
   td::uint64 native_registered_run_reuses = 0;
+  td::uint64 native_rooted_run_parents = 0;
+  td::uint64 native_rooted_run_outputs = 0;
+  td::uint64 native_expanded_entries = 0;
   td::uint64 native_canonical_accounts_reused = 0;
   bool native_canonical_root_reused = false;
   NativeDeferralCounters native_deferrals;
@@ -739,6 +742,9 @@ struct CollationStats {
                                    << " native_deadline_first_fragment_commits="
                                    << native_deadline_first_fragment_commits
                                    << " native_registered_run_reuses=" << native_registered_run_reuses
+                                   << " native_rooted_run_parents=" << native_rooted_run_parents
+                                   << " native_rooted_run_outputs=" << native_rooted_run_outputs
+                                   << " native_expanded_entries=" << native_expanded_entries
                                    << " native_canonical_root_reused=" << native_canonical_root_reused
                                    << " native_canonical_accounts_reused=" << native_canonical_accounts_reused;
     result += native_microbatch_account_histogram.to_str("native_microbatch_accounts");
@@ -804,7 +810,12 @@ struct ValidationStats {
     td::RealCpuTimer::Time trx_storage_stat;
     td::RealCpuTimer::Time trx_other;
     td::RealCpuTimer::Time check_transactions_other;
+    td::RealCpuTimer::Time native_batch_decode;
     td::RealCpuTimer::Time native_batch_replay;
+    td::uint64 native_rooted_run_parents{0};
+    td::uint64 native_rooted_run_outputs{0};
+    td::uint64 native_expanded_entries{0};
+    td::uint64 native_replayed_outputs{0};
     td::RealCpuTimer::Time native_signature_verify;
     td::RealCpuTimer::Time native_account_load;
     td::RealCpuTimer::Time native_state_replay;
@@ -831,7 +842,12 @@ struct ValidationStats {
                        << " process_mc_state=" << process_mc_state.get(is_cpu) << " trx_tvm=" << trx_tvm.get(is_cpu)
                        << " trx_storage_stat=" << trx_storage_stat.get(is_cpu) << " trx_other=" << trx_other.get(is_cpu)
                        << " check_transactions_other=" << check_transactions_other.get(is_cpu)
+                       << " native_batch_decode=" << native_batch_decode.get(is_cpu)
                        << " native_batch_replay=" << native_batch_replay.get(is_cpu)
+                       << " native_rooted_run_parents=" << native_rooted_run_parents
+                       << " native_rooted_run_outputs=" << native_rooted_run_outputs
+                       << " native_expanded_entries=" << native_expanded_entries
+                       << " native_replayed_outputs=" << native_replayed_outputs
                        << " native_signature_verify=" << native_signature_verify.get(is_cpu)
                        << " native_account_load=" << native_account_load.get(is_cpu)
                        << " native_state_replay=" << native_state_replay.get(is_cpu)

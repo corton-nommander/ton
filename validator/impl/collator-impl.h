@@ -236,6 +236,10 @@ class Collator final : public td::actor::Actor {
   // entries above.  The latter still drives state/accounting; only this
   // vector is authoritative when serializing a source-signed run batch.
   std::vector<block::NativeTransferRun> native_transfer_batch_runs_;
+  // Rooted runs retain one canonical signed object per physical external and
+  // count logical payments without expanding NativeTransfer entries.
+  std::vector<block::CanonicalNativeTransferRun> native_transfer_batch_rooted_runs_;
+  std::size_t native_transfer_batch_rooted_logical_count_{0};
   std::set<StdSmcAddress> native_compact_accounts_;
   block::CurrencyCollection native_compact_transaction_fees_{0};
 
@@ -359,6 +363,12 @@ class Collator final : public td::actor::Actor {
   bool use_native_fast_path() const {
     return workchain() == basechainId && global_version_ >= 14;
   }
+  std::size_t native_transfer_batch_logical_count() const {
+    return native_transfer_batch_entries_.size() + native_transfer_batch_rooted_logical_count_;
+  }
+  bool native_transfer_batch_empty() const {
+    return native_transfer_batch_logical_count() == 0;
+  }
   bool native_transfer_runs_enabled() const {
     return use_native_fast_path() && config_ &&
            global_version_ >= block::NativeTransferBatch::runs_global_version &&
@@ -392,7 +402,8 @@ class Collator final : public td::actor::Actor {
   // registering the external. Native collation can then reuse that value
   // instead of parsing and canonicalizing the same immutable root twice.
   td::Status register_external_message(Ref<ExtMessage> ext_msg, int priority,
-                                       std::optional<block::NativeTransferRun>* decoded_native_run = nullptr);
+                                       std::optional<block::NativeTransferRun>* decoded_native_run = nullptr,
+                                       std::optional<block::CanonicalNativeTransferRun>* rooted_native_run = nullptr);
   struct ExtMsgPopBatch {
     std::vector<std::pair<td::Ref<ExtMessage>, int>> messages;
     bool producer_completed{false};

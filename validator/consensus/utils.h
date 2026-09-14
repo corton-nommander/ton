@@ -75,6 +75,25 @@ inline bool max_tps_mode_enabled() {
   return enabled;
 }
 
+// Reuse strictly decoded direct-run roots and omit the derived per-output
+// execution vector. This changes local representation only; wire ordering,
+// canonical checks, signatures, and the state engine remain identical.
+constexpr bool parse_native_direct_run_zero_copy(std::string_view value) {
+  return value == "1";
+}
+static_assert(parse_native_direct_run_zero_copy("1"));
+static_assert(!parse_native_direct_run_zero_copy(""));
+static_assert(!parse_native_direct_run_zero_copy("0"));
+static_assert(!parse_native_direct_run_zero_copy("true"));
+
+inline bool native_direct_run_zero_copy_enabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("TON_NATIVE_DIRECT_RUN_ZERO_COPY");
+    return parse_native_direct_run_zero_copy(value ? std::string_view{value} : std::string_view{});
+  }();
+  return enabled;
+}
+
 // Experimental checkpoint retention is fail-closed and independent from the
 // broader max-TPS switch: only the literal value "1" enables it.  The caller
 // still gates the policy to work-driven shardchain collation and every

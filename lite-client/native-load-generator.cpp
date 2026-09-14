@@ -3017,7 +3017,6 @@ void NativeLoadCoordinator::finalize_workers_after_follower() {
 }
 
 void NativeLoadCoordinator::finish_process() {
-  report(true);
   auto total = aggregate();
   if (options_.canonical_block_follower &&
       (follower_stats_.errors || follower_stats_.retry_exhausted ||
@@ -3040,6 +3039,10 @@ void NativeLoadCoordinator::finish_process() {
   }
   follower_client_.reset();
   workers_.clear();
+  // Docker may split the large stdout JSON record into separate log frames.
+  // Emit terminal stderr messages before the final record so this coordinator
+  // cannot insert its shutdown message between those stdout fragments.
+  report(true);
   td::actor::SchedulerContext::get().stop();
   stop();
 }

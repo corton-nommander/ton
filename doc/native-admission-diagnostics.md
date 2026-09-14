@@ -131,9 +131,9 @@ join measures remaining wait. Neither is exclusive CPU cost. Empty invocations
 are excluded. Existing per-block validation replay/materialization/dictionary
 and collation execution/commit timers remain available through Session Stats.
 
-Before choosing a serial, ephemeral-thread, or persistent-pool executor, each
-parallel signature helper now checks the same process-wide positive cache used by
-the scalar verifier. If every item is non-null, structurally valid, and cached
+When the preflight is enabled, each parallel signature helper checks the same
+process-wide positive cache used by the scalar verifier before choosing a serial,
+ephemeral-thread, or persistent-pool executor. If every item is non-null, structurally valid, and cached
 under its full signing payload, signature, and exact chain domain, the helper
 returns without launching or waking workers. The first null, invalid, or cache
 miss takes the complete existing verification path. This preserves signature
@@ -143,10 +143,19 @@ flow. `cache_fast_checks`, `cache_fast_hits`, `cache_fast_misses`,
 The hit/miss counters classify whole helper calls; scanned items include the
 prefix examined before a miss, and cached items count only complete all-hit calls.
 `cache_fast_enabled` records the effective configuration. The strict
-`TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH=0|1` control defaults to `1`
+`TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH=0|1` control defaults to `0`
 when unset; any other value fails at the first helper or stats read. Compare
 `0/1` in the same image with the persistent executor disabled so the two
-executor treatments are not conflated.
+executor treatments are not conflated. The September 14 comparison was interrupted
+before a complete ABBA result and supplies no promotion evidence. Keep the flag
+off; the [cache-preflight result](benchmarks/results/native-signature-cache-fastpath-20260914.json)
+records the available observations and their limitations.
+
+The separate default-off `TON_NATIVE_DIRECT_RUN_ZERO_COPY` experiment omits the
+expanded per-output entry vector by retaining strictly decoded canonical NTRN
+parents. Its representation counters and `native_batch_decode` timer are described
+in [native rooted runs](native-rooted-runs.md). It preserves parent signature
+verification and the ordered state engine; codec microbenchmarks are not live TPS.
 
 Validators containing the persistent-executor experiment add monotonic
 `pool_calls`, `pool_tickets`, `pool_threads_created`, `pool_contended_submits`,

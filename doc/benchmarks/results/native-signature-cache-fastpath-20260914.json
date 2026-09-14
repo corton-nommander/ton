@@ -1,0 +1,67 @@
+{
+  "schema": "native-signature-cache-evaluation-v1",
+  "recorded_date": "2026-09-14",
+  "source_revision": "b86757ab780e30c9b54c0cb9ec82b995676d89aa",
+  "benchmark_revision": "245a3377684282fb7225aa378ff9b5afac975c81",
+  "flag": "TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH",
+  "selected_value": 0,
+  "comparison_complete": false,
+  "treatment_promoted": false,
+  "capacity_claim_allowed": false,
+  "planned_order": [
+    "A1",
+    "B1",
+    "B2",
+    "A2"
+  ],
+  "accepted_arms": [
+    "A1"
+  ],
+  "reason": "B1 final stdout JSON was interrupted at its Docker 16384-byte log frame boundary by stderr; reporting was interrupted and no later arm ran. Recovered B1 is diagnostic only. Host rebooted before restart.",
+  "A1": {
+    "status": "accepted_control",
+    "offered_tps": 49875.573333333334,
+    "canonical_tps": 49855.33222036728,
+    "backlog_after_drain": 0,
+    "summary": {
+      "path": "build/benchmarks/native-signature-cache-fastpath-cache-fast-b86757ab780e/01-A1/benchmark-summary.json",
+      "sha256": "95eefebad2c94bf7025cb9875f675ab3b9adfd2df2d6e3ea8c91380f27cfccd8"
+    }
+  },
+  "B1": {
+    "status": "excluded_reporting_failure",
+    "wrapper_exit_code": 141,
+    "recovered_final_diagnostic": {
+      "steady_offered_avg_tps": 40818.58666666667,
+      "canonical_chain_measure_avg_tps": 41440.05342237062,
+      "canonical_total_backlog_after_drain": 0,
+      "nonce_gaps": 0,
+      "transport_errors": 0,
+      "sign_errors": 0,
+      "benchmark_result_valid": true
+    },
+    "cache_counters_diagnostic": {
+      "cache_fast_misses": 0,
+      "cache_fast_hits": 3393,
+      "cache_fast_cached_items": 1761662,
+      "cache_fast_checks": 3393,
+      "cache_fast_scanned_items": 1761662
+    },
+    "raw_log": {
+      "path": "build/benchmarks/native-signature-cache-fastpath-cache-fast-b86757ab780e/02-B1/native-load-generator.log",
+      "sha256": "4a848678a311552c08cb1b3c96d4c9e2668bd65b8a52cecd6b1e55033940de63"
+    },
+    "recovery_evidence": {
+      "path": "build/benchmarks/native-signature-cache-fastpath-cache-fast-b86757ab780e/02-B1-final-record-corruption.json",
+      "sha256": "2fc7b250b781e6d9fe86fb3696f50f7a795c0dcff7515594a923d7e7e6d917c0"
+    }
+  },
+  "fixes": {
+    "record_extraction_commit": "5884fecc56928e798b5241ac62dbbffc235017cd",
+    "full_A1_report_equivalence": {
+      "path": "build/benchmarks/native-signature-cache-fastpath-cache-fast-b86757ab780e/report-speedup-resume/equivalence.json",
+      "sha256": "cb8cdb0bd135e40b3462c2e6b9846f6d856fdfcf4d9887faf77288569f357691"
+    }
+  },
+  "limit": "No ABBA mean, treatment speedup, or capacity ceiling is established."
+}

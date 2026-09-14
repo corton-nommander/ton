@@ -1,0 +1,403 @@
+{
+  "schema": "native-rooted-runs-evaluation-v1",
+  "recorded_date": "2026-09-14",
+  "source_revision": "99765f23e0de360aecf6ba4b814af7e97e6cfe16",
+  "companion_revision": "fac07c513cfde582e5980fcce8f799fd83c078a4",
+  "status": "implemented_component_verified_default_off",
+  "flag": "TON_NATIVE_DIRECT_RUN_ZERO_COPY",
+  "selected_value": 0,
+  "signature_cache_preflight_selected_value": 0,
+  "live_native_comparison_complete": false,
+  "treatment_promoted": false,
+  "capacity_claim_allowed": false,
+  "representation": {
+    "wire_versions": [
+      5,
+      6
+    ],
+    "wire_format_changed": false,
+    "strict_canonical_reconstruction_retained": true,
+    "parent_signature_domain_checks_retained": true,
+    "expanded_entries_in_rooted_decode": 0,
+    "transfer_scratch_per_parent": 1,
+    "signature_copies_per_parent_iteration": 1,
+    "state_engine_and_wire_order_retained": true
+  },
+  "microbenchmark": {
+    "method": {
+      "schema": "native-rooted-microbenchmark-run-v1",
+      "command": [
+        "nice",
+        "-n",
+        "10",
+        "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/test/bench-native-parent-metadata",
+        "--repetitions",
+        "7"
+      ],
+      "source_revision": "99765f23e0de360aecf6ba4b814af7e97e6cfe16",
+      "executable_sha256": "1cf405191988b7692b08ea62465c877233de357cfab2235a8e4cc7d5899e30d9",
+      "returncode": 0,
+      "elapsed_s": 26.116728417000104,
+      "repetitions": 7,
+      "records": 336,
+      "raw_sha256": "e88c3366361a701cbf87b0d35030298b3e3ce1c3aeb6072072cab3545a67c41f",
+      "concurrent_task_compilation": false,
+      "max_rss_kib": 123980,
+      "compiler": "clang++-22",
+      "cmake_build_type": "Release",
+      "cpu": "AMD Ryzen 9 3900X 12-Core Processor",
+      "limit": "Warm-cache local codec measurements; no cryptographic verification or end-to-end TPS."
+    },
+    "raw": {
+      "path": "build/benchmarks/native-rooted-runs-20260914/microbenchmark.jsonl",
+      "sha256": "e88c3366361a701cbf87b0d35030298b3e3ce1c3aeb6072072cab3545a67c41f"
+    },
+    "receipt": {
+      "path": "build/benchmarks/native-rooted-runs-20260914/microbenchmark-receipt.json",
+      "sha256": "039314e91e8b1936cd3de491946608004e402ce9d8a45a44846d22370e5a7581"
+    },
+    "comparisons": [
+      {
+        "version": 5,
+        "workload": "repeated_output",
+        "logical_updates": 16384,
+        "parents": 1024,
+        "boc_bytes": 246126,
+        "strict_decode": {
+          "control_stage": "strict_full_unpack",
+          "rooted_stage": "strict_rooted_unpack",
+          "control_median_us": 19050.981,
+          "rooted_median_us": 9370.045,
+          "median_speedup": 2.0331792430025684,
+          "control_mean_us": 19008.7191429,
+          "rooted_mean_us": 9586.22957143
+        },
+        "serialization": {
+          "control_stage": "expanded_store",
+          "rooted_stage": "rooted_store",
+          "control_median_us": 7461.674,
+          "rooted_median_us": 327.361,
+          "median_speedup": 22.793411554827852,
+          "control_mean_us": 7454.06271429,
+          "rooted_mean_us": 332.493
+        }
+      },
+      {
+        "version": 5,
+        "workload": "repeated_output",
+        "logical_updates": 65536,
+        "parents": 4096,
+        "boc_bytes": 984222,
+        "strict_decode": {
+          "control_stage": "strict_full_unpack",
+          "rooted_stage": "strict_rooted_unpack",
+          "control_median_us": 77397.324,
+          "rooted_median_us": 43261.648,
+          "median_speedup": 1.7890516792148092,
+          "control_mean_us": 75796.9421429,
+          "rooted_mean_us": 44120.8285714
+        },
+        "serialization": {
+          "control_stage": "expanded_store",
+          "rooted_stage": "rooted_store",
+          "control_median_us": 36077.055,
+          "rooted_median_us": 1213.44,
+          "median_speedup": 29.731222804588608,
+          "control_mean_us": 37774.1007143,
+          "rooted_mean_us": 1212.98328571
+        }
+      },
+      {
+        "version": 5,
+        "workload": "distinct_outputs",
+        "logical_updates": 16384,
+        "parents": 1024,
+        "boc_bytes": 1063278,
+        "strict_decode": {
+          "control_stage": "strict_full_unpack",
+          "rooted_stage": "strict_rooted_unpack",
+          "control_median_us": 21543.873,
+          "rooted_median_us": 9996.692,
+          "median_speedup": 2.155100207148525,
+          "control_mean_us": 21390.5137143,
+          "rooted_mean_us": 10055.1445714
+        },
+        "serialization": {
+          "control_stage": "expanded_store",
+          "rooted_stage": "rooted_store",
+          "control_median_us": 7546.411,
+          "rooted_median_us": 310.91,
+          "median_speedup": 24.272011192949726,
+          "control_mean_us": 7490.10557143,
+          "rooted_mean_us": 337.883
+        }
+      },
+      {
+        "version": 5,
+        "workload": "distinct_outputs",
+        "logical_updates": 65536,
+        "parents": 4096,
+        "boc_bytes": 4326561,
+        "strict_decode": {
+          "control_stage": "strict_full_unpack",
+          "rooted_stage": "strict_rooted_unpack",
+          "control_median_us": 92016.144,
+          "rooted_median_us": 41171.092,
+          "median_speedup": 2.2349697209877264,
+          "control_mean_us": 97268.6485714,
+          "rooted_mean_us": 42865.6495714
+        },
+        "serialization": {
+          "control_stage": "expanded_store",
+          "rooted_stage": "rooted_store",
+          "control_median_us": 39382.369,
+          "rooted_median_us": 1242.8,
+          "median_speedup": 31.68842050209205,
+          "control_mean_us": 39102.9135714,
+          "rooted_mean_us": 1401.23571429
+        }
+      },
+      {
+        "version": 6,
+        "workload": "repeated_output",
+        "logical_updates": 16384,
+        "parents": 1024,
+        "boc_bytes": 246126,
+        "strict_decode": {
+          "control_stage": "strict_full_unpack",
+          "rooted_stage": "strict_rooted_unpack",
+          "control_median_us": 14202.037,
+          "rooted_median_us": 9522.548,
+          "median_speedup": 1.4914114373589924,
+          "control_mean_us": 14120.8577143,
+          "rooted_mean_us": 9563.45471429
+        },
+        "serialization": {
+          "control_stage": "expanded_store",
+          "rooted_stage": "rooted_store",
+          "control_median_us": 6906.518,
+          "rooted_median_us": 297.6,
+          "median_speedup": 23.20738575268817,
+          "control_mean_us": 6937.44528571,
+          "rooted_mean_us": 298.041428571
+        }
+      },
+      {
+        "version": 6,
+        "workload": "repeated_output",
+        "logical_updates": 65536,
+        "parents": 4096,
+        "boc_bytes": 984222,
+        "strict_decode": {
+          "control_stage": "strict_full_unpack",
+          "rooted_stage": "strict_rooted_unpack",
+          "control_median_us": 74411.392,
+          "rooted_median_us": 40769.604,
+          "median_speedup": 1.8251683778925105,
+          "control_mean_us": 73807.6878571,
+          "rooted_mean_us": 41243.4712857
+        },
+        "serialization": {
+          "control_stage": "expanded_store",
+          "rooted_stage": "rooted_store",
+          "control_median_us": 34603.354,
+          "rooted_median_us": 1178.279,
+          "median_speedup": 29.36770832714493,
+          "control_mean_us": 35288.3728571,
+          "rooted_mean_us": 1179.07514286
+        }
+      },
+      {
+        "version": 6,
+        "workload": "distinct_outputs",
+        "logical_updates": 16384,
+        "parents": 1024,
+        "boc_bytes": 1063278,
+        "strict_decode": {
+          "control_stage": "strict_full_unpack",
+          "rooted_stage": "strict_rooted_unpack",
+          "control_median_us": 15609.14,
+          "rooted_median_us": 7932.875,
+          "median_speedup": 1.9676523328553646,
+          "control_mean_us": 15799.7042857,
+          "rooted_mean_us": 8027.63928571
+        },
+        "serialization": {
+          "control_stage": "expanded_store",
+          "rooted_stage": "rooted_store",
+          "control_median_us": 6375.226,
+          "rooted_median_us": 294.809,
+          "median_speedup": 21.624936823502672,
+          "control_mean_us": 6450.10885714,
+          "rooted_mean_us": 295.969714286
+        }
+      },
+      {
+        "version": 6,
+        "workload": "distinct_outputs",
+        "logical_updates": 65536,
+        "parents": 4096,
+        "boc_bytes": 4326561,
+        "strict_decode": {
+          "control_stage": "strict_full_unpack",
+          "rooted_stage": "strict_rooted_unpack",
+          "control_median_us": 83806.908,
+          "rooted_median_us": 43780.388,
+          "median_speedup": 1.9142568585732953,
+          "control_mean_us": 83606.3804286,
+          "rooted_mean_us": 42823.3895714
+        },
+        "serialization": {
+          "control_stage": "expanded_store",
+          "rooted_stage": "rooted_store",
+          "control_median_us": 38738.949,
+          "rooted_median_us": 1358.789,
+          "median_speedup": 28.509907719300053,
+          "control_mean_us": 39287.2282857,
+          "rooted_mean_us": 1376.50314286
+        }
+      }
+    ],
+    "limitations": [
+      "Warm-cache isolated codec stages overlap and are not additive.",
+      "Strict decode starts from an available cell graph; separate raw rows include BOC decoding.",
+      "No cryptographic signature verification, account replay, networking or end-to-end TPS is measured.",
+      "Task compilation finished before this run; this is not an otherwise isolated host.",
+      "Earlier concurrent-build exploratory measurements are excluded."
+    ]
+  },
+  "validation": {
+    "build": {
+      "result": "passed",
+      "compiler_jobs": 2,
+      "nice": 10,
+      "targets": [
+        "validator-engine",
+        "native-load-generator",
+        "test-native-parent-metadata",
+        "bench-native-parent-metadata",
+        "test-native-work-scratch",
+        "test-collator-external-wait-stats",
+        "test-cells"
+      ],
+      "logs": [
+        {
+          "path": "build/benchmarks/native-rooted-runs-20260914/build-codec.log",
+          "sha256": "8e321641b139624acdff3e0d090ac1eda661ce821c0e7fa4f226dfa43601ce56"
+        },
+        {
+          "path": "build/benchmarks/native-rooted-runs-20260914/build-validator.log",
+          "sha256": "b307969dfa4cc0fccd37061f34b1d60acaa68de35411c27ecba7fe59723e56c3"
+        },
+        {
+          "path": "build/benchmarks/native-rooted-runs-20260914/build-final.log",
+          "sha256": "4f5cd0dabb81051efdaa275a84de960c39e1962b5425d8f604a41906dd08f90a"
+        }
+      ],
+      "executables": [
+        {
+          "path": "build/validator-engine/validator-engine",
+          "sha256": "2d94b09e667eebf299dcf9804e97aa8cd69153fc294353f566ee8d18dccf6ebb"
+        },
+        {
+          "path": "build/lite-client/native-load-generator",
+          "sha256": "2636e25b9c6e3e174ca5fde921b249b139b5692008143161bcc6ee9cc08f76e6"
+        }
+      ],
+      "provenance_note": "Executables were compiled before the source commit; compiled source matches that revision, while embedded Git labels can predate it."
+    },
+    "tests": [
+      {
+        "name": "test-native-parent-metadata",
+        "passed": 13,
+        "log": {
+          "path": "build/benchmarks/native-rooted-runs-20260914/test-parent-metadata.log",
+          "sha256": "28812b0c8e9bf28ec039b3c4daf8274d5e4e1e86f435c7a02490596507443597"
+        }
+      },
+      {
+        "name": "test-cells",
+        "passed": 40,
+        "log": {
+          "path": "build/benchmarks/native-rooted-runs-20260914/test-cells.log",
+          "sha256": "9e19d91d04ee0171d661b2bbb3486a8903475231aaae0d2750a7e4b683232ace"
+        }
+      },
+      {
+        "name": "test-native-work-scratch",
+        "passed": 5,
+        "log": {
+          "path": "build/benchmarks/native-rooted-runs-20260914/test-work-scratch.log",
+          "sha256": "5d12401f9717f3bddea39bfa0c0bbddecf7ab8f3854f03f2cb3696538e46c355"
+        }
+      },
+      {
+        "name": "test-collator-external-wait-stats",
+        "passed": 15,
+        "log": {
+          "path": "build/benchmarks/native-rooted-runs-20260914/test-collator-external-wait-stats.log",
+          "sha256": "bfec6008e8126a7cec7eba0b646e824d247375f0ff100771f88dc5b21848af49"
+        }
+      }
+    ],
+    "reporting_suite": {
+      "result": "passed",
+      "log": {
+        "path": "build/benchmarks/native-rooted-runs-20260914/reporting-suite.log",
+        "sha256": "b7566be9c03f1d50b081055838da2033dca258db61424fd81b6a438d129ce586"
+      }
+    },
+    "remaining_gap": "Real Collator/ValidateQuery execution with rooted runs across failed work, rejected checkpoints and intake deadlines. Component tests exercise codec/state engine and journal primitives separately."
+  },
+  "reporting": {
+    "indexed_reducer_equivalence": {
+      "schema": "native-pipeline-report-equivalence-v1",
+      "archive": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-signature-cache-fastpath-cache-fast-b86757ab780e/01-A1",
+      "output": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/native-signature-cache-fastpath-cache-fast-b86757ab780e/report-speedup-resume/validator-pipeline-summary.json",
+      "returncode": 0,
+      "elapsed_s": 24.604130406999957,
+      "cpu_user_s": 23.542598,
+      "cpu_system_s": 0.9756509999999999,
+      "max_rss_kib": 1193112,
+      "input_bytes": 163008240,
+      "expected_sha256": "4cb34de2137eb26a71921004c80b90bf2cf781bf07517c8c08d9a2b99e61b127",
+      "actual_sha256": "4cb34de2137eb26a71921004c80b90bf2cf781bf07517c8c08d9a2b99e61b127",
+      "byte_identical": true,
+      "json_identical": true,
+      "stderr": "",
+      "measure_window": {
+        "start": 1789333951.37,
+        "end": 1789334551.37
+      },
+      "baseline_rerun": false,
+      "nice": 10
+    },
+    "current_report_archive_compatibility": {
+      "schema": "native-rooted-report-archive-compatibility-v1",
+      "returncode": 0,
+      "elapsed_s": 25.334246469000163,
+      "input_bytes": 163008240,
+      "normalized_previous_fields_identical": true,
+      "missing_rooted_telemetry_not_zero": true,
+      "populations_checked": 8,
+      "actual_sha256": "7e2f265d787a32ec0faf6125def4ee9048b82be523d1c07c63d129dbac15f3a6",
+      "baseline_sha256": "4cb34de2137eb26a71921004c80b90bf2cf781bf07517c8c08d9a2b99e61b127",
+      "companion_revision": "fac07c513cfde582e5980fcce8f799fd83c078a4",
+      "max_rss_kib": 1213516,
+      "nice": 10
+    },
+    "evidence": [
+      {
+        "path": "build/benchmarks/native-signature-cache-fastpath-cache-fast-b86757ab780e/report-speedup-resume/equivalence.json",
+        "sha256": "cb8cdb0bd135e40b3462c2e6b9846f6d856fdfcf4d9887faf77288569f357691"
+      },
+      {
+        "path": "build/benchmarks/native-rooted-runs-20260914/report-archive-compatibility.json",
+        "sha256": "40cfef5ea6e69917e8408e7922509bbefdf04a59da5de9e06c2d49c0765f82ab"
+      }
+    ],
+    "old_runtime_observation": "Approximately 16 minutes for the original report reducer; no paired slow baseline rerun.",
+    "shutdown": "Exec-chain PID and SIGTERM tests pass without Docker; no new-image runtime stop test performed."
+  },
+  "deployment": "No new Docker image built or live rooted mode enabled during the post-reboot resume."
+}

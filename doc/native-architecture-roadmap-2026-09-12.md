@@ -80,9 +80,19 @@ and are not TPS forecasts.
    An exact positive-cache preflight is now implemented separately. It avoids a
    worker cohort only when every immutable signed payload already passed the
    same domain-bound verification during admission; every miss takes the full
-   verifier path. It defaults on, has a strict same-image control, and reports
-   checks, hits, misses and item coverage. Its end-to-end effect remains
-   unmeasured.
+   verifier path. It now defaults off and reports checks, hits, misses and item
+   coverage. Its same-image ABBA attempt was interrupted; the available
+   observations do not justify promotion or a capacity claim. See the
+   [cache-preflight result](benchmarks/results/native-signature-cache-fastpath-20260914.json).
+   A separate default-off [rooted-run path](native-rooted-runs.md) is implemented
+   in collation and validation. It retains strictly parsed canonical v5/v6 parents,
+   omits the expanded logical-entry vector, reuses parent roots at serialization,
+   and visits outputs through one reusable transfer scratch per parent. It keeps
+   domain-bound signature checks and the existing state engine in wire order.
+   Differential codec/state tests pass; an actual native Collator runtime
+   comparison remains required before enabling it. Local codec measurements are
+   recorded in the [rooted-run result](benchmarks/results/native-rooted-runs-20260914.json)
+   and are not end-to-end throughput evidence.
    Build per-account dependency components so
    independent source/destination chains execute concurrently and commit in stable
    original order. In the earlier balanced-control diagnostics, replay was
@@ -166,8 +176,10 @@ the combined loss. Lane-homogeneous admission batches can separately test whethe
 the slowest-owner join barrier matters. Both are diagnostics; neither addresses
 the shared validation and durability paths that now have stronger evidence.
 
-Implementation order: keep the persistent executor disabled; screen the exact
-signature-cache preflight and validated-state handoff independently; collect the
+Implementation order: keep the persistent executor and signature-cache preflight
+disabled; finish a bounded native runtime correctness check for the rooted-run
+path before any live performance screen. Screen rooted runs and validated-state
+handoff independently; collect the
 callback stage split and test the mailbox quantum only if the pool boundary
 dominates; then run the three-arm CellDb profile-off/profile-on/sync-false ceiling
 before adding a durability coordinator. Compare the revised lane scheduler only
@@ -178,3 +190,16 @@ complete canonical proofs, zero residual drain, stable identities and at least 5
 useful offered-load surplus before a capacity claim. A 200k claim must use full-window
 proof-observed canonical throughput with a load source capable of at least ~210k
 useful transfers/s.
+
+The resumed benchmark work also repaired reporting and process shutdown.
+Payment-lane preflight now reads the resolved Compose environment. Final-record
+extraction requires exactly one complete JSON record from the original Docker
+log, records its source hash/offset, and rejects malformed or incomplete records;
+the generator now emits its terminal stderr messages before that stdout record.
+An indexed report reducer reproduced the original archived A1 summary byte for
+byte in 24.604 seconds on 163,008,240 input bytes. This is a reporting measurement,
+not validator throughput. The entrypoint exec chain passed fake-engine PID and
+SIGTERM tests but still needs an image-level stop check. See the
+[continuation report](native-lane-pipeline-cycles-2026-09-12.md#september-14-continuation)
+for the evidence boundaries. These fixes do not make an interrupted comparison
+eligible for promotion.

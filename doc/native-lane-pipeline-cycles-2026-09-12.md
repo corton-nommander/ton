@@ -128,6 +128,9 @@ TON_NATIVE_ADMISSION_LANE_OWNERS=0
 TON_NATIVE_LANE_SCHEDULERS=0
 TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0
 TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=0
+TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH=0
+TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL=0
+TON_NATIVE_DIRECT_RUN_ZERO_COPY=0
 ```
 
 The [reference environment fragment](benchmark-profiles/native-lane-pipeline-reference.env)
@@ -237,3 +240,54 @@ These are hypotheses from the saved diagnostics, including the valid balanced
 comparison. They are not performance gains or a forecast of 200,000 TPS. Additional
 connections, RAM and larger windows remain lower priority given whole-container
 CPU headroom and unused window/query credit; per-group saturation remains possible.
+
+## September 14 continuation
+
+The exact positive signature-cache preflight has an independent `0/1` control,
+but its resumed same-image ABBA comparison was interrupted. Keep
+`TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH=0`; it is now also the unset C++
+default. The [cache-preflight record](benchmarks/results/native-signature-cache-fastpath-20260914.json)
+preserves the observations and validity limitations. A1 is the sole accepted arm,
+at 49,855.33 canonical TPS. B1's recovered 41,440.05 TPS is diagnostic only: its
+wrapper exited 141 after the final JSON record was split by stderr at a Docker
+log-frame boundary. B2 and A2 did not run. Neither the recovered final record nor
+its active cache-hit counters turn B1 into an accepted benchmark. There is no
+completed-ABBA mean, treatment speedup, promotion or capacity claim from that context.
+
+A larger work reduction is now implemented behind
+`TON_NATIVE_DIRECT_RUN_ZERO_COPY=1`: collation and validation retain canonical
+v5/v6 signed parents, avoid the expanded logical-entry vector and reuse canonical
+parent roots during serialization. One transfer scratch per parent feeds the
+same state engine in wire order after parent authorization. Version, domain,
+locality and canonical-tree checks remain enforced. The flag defaults off.
+
+The [rooted-run design and validation](native-rooted-runs.md) document 13 passing
+metadata tests and 40 passing cell tests, including differential wire and state
+replay checks. The [compact result](benchmarks/results/native-rooted-runs-20260914.json)
+records local microbenchmark evidence. An actual native Collator
+runtime check is still required; these tests and codec timings establish no live
+TPS gain.
+
+Benchmark reporting was corrected separately:
+
+- Payment-lane preflight reads the resolved Compose environment instead of an
+  unsourced host variable (`245a337`).
+- Final-record extraction from the original merged Docker log requires exactly
+  one complete record, records the source hash and offsets, and rejects malformed
+  or incomplete input (`5884fe`). The generator now also emits terminal stderr
+  messages before its final stdout JSON record, avoiding its own shutdown-message
+  insertion between Docker log fragments.
+- The indexed report reducer (`0aa77c9`, `e67028e`) processed the archived
+  163,008,240-byte A1 input in 24.604 seconds at nice 10 and reproduced the original
+  summary byte for byte, SHA-256
+  `4cb34de2137eb26a71921004c80b90bf2cf781bf07517c8c08d9a2b99e61b127`.
+  The earlier approximately 16-minute reduction is a historical observation;
+  the baseline was not rerun as a controlled timing pair. The equivalence receipt
+  is linked from the cache-preflight result. Exact byte equivalence applies to
+  those parser revisions; later additive rooted-run report fields change the
+  output schema.
+- The entrypoint exec chain (`467e8b0`) passes fake-engine PID and SIGTERM tests.
+  An image-level validator stop test has not been completed.
+
+These repairs improve reporting and process control. They do not authorize
+substituting an interrupted arm for a valid performance comparison.

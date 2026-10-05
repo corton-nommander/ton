@@ -1,0 +1,133 @@
+#include "imports/stdlib.func";
+
+;;; ===========================================================================
+;;; fatbastard.fc  --  fat-state load generator (FunC, no Tolk optimisations).
+;;;
+;;; Reproduces the mainnet memecoin bots that inflated their OWN account storage
+;;; to thousands of cells (depth ~18).  Every time the collator loads such an
+;;; account it must walk the whole cell tree to (re)compute the storage-dict
+;;; hash for full collated data -- `prelim_storage_stat` /
+;;; `compute_account_storage_dict`.  That collation-TIME cost, NOT gas, is what
+;;; actually drove the late-July basechain shard splits (long_collation): 30% of
+;;; all collation time, dominant phase on 1274/1277 long_collation blocks, while
+;;; TVM was 1.6%.
+;;;
+;;; Two levers:
+;;;   grow -- inflate state to N cells at depth D (chunk it; each grow costs gas
+;;;           to build cells, so keep `count` small and send many).
+;;;   poke -- a cheap message that MUTATES a nonce, so the storage-dict hash
+;;;           changes -> the per-run StorageStatCache misses -> the collator
+;;;           re-walks the ENTIRE tree.  This is the expensive path; drive a
+;;;           stream of pokes with the Go spammer to load the collator.
+;;;
+;;; The mutation matters: without it the cache hits after the first touch and
+;;; the walk is skipped.  The real bots mutated their state every tx, so we do
+;;; too.
+;;; ===========================================================================
+
+const int op::grow  = 0x46415447;  ;; "FATG"
+const int op::poke  = 0x46415450;  ;; "FATP" (any body < 32 bits also = poke)
+const int op::reset = 0x46415452;  ;; "FATR" -- drop the whole dict (cleanup)
+
+const int KEY_LEN = 64;
+const int DEFAULT_GROW_BUDGET = 900000;  ;; gas cap for one grow if body omits it
+
+;; Gas consumed so far in this transaction (TVM GASCONSUMED, v4+).
+int gas_consumed() asm "GASCONSUMED";
+
+;; storage: store:dict(64 -> ^chain)  next_key:uint64  cells_hint:uint64  nonce:uint64
+global cell store;
+global int next_key;
+global int cells_hint;
+global int nonce;
+
+() load_data() impure {
+    slice ds = get_data().begin_parse();
+    store      = ds~load_dict();
+    next_key   = ds~load_uint(64);
+    cells_hint = ds~load_uint(64);
+    nonce      = ds~load_uint(64);
+}
+
+() save_data() impure {
+    set_data(begin_cell()
+        .store_dict(store)
+        .store_uint(next_key, 64)
+        .store_uint(cells_hint, 64)
+        .store_uint(nonce, 64)
+        .end_cell());
+}
+
+;; Build a chain of `depth` UNIQUE cells.  `seed` (the entry's key) plus the
+;; per-cell index make every cell unique, so nothing dedups and the real cell
+;; count grows by exactly `depth`.
+cell build_chain(int seed, int depth) {
+    cell c = begin_cell().store_uint(seed, 64).store_uint(0xFA7, 12).end_cell();
+    int i = 1;
+    repeat (depth - 1) {
+        c = begin_cell().store_uint(seed, 64).store_uint(i, 24).store_ref(c).end_cell();
+        i += 1;
+    }
+    return c;
+}
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    if (flags & 1) {            ;; ignore bounced
+        return ();
+    }
+
+    load_data();
+
+    ;; Bare / short body -> poke: mutate the nonce so the storage-dict hash
+    ;; changes and the next collation re-walks the whole tree.
+    if (in_msg_body.slice_bits() < 32) {
+        nonce += 1;
+        save_data();
+        return ();
+    }
+
+    int op = in_msg_body~load_uint(32);
+
+    if (op == op::grow) {
+        int count = in_msg_body~load_uint(32);   ;; max entries to add this message
+        int depth = in_msg_body~load_uint(16);   ;; cells per entry (tree depth)
+        ;; Optional gas budget: stop early (committing partial progress) so a
+        ;; single oversized grow adapts to the network's per-tx gas limit
+        ;; instead of running out of gas and reverting the whole message.
+        int budget = DEFAULT_GROW_BUDGET;
+        if (in_msg_body.slice_bits() >= 32) {
+            budget = in_msg_body~load_uint(32);
+        }
+        if (depth < 1) { depth = 1; }
+        int added = 0;
+        while ((added < count) & (gas_consumed() < budget)) {
+            cell v = build_chain(next_key, depth);
+            store~udict_set_ref(KEY_LEN, next_key, v);
+            next_key   += 1;
+            cells_hint += depth + 1;   ;; +1 for the dict leaf holding the ref
+            added += 1;
+        }
+        save_data();
+        return ();
+    }
+
+    if (op == op::reset) {
+        store = new_dict();
+        next_key = 0;
+        cells_hint = 0;
+        nonce += 1;
+        save_data();
+        return ();
+    }
+
+    ;; op::poke or any other op -> mutate + touch only.
+    nonce += 1;
+    save_data();
+}
+
+;; ---- getters ----
+int get_next_key() method_id { load_data(); return next_key; }
+int get_cells_hint() method_id { load_data(); return cells_hint; }
+int get_nonce() method_id { load_data(); return nonce; }

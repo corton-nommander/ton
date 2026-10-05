@@ -1,0 +1,20 @@
+node_modules
+temp
+dist
+.DS_Store
+*.txt
+!big_accounts*
+!go-spam/pkg/gram/comments.txt
+*.log
+ton-mesh
+go-spam/build
+# CocoIndex Code (ccc)
+/.cocoindex_code/
+configs-private/
+
+# WalletSpam pool secret (32-byte ed25519 seed) — NEVER commit
+pool.key
+*.key
+wallets.toml
+*.addrs
+__pycache__/

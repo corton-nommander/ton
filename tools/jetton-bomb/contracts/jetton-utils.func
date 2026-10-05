@@ -1,0 +1,75 @@
+#include "params.func";
+const int ONE_TON = 100;
+
+cell pack_jetton_wallet_data (int balance, slice owner, slice jetton_master, cell token_wallet_code) inline {
+    return  begin_cell()
+            .store_grams(balance)
+            .store_slice(owner)
+            .store_slice(jetton_master)
+            .store_ref(token_wallet_code)
+            .end_cell();
+}
+{-
+    _ split_depth:(Maybe (## 5)) special:(Maybe TickTock)
+      code:(Maybe ^Cell) data:(Maybe ^Cell)
+      library:(HashmapE 256 SimpleLib) = StateInit;
+-}
+
+const int SPLIT_DEPTH = 4;
+
+{-
+  _ split_depth:(Maybe (## 5)) special:(Maybe TickTock)
+    code:(Maybe ^Cell) data:(Maybe ^Cell)
+    library:(Maybe ^Cell) = StateInit;
+-}
+
+cell calculate_jetton_wallet_state_init (slice owner, slice jetton_master, cell code) inline {
+    return begin_cell()
+            .store_uint(1, 1) ;; split_depth (Maybe = 1) 
+            .store_uint(SPLIT_DEPTH, 5)
+            .store_uint(0, 1) ;; special (Maybe = 0)
+            .store_maybe_ref(code)
+            .store_maybe_ref(pack_jetton_wallet_data(1000000, owner, jetton_master, code)) ;; 1m default balance
+            .store_uint(0, 1) ;; libraries - empty cell
+            .end_cell();
+}
+
+slice create_std_addr(int wc, int hash_part) inline {
+  return begin_cell()
+          .store_uint(4, 3)
+          .store_int(wc, 8)
+          .store_uint(hash_part, 256)
+          .end_cell()
+          .begin_parse();
+}
+
+slice cast_to_std_addr(slice addr) inline {
+    (int wc, int hash_part) = parse_std_addr(addr);
+    return create_std_addr(wc, hash_part);
+}
+
+{-
+  _ split_depth:(Maybe (## 5)) special:(Maybe TickTock)
+    code:(Maybe ^Cell) data:(Maybe ^Cell)
+    library:(Maybe ^Cell) = StateInit;
+
+  anycast_info$_ depth:(#<= 30) { depth >= 1 }
+     rewrite_pfx:(bits depth) = Anycast;
+
+  addr_std$10 anycast:(Maybe Anycast)
+   workchain_id:int8 address:bits256  = MsgAddressInt;
+-}
+
+slice calc_address(cell state_init, int shard) inline {
+    int hashpart = cell_hash(state_init);
+    int bits_to_leave = 256 - SPLIT_DEPTH;
+    hashpart = (shard << bits_to_leave) | (hashpart & ((1 << bits_to_leave) - 1));
+    return create_std_addr(workchain, hashpart);
+}
+
+(slice) calc_user_wallet (slice owner, slice jetton_master, cell code) inline {
+    var (wc, hashpart) = parse_std_addr(owner);
+    int shard = hashpart >> (256 - SPLIT_DEPTH);
+    return calc_address(calculate_jetton_wallet_state_init(owner, jetton_master, code), shard);
+}
+

@@ -1,0 +1,299 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 100,
+      "type": "timeseries",
+      "title": "Jetton Transfer time",
+      "description": "full_trace_time = on-chain trace span (last tx block time - first tx block time, as in tonscan). finalized_action_in = when got finalized action from toncenter's streaming.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "pluginVersion": "12.1.1",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": 0,
+            "barWidthFactor": 0.8,
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "gradientMode": "none",
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "seconds",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "full_trace_time"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "full_trace_time (on-chain)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "finalized_action_in"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "finalized_action_in (streaming)"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "dmtestnetch"
+          },
+          "editorType": "sql",
+          "queryType": "table",
+          "rawSql": "SELECT\n  fromUnixTimestamp(toInt64(min(utime))) AS ts,\n  lower(hex(base64Decode(msghash)))      AS msghash_hex,   /* join key only, hidden in the panel */\n  argMax(finalized_action_in, updated_at) AS finalized_action_in\nFROM dm_testnet.toncenter_streaming_testnet\nWHERE $__timeFilter(fromUnixTimestamp(toInt64(utime)))\nGROUP BY msghash_hex\nORDER BY ts\nLIMIT 60000",
+          "refId": "A",
+          "format": 1
+        },
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "testnetdch"
+          },
+          "editorType": "sql",
+          "queryType": "table",
+          "rawSql": "SELECT\n  lower(hex(base64Decode(toString(m.hash_norm)))) AS msghash_hex,\n  max(d.full_trace_time)                          AS full_trace_time\nFROM\n(\n  SELECT hash_norm, tx_trace_id\n  FROM testnet_d.messages\n  WHERE direction = 'in' AND source IS NULL\n    AND destination = '0:CCA3DC4922DEAA32160983996E8482B5F179112552943DE3A0AC0D0E449A1381'  /* monitor sender wallet */\n    AND tx_now >= toUnixTimestamp($__fromTime)\n    AND tx_now <= toUnixTimestamp($__toTime)\n) AS m\nINNER JOIN\n(\n  /* ZOOM-INVARIANT: keep the LOWER bound (the external is the trace's first tx, so the\n     trace cannot start earlier) but DROP the upper bound, so a tail landing hours after\n     the external is still counted. trace_id IN (<same anchor>) keeps it cheap. */\n  SELECT trace_id, max(now) - min(now) AS full_trace_time\n  FROM testnet_d.transactions\n  WHERE now >= toUnixTimestamp($__fromTime) - 300\n    AND trace_id IN (\n      SELECT tx_trace_id FROM testnet_d.messages\n      WHERE direction = 'in' AND source IS NULL\n        AND destination = '0:CCA3DC4922DEAA32160983996E8482B5F179112552943DE3A0AC0D0E449A1381'\n        AND tx_now >= toUnixTimestamp($__fromTime) - 300\n        AND tx_now <= toUnixTimestamp($__toTime)\n    )\n  GROUP BY trace_id\n) AS d ON m.tx_trace_id = d.trace_id\nGROUP BY msghash_hex\nLIMIT 60000",
+          "refId": "B",
+          "format": 1
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "msghash_hex",
+            "mode": "inner"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "msghash_hex": true
+            },
+            "renameByName": {},
+            "indexByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 101,
+      "type": "table",
+      "title": "TX hashes + full_trace_time (merged)",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "pluginVersion": "12.1.1",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "full_trace_time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "finalized_action_in"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "ts",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "dmtestnetch"
+          },
+          "editorType": "sql",
+          "queryType": "table",
+          "rawSql": "SELECT\n  fromUnixTimestamp(toInt64(utime))        AS ts,\n  lower(hex(base64Decode(msghash)))        AS msghash_hex,   /* paste this into tonscan */\n  msghash                                  AS msghash_base64,\n  finalized_action_in\nFROM dm_testnet.toncenter_streaming_testnet\nWHERE $__timeFilter(fromUnixTimestamp(toInt64(utime)))\nORDER BY ts\nLIMIT 60000",
+          "refId": "A",
+          "format": 1
+        },
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "testnetdch"
+          },
+          "editorType": "sql",
+          "queryType": "table",
+          "rawSql": "SELECT\n  lower(hex(base64Decode(toString(m.hash_norm)))) AS msghash_hex,\n  d.full_trace_time     AS full_trace_time\nFROM\n(\n  SELECT hash_norm, tx_trace_id\n  FROM testnet_d.messages\n  WHERE direction = 'in' AND source IS NULL\n    AND destination = '0:CCA3DC4922DEAA32160983996E8482B5F179112552943DE3A0AC0D0E449A1381'\n    AND tx_now >= toUnixTimestamp($__fromTime) - 300\n    AND tx_now <= toUnixTimestamp($__toTime)\n) AS m\nINNER JOIN\n(\n  /* ZOOM-INVARIANT: lower bound only + anchor (see bar panel comment) */\n  SELECT trace_id, max(now) - min(now) AS full_trace_time\n  FROM testnet_d.transactions\n  WHERE now >= toUnixTimestamp($__fromTime) - 300\n    AND trace_id IN (\n      SELECT tx_trace_id FROM testnet_d.messages\n      WHERE direction = 'in' AND source IS NULL\n        AND destination = '0:CCA3DC4922DEAA32160983996E8482B5F179112552943DE3A0AC0D0E449A1381'\n        AND tx_now >= toUnixTimestamp($__fromTime) - 300\n        AND tx_now <= toUnixTimestamp($__toTime)\n    )\n  GROUP BY trace_id\n) AS d ON m.tx_trace_id = d.trace_id\nLIMIT 60000",
+          "refId": "B",
+          "format": 1
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "msghash_hex",
+            "mode": "outer"
+          }
+        }
+      ]
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": [],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Full trace time - testnet",
+  "uid": "fulltracetimetestnet",
+  "version": 1,
+  "weekStart": ""
+}

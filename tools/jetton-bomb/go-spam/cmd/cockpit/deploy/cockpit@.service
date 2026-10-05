@@ -1,0 +1,17 @@
+[Unit]
+Description=TON load cockpit (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=victor
+Group=victor
+EnvironmentFile=-/etc/cockpit/%i.env
+ExecStart=/usr/local/bin/cockpit --network %i --pool-config /etc/cockpit/%i.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

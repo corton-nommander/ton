@@ -82,6 +82,47 @@ TEST(Block, MsgProcessedUptoSplitRequiresAncestorOwner) {
   ASSERT_EQ(child_to_sibling.owner, left);
 }
 
+TEST(Block, MissingAccountStateMatchesCanonicalAccountNone) {
+  td::Ref<vm::Cell> canonical_none;
+  ASSERT_TRUE(block::gen::t_Account.cell_pack_account_none(canonical_none));
+  ASSERT_TRUE(block::gen::t_Account.validate_ref(canonical_none));
+
+  // Validation synthesizes Account for an absent ShardAccounts dictionary
+  // entry. Its hash must equal the state collation uses for a new account.
+  td::Ref<vm::Cell> absent_state;
+  ASSERT_TRUE(block::tlb::ShardAccount::extract_account_state({}, absent_state));
+  ASSERT_EQ(absent_state->get_hash(), canonical_none->get_hash());
+  ASSERT_TRUE(block::gen::t_Account.validate_ref(absent_state));
+
+  block::tlb::ShardAccount::Record absent_record;
+  ASSERT_TRUE(absent_record.reset());
+  ASSERT_EQ(absent_record.account->get_hash(), absent_state->get_hash());
+  ASSERT_TRUE(absent_record.valid && absent_record.is_zero);
+  ASSERT_EQ(absent_record.last_trans_lt, 0u);
+  ASSERT_TRUE(absent_record.last_trans_hash.is_zero());
+
+  ton::StdSmcAddress address;
+  address.clear();
+  for (auto workchain : {ton::masterchainId, ton::basechainId}) {
+    block::Account new_account{workchain, address.cbits()};
+    ASSERT_TRUE(new_account.init_new(1234));
+    ASSERT_EQ(new_account.orig_total_state->get_hash(), absent_state->get_hash());
+    ASSERT_EQ(new_account.total_state->get_hash(), absent_state->get_hash());
+    ASSERT_EQ(new_account.status, block::Account::acc_nonexist);
+    ASSERT_TRUE(new_account.balance.is_zero());
+  }
+
+  // An explicit ShardAccount retains its exact referenced Account cell; the
+  // synthetic default must not normalize existing account states.
+  vm::CellBuilder shard_account;
+  ASSERT_TRUE(shard_account.store_ref_bool(canonical_none));
+  ASSERT_TRUE(shard_account.store_zeroes_bool(256 + 64));
+  td::Ref<vm::Cell> explicit_state;
+  ASSERT_TRUE(block::tlb::ShardAccount::extract_account_state(
+      vm::load_cell_slice_ref(shard_account.finalize()), explicit_state));
+  ASSERT_EQ(explicit_state->get_hash(), canonical_none->get_hash());
+}
+
 void show_total_cells(std::ostream& stream) {
   stream << "total cells = " << vm::DataCell::get_total_data_cells() << std::endl;
 }

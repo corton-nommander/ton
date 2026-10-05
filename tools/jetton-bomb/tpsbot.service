@@ -1,0 +1,21 @@
+[Unit]
+Description=Tg Bot for testnet abuse
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/victor/jetton-bomb
+User=victor
+Group=victor
+Environment="TONCENTER_ENDPOINT=https://testnet.toncenter.com/api/v2/jsonRPC"
+Environment="TONCENTER_API_KEY="
+Environment="WALLET_MNEMONIC="
+Environment="TELEGRAM_BOT_TOKEN="
+ExecStart=/usr/bin/ts-node /home/victor/jetton-bomb/scripts/telegramTpsBot.ts
+KillMode=process
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+

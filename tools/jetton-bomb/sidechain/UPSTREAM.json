@@ -1,0 +1,23 @@
+{
+  "source_directory": "/home/neodix/gitProjects/ton-mesh/home-user/genesis/jetton-bomb",
+  "upstream_revision": "bdeadcd57dfd2ec6f43d8f20e76ac8372675940f",
+  "sidechain_revision": "9e252878c217f22f3e2e144440f386c0262c1aa3",
+  "excluded": [
+    ".git",
+    "node_modules",
+    "build",
+    "mnemonic.txt",
+    "config.json",
+    "tps_shards.json",
+    "wallet secrets",
+    "history files",
+    "prebuilt executables"
+  ],
+  "compiler": "1.2.0",
+  "original_static_tps_source_sha256": "3cf1a9beac71f1a6f73dc5daffff26be409b382e78b45bccee4382476feee709",
+  "original_static_tps_artifact_sha256": "c726358047bd350a787239c8837dfb0a0decddd7f23303efab0614d5e1e3e389",
+  "adapted_static_tps_source_sha256": "bd92af25c29a2f024bb1663839d0c88e7fe83dcf6b6e20405f8ea98becd6b9aa",
+  "adapted_static_tps_artifact_sha256": "fad2a070905efe02725d7947c83367b6452b61a19e31b24fdefddfd40452ed85",
+  "adapted_code_hash": "77cbd1d23c24955c239336da50f4a03eab2f481afcb61f9ce67488ad018f0da3",
+  "contract_change": "Masterchain self-messages carry 1 TON to cover masterchain forwarding fees; basechain self-message value remains 0.003 TON. Float returns to the same account."
+}

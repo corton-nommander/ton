@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Cockpit</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+            rel="stylesheet"
+        />
+        <link
+            href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Oswald:wght@300;400;500&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="/style.css" />
+        <link rel="stylesheet" href="/instruments.css" />
+        <script defer src="/app.js"></script>
+    </head>
+    <body>
+        <div class="dashboard">
+            <header class="masthead">
+                <nav class="network-switch" aria-label="Network">
+                    <a id="mainnet-link" title="Open the mainnet dashboard">MAINNET</a
+                    ><a id="testnet-link" title="Open the testnet dashboard">TESTNET</a>
+                </nav>
+                <div class="clock" title="Current time in UTC">
+                    <span id="clock">—</span><span class="clock-caption">UTC / LIVE DISPLAY</span>
+                </div>
+            </header>
+
+            <div id="warning" class="warning hidden" role="status"></div>
+
+            <main>
+                <section class="instrument-bank" aria-label="Main instruments">
+                    <div class="instrument-heading" title="Current transaction speed and network state">
+                        <h2>NETWORK SPEED</h2>
+                        <span id="meter-state" class="state unknown" title="Freshness of tpsmeter data">WAITING</span>
+                    </div>
+                    <div class="instrument-layout">
+                        <div class="side-meters side-meters--left">
+                            <div
+                                class="tape"
+                                id="tape-gas"
+                                data-meter="gas"
+                                role="img"
+                                aria-label="GAS - GRAM: no reading"
+                            >
+                                <div class="tape-title">GAS - GRAM</div>
+                                <div class="tape-housing">
+                                    <div class="tape-channel">
+                                        <div id="fuel-fill" class="tape-fill"></div>
+                                        <div id="fuel-pointer" class="tape-pointer"></div>
+                                    </div>
+                                </div>
+                                <div class="tape-scale">
+                                    <span style="top: 0" id="fuel-tick-max">—</span
+                                    ><span style="top: 50%" id="fuel-tick-mid">—</span><span style="top: 100%">0</span>
+                                </div>
+                                <div class="tape-readout"><output id="fuel-value">—</output></div>
+                            </div>
+                            <div id="load-status" class="load-status" aria-label="Current load">
+                                <div class="load-status-heading">LOAD <span id="load-state">WAITING</span></div>
+                                <div id="load-details" class="load-details"></div>
+                            </div>
+                        </div>
+                        <div class="speed-column">
+                            <div class="cluster">
+                                <div
+                                    id="gauge-300"
+                                    class="gauge gauge--side gauge--left"
+                                    role="img"
+                                    aria-label="5 MIN TPS: no reading"
+                                >
+                                    <div class="recess">
+                                        <div class="dial">
+                                            <div class="arc"></div>
+                                            <div class="screw left"></div>
+                                            <div class="screw right"></div>
+                                            <div class="face-text">
+                                                <strong>5 MIN</strong><span>TRANSACTIONS / SECOND</span>
+                                            </div>
+                                            <div class="odometer"><output>—</output></div>
+                                            <div class="needle-arm">
+                                                <div class="needle"></div>
+                                                <div class="needle-tail"></div>
+                                            </div>
+                                            <div class="hub"></div>
+                                            <div class="glass"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    id="gauge-60"
+                                    class="gauge gauge--main"
+                                    role="img"
+                                    aria-label="1 MIN TPS: no reading"
+                                >
+                                    <div class="recess">
+                                        <div class="dial">
+                                            <div class="arc"></div>
+                                            <div class="screw left"></div>
+                                            <div class="screw right"></div>
+                                            <div class="face-text">
+                                                <strong>1 MIN</strong><span>TRANSACTIONS / SECOND</span>
+                                            </div>
+                                            <div class="odometer"><output>—</output></div>
+                                            <div class="needle-arm">
+                                                <div class="needle"></div>
+                                                <div class="needle-tail"></div>
+                                            </div>
+                                            <div class="hub"></div>
+                                            <div class="glass"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    id="gauge-900"
+                                    class="gauge gauge--side gauge--right"
+                                    role="img"
+                                    aria-label="15 MIN TPS: no reading"
+                                >
+                                    <div class="recess">
+                                        <div class="dial">
+                                            <div class="arc"></div>
+                                            <div class="screw left"></div>
+                                            <div class="screw right"></div>
+                                            <div class="face-text">
+                                                <strong>15 MIN</strong><span>TRANSACTIONS / SECOND</span>
+                                            </div>
+                                            <div class="odometer"><output>—</output></div>
+                                            <div class="needle-arm">
+                                                <div class="needle"></div>
+                                                <div class="needle-tail"></div>
+                                            </div>
+                                            <div class="hub"></div>
+                                            <div class="glass"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <p id="meter-detail" class="instrument-note">Waiting for tpsmeter</p>
+                        </div>
+                        <div class="side-meters side-meters--right">
+                            <div
+                                class="tape"
+                                id="tape-shards"
+                                data-meter="shards"
+                                role="img"
+                                aria-label="SHARDS: no reading"
+                            >
+                                <div class="tape-title">SHARDS</div>
+                                <div class="tape-housing">
+                                    <div class="tape-channel">
+                                        <div id="shards-fill" class="tape-fill"></div>
+                                        <span class="integer-tick" style="bottom: 0"></span
+                                        ><span class="integer-tick" style="bottom: 25%"></span
+                                        ><span class="integer-tick" style="bottom: 50%"></span
+                                        ><span class="integer-tick" style="bottom: 75%"></span
+                                        ><span class="integer-tick" style="bottom: calc(100% - 1px)"></span>
+                                        <div id="shards-pointer" class="tape-pointer"></div>
+                                    </div>
+                                </div>
+                                <div class="tape-scale">
+                                    <span style="top: 0">4</span><span style="top: 25%">3</span
+                                    ><span style="top: 50%">2</span><span style="top: 75%">1</span
+                                    ><span style="top: 100%">0</span>
+                                </div>
+                                <div class="tape-readout"><output id="shards-number">—</output></div>
+                            </div>
+                            <div
+                                class="tape"
+                                id="tape-latency"
+                                data-meter="latency"
+                                role="img"
+                                aria-label="TPSMETER LATENCY: no reading"
+                            >
+                                <div class="tape-title">TPSMETER<br />LATENCY</div>
+                                <div class="tape-housing">
+                                    <div class="tape-channel">
+                                        <div id="latency-fill" class="tape-fill"></div>
+                                        <div id="latency-pointer" class="tape-pointer"></div>
+                                    </div>
+                                </div>
+                                <div class="tape-scale">
+                                    <span style="top: 0">15s</span><span style="top: 33.333%">10s</span
+                                    ><span style="top: 66.667%">5s</span><span style="top: 100%">0</span>
+                                </div>
+                                <div class="tape-readout"><output id="latency-value">—</output></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="panel master-status">
+                    <div class="section-title" title="Overall health of data sources and the network">
+                        <h2>System status</h2>
+                    </div>
+                    <div id="lamps" class="lamps"></div>
+                </section>
+
+                <section class="panel blocks-panel">
+                    <div class="section-title" title="Latest liteserver masterchain and referenced shard blocks">
+                        <h2>Masterchain &amp; active shards</h2>
+                        <span id="blocks-source" class="meta" title="Source of block data"></span>
+                    </div>
+                    <div id="block-rows" class="block-rows"></div>
+                </section>
+
+                <section class="panel chart-panel">
+                    <div class="section-title" title="Historical TPS and shard count from tpsmeter">
+                        <h2>Network history</h2>
+                        <div class="range-switch" aria-label="Chart range">
+                            <button data-span="15m" title="Last 15 minutes">15m</button
+                            ><button data-span="1h" class="active" title="Last hour">1h</button
+                            ><button data-span="6h" title="Last 6 hours">6h</button
+                            ><button data-span="24h" title="Last 24 hours">24h</button>
+                        </div>
+                    </div>
+                    <div class="chart-grid">
+                        <div>
+                            <div class="chart-label" title="Transactions per second averaged over one minute">
+                                TPS / 60-SECOND ROLLING
+                            </div>
+                            <div class="chart-canvas">
+                                <canvas
+                                    id="tps-chart"
+                                    aria-label="TPS over time"
+                                    title="Move over the chart to inspect TPS"
+                                ></canvas>
+                                <div class="chart-crosshair hidden" id="tps-crosshair"></div>
+                                <div class="chart-tooltip hidden" id="tps-tooltip" role="status"></div>
+                            </div>
+                            <div class="chart-axis-caption">TPS ↑ · Time (UTC) →</div>
+                        </div>
+                        <div>
+                            <div class="chart-label" title="Number of active basechain shards">ACTIVE SHARDS</div>
+                            <div class="chart-canvas">
+                                <canvas
+                                    id="shards-chart"
+                                    aria-label="Active shards over time"
+                                    title="Move over the chart to inspect shard count"
+                                ></canvas>
+                                <div class="chart-crosshair hidden" id="shards-crosshair"></div>
+                                <div class="chart-tooltip hidden" id="shards-tooltip" role="status"></div>
+                            </div>
+                            <div class="chart-axis-caption">Shards ↑ · Time (UTC) →</div>
+                        </div>
+                    </div>
+                    <p id="chart-detail" class="instrument-note" title="History coverage and freshness"></p>
+                </section>
+
+                <section class="lower-grid">
+                    <div class="panel">
+                        <div class="section-title" title="Status and report age of lite servers">
+                            <h2>Lite servers <small id="ls-count" title="Healthy servers / total servers">—</small></h2>
+                        </div>
+                        <div id="ls-rows" class="rows"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="section-title" title="Availability and freshness of public APIs">
+                            <h2>API &amp; streaming</h2>
+                        </div>
+                        <div id="service-rows" class="rows"></div>
+                    </div>
+                </section>
+
+                <section class="panel telemetry-panel">
+                    <div class="section-title" title="Recent load and processing metrics">
+                        <h2>Pressure &amp; queues</h2>
+                    </div>
+                    <div id="pressure-rows" class="pressure-grid"></div>
+                </section>
+            </main>
+            <p id="meter-source-note" class="instrument-note hidden">
+                Testnet TPS meter: tc-tgls-01 + tc-tgls-02, the managed pair chosen for sustained reliability. These are
+                separate from the lite servers listed above.
+            </p>
+        </div>
+    </body>
+</html>

@@ -44,6 +44,13 @@ Main TON monorepo, which includes the code of the node/validator, lite-client, t
 
 ## Native sidechain desktop benchmark
 
+For ordinary TVM internal-message testing, the copied
+[`tools/jetton-bomb`](tools/jetton-bomb/sidechain/README.md) utility now includes
+an execution-mode check and bounded masterchain load runner. See the
+[compatibility evaluation and measurements](doc/jetton-bomb-sidechain-2026-10-05.md):
+the optimized version-16 basechain does not execute ordinary internal messages,
+and these masterchain TVM rates measure a different workload from native TPS.
+
 Use the benchmark wrapper from the sibling `MyLocalTonDocker` checkout for a
 repeatable native-transfer capacity run.  First build this checkout as the
 native CPU-specific TON base image selected by `.env.physical`; the wrapper

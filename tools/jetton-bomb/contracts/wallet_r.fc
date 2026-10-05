@@ -1,0 +1,154 @@
+#include "imports/stdlib.func";
+#include "messages.func";
+
+;;; Retrieves code of smart-contract from c7
+cell my_code() asm "MYCODE";
+
+const SPAM_CONFIG = -137;
+() check_spam_config() impure inline {
+    cell config = config_param(SPAM_CONFIG);
+    if (config.cell_null?()) {
+        return ();
+    }
+    throw_if(666, config.begin_parse().preload_uint(16) == 1);
+}
+
+const int op::reproduce = 0xba5e5d50;
+
+cell wallet_init(cell data) inline {
+  return begin_cell().store_uint(0,2).store_dict(my_code())
+                     .store_dict(data).store_uint(0,1)
+          .end_cell();
+}
+
+cell wallet_data(int seqno, int subwallet, int pubkey) inline {
+  return begin_cell().store_uint(seqno, 32)
+                     .store_uint(subwallet, 32)
+                     .store_uint(pubkey, 256)
+          .end_cell();
+}
+
+slice calc_wallet_addr(int subwallet, int pubkey) inline {
+  cell data = wallet_data(0, subwallet, pubkey);
+  cell init = wallet_init(data); 
+  return begin_cell().store_uint(1024, 11)
+                     .store_uint(cell_hash(init), 256)
+          .end_cell().begin_parse();
+}
+
+const int min_balance = 1000000000; ;; 1 TON
+const int deploy_chunk = 200;
+
+() recv_internal(int msg_value, cell in_msg_full, slice in_msg_body) impure {
+  if (in_msg_body.slice_empty?()) { ;; ignore empty messages
+    return ();
+  }
+  slice cs = in_msg_full.begin_parse();
+  int flags = cs~load_uint(4);
+  if (flags & 1) { ;; ignore bounced
+      return ();
+  }
+  int op = in_msg_body~load_uint(32);
+  if (op != op::reproduce) {
+    return ();
+  }
+  int last_subwallet = in_msg_body~load_uint(32);
+  int from_subwallet = in_msg_body~load_uint(32);
+
+  slice sender_address = cs~load_msg_addr();
+
+  var ds = get_data().begin_parse();
+  var (stored_seqno, stored_subwallet, public_key) = (ds~load_uint(32), ds~load_uint(32), ds~load_uint(256));
+
+  if (stored_subwallet >= last_subwallet) {
+    ;; if last_subwallet = 0 - just deploys itself
+    ;; or if deployed everything - stop
+    return ();
+  }
+
+  slice expected_prev_subwallet = calc_wallet_addr(from_subwallet, public_key);
+  throw_unless(401, equal_slice_bits(expected_prev_subwallet, sender_address));
+
+  check_spam_config();
+
+  int deployed = 0;
+  raw_reserve(min_balance, 2);
+
+  int to_deploy = last_subwallet - stored_subwallet;
+  int work? = true;
+
+  while ( work? ) {
+    cell next_subwallet_data = wallet_data(0, stored_subwallet + deployed + 1, public_key);
+    cell next_subwallet_init = wallet_init(next_subwallet_data); 
+
+    slice next_subwallet_addr = begin_cell().store_uint(1024, 11)
+                                            .store_uint(cell_hash(next_subwallet_init), 256)
+                                 .end_cell().begin_parse();
+
+    int attached_max_subwallet = 0; 
+    int value = min_balance;
+    int mode = 1;
+
+    deployed += 1;
+    if ( (deployed >= deploy_chunk) | (deployed >= to_deploy) ) {
+      work? = false;
+      attached_max_subwallet = last_subwallet;
+      ;; send all remaining except min_balance
+      value = 0;
+      mode = 128;
+    }
+
+    var body = begin_cell().store_uint(op::reproduce, 32)
+                           .store_uint(attached_max_subwallet, 32) ;; 250 deploy, last - hop
+                           .store_uint(stored_subwallet, 32) ;; from_subwallet
+                .end_cell();
+
+    var msg = begin_cell().store_msg_flag(msg_flag::bounceable)
+                          .store_slice(next_subwallet_addr)
+                          .store_coins(value)
+                          .store_msgbody_prefix_stateinit(next_subwallet_init, body)
+               .end_cell();
+
+    send_raw_message(msg, mode);
+  }
+}
+
+() recv_external(slice in_msg) impure {
+  var signature = in_msg~load_bits(512);
+  var cs = in_msg;
+  var (subwallet_id, valid_until, msg_seqno) = (cs~load_uint(32), cs~load_uint(32), cs~load_uint(32));
+  throw_if(35, valid_until <= now());
+  var ds = get_data().begin_parse();
+  var (stored_seqno, stored_subwallet, public_key) = (ds~load_uint(32), ds~load_uint(32), ds~load_uint(256));
+  ds.end_parse();
+  throw_unless(33, msg_seqno == stored_seqno);
+  throw_unless(34, subwallet_id == stored_subwallet);
+  throw_unless(35, check_signature(slice_hash(in_msg), signature, public_key));
+  accept_message();
+  cs~touch();
+  while (cs.slice_refs()) {
+    var mode = cs~load_uint(8);
+    send_raw_message(cs~load_ref(), mode);
+  }
+  set_data(
+      wallet_data(stored_seqno + 1, stored_subwallet, public_key)
+  );
+}
+
+;; Get methods
+
+int seqno() method_id {
+  return get_data().begin_parse().preload_uint(32);
+}
+
+int get_subwallet() method_id {
+  var cs = get_data().begin_parse();
+  cs~load_uint(32);
+  return cs.preload_uint(32);
+}
+
+int get_public_key() method_id {
+  var cs = get_data().begin_parse();
+  cs~load_uint(64);
+  return cs.preload_uint(256);
+}

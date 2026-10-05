@@ -1,0 +1,51 @@
+apiVersion: 1
+datasources:
+  - name: dm_testnet (dm)
+    uid: dmtestnetch
+    type: grafana-clickhouse-datasource
+    access: proxy
+    isDefault: true
+    jsonData:
+      host: 172.16.240.69
+      port: 8123
+      protocol: http
+      username: dm
+      defaultDatabase: dm_testnet
+    secureJsonData:
+      password: ${CH_DM_PASSWORD}
+  - name: testnet_d (vicread)
+    uid: testnetdch
+    type: grafana-clickhouse-datasource
+    access: proxy
+    jsonData:
+      host: 172.16.240.69
+      port: 8123
+      protocol: http
+      username: vicread
+      defaultDatabase: testnet_d
+    secureJsonData:
+      password: ${CH_VICREAD_PASSWORD}
+  - name: dm_mainnet (dm)
+    uid: dmmainnetch
+    type: grafana-clickhouse-datasource
+    access: proxy
+    jsonData:
+      host: 172.16.240.69
+      port: 8123
+      protocol: http
+      username: dm
+      defaultDatabase: dm_mainnet
+    secureJsonData:
+      password: ${CH_DM_PASSWORD}
+  - name: mainnet_d (vicread)
+    uid: mainnetdch
+    type: grafana-clickhouse-datasource
+    access: proxy
+    jsonData:
+      host: 172.16.240.69
+      port: 8123
+      protocol: http
+      username: vicread
+      defaultDatabase: mainnet_d
+    secureJsonData:
+      password: ${CH_VICREAD_PASSWORD}

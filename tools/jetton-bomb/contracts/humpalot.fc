@@ -1,0 +1,152 @@
+#include "imports/stdlib.func";
+
+;;; ===========================================================================
+;;; humpalot.fc  --  hash-grinding load generator (FunC, no Tolk optimisations).
+;;;
+;;; Reproduces the mainnet memecoin "MEV" bots that burn gas searching for a
+;;; minimal SHA-256 hash on-chain (unrolled HASHEXT_SHA256 + MIN loops).
+;;;
+;;; Purpose: measure the REAL validator TVM gas->CPU throughput in live
+;;; collation, to decide whether the basechain gas limit can safely be raised.
+;;; We found gas never trips the split axis (prelim_storage_stat does), but a
+;;; grinder that spends *all* its gas on cheap HASHEXT is the one load that
+;;; makes trx_tvm approach the ~400 ms collation budget -- this contract finds
+;;; where that happens on real hardware.
+;;;
+;;; Drive it with the Go spammer.  Two grind modes, chosen by op:
+;;;   op::grind      -- grind until GAS CONSUMED reaches `budget` gas, then stop.
+;;;                     This is the primary mode: it self-adapts to whatever
+;;;                     per-tx gas limit the network config sets (testnet may
+;;;                     differ from mainnet), so we don't have to guess how many
+;;;                     iterations map to a full block.  Set budget just under
+;;;                     the network's per-tx gas limit (leave ~10k for the save
+;;;                     + optional self-send).
+;;;   op::grind_rnd  -- grind a fixed `rounds` iterations (deterministic; for
+;;;                     tests / precise per-tx work).
+;;; ===========================================================================
+
+;; HASHEXT_SHA256 over a single builder chunk -> 256-bit hash int.
+;; Stack: [builder] -- push chunk-count 1 -- HASHEXT reads it -- [hash].
+;; This is the exact cheap op the bots abuse ((i+1)*1 + bits/8/33 gas).
+int hashext_sha256(builder b) asm "1 PUSHINT HASHEXT_SHA256";
+
+;; Gas consumed so far in this transaction (TVM GASCONSUMED, v4+).  No opcode
+;; reads the gas *limit*, so we target a caller-supplied consumed-gas budget.
+int gas_consumed() asm "GASCONSUMED";
+
+const int op::grind      = 0x48554d50;  ;; "HUMP" -- grind to a gas budget, stop
+const int op::grind_loop = 0x48554d51;  ;; grind to budget, re-post one msg to self
+const int op::grind_rnd  = 0x48554d52;  ;; grind a fixed number of rounds
+
+const int DEFAULT_BUDGET  = 400000;      ;; safe gas target if body carries none
+const int BATCH           = 16;          ;; gas-check granularity (~16 hashes)
+const int CONTINUE_VALUE  = 50000000;    ;; 0.05 TON floor to self-continue
+
+;; storage: seqno:uint32  rounds_total:uint64  best_hash:uint256
+global int seqno;
+global int rounds_total;
+global int best_hash;
+
+() load_data() impure {
+    slice ds = get_data().begin_parse();
+    seqno        = ds~load_uint(32);
+    rounds_total = ds~load_uint(64);
+    best_hash    = ds~load_uint(256);
+}
+
+() save_data() impure {
+    set_data(begin_cell()
+        .store_uint(seqno, 32)
+        .store_uint(rounds_total, 64)
+        .store_uint(best_hash, 256)
+        .end_cell());
+}
+
+;; One HASHEXT_SHA256 iteration -- MEV-style minimal-hash search.  Hashes a
+;; fresh (seed, nonce) chunk and keeps the running min so it can't be folded
+;; away and the hasher runs for real.  Returns the next nonce.
+int grind_one(int seed, int i) impure inline {
+    int h = hashext_sha256(begin_cell().store_uint(seed, 64).store_uint(i, 192));
+    if (h < best_hash) {
+        best_hash = h;
+    }
+    return i + 1;
+}
+
+;; Fixed-count grind (deterministic).
+() grind_rounds(int seed, int rounds) impure {
+    int i = 0;
+    repeat (rounds) {
+        i = grind_one(seed, i);
+    }
+    rounds_total += rounds;
+}
+
+;; Grind until this transaction has consumed `budget` gas, checking every BATCH
+;; hashes so overshoot is bounded to one batch.  Self-adapts to the network's
+;; gas limit: pick budget just below it and the loop stops cleanly with room to
+;; save + send, regardless of the per-round gas price.
+() grind_budget(int seed, int budget) impure {
+    int i = 0;
+    while (gas_consumed() < budget) {
+        repeat (BATCH) {
+            i = grind_one(seed, i);
+        }
+    }
+    rounds_total += i;
+}
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    if (flags & 1) {            ;; ignore bounced
+        return ();
+    }
+    slice src = cs~load_msg_addr();
+    slice me  = cs~load_msg_addr();   ;; destination == this contract
+
+    load_data();
+
+    ;; Body: [op:uint32] [param:uint32].  param = gas budget (grind / grind_loop)
+    ;; or round count (grind_rnd).  Empty/short body -> default-budget grind.
+    int op = op::grind;
+    int param = DEFAULT_BUDGET;
+    if (in_msg_body.slice_bits() >= 32) {
+        op = in_msg_body~load_uint(32);
+        if (in_msg_body.slice_bits() >= 32) {
+            param = in_msg_body~load_uint(32);
+        }
+    }
+
+    seqno += 1;
+    if (op == op::grind_rnd) {
+        grind_rounds(seqno, param);
+    } else {
+        grind_budget(seqno, param);
+    }
+    save_data();
+
+    ;; Optional self-sustain: post exactly ONE continuation to ourselves, so a
+    ;; single kick keeps a chain of fresh full-gas transactions running (mirrors
+    ;; the 0:7DC313D3 bot that poked itself thousands of times).  Bounded to one
+    ;; in-flight message per chain and gated on funding, so it cannot avalanche.
+    if ((op == op::grind_loop) & (msg_value >= CONTINUE_VALUE)) {
+        cell body = begin_cell()
+            .store_uint(op::grind_loop, 32)
+            .store_uint(param, 32)
+            .end_cell();
+        send_raw_message(begin_cell()
+            .store_uint(0x18, 6)          ;; bounceable
+            .store_slice(me)              ;; to self
+            .store_coins(0)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1)
+            .store_uint(1, 1)             ;; body as ref
+            .store_ref(body)
+            .end_cell(), 64);             ;; mode 64: carry remaining value
+    }
+}
+
+;; ---- getters ----
+int get_seqno() method_id { load_data(); return seqno; }
+int get_rounds_total() method_id { load_data(); return rounds_total; }
+int get_best_hash() method_id { load_data(); return best_hash; }

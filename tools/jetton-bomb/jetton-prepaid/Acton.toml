@@ -1,0 +1,61 @@
+[package]
+name = "jetton-prepaid"
+description = "Plain prepaid jetton for load testing (GRAM)"
+version = "0.1.0"
+license = "MIT"
+
+[toolchain]
+acton = "1.1.0"
+
+[contracts.JettonMinter]
+display-name = "JettonMinter"
+src = "contracts/JettonMinter.tolk"
+depends = ["JettonWallet"]
+
+[contracts.JettonWallet]
+display-name = "JettonWallet"
+src = "contracts/JettonWallet.tolk"
+depends = []
+
+[contracts.WalletSpam]
+display-name = "WalletSpam"
+src = "contracts/WalletSpam.tolk"
+depends = []
+
+[contracts.Fat]
+display-name = "Fat"
+src = "contracts/Fat.tolk"
+depends = []
+
+[contracts.FatReproduce]
+display-name = "FatReproduce"
+src = "contracts/FatReproduce.tolk"
+depends = []
+
+[test]
+
+[fmt]
+width = 100
+ignore = []
+
+[scripts]
+genkey = "acton script scripts/genkey.tolk"
+deploy-emulation = "acton script scripts/deploy.tolk"
+deploy-testnet = "acton script scripts/deploy.tolk --net testnet"
+destroy-testnet = "acton script scripts/destroy.tolk --net testnet"
+jetton-change-admin = "acton script scripts/change-admin.tolk"
+jetton-change-metadata = "acton script scripts/change-metadata.tolk"
+jetton-claim-admin = "acton script scripts/claim-admin.tolk"
+jetton-info = "acton script scripts/info.tolk"
+jetton-mint = "acton script scripts/mint.tolk"
+jetton-transfer = "acton script scripts/transfer.tolk"
+
+[import-mappings]
+acton = ".acton"
+contracts = "contracts"
+gen = "gen"
+tests = "tests"
+wrappers = "wrappers"
+
+# Check full Acton.toml reference and all available keys:
+# https://ton-blockchain.github.io/acton/docs/acton-toml

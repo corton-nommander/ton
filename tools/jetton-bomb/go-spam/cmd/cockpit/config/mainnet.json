@@ -1,0 +1,9 @@
+{
+  "public_key": "35c9c90be70363e8f343408cc48f4b6d4acfa987f21fa773f1499032ce57694e",
+  "minter": "EQCgKV2KK3U6AcRpGj64KzGjz8h6aCIkaV9Mce_rpubewSl_",
+  "count": 5000,
+  "initial_balance": 0.2,
+  "jetton_initial_balance": 0.01,
+  "send_threshold": 0.06,
+  "expected_wallet_0": "0:d1e5e9e8f160b6d8577ccba3b5e0db6ba59a61fde5e561dacd65c7f62b51d168"
+}

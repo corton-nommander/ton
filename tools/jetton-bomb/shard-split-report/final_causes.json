@@ -1,0 +1,2354 @@
+[
+ {
+  "sid": "S01_2026-05-10T085549Z",
+  "utc": "2026-05-10 08:55:49",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "unknown",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "long_collation was not acting on mainnet before the 27.05 upgrade (same condition rate in May, zero low-TPS splits); its stats fields are absent for this date; archive: 20 blocks, none reached cat>=2 (max block 638KB = 61% of the 1MB soft), queue max 282<<4096, no dispatch marker -> no trigger observed",
+  "n_archive": 20,
+  "n_nonempty": 19,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 3,
+   "dispatch": 0
+  },
+  "qmax": 282,
+  "maxclt": 0.435,
+  "hw_gas": -64,
+  "cov": [
+   270,
+   121
+  ],
+  "agent_primary": "load_class"
+ },
+ {
+  "sid": "S02_2026-05-13T141735Z",
+  "utc": "2026-05-13 14:17:35",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "unknown",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "long_collation not acting on mainnet before the 27.05 upgrade; archive: 40 blocks, none at cat>=2 (max 688KB = 66% soft), queue max 333<<4096, no dispatch -> no trigger observed in the sample",
+  "n_archive": 40,
+  "n_nonempty": 35,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 6,
+   "dispatch": 0
+  },
+  "qmax": 333,
+  "maxclt": 0.472,
+  "hw_gas": -64,
+  "cov": [
+   271,
+   113
+  ],
+  "agent_primary": "queue"
+ },
+ {
+  "sid": "S03_2026-05-19T041527Z",
+  "utc": "2026-05-19 04:15:27",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "load_class",
+  "load_dim": "bytes",
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "long_collation was not acting on mainnet before the 27.05 node upgrade (same condition rate in May but zero low-TPS splits); its stats fields do not exist for this date; archive: 2/24 blocks reached cat_bytes=2 with block_full bytes marker (max 1.29MB = 123% of the 1MB soft) at T-117..T-75s; queue max 564<<4096, no dispatch -> bytes is the only trigger that fired",
+  "n_archive": 24,
+  "n_nonempty": 20,
+  "counts": {
+   "load_class": 2,
+   "queue": 0,
+   "long_collation": 16,
+   "dispatch": 0
+  },
+  "qmax": 564,
+  "maxclt": 0.567,
+  "hw_gas": -64,
+  "cov": [
+   118,
+   0
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S04_2026-05-19T074745Z",
+  "utc": "2026-05-19 07:47:45",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "load_class",
+  "load_dim": "bytes",
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "long_collation was not acting on mainnet before the 27.05 node upgrade (same condition rate in May but zero low-TPS splits); its stats fields do not exist for this date; archive: 3/76 blocks at cat_bytes=2, block_full bytes (max 1.53MB = 145% soft) at T-103..T-16s; queue max 382<<4096, no dispatch",
+  "n_archive": 76,
+  "n_nonempty": 66,
+  "counts": {
+   "load_class": 3,
+   "queue": 0,
+   "long_collation": 27,
+   "dispatch": 0
+  },
+  "qmax": 382,
+  "maxclt": 1.69,
+  "hw_gas": -64,
+  "cov": [
+   275,
+   15
+  ],
+  "agent_primary": "load_class"
+ },
+ {
+  "sid": "S05_2026-05-19T101410Z",
+  "utc": "2026-05-19 10:14:10",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "load_class",
+  "load_dim": "bytes",
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage in [T-300,T]; long_collation was not acting on mainnet before the 27.05 node upgrade (same condition rate in May but zero low-TPS splits); its stats fields do not exist for this date and the two other 19.05 episodes on this shard are archive-confirmed load_class/bytes",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S06_2026-05-20T184737Z",
+  "utc": "2026-05-20 18:47:37",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "dispatch",
+  "load_dim": null,
+  "secondary": "load_class",
+  "confidence": "inferred",
+  "evidence": "no archive coverage in [T-300,T]; long_collation was not acting on mainnet before the 27.05 node upgrade (same condition rate in May but zero low-TPS splits); its stats fields do not exist for this date, queue <=34 day-wide, bytes reached soft in only ~2 of 91 burst blocks; the load is the dispatch shape: 10 W5 wallets x 4 tx x ~247 msgs = ~9.9k deferred messages (defer_after=10) drained 80-366/block vs the 150/phase cap",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": null
+ },
+ {
+  "sid": "S07_2026-05-21T091320Z",
+  "utc": "2026-05-21 09:13:20",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "load_class",
+  "load_dim": "bytes",
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "long_collation was not acting on mainnet before the 27.05 node upgrade (same condition rate in May but zero low-TPS splits); its stats fields do not exist for this date; archive: 2/27 blocks at cat_bytes=3 (max 1.79MB = 170% of the 1MB soft, block_full bytes) at T-107..T-66s; queue max 325<<4096, no dispatch",
+  "n_archive": 27,
+  "n_nonempty": 25,
+  "counts": {
+   "load_class": 2,
+   "queue": 0,
+   "long_collation": 7,
+   "dispatch": 0
+  },
+  "qmax": 325,
+  "maxclt": 1.713,
+  "hw_gas": -64,
+  "cov": [
+   294,
+   65
+  ],
+  "agent_primary": null
+ },
+ {
+  "sid": "S08_2026-05-26T215943Z",
+  "utc": "2026-05-26 21:59:43",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "load_class",
+  "load_dim": "bytes",
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "long_collation was not acting on mainnet before the 27.05 node upgrade (same condition rate in May but zero low-TPS splits); its stats fields do not exist for this date; archive: 1/6 covered blocks at cat_bytes=2 (1.12MB = 106% soft, block_full bytes) at T-9s; queue max 355<<4096, no dispatch; coverage is thin (6 blocks)",
+  "n_archive": 6,
+  "n_nonempty": 5,
+  "counts": {
+   "load_class": 1,
+   "queue": 0,
+   "long_collation": 3,
+   "dispatch": 0
+  },
+  "qmax": 355,
+  "maxclt": 0.487,
+  "hw_gas": -64,
+  "cov": [
+   299,
+   8
+  ],
+  "agent_primary": "load_class"
+ },
+ {
+  "sid": "S09_2026-05-27T203931Z",
+  "utc": "2026-05-27 20:39:31",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": "load_class",
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 18/18 non-empty collated blocks (100%), max collation 0.474s; queue max 438<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 24,
+  "n_nonempty": 18,
+  "counts": {
+   "load_class": 2,
+   "queue": 0,
+   "long_collation": 18,
+   "dispatch": 0
+  },
+  "qmax": 438,
+  "maxclt": 0.474,
+  "hw_gas": -64,
+  "cov": [
+   101,
+   11
+  ],
+  "agent_primary": null
+ },
+ {
+  "sid": "S10_2026-05-29T193321Z",
+  "utc": "2026-05-29 19:33:21",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": "load_class",
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 11/23 non-empty collated blocks (48%), max collation 0.693s; queue max 317<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 28,
+  "n_nonempty": 23,
+  "counts": {
+   "load_class": 2,
+   "queue": 0,
+   "long_collation": 11,
+   "dispatch": 0
+  },
+  "qmax": 317,
+  "maxclt": 0.693,
+  "hw_gas": -64,
+  "cov": [
+   267,
+   29
+  ],
+  "agent_primary": "queue"
+ },
+ {
+  "sid": "S11_2026-06-05T051250Z",
+  "utc": "2026-06-05 05:12:50",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 8/19 non-empty collated blocks (42%), max collation 0.407s; queue max 20<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 32,
+  "n_nonempty": 19,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 8,
+   "dispatch": 0
+  },
+  "qmax": 20,
+  "maxclt": 0.407,
+  "hw_gas": -64,
+  "cov": [
+   283,
+   27
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S12_2026-06-05T070108Z",
+  "utc": "2026-06-05 07:01:08",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 4/7 non-empty collated blocks (57%), max collation 0.502s; queue max 2<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 12,
+  "n_nonempty": 7,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 4,
+   "dispatch": 0
+  },
+  "qmax": 2,
+  "maxclt": 0.502,
+  "hw_gas": -64,
+  "cov": [
+   92,
+   18
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S12_2026-06-05T070108Z",
+  "utc": "2026-06-05 07:06:00",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 5/10 non-empty collated blocks (50%), max collation 0.421s; queue max 14<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 12,
+  "n_nonempty": 10,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 5,
+   "dispatch": 0
+  },
+  "qmax": 14,
+  "maxclt": 0.421,
+  "hw_gas": -64,
+  "cov": [
+   95,
+   20
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S13_2026-06-05T084945Z",
+  "utc": "2026-06-05 08:49:45",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 10/24 non-empty collated blocks (42%), max collation 1.999s; queue max 5<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 33,
+  "n_nonempty": 24,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 10,
+   "dispatch": 0
+  },
+  "qmax": 5,
+  "maxclt": 1.999,
+  "hw_gas": -64,
+  "cov": [
+   295,
+   7
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S14_2026-06-05T174714Z",
+  "utc": "2026-06-05 17:47:14",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 8/36 non-empty collated blocks (22%), max collation 2.944s; queue max 11<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 41,
+  "n_nonempty": 36,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 8,
+   "dispatch": 0
+  },
+  "qmax": 11,
+  "maxclt": 2.944,
+  "hw_gas": -64,
+  "cov": [
+   285,
+   24
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S14_2026-06-05T174714Z",
+  "utc": "2026-06-05 17:55:21",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 6/43 non-empty collated blocks (14%), max collation 0.438s; queue max 8<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 49,
+  "n_nonempty": 43,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 6,
+   "dispatch": 0
+  },
+  "qmax": 8,
+  "maxclt": 0.438,
+  "hw_gas": -64,
+  "cov": [
+   297,
+   7
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S15_2026-06-06T051634Z",
+  "utc": "2026-06-06 05:16:34",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; same session: 05:21:01 and 05:56:05 are archive-confirmed long_collation",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S15_2026-06-06T051634Z",
+  "utc": "2026-06-06 05:21:01",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 5/12 non-empty collated blocks (42%), max collation 0.411s; queue max 23<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 16,
+  "n_nonempty": 12,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 5,
+   "dispatch": 0
+  },
+  "qmax": 23,
+  "maxclt": 0.411,
+  "hw_gas": -64,
+  "cov": [
+   110,
+   9
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S15_2026-06-06T051634Z",
+  "utc": "2026-06-06 05:56:05",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 7/25 non-empty collated blocks (28%), max collation 0.473s; queue max 6<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 41,
+  "n_nonempty": 25,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 7,
+   "dispatch": 0
+  },
+  "qmax": 6,
+  "maxclt": 0.473,
+  "hw_gas": -64,
+  "cov": [
+   264,
+   8
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S16_2026-06-06T144112Z",
+  "utc": "2026-06-06 14:41:12",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 6/28 non-empty collated blocks (21%), max collation 5.301s; queue max 36<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 34,
+  "n_nonempty": 28,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 6,
+   "dispatch": 0
+  },
+  "qmax": 36,
+  "maxclt": 5.301,
+  "hw_gas": -64,
+  "cov": [
+   299,
+   143
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S17_2026-06-06T154354Z",
+  "utc": "2026-06-06 15:43:54",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 3/13 non-empty collated blocks (23%), max collation 0.449s; queue max 59<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 16,
+  "n_nonempty": 13,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 3,
+   "dispatch": 0
+  },
+  "qmax": 59,
+  "maxclt": 0.449,
+  "hw_gas": -64,
+  "cov": [
+   131,
+   18
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S18_2026-06-07T021254Z",
+  "utc": "2026-06-07 02:12:54",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; same day/shard: 6 other 06-07 episodes archive-confirmed long_collation",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S19_2026-06-07T070442Z",
+  "utc": "2026-06-07 07:04:42",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 1/17 non-empty collated blocks (6%), max collation 0.402s; queue max 3<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 20,
+  "n_nonempty": 17,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 1,
+   "dispatch": 0
+  },
+  "qmax": 3,
+  "maxclt": 0.402,
+  "hw_gas": -64,
+  "cov": [
+   294,
+   145
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S20_2026-06-07T104527Z",
+  "utc": "2026-06-07 10:45:27",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 4/11 non-empty collated blocks (36%), max collation 0.402s; queue max 1<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 16,
+  "n_nonempty": 11,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 4,
+   "dispatch": 0
+  },
+  "qmax": 1,
+  "maxclt": 0.402,
+  "hw_gas": -64,
+  "cov": [
+   121,
+   9
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S21_2026-06-07T122118Z",
+  "utc": "2026-06-07 12:21:18",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 4/26 non-empty collated blocks (15%), max collation 3.402s; queue max 37<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 33,
+  "n_nonempty": 26,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 4,
+   "dispatch": 0
+  },
+  "qmax": 37,
+  "maxclt": 3.402,
+  "hw_gas": -64,
+  "cov": [
+   287,
+   3
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S21_2026-06-07T122118Z",
+  "utc": "2026-06-07 12:25:57",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 3/12 non-empty collated blocks (25%), max collation 0.461s; queue max 3<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 16,
+  "n_nonempty": 12,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 3,
+   "dispatch": 0
+  },
+  "qmax": 3,
+  "maxclt": 0.461,
+  "hw_gas": -64,
+  "cov": [
+   283,
+   35
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S22_2026-06-07T140530Z",
+  "utc": "2026-06-07 14:05:30",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 3/36 non-empty collated blocks (8%), max collation 0.402s; queue max 1<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 41,
+  "n_nonempty": 36,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 3,
+   "dispatch": 0
+  },
+  "qmax": 1,
+  "maxclt": 0.402,
+  "hw_gas": -64,
+  "cov": [
+   299,
+   30
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S23_2026-06-07T151205Z",
+  "utc": "2026-06-07 15:12:05",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; same day/shard: 6 other 06-07 episodes archive-confirmed long_collation",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S24_2026-06-07T180302Z",
+  "utc": "2026-06-07 18:03:02",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; same session: 18:07:35 and 18:27:57 archive-confirmed long_collation",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S24_2026-06-07T180302Z",
+  "utc": "2026-06-07 18:07:35",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 13/17 non-empty collated blocks (76%), max collation 1.641s; queue max 22<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 26,
+  "n_nonempty": 17,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 13,
+   "dispatch": 0
+  },
+  "qmax": 22,
+  "maxclt": 1.641,
+  "hw_gas": -64,
+  "cov": [
+   112,
+   0
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S24_2026-06-07T180302Z",
+  "utc": "2026-06-07 18:15:19",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; same session: 18:07:35 and 18:27:57 archive-confirmed long_collation",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S24_2026-06-07T180302Z",
+  "utc": "2026-06-07 18:27:57",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 6/5 non-empty collated blocks (120%), max collation 1.309s; queue max 11<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 10,
+  "n_nonempty": 5,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 6,
+   "dispatch": 0
+  },
+  "qmax": 11,
+  "maxclt": 1.309,
+  "hw_gas": -64,
+  "cov": [
+   102,
+   27
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S25_2026-06-09T233936Z",
+  "utc": "2026-06-09 23:39:36",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 4/6 non-empty collated blocks (67%), max collation 0.421s; queue max 10<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 12,
+  "n_nonempty": 6,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 4,
+   "dispatch": 0
+  },
+  "qmax": 10,
+  "maxclt": 0.421,
+  "hw_gas": -64,
+  "cov": [
+   94,
+   22
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S26_2026-06-10T064837Z",
+  "utc": "2026-06-10 06:48:37",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 8/16 non-empty collated blocks (50%), max collation 0.602s; queue max 1<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 24,
+  "n_nonempty": 16,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 8,
+   "dispatch": 0
+  },
+  "qmax": 1,
+  "maxclt": 0.602,
+  "hw_gas": -64,
+  "cov": [
+   100,
+   10
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S27_2026-06-10T091424Z",
+  "utc": "2026-06-10 09:14:24",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 3/17 non-empty collated blocks (18%), max collation 1.634s; queue max 3<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 18,
+  "n_nonempty": 17,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 3,
+   "dispatch": 0
+  },
+  "qmax": 3,
+  "maxclt": 1.634,
+  "hw_gas": -64,
+  "cov": [
+   291,
+   142
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S27_2026-06-10T091424Z",
+  "utc": "2026-06-10 09:22:44",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 9/18 non-empty collated blocks (50%), max collation 1.047s; queue max 23<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 23,
+  "n_nonempty": 18,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 9,
+   "dispatch": 0
+  },
+  "qmax": 23,
+  "maxclt": 1.047,
+  "hw_gas": -64,
+  "cov": [
+   100,
+   6
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S27_2026-06-10T091424Z",
+  "utc": "2026-06-10 09:27:17",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 4/19 non-empty collated blocks (21%), max collation 1.794s; queue max 6<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 22,
+  "n_nonempty": 19,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 4,
+   "dispatch": 0
+  },
+  "qmax": 6,
+  "maxclt": 1.794,
+  "hw_gas": -64,
+  "cov": [
+   299,
+   1
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S27_2026-06-10T091424Z",
+  "utc": "2026-06-10 09:35:28",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 7/8 non-empty collated blocks (88%), max collation 6.438s; queue max 44<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 11,
+  "n_nonempty": 8,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 7,
+   "dispatch": 0
+  },
+  "qmax": 44,
+  "maxclt": 6.438,
+  "hw_gas": -64,
+  "cov": [
+   98,
+   16
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S28_2026-06-10T105438Z",
+  "utc": "2026-06-10 10:54:38",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 2/17 non-empty collated blocks (12%), max collation 0.781s; queue max 10<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 20,
+  "n_nonempty": 17,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 2,
+   "dispatch": 0
+  },
+  "qmax": 10,
+  "maxclt": 0.781,
+  "hw_gas": -64,
+  "cov": [
+   289,
+   140
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S29_2026-06-10T115717Z",
+  "utc": "2026-06-10 11:57:17",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 5/34 non-empty collated blocks (15%), max collation 1.161s; queue max 24<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 38,
+  "n_nonempty": 34,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 5,
+   "dispatch": 0
+  },
+  "qmax": 24,
+  "maxclt": 1.161,
+  "hw_gas": -64,
+  "cov": [
+   297,
+   140
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S30_2026-06-24T165937Z",
+  "utc": "2026-06-24 16:59:37",
+  "shard": "8000",
+  "ep_type": "compute",
+  "ours": false,
+  "primary": "load_class",
+  "load_dim": "gas",
+  "secondary": "long_collation",
+  "confidence": "confirmed",
+  "evidence": "gas history_weight=+4 (>=0 => want_split): 33 blocks >=10M soft of 693 in window; archive 6/47 blocks cat_gas>=2 (max 15.08M); queue max 31<4096; long_collation 13/43 non-empty",
+  "n_archive": 47,
+  "n_nonempty": 43,
+  "counts": {
+   "load_class": 6,
+   "queue": 0,
+   "long_collation": 13,
+   "dispatch": 0
+  },
+  "qmax": 31,
+  "maxclt": 3.458,
+  "hw_gas": 4,
+  "cov": [
+   126,
+   15
+  ],
+  "agent_primary": "load_class"
+ },
+ {
+  "sid": "S31_2026-06-26T053721Z",
+  "utc": "2026-06-26 05:37:21",
+  "shard": "8000",
+  "ep_type": "compute",
+  "ours": false,
+  "primary": "load_class",
+  "load_dim": "gas",
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "gas history_weight=+15 (>=0 => want_split): 57 blocks >=10M soft of 744 in window; archive 0/12 blocks cat_gas>=2 (max 0.03M); queue max 0<4096; long_collation 0/11 non-empty",
+  "n_archive": 12,
+  "n_nonempty": 11,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": 0.4,
+  "hw_gas": 15,
+  "cov": [
+   296,
+   258
+  ],
+  "agent_primary": "load_class"
+ },
+ {
+  "sid": "S32_2026-06-30T030904Z",
+  "utc": "2026-06-30 03:09:04",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 5/29 non-empty collated blocks (17%), max collation 0.814s; queue max 176<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 43,
+  "n_nonempty": 29,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 5,
+   "dispatch": 0
+  },
+  "qmax": 176,
+  "maxclt": 0.814,
+  "hw_gas": -64,
+  "cov": [
+   187,
+   4
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S33_2026-07-01T135940Z",
+  "utc": "2026-07-01 13:59:40",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 7/29 non-empty collated blocks (24%), max collation 4.738s; queue max 35<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 32,
+  "n_nonempty": 29,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 7,
+   "dispatch": 0
+  },
+  "qmax": 35,
+  "maxclt": 4.738,
+  "hw_gas": -64,
+  "cov": [
+   279,
+   30
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S33_2026-07-01T135940Z",
+  "utc": "2026-07-01 14:03:54",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 1/3 non-empty collated blocks (33%), max collation 0.402s; queue max 0<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 4,
+  "n_nonempty": 3,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 1,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": 0.402,
+  "hw_gas": -64,
+  "cov": [
+   285,
+   284
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S34_2026-07-06T142021Z",
+  "utc": "2026-07-06 14:20:21",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 1/20 non-empty collated blocks (5%), max collation 0.404s; queue max 18<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 20,
+  "n_nonempty": 20,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 1,
+   "dispatch": 0
+  },
+  "qmax": 18,
+  "maxclt": 0.404,
+  "hw_gas": -64,
+  "cov": [
+   278,
+   130
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S35_2026-07-07T154126Z",
+  "utc": "2026-07-07 15:41:26",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 4/35 non-empty collated blocks (11%), max collation 0.856s; queue max 26<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 35,
+  "n_nonempty": 35,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 4,
+   "dispatch": 0
+  },
+  "qmax": 26,
+  "maxclt": 0.856,
+  "hw_gas": -64,
+  "cov": [
+   292,
+   143
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S36_2026-07-08T123121Z",
+  "utc": "2026-07-08 12:31:21",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 1/19 non-empty collated blocks (5%), max collation 0.424s; queue max 0<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 20,
+  "n_nonempty": 19,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 1,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": 0.424,
+  "hw_gas": -64,
+  "cov": [
+   289,
+   141
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S37_2026-07-08T164935Z",
+  "utc": "2026-07-08 16:49:35",
+  "shard": "8000",
+  "ep_type": "broad",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 1/15 non-empty collated blocks (7%), max collation 1.148s; queue max 1<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 16,
+  "n_nonempty": 15,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 1,
+   "dispatch": 0
+  },
+  "qmax": 1,
+  "maxclt": 1.148,
+  "hw_gas": -64,
+  "cov": [
+   265,
+   154
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S38_2026-07-08T205121Z",
+  "utc": "2026-07-08 20:51:21",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 4/48 non-empty collated blocks (8%), max collation 0.462s; queue max 22<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 52,
+  "n_nonempty": 48,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 4,
+   "dispatch": 0
+  },
+  "qmax": 22,
+  "maxclt": 0.462,
+  "hw_gas": -64,
+  "cov": [
+   284,
+   29
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S38_2026-07-08T205121Z",
+  "utc": "2026-07-08 20:59:46",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 5/12 non-empty collated blocks (42%), max collation 0.53s; queue max 6<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 16,
+  "n_nonempty": 12,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 5,
+   "dispatch": 0
+  },
+  "qmax": 6,
+  "maxclt": 0.53,
+  "hw_gas": -64,
+  "cov": [
+   110,
+   1
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S39_2026-07-08T221027Z",
+  "utc": "2026-07-08 22:10:27",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 4/57 non-empty collated blocks (7%), max collation 0.41s; queue max 4<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 60,
+  "n_nonempty": 57,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 4,
+   "dispatch": 0
+  },
+  "qmax": 4,
+  "maxclt": 0.41,
+  "hw_gas": -64,
+  "cov": [
+   296,
+   130
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S40_2026-07-09T085609Z",
+  "utc": "2026-07-09 08:56:09",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; same session: 09:21:16 archive-confirmed long_collation (17/91)",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S40_2026-07-09T085609Z",
+  "utc": "2026-07-09 09:21:16",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 17/91 non-empty collated blocks (19%), max collation 4.878s; queue max 65<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 105,
+  "n_nonempty": 91,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 17,
+   "dispatch": 0
+  },
+  "qmax": 65,
+  "maxclt": 4.878,
+  "hw_gas": -64,
+  "cov": [
+   290,
+   4
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S40_2026-07-09T085609Z",
+  "utc": "2026-07-09 09:26:12",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; same session: 09:21:16 archive-confirmed long_collation",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S41_2026-07-09T142124Z",
+  "utc": "2026-07-09 14:21:24",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; same session: 14:54:37 shows long_collation, load_class exactly ruled out",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S41_2026-07-09T142124Z",
+  "utc": "2026-07-09 14:54:37",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 1/15 non-empty collated blocks (7%), max collation 2.699s; queue max 27<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 18,
+  "n_nonempty": 15,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 1,
+   "dispatch": 0
+  },
+  "qmax": 27,
+  "maxclt": 2.699,
+  "hw_gas": -64,
+  "cov": [
+   281,
+   134
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S42_2026-07-09T161356Z",
+  "utc": "2026-07-09 16:13:56",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 9/22 non-empty collated blocks (41%), max collation 0.462s; queue max 16<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 24,
+  "n_nonempty": 22,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 9,
+   "dispatch": 0
+  },
+  "qmax": 16,
+  "maxclt": 0.462,
+  "hw_gas": -64,
+  "cov": [
+   103,
+   27
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S43_2026-07-09T185216Z",
+  "utc": "2026-07-09 18:52:16",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 3/44 non-empty collated blocks (7%), max collation 2.771s; queue max 5<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 51,
+  "n_nonempty": 44,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 3,
+   "dispatch": 0
+  },
+  "qmax": 5,
+  "maxclt": 2.771,
+  "hw_gas": -64,
+  "cov": [
+   295,
+   145
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S44_2026-07-09T195436Z",
+  "utc": "2026-07-09 19:54:36",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 7/29 non-empty collated blocks (24%), max collation 5.776s; queue max 72<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 33,
+  "n_nonempty": 29,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 7,
+   "dispatch": 0
+  },
+  "qmax": 72,
+  "maxclt": 5.776,
+  "hw_gas": -64,
+  "cov": [
+   275,
+   9
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S45_2026-07-09T215519Z",
+  "utc": "2026-07-09 21:55:19",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 2/10 non-empty collated blocks (20%), max collation 0.404s; queue max 2<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 12,
+  "n_nonempty": 10,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 2,
+   "dispatch": 0
+  },
+  "qmax": 2,
+  "maxclt": 0.404,
+  "hw_gas": -64,
+  "cov": [
+   87,
+   13
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S46_2026-07-10T080801Z",
+  "utc": "2026-07-10 08:08:01",
+  "shard": "8000",
+  "ep_type": "lowtps",
+  "ours": false,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 4/15 non-empty collated blocks (27%), max collation 0.4s; queue max 20<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 16,
+  "n_nonempty": 15,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 4,
+   "dispatch": 0
+  },
+  "qmax": 20,
+  "maxclt": 0.4,
+  "hw_gas": -64,
+  "cov": [
+   116,
+   4
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 08:24:43",
+  "shard": "8000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 13/14 non-empty collated blocks (93%), max collation 0.449s; queue max 684<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 16,
+  "n_nonempty": 14,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 13,
+   "dispatch": 0
+  },
+  "qmax": 684,
+  "maxclt": 0.449,
+  "hw_gas": -64,
+  "cov": [
+   56,
+   4
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 08:36:00",
+  "shard": "8000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": "load_class",
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 17/25 non-empty collated blocks (68%), max collation 0.48s; queue max 258<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 28,
+  "n_nonempty": 25,
+  "counts": {
+   "load_class": 3,
+   "queue": 0,
+   "long_collation": 17,
+   "dispatch": 0
+  },
+  "qmax": 258,
+  "maxclt": 0.48,
+  "hw_gas": -64,
+  "cov": [
+   251,
+   25
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 08:46:28",
+  "shard": "8000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 4/35 non-empty collated blocks (11%), max collation 0.446s; queue max 51<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 40,
+  "n_nonempty": 35,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 4,
+   "dispatch": 0
+  },
+  "qmax": 51,
+  "maxclt": 0.446,
+  "hw_gas": -64,
+  "cov": [
+   296,
+   148
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:11:56",
+  "shard": "8000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 3/25 non-empty collated blocks (12%), max collation 0.435s; queue max 14<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 28,
+  "n_nonempty": 25,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 3,
+   "dispatch": 0
+  },
+  "qmax": 14,
+  "maxclt": 0.435,
+  "hw_gas": -64,
+  "cov": [
+   281,
+   171
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:14:02",
+  "shard": "4000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: long_collation in 3/3 non-empty collated blocks (100%), max collation 0.458s; queue max 1506<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 4,
+  "n_nonempty": 3,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 3,
+   "dispatch": 0
+  },
+  "qmax": 1506,
+  "maxclt": 0.458,
+  "hw_gas": -64,
+  "cov": [
+   11,
+   10
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:14:03",
+  "shard": "C000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; sibling shard 4000 splitting the same second is archive-confirmed long_collation",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "unknown"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:20:14",
+  "shard": "2000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "queue",
+  "load_dim": null,
+  "secondary": "long_collation",
+  "confidence": "confirmed",
+  "evidence": "archive: out_msg_queue >=4096 in 27/40 collated blocks, peak 6196 (force-split limit 4096); gas hw=-64 (no gas-soft block); long_collation 4/34",
+  "n_archive": 40,
+  "n_nonempty": 34,
+  "counts": {
+   "load_class": 0,
+   "queue": 27,
+   "long_collation": 4,
+   "dispatch": 0
+  },
+  "qmax": 6196,
+  "maxclt": 0.473,
+  "hw_gas": -64,
+  "cov": [
+   161,
+   11
+  ],
+  "agent_primary": "queue"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:20:14",
+  "shard": "6000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "queue",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; sibling shard 2000 splitting the same second is archive-confirmed queue (peak 6196)",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "queue"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:20:28",
+  "shard": "A000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "load_class",
+  "load_dim": "collated_data",
+  "secondary": "long_collation",
+  "confidence": "confirmed",
+  "evidence": "archive: 6/6 non-empty blocks reached cat_collated_data=3 (1.72-1.80MB = 164-172% of the 1.05MB soft) at T-92..T-41; the same 6 also meet long_collation; queue max 3823 (<4096)",
+  "n_archive": 8,
+  "n_nonempty": 6,
+  "counts": {
+   "load_class": 6,
+   "queue": 0,
+   "long_collation": 6,
+   "dispatch": 0
+  },
+  "qmax": 3823,
+  "maxclt": 0.436,
+  "hw_gas": -64,
+  "cov": [
+   92,
+   41
+  ],
+  "agent_primary": "load_class"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:22:30",
+  "shard": "B000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "unknown",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; no coverage; parent A000 was load_class/collated_data, siblings were queue - cannot rank",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "unknown"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:23:16",
+  "shard": "7000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "queue",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: out_msg_queue >=4096 in 12/20 collated blocks, peak 4822 (force-split limit 4096); gas hw=-64 (no gas-soft block); long_collation 0/20",
+  "n_archive": 20,
+  "n_nonempty": 20,
+  "counts": {
+   "load_class": 0,
+   "queue": 12,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 4822,
+  "maxclt": 0.409,
+  "hw_gas": -64,
+  "cov": [
+   137,
+   14
+  ],
+  "agent_primary": "queue"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:23:58",
+  "shard": "5000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "queue",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: out_msg_queue >=4096 in 12/18 collated blocks, peak 4860 (force-split limit 4096); gas hw=-64 (no gas-soft block); long_collation 1/16",
+  "n_archive": 18,
+  "n_nonempty": 16,
+  "counts": {
+   "load_class": 0,
+   "queue": 12,
+   "long_collation": 1,
+   "dispatch": 0
+  },
+  "qmax": 4860,
+  "maxclt": 0.458,
+  "hw_gas": -64,
+  "cov": [
+   202,
+   12
+  ],
+  "agent_primary": "queue"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:24:18",
+  "shard": "1000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "queue",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "confirmed",
+  "evidence": "archive: out_msg_queue >=4096 in 12/18 collated blocks, peak 4731 (force-split limit 4096); gas hw=-64 (no gas-soft block); long_collation 1/13",
+  "n_archive": 18,
+  "n_nonempty": 13,
+  "counts": {
+   "load_class": 1,
+   "queue": 12,
+   "long_collation": 1,
+   "dispatch": 0
+  },
+  "qmax": 4731,
+  "maxclt": 0.482,
+  "hw_gas": -64,
+  "cov": [
+   219,
+   26
+  ],
+  "agent_primary": "queue"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:25:28",
+  "shard": "3000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "queue",
+  "load_dim": null,
+  "secondary": "load_class",
+  "confidence": "confirmed",
+  "evidence": "archive: out_msg_queue >=4096 in 6/6 collated blocks, peak 5108 (force-split limit 4096); gas hw=-64 (no gas-soft block); long_collation 2/5",
+  "n_archive": 6,
+  "n_nonempty": 5,
+  "counts": {
+   "load_class": 3,
+   "queue": 6,
+   "long_collation": 2,
+   "dispatch": 0
+  },
+  "qmax": 5108,
+  "maxclt": 0.464,
+  "hw_gas": -64,
+  "cov": [
+   109,
+   62
+  ],
+  "agent_primary": "queue"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:42:57",
+  "shard": "9000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "unknown",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; no coverage in window",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "unknown"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 09:56:46",
+  "shard": "E000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "unknown",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; no coverage in window",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "unknown"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 10:17:53",
+  "shard": "F000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "unknown",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; no coverage in window",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "unknown"
+ },
+ {
+  "sid": "S47_2026-07-13T082443Z",
+  "utc": "2026-07-13 10:17:54",
+  "shard": "D000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "unknown",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; no coverage in window",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "unknown"
+ },
+ {
+  "sid": "S48_2026-07-20T095158Z",
+  "utc": "2026-07-20 09:51:58",
+  "shard": "8000",
+  "ep_type": "our-jetton",
+  "ours": true,
+  "primary": "unknown",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; documented archive gap at the split moment; load_class exactly ruled out",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "unknown"
+ },
+ {
+  "sid": "S48_2026-07-20T095158Z",
+  "utc": "2026-07-20 10:23:46",
+  "shard": "8000",
+  "ep_type": "lowtps (organic tail)",
+  "ours": true,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "archive: long_collation in 7/24 non-empty collated blocks (29%), max collation 2.967s; queue max 14<<4096; gas hw=-64 (load_class cannot reach want_split); no dispatch",
+  "n_archive": 27,
+  "n_nonempty": 24,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 7,
+   "dispatch": 0
+  },
+  "qmax": 14,
+  "maxclt": 2.967,
+  "hw_gas": -64,
+  "cov": [
+   258,
+   34
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S49_2026-07-20T214432Z",
+  "utc": "2026-07-20 21:44:32",
+  "shard": "8000",
+  "ep_type": "our-poke",
+  "ours": true,
+  "primary": "long_collation",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; no in-window coverage, but the 4 post-split blocks (T+13..15) are 3/4 long_collation and the day\u2019s other split is archive-confirmed long_collation; matches the poke mechanism (CellDB state loading)",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "long_collation"
+ },
+ {
+  "sid": "S50_2026-07-23T100059Z",
+  "utc": "2026-07-23 10:00:59",
+  "shard": "8000",
+  "ep_type": "our-destroy",
+  "ours": true,
+  "primary": "unknown",
+  "load_dim": null,
+  "secondary": null,
+  "confidence": "inferred",
+  "evidence": "no archive coverage of this shard in [T-300,T]; session-stats collection for 23.07 stops at 01:27 UTC - no archive data at all",
+  "n_archive": 0,
+  "n_nonempty": 0,
+  "counts": {
+   "load_class": 0,
+   "queue": 0,
+   "long_collation": 0,
+   "dispatch": 0
+  },
+  "qmax": 0,
+  "maxclt": -1,
+  "hw_gas": -64,
+  "cov": [
+   null,
+   null
+  ],
+  "agent_primary": "unknown"
+ }
+]

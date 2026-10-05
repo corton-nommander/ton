@@ -1128,7 +1128,7 @@ const RefTo<Account> t_Ref_AccountE{true};
 bool ShardAccount::extract_account_state(Ref<vm::CellSlice> cs_ref, Ref<vm::Cell>& acc_state) {
   if (cs_ref.is_null()) {
     vm::CellBuilder cb;
-    return cb.store_bool_bool(false) && cb.finalize_to(acc_state);
+    return cb.store_long_bool(0, 2) && cb.finalize_to(acc_state);  // account_none$00 = Account
   } else {
     return cs_ref->prefetch_ref_to(acc_state);
   }

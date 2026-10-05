@@ -1,0 +1,1395 @@
+{
+  "schema": "jetton-bomb-sidechain-evaluation-v1",
+  "date": "2026-10-05",
+  "source_revision": "9e252878c217f22f3e2e144440f386c0262c1aa3",
+  "runtime_patch": "crypto/block/block-parse.cpp: absent ShardAccount synthesize canonical two-bit account_none$00",
+  "utility_path": "tools/jetton-bomb",
+  "upstream": {
+    "source_directory": "/home/neodix/gitProjects/ton-mesh/home-user/genesis/jetton-bomb",
+    "upstream_revision": "bdeadcd57dfd2ec6f43d8f20e76ac8372675940f",
+    "sidechain_revision": "9e252878c217f22f3e2e144440f386c0262c1aa3",
+    "excluded": [
+      ".git",
+      "node_modules",
+      "build",
+      "mnemonic.txt",
+      "config.json",
+      "tps_shards.json",
+      "wallet secrets",
+      "history files",
+      "prebuilt executables"
+    ],
+    "compiler": "1.2.0",
+    "original_static_tps_source_sha256": "3cf1a9beac71f1a6f73dc5daffff26be409b382e78b45bccee4382476feee709",
+    "original_static_tps_artifact_sha256": "c726358047bd350a787239c8837dfb0a0decddd7f23303efab0614d5e1e3e389",
+    "adapted_static_tps_source_sha256": "bd92af25c29a2f024bb1663839d0c88e7fe83dcf6b6e20405f8ea98becd6b9aa",
+    "adapted_static_tps_artifact_sha256": "fad2a070905efe02725d7947c83367b6452b61a19e31b24fdefddfd40452ed85",
+    "adapted_code_hash": "77cbd1d23c24955c239336da50f4a03eab2f481afcb61f9ce67488ad018f0da3",
+    "contract_change": "Masterchain self-messages carry 1 TON to cover masterchain forwarding fees; basechain self-message value remains 0.003 TON. Float returns to the same account."
+  },
+  "native_basechain_support": "ordinary TVM external/internal messages disabled at global version >=14; preflight exits3",
+  "measurement_scope": "successful self-work and all inbound internal receipts at StaticTps target accounts in masterchain; sink-account ping transactions and other network transactions are outside this count",
+  "runtime": {
+    "name": "sidechain-jetton-fixed",
+    "image_id": "sha256:97886aff443737c9422f752a6b831b2f0b85fc41a2f057f9e7e698138caa86de",
+    "source_labels": {
+      "com.docker.compose.project": "mylocalton-desktop",
+      "com.docker.compose.service": "genesis",
+      "com.docker.compose.version": "2.39.1",
+      "org.opencontainers.image.created": "2026-09-14T06:47:12Z",
+      "org.opencontainers.image.revision": "925ee0721c5b691debe3a2e37dba83d3daaae581",
+      "org.opencontainers.image.version": "22.04"
+    },
+    "environment": {
+      "GENESIS": "true",
+      "NAME": "genesis",
+      "GLOBAL_ID": "-217",
+      "VERSION_CAPABILITIES": "14",
+      "NATIVE_TRANSFER_RUNS_ENABLED": "1",
+      "NATIVE_PAYMENT_LANES_ENABLED": "1",
+      "NATIVE_PAYMENT_LANE_DEPTH": "2",
+      "ACTUAL_MIN_SPLIT": "2",
+      "MIN_SPLIT": "2",
+      "MAX_SPLIT": "2",
+      "NATIVE_LOAD_SOURCES": "4",
+      "NATIVE_SPAM_GENESIS_SOURCES": "4",
+      "NATIVE_SPAM_GENESIS_ACCOUNT_LIMIT": "8",
+      "BASECHAIN_CONTRACT_FAUCETS": "0",
+      "NATIVE_SPAM_RUN": "0",
+      "SPAM_RUN": "0",
+      "EMBEDDED_FILE_HTTP_SERVER": "false",
+      "TON_SIMPLEX_MAX_TPS": "1",
+      "TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS": "8000",
+      "TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS": "1000",
+      "SIMPLEX_TARGET_RATE_MS": "300",
+      "SIMPLEX_FIRST_BLOCK_TIMEOUT_MS": "500",
+      "SIMPLEX_MAX_LEADER_WINDOW_DESYNC": "700",
+      "BLOCK_SIZE_UNDERLOAD_KB": "4096",
+      "BLOCK_SIZE_SOFT_KB": "8704",
+      "BLOCK_SIZE_HARD_KB": "9216",
+      "BLOCK_GAS_LIMIT_UNDERLOAD": "2000000",
+      "BLOCK_GAS_LIMIT_SOFT": "10000000",
+      "BLOCK_GAS_LIMIT_HARD": "20000000",
+      "GENESIS_VERBOSITY": "1",
+      "VERBOSITY": "1",
+      "CUSTOM_PARAMETERS": "--threads 16",
+      "TON_NATIVE_ADMISSION_CONFIG_CACHE": "1",
+      "TON_NATIVE_CANDIDATE_METADATA_PROJECTION": "1",
+      "TON_OVERLAY_LOCAL_SIGNATURE_REUSE": "1",
+      "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "DEBIAN_FRONTEND": "noninteractive"
+    },
+    "resources": {
+      "NanoCpus": 16000000000,
+      "Memory": 12884901888,
+      "MemorySwap": 12884901888,
+      "CpusetCpus": ""
+    },
+    "host_config": {
+      "Binds": null,
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "bridge",
+      "PortBindings": {
+        "40004/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "41006"
+          }
+        ]
+      },
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 12884901888,
+      "NanoCpus": 16000000000,
+      "CgroupParent": "",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 12884901888,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/asound",
+        "/proc/acpi",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/sys/firmware",
+        "/sys/devices/virtual/powercap"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "mounts": [],
+    "port_bindings": {
+      "40004/tcp": [
+        {
+          "HostIp": "127.0.0.1",
+          "HostPort": "41006"
+        }
+      ]
+    },
+    "ready_masterchain_seqno": 563,
+    "reused_container": true,
+    "storage": "existing isolated container writable overlay"
+  },
+  "validator_provenance": {
+    "base_image_id": "sha256:53ec44c24a5ebd638b676fed9d82844cbe838751d1aa991761bffcd5395352aa",
+    "validator_sha256": "62febcf35bccd0c9d4a062fea5ecd077c1d44b1fe70df3c7f52316921c959d43",
+    "runtime_libraries_sha256": {
+      "libjemalloc.so.2": "567efa52ecf445d5966025e1dcfd6b927a986472d272be3742f74a4a373baf12",
+      "libgsl.so.27": "99a902f1c0df5c709ba20cb64f014eda51b978305c2923d9397f0b1b902eda18",
+      "libblas.so.3": "e748efcae5753fe4a652877fccdb5895ac6f7605668a2db878b19c914e78e3a8",
+      "libstdc++.so.6": "1fd75fe70354a416d75aef22bcae68c47bd25d20e2d0568c30b1a9838cf62f11",
+      "libm.so.6": "fce00b6f25f459cf4ae0b7fae4257909a1a8a86f9149e7c029a5d617baf1ccd0",
+      "libgcc_s.so.1": "d93224d2b0dab4247598be683adca02f5cf00586f99c187579cd7e92058fb7cb",
+      "libc.so.6": "3a15d66867d83762c7f2f1e37359cb8f6c5743edb369c65285cb0b1c4f7498bf",
+      "ld-linux-x86-64.so.2": "c20a2dc8917c755f02b94049356320fe1f62ac7d9f8994731f807d9df39302da",
+      "libgslcblas.so.0": "cbaeb658d6d3fd2dc46695923083c0e8b5ceb5f9fb76b1f607a643e00cb2a1c5"
+    },
+    "source_revision": "9e252878c217f22f3e2e144440f386c0262c1aa3",
+    "source_diff": "diff --git a/crypto/block/block-parse.cpp b/crypto/block/block-parse.cpp\nindex 8971d3af..d081c25e 100644\n--- a/crypto/block/block-parse.cpp\n+++ b/crypto/block/block-parse.cpp\n@@ -1128,7 +1128,7 @@ const RefTo<Account> t_Ref_AccountE{true};\n bool ShardAccount::extract_account_state(Ref<vm::CellSlice> cs_ref, Ref<vm::Cell>& acc_state) {\n   if (cs_ref.is_null()) {\n     vm::CellBuilder cb;\n-    return cb.store_bool_bool(false) && cb.finalize_to(acc_state);\n+    return cb.store_long_bool(0, 2) && cb.finalize_to(acc_state);  // account_none$00 = Account\n   } else {\n     return cs_ref->prefetch_ref_to(acc_state);\n   }\n"
+  },
+  "host_runtime": {
+    "docker": "Docker Desktop: CPUs=24, memory_bytes=85918466048",
+    "cpu": "AMD Ryzen 9 3900X; 24 logical CPUs",
+    "other_services_running": [
+      "sidechain-jetton-fixed 97886aff4437",
+      "hyperliquid-jev-gateway-1 caddy:2.10.2-alpine",
+      "hyperliquid-jev-engine-1 hyperliquid-jev-app:local",
+      "hyperliquid-jev-web-1 hyperliquid-jev-app:local",
+      "hyperliquid-jev-db-1 postgres:17.11-bookworm"
+    ]
+  },
+  "runs": [
+    {
+      "valid": true,
+      "workchain": -1,
+      "contracts": 4,
+      "requested_target_tps_per_contract": 3000,
+      "canonical_window_seconds": 120,
+      "wall_window_seconds": 120.009792573,
+      "successful_work_counter_delta": 117995,
+      "successful_work_tps": 983.2916666666666,
+      "successful_work_wall_tps": 983.2114319189875,
+      "internal_transaction_tps": 1312.2416666666666,
+      "internal_transaction_wall_tps": 1312.1345902186622,
+      "receipts": {
+        "transactions": 157469,
+        "internal_transactions": 157469,
+        "external_transactions": 0,
+        "aborted_transactions": 0,
+        "bounced_internal_transactions": 39458,
+        "self_work_receipts": 118011,
+        "aborted_self_work_receipts": 0
+      },
+      "audit_complete": true,
+      "drained": true,
+      "proof_policy": "trusted local liteserver masterchain account snapshots; receipt predecessor hashes verified by tonutils-go; no independent consensus proof verification",
+      "code_hash": "77cbd1d23c24955c239336da50f4a03eab2f481afcb61f9ce67488ad018f0da3",
+      "start": {
+        "masterchain": {
+          "Workchain": -1,
+          "Shard": -9223372036854775808,
+          "SeqNo": 864,
+          "RootHash": "6SxlsYKWMe+VJZIdXCyR7w8FHb3AoseNdckgRbQ10/A=",
+          "FileHash": "cc5gUTbVyPSzWzfJNwcrpzc9lOIfQLjf91/pZQVPxdo="
+        },
+        "gen_utime": 1791209383,
+        "captured_at": "2026-10-05T14:09:44.567607316Z",
+        "accounts": [
+          {
+            "address": "-1:cf5ff331160495c3f1b560dd0b24963d15f064484164d8ca444b2a3f474a23f3",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209378,
+              "window_transactions": 1833,
+              "total_work_transactions": 1833,
+              "epoch": 2
+            },
+            "last_transaction_lt": 865000619,
+            "last_transaction_hash": "558a85342d2fa120b691b58e1c93874586cac24e4491f90d9ead6164c6912c5d",
+            "balance_nano": "999783728616040"
+          },
+          {
+            "address": "-1:4d1088320af0322f6c2cfada2b8cc454c62368983ccd9d0644ab6804a8f632fe",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209378,
+              "window_transactions": 1826,
+              "total_work_transactions": 1826,
+              "epoch": 2
+            },
+            "last_transaction_lt": 865000621,
+            "last_transaction_hash": "1890d195c79c8f7edfa45901c6d32094558bbda8a7f3f578610d06b4a366af04",
+            "balance_nano": "999783639546040"
+          },
+          {
+            "address": "-1:cfbd67f411719c035f247d2f353454134769d973e99fccfb6fc8611ccb40ea1f",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209378,
+              "window_transactions": 1838,
+              "total_work_transactions": 1838,
+              "epoch": 2
+            },
+            "last_transaction_lt": 865000619,
+            "last_transaction_hash": "a3e257bc43aae75dab9db42f488c4b910873f4e59ff804e3879da3853a635cfa",
+            "balance_nano": "999783871296040"
+          },
+          {
+            "address": "-1:757c2c9cc8b7e731c86e8d6a436d8ddc9192ca2fc5c1f73ad70d92abcd603508",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209378,
+              "window_transactions": 1828,
+              "total_work_transactions": 1828,
+              "epoch": 2
+            },
+            "last_transaction_lt": 865000619,
+            "last_transaction_hash": "92f6139c66824537bd63335a49e2648d1c0b654f6603d08b14bdbff784a3ba4a",
+            "balance_nano": "999783708916040"
+          }
+        ]
+      },
+      "end": {
+        "masterchain": {
+          "Workchain": -1,
+          "Shard": -9223372036854775808,
+          "SeqNo": 983,
+          "RootHash": "hraKBIb5sz5+sWH17GtEub38GZIYcKlF+XwK50qvCAE=",
+          "FileHash": "W29NzUIf6Lt383gZ2VHw4pq6kSMMYAJ8mBbpl7SxPxg="
+        },
+        "gen_utime": 1791209503,
+        "captured_at": "2026-10-05T14:11:44.577399889Z",
+        "accounts": [
+          {
+            "address": "-1:cf5ff331160495c3f1b560dd0b24963d15f064484164d8ca444b2a3f474a23f3",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209499,
+              "window_transactions": 1255,
+              "total_work_transactions": 31330,
+              "epoch": 6
+            },
+            "last_transaction_lt": 984000619,
+            "last_transaction_hash": "d4b0b72e89f95a940fef5afca7b6b1ec96bd9ff8e05a693afa5a6283c1ee20d9",
+            "balance_nano": "997479548166441"
+          },
+          {
+            "address": "-1:4d1088320af0322f6c2cfada2b8cc454c62368983ccd9d0644ab6804a8f632fe",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209499,
+              "window_transactions": 1249,
+              "total_work_transactions": 31331,
+              "epoch": 6
+            },
+            "last_transaction_lt": 984000617,
+            "last_transaction_hash": "fab28081e1d92da2712cfb70539b7f6425ede18fa43f1f36cb5ef6e663e8263f",
+            "balance_nano": "997479613596441"
+          },
+          {
+            "address": "-1:cfbd67f411719c035f247d2f353454134769d973e99fccfb6fc8611ccb40ea1f",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209499,
+              "window_transactions": 1250,
+              "total_work_transactions": 31323,
+              "epoch": 6
+            },
+            "last_transaction_lt": 984000617,
+            "last_transaction_hash": "ab7063f0935a4eea432721a871f942abc6f6da92674285b543f2cfbc6586e9d8",
+            "balance_nano": "997479459096441"
+          },
+          {
+            "address": "-1:757c2c9cc8b7e731c86e8d6a436d8ddc9192ca2fc5c1f73ad70d92abcd603508",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209499,
+              "window_transactions": 1253,
+              "total_work_transactions": 31336,
+              "epoch": 6
+            },
+            "last_transaction_lt": 984000617,
+            "last_transaction_hash": "f4eb043c864fe8efee8cfc751789259cb284c1bf656b556c3d93f101b811045f",
+            "balance_nano": "997478587966441"
+          }
+        ]
+      },
+      "drain": {
+        "masterchain": {
+          "Workchain": -1,
+          "Shard": -9223372036854775808,
+          "SeqNo": 989,
+          "RootHash": "uIVS7qGHY818+rYiBDOOntPmFwe4QbBKpg+Fnu3ILTI=",
+          "FileHash": "aDp2JJynv3h3RFqRpN0Il0RQEze9r+O5fqS2c5QqTvE="
+        },
+        "gen_utime": 1791209510,
+        "captured_at": "2026-10-05T14:11:50.654671779Z",
+        "accounts": [
+          {
+            "address": "-1:cf5ff331160495c3f1b560dd0b24963d15f064484164d8ca444b2a3f474a23f3",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209499,
+              "window_transactions": 1257,
+              "total_work_transactions": 31332,
+              "epoch": 7
+            },
+            "last_transaction_lt": 985000011,
+            "last_transaction_hash": "45cac0285ad8cb55ea53e867515fedfd8bdf3727396712fe0f29b5e6b5961629",
+            "balance_nano": "997481399835781"
+          },
+          {
+            "address": "-1:4d1088320af0322f6c2cfada2b8cc454c62368983ccd9d0644ab6804a8f632fe",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209499,
+              "window_transactions": 1251,
+              "total_work_transactions": 31333,
+              "epoch": 7
+            },
+            "last_transaction_lt": 985000009,
+            "last_transaction_hash": "46dbbb935037fd1ef53e478cb801ae299f86dde68e54f19630d81c4766b7a39f",
+            "balance_nano": "997481465265781"
+          },
+          {
+            "address": "-1:cfbd67f411719c035f247d2f353454134769d973e99fccfb6fc8611ccb40ea1f",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209499,
+              "window_transactions": 1252,
+              "total_work_transactions": 31325,
+              "epoch": 7
+            },
+            "last_transaction_lt": 985000009,
+            "last_transaction_hash": "5588c4a6b4ba4736cb25004e34f8a23c200d415089691571cc34ec62a09d1d1b",
+            "balance_nano": "997481310765781"
+          },
+          {
+            "address": "-1:757c2c9cc8b7e731c86e8d6a436d8ddc9192ca2fc5c1f73ad70d92abcd603508",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209499,
+              "window_transactions": 1255,
+              "total_work_transactions": 31338,
+              "epoch": 7
+            },
+            "last_transaction_lt": 985000013,
+            "last_transaction_hash": "86848797b5049338928ca0dc735d2d2eb318b7a8cbe167d86c78e6b11036a524",
+            "balance_nano": "997480378145781"
+          }
+        ]
+      },
+      "measurement_resource_samples": {
+        "count": 10,
+        "mean_cpu_cores": 0.95873,
+        "max_cpu_cores": 1.3326,
+        "memory_usage_samples": [
+          "680.7MiB / 12GiB",
+          "713.1MiB / 12GiB",
+          "734.7MiB / 12GiB",
+          "756.7MiB / 12GiB",
+          "789.3MiB / 12GiB",
+          "820.8MiB / 12GiB",
+          "847.6MiB / 12GiB",
+          "872.2MiB / 12GiB",
+          "893.6MiB / 12GiB",
+          "924.3MiB / 12GiB"
+        ]
+      },
+      "raw_result": {
+        "path": "build/benchmarks/jetton-bomb-20261005/fixed/four-contracts.json",
+        "sha256": "caafaff5d03371eae914424db4ef7c99861c917fcb0d44bec087bceabacd6073"
+      }
+    },
+    {
+      "valid": true,
+      "workchain": -1,
+      "contracts": 16,
+      "requested_target_tps_per_contract": 3000,
+      "canonical_window_seconds": 119,
+      "wall_window_seconds": 120.036515919,
+      "successful_work_counter_delta": 149673,
+      "successful_work_tps": 1257.7563025210084,
+      "successful_work_wall_tps": 1246.8955705195453,
+      "internal_transaction_tps": 1355.689075630252,
+      "internal_transaction_wall_tps": 1343.9826936401803,
+      "receipts": {
+        "transactions": 161327,
+        "internal_transactions": 161327,
+        "external_transactions": 0,
+        "aborted_transactions": 0,
+        "bounced_internal_transactions": 11590,
+        "self_work_receipts": 149737,
+        "aborted_self_work_receipts": 0
+      },
+      "audit_complete": true,
+      "drained": true,
+      "proof_policy": "trusted local liteserver masterchain account snapshots; receipt predecessor hashes verified by tonutils-go; no independent consensus proof verification",
+      "code_hash": "77cbd1d23c24955c239336da50f4a03eab2f481afcb61f9ce67488ad018f0da3",
+      "start": {
+        "masterchain": {
+          "Workchain": -1,
+          "Shard": -9223372036854775808,
+          "SeqNo": 1144,
+          "RootHash": "19Jou/0VQq0b/EuMH0qJso0rrf9V6A7QqKU62KmZHEk=",
+          "FileHash": "w8d0IqO2VEQlN+YIc/4o04oxvey6ipQqD9ZAdazFRhA="
+        },
+        "gen_utime": 1791209595,
+        "captured_at": "2026-10-05T14:13:16.496325823Z",
+        "accounts": [
+          {
+            "address": "-1:df0438f78162af450435387f791fd38b0b45b2060bc578e2722acac64813fea7",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209581,
+              "window_transactions": 1442,
+              "total_work_transactions": 1442,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "7149d55710a57ef7361a1ad8a61ad1ae2b31957d2bc3759dd225304225ca0d3a",
+            "balance_nano": "999853516472082"
+          },
+          {
+            "address": "-1:1f72a0dbdd536ee54bda46a7b9e83c7b7a4169a1992356c5380a549d75551304",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209581,
+              "window_transactions": 1439,
+              "total_work_transactions": 1439,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "7854a742b0eaba2050a0323d5b6836e0145df5a0f1ef99069d3f4aa51037a929",
+            "balance_nano": "999853627632082"
+          },
+          {
+            "address": "-1:274663167f2aa547e2121e7db10b487976ce9181ed911b69d687da2d7117d287",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209581,
+              "window_transactions": 1437,
+              "total_work_transactions": 1437,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "ba1b8f816cfab7014f35d438c824754c6b8d6b2fbf45d6e44a4e531be48fb05d",
+            "balance_nano": "999853742732082"
+          },
+          {
+            "address": "-1:84ea5a272324743d1945f2226e44d8c8b87496a5b1d0493110ca2d4bda58105e",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209581,
+              "window_transactions": 1438,
+              "total_work_transactions": 1438,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "c4eb631b8cc2ed07dd7b7b9b1da9a87f29fcf3201eb592f4d2376c7ecb851ccc",
+            "balance_nano": "999853623692082"
+          },
+          {
+            "address": "-1:e6a734588d081bd58b4df37c2f8d457fbb33fd8e826a9835ae484e2c4a928c7e",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209585,
+              "window_transactions": 1133,
+              "total_work_transactions": 1133,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000203,
+            "last_transaction_hash": "31b8517857c30560a83f8bc5ca2b44b8ecdc15324c6becb6b8e5cd939d977e82",
+            "balance_nano": "999903643162413"
+          },
+          {
+            "address": "-1:1750bad3b0f0286d6261f5cf474dd591406ecb9d4f3ac41435265051b75a0350",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209585,
+              "window_transactions": 1134,
+              "total_work_transactions": 1134,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "14d0d55dd956d8555a5262b0f4f73bc890f03c0d57ea73f4a9c1971fa85c4fb5",
+            "balance_nano": "999903647102413"
+          },
+          {
+            "address": "-1:e63f1b85a5e9c506c51329cd2ee9877b3f067c52c7ef4d3eb00a3ea9b32f7128",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209585,
+              "window_transactions": 1133,
+              "total_work_transactions": 1133,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "649011523ad25bc6b376db08b506df655d02affb42b586a79e7bfe4f6ce85d94",
+            "balance_nano": "999903643162413"
+          },
+          {
+            "address": "-1:b09c637693d32326bdc0cd938ef7a4702384ddc81ac9de6e99e12b53cc0cf087",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209585,
+              "window_transactions": 1136,
+              "total_work_transactions": 1136,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000203,
+            "last_transaction_hash": "5e48165889fec6644c76fa6a7dcdb1fa2a9628c1b213437f9bf74e75115897b7",
+            "balance_nano": "999903532002413"
+          },
+          {
+            "address": "-1:1c3008bb2965635a191d9a136f6919e5703853196fcbaee408ac2d2353817697",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209585,
+              "window_transactions": 1133,
+              "total_work_transactions": 1133,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "eb1b9b1ae2f38b9dfb3849d525caff881839c10a0ade09b956f4ed38dcfc4158",
+            "balance_nano": "999919938012743"
+          },
+          {
+            "address": "-1:2a14d2e7bc2f54f8c5d761a02740f6b7ca9a8b222a157c2f9bba5b3526a0f9cd",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209585,
+              "window_transactions": 1133,
+              "total_work_transactions": 1133,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "5a62d71becc46dc8eeda5448d2d5808a134e155d395e595e37937ca13bc0f321",
+            "balance_nano": "999920122482743"
+          },
+          {
+            "address": "-1:b3a90c91b8dfe9b99aa12236c7ec8d136a7d7bf8599e679a4c27c16ec2a3326c",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209585,
+              "window_transactions": 1132,
+              "total_work_transactions": 1132,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "f4426b00e6db9e538e49c704980138b7ec4af7c0f69383a002ab105e1e5beb5c",
+            "balance_nano": "999920180032743"
+          },
+          {
+            "address": "-1:bf2bd7d4fa1f3f46cf3fa88e286d14917eeba4e5444444ccb1786dbdf7a5a4fc",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209585,
+              "window_transactions": 1131,
+              "total_work_transactions": 1131,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "fcc3628a0b95b1c1443514b2487b44f6af1df9dedca1f1759de9a5b93e38f49f",
+            "balance_nano": "999920114602743"
+          },
+          {
+            "address": "-1:e8ec2dd5ab4831d75a5410174ad37755fc37e19155e15c504f861cadbed2887f",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209590,
+              "window_transactions": 493,
+              "total_work_transactions": 493,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "98912dec7fb52148fc88cf5933aa8be909feecaa75d1f8b3bc28ac6df06ac675",
+            "balance_nano": "999964148813402"
+          },
+          {
+            "address": "-1:3efe63eb9ece7903d6e8c1d669b7a7d22f428232dc8ec1cecc3f950bc04544af",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209590,
+              "window_transactions": 494,
+              "total_work_transactions": 494,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "d9e97c29434e7b0bd4908284beac26d05b5e1795c267922b30cbae24a34e7afb",
+            "balance_nano": "999964214243402"
+          },
+          {
+            "address": "-1:62d96d9785dfaee8f3a0d12aa44e08b923cb3669135df07484d7ac90482c55db",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209590,
+              "window_transactions": 490,
+              "total_work_transactions": 490,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000201,
+            "last_transaction_hash": "dfec5bad9f4c6c8ef78e2063273e5ba89d2475dc5499db8d425439277e3f3541",
+            "balance_nano": "999964505933402"
+          },
+          {
+            "address": "-1:42cd0dce736bdd782c28788b64b93f6456ac48a9a8fbba18b7bcd2c916170677",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209590,
+              "window_transactions": 490,
+              "total_work_transactions": 490,
+              "epoch": 2
+            },
+            "last_transaction_lt": 1145000199,
+            "last_transaction_hash": "88179c759d0a62b455e88da468d34605812b12a0ab7776db68c05edcb9c99b02",
+            "balance_nano": "999964444443402"
+          }
+        ]
+      },
+      "end": {
+        "masterchain": {
+          "Workchain": -1,
+          "Shard": -9223372036854775808,
+          "SeqNo": 1258,
+          "RootHash": "LX2w8nOzUVWx5sl7BUpmTuRYjGlkrpun9WP4uYOpF9o=",
+          "FileHash": "29riT9WS1VamPUtWWSe9ALAgudYDsmyBzTH05L49Nrw="
+        },
+        "gen_utime": 1791209714,
+        "captured_at": "2026-10-05T14:15:16.532841742Z",
+        "accounts": [
+          {
+            "address": "-1:df0438f78162af450435387f791fd38b0b45b2060bc578e2722acac64813fea7",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209701,
+              "window_transactions": 1058,
+              "total_work_transactions": 10801,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000163,
+            "last_transaction_hash": "428d0623e9c7061128e5df7e9ef2a043e49f1caa1bbff3b09baec5a683cdda33",
+            "balance_nano": "999270358012815"
+          },
+          {
+            "address": "-1:1f72a0dbdd536ee54bda46a7b9e83c7b7a4169a1992356c5380a549d75551304",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209701,
+              "window_transactions": 1050,
+              "total_work_transactions": 10783,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000161,
+            "last_transaction_hash": "a7f7128a1f4f762d96ff0860fdb8cfc0a56f45b61a884dea5e5fddeb1f33b3a4",
+            "balance_nano": "999271147952815"
+          },
+          {
+            "address": "-1:274663167f2aa547e2121e7db10b487976ce9181ed911b69d687da2d7117d287",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209701,
+              "window_transactions": 1055,
+              "total_work_transactions": 10793,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000161,
+            "last_transaction_hash": "79ac08a468bade4d4115ec5558a442d742bd5181f1e808e45750868a686d75c7",
+            "balance_nano": "999270879902815"
+          },
+          {
+            "address": "-1:84ea5a272324743d1945f2226e44d8c8b87496a5b1d0493110ca2d4bda58105e",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209701,
+              "window_transactions": 1055,
+              "total_work_transactions": 10792,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000161,
+            "last_transaction_hash": "fd844b26d15ccf7417d5fa48dcfd9baaf00363df3e8e37bded7bac294a2f51e4",
+            "balance_nano": "999270507022815"
+          },
+          {
+            "address": "-1:e6a734588d081bd58b4df37c2f8d457fbb33fd8e826a9835ae484e2c4a928c7e",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 646,
+              "total_work_transactions": 10497,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000161,
+            "last_transaction_hash": "165ac55b28424655ac213836fef02272fce5122aec82018015740d2f0b174870",
+            "balance_nano": "999320012483146"
+          },
+          {
+            "address": "-1:1750bad3b0f0286d6261f5cf474dd591406ecb9d4f3ac41435265051b75a0350",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 649,
+              "total_work_transactions": 10482,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000163,
+            "last_transaction_hash": "0ba923de377c69c875fb170f0e385216c4ecdffd53d61f63eed53dcebe544cc7",
+            "balance_nano": "999321183183146"
+          },
+          {
+            "address": "-1:e63f1b85a5e9c506c51329cd2ee9877b3f067c52c7ef4d3eb00a3ea9b32f7128",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 648,
+              "total_work_transactions": 10484,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000165,
+            "last_transaction_hash": "0fe920cede15a2f792ee7f1a0598158f08fa0c3abe4995f01ce71880b9243bc2",
+            "balance_nano": "999320514673146"
+          },
+          {
+            "address": "-1:b09c637693d32326bdc0cd938ef7a4702384ddc81ac9de6e99e12b53cc0cf087",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 645,
+              "total_work_transactions": 10492,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000161,
+            "last_transaction_hash": "a12c18c4db63c6c7b5405cfb68a47a254ba34cb42d3967ad7eb2c817a9073bc4",
+            "balance_nano": "999320484703146"
+          },
+          {
+            "address": "-1:1c3008bb2965635a191d9a136f6919e5703853196fcbaee408ac2d2353817697",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 648,
+              "total_work_transactions": 10493,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000161,
+            "last_transaction_hash": "e7db2e2f388932473e079bde4e67b62992a1e2e1519173867ec1ae227a37a979",
+            "balance_nano": "999336476043476"
+          },
+          {
+            "address": "-1:2a14d2e7bc2f54f8c5d761a02740f6b7ca9a8b222a157c2f9bba5b3526a0f9cd",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 645,
+              "total_work_transactions": 10495,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000163,
+            "last_transaction_hash": "0cf7906b5d19334e3915698d46240a4abad6996ffe6a952f0c16ec532fc16176",
+            "balance_nano": "999336606903476"
+          },
+          {
+            "address": "-1:b3a90c91b8dfe9b99aa12236c7ec8d136a7d7bf8599e679a4c27c16ec2a3326c",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 646,
+              "total_work_transactions": 10486,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000163,
+            "last_transaction_hash": "896be3d73bbc540e23e2518d33890730ba552dab79750d23681775038ad3c654",
+            "balance_nano": "999337124853476"
+          },
+          {
+            "address": "-1:bf2bd7d4fa1f3f46cf3fa88e286d14917eeba4e5444444ccb1786dbdf7a5a4fc",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 644,
+              "total_work_transactions": 10490,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000163,
+            "last_transaction_hash": "d5e3425c06116aa362bdb519fb44241a9a08bb42d05ebffffb9c0906c7ad04c5",
+            "balance_nano": "999336710183476"
+          },
+          {
+            "address": "-1:e8ec2dd5ab4831d75a5410174ad37755fc37e19155e15c504f861cadbed2887f",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209711,
+              "window_transactions": 327,
+              "total_work_transactions": 9842,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000163,
+            "last_transaction_hash": "a229c3ad113710e5bc73c729800718d905fe4b73989cf4771452247a60a59c3b",
+            "balance_nano": "999380889464135"
+          },
+          {
+            "address": "-1:3efe63eb9ece7903d6e8c1d669b7a7d22f428232dc8ec1cecc3f950bc04544af",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209711,
+              "window_transactions": 326,
+              "total_work_transactions": 9838,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000163,
+            "last_transaction_hash": "21d0c68b1974a9b4df6ae8ee2d92a88d11ba8c7dc23142758e622c14f9336b79",
+            "balance_nano": "999381365624135"
+          },
+          {
+            "address": "-1:62d96d9785dfaee8f3a0d12aa44e08b923cb3669135df07484d7ac90482c55db",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209711,
+              "window_transactions": 325,
+              "total_work_transactions": 9848,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000161,
+            "last_transaction_hash": "0fdf3501c5ddaaa4e2c39ae399c0f8f79c7aff13667e86572ff043227232534e",
+            "balance_nano": "999381220554135"
+          },
+          {
+            "address": "-1:42cd0dce736bdd782c28788b64b93f6456ac48a9a8fbba18b7bcd2c916170677",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": true,
+              "target_tps": 3000,
+              "window_start": 1791209711,
+              "window_transactions": 327,
+              "total_work_transactions": 9845,
+              "epoch": 6
+            },
+            "last_transaction_lt": 1259000163,
+            "last_transaction_hash": "344d2a3451df4e4ec02ead776ca40a8cfa43f50b3c3b11b1931966eb3082c0ee",
+            "balance_nano": "999381393204135"
+          }
+        ]
+      },
+      "drain": {
+        "masterchain": {
+          "Workchain": -1,
+          "Shard": -9223372036854775808,
+          "SeqNo": 1273,
+          "RootHash": "w6ey4obtZcYTyBiRuaXHmLBn57yFDI7hh393rcJ1S/A=",
+          "FileHash": "hlpKMarl0NX+r4sqsKR0ik8UJOwMWV9FqvkY2aunKNU="
+        },
+        "gen_utime": 1791209727,
+        "captured_at": "2026-10-05T14:15:29.784565761Z",
+        "accounts": [
+          {
+            "address": "-1:df0438f78162af450435387f791fd38b0b45b2060bc578e2722acac64813fea7",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209701,
+              "window_transactions": 1141,
+              "total_work_transactions": 10884,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1261000011,
+            "last_transaction_hash": "1ac9c27ff5c9632fa006fd5ab9852d20a853dd835d67ec67dc9dda7138d64a10",
+            "balance_nano": "999267179191825"
+          },
+          {
+            "address": "-1:1f72a0dbdd536ee54bda46a7b9e83c7b7a4169a1992356c5380a549d75551304",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209701,
+              "window_transactions": 1132,
+              "total_work_transactions": 10865,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1261000027,
+            "last_transaction_hash": "19c3350b82c2ffdb19d82e6e6c60309d2b5285ca1d6e3f6eb96b686c12cb70fa",
+            "balance_nano": "999268026681825"
+          },
+          {
+            "address": "-1:274663167f2aa547e2121e7db10b487976ce9181ed911b69d687da2d7117d287",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209701,
+              "window_transactions": 1138,
+              "total_work_transactions": 10876,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1261000037,
+            "last_transaction_hash": "0c3b7f7be9c5ff705a97c4c09361b2e7cc2e4fe49869cb0e8c76700adf1982dd",
+            "balance_nano": "999267639591825"
+          },
+          {
+            "address": "-1:84ea5a272324743d1945f2226e44d8c8b87496a5b1d0493110ca2d4bda58105e",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209701,
+              "window_transactions": 1138,
+              "total_work_transactions": 10875,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1261000009,
+            "last_transaction_hash": "072531b875ec611ca16588ac5fbb26b03b5af6640c4427460b5b76397a929cbd",
+            "balance_nano": "999267328201825"
+          },
+          {
+            "address": "-1:e6a734588d081bd58b4df37c2f8d457fbb33fd8e826a9835ae484e2c4a928c7e",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 978,
+              "total_work_transactions": 10829,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1263000005,
+            "last_transaction_hash": "9ddda66d6bf0ecd2b69e521e30fac055963496b3687a797da5c532be15b1636a",
+            "balance_nano": "999300966460836"
+          },
+          {
+            "address": "-1:1750bad3b0f0286d6261f5cf474dd591406ecb9d4f3ac41435265051b75a0350",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 983,
+              "total_work_transactions": 10816,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1263000025,
+            "last_transaction_hash": "f257a32e72c691f29125705d4dba4702ef9a79371113aefcd55ff41d51bc4d87",
+            "balance_nano": "999302083550836"
+          },
+          {
+            "address": "-1:e63f1b85a5e9c506c51329cd2ee9877b3f067c52c7ef4d3eb00a3ea9b32f7128",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 981,
+              "total_work_transactions": 10817,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1263000017,
+            "last_transaction_hash": "95a4f69b197fb81a8daf0caf3ee9505dbe2b692b166798bfa3a91e9d4eeb8bb2",
+            "balance_nano": "999301411100836"
+          },
+          {
+            "address": "-1:b09c637693d32326bdc0cd938ef7a4702384ddc81ac9de6e99e12b53cc0cf087",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 979,
+              "total_work_transactions": 10826,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1263000023,
+            "last_transaction_hash": "bf78f5676a71acc5b3e61d1c319095fd39696343532d74f28c77f17758cf27aa",
+            "balance_nano": "999301385070836"
+          },
+          {
+            "address": "-1:1c3008bb2965635a191d9a136f6919e5703853196fcbaee408ac2d2353817697",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 1293,
+              "total_work_transactions": 11138,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1265000017,
+            "last_transaction_hash": "64304f990e385b0494217a763eb233864ab4e5f8a4ace8a62880b5ba8077a68d",
+            "balance_nano": "999296649820506"
+          },
+          {
+            "address": "-1:2a14d2e7bc2f54f8c5d761a02740f6b7ca9a8b222a157c2f9bba5b3526a0f9cd",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 1288,
+              "total_work_transactions": 11138,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1265000007,
+            "last_transaction_hash": "90298fd9bb5fe521bde2824e70446ad2e0b3982e1a3bcf1ad02cc32e1e501c65",
+            "balance_nano": "999296957270506"
+          },
+          {
+            "address": "-1:b3a90c91b8dfe9b99aa12236c7ec8d136a7d7bf8599e679a4c27c16ec2a3326c",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 1292,
+              "total_work_transactions": 11132,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1265000009,
+            "last_transaction_hash": "f73caf8e159f9cc88043789781d2b8207a16b7226e1141ffdbb5a0aaa4f89418",
+            "balance_nano": "999297241080506"
+          },
+          {
+            "address": "-1:bf2bd7d4fa1f3f46cf3fa88e286d14917eeba4e5444444ccb1786dbdf7a5a4fc",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209707,
+              "window_transactions": 1291,
+              "total_work_transactions": 11137,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1265000011,
+            "last_transaction_hash": "3f3fceaff48688dd240e62aee9fc1bf6cde6fc1c1a9db0c07131d0d27ef92e63",
+            "balance_nano": "999296830350506"
+          },
+          {
+            "address": "-1:e8ec2dd5ab4831d75a5410174ad37755fc37e19155e15c504f861cadbed2887f",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209711,
+              "window_transactions": 1433,
+              "total_work_transactions": 10948,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1267000005,
+            "last_transaction_hash": "08a235ed6a515e94a5da447737e216e43c64faa434358898b36721cd58da7cea",
+            "balance_nano": "999305001740505"
+          },
+          {
+            "address": "-1:3efe63eb9ece7903d6e8c1d669b7a7d22f428232dc8ec1cecc3f950bc04544af",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209711,
+              "window_transactions": 1433,
+              "total_work_transactions": 10945,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1267000011,
+            "last_transaction_hash": "fc1188471e396aeee4640d53572a733cd173fe1eaaa1f490223ec0c133856d52",
+            "balance_nano": "999305481840505"
+          },
+          {
+            "address": "-1:62d96d9785dfaee8f3a0d12aa44e08b923cb3669135df07484d7ac90482c55db",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209711,
+              "window_transactions": 1431,
+              "total_work_transactions": 10954,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1267000009,
+            "last_transaction_hash": "01fecb3b3804a4e4115c356cdf82d512615dd3bce66160cbead5c89cc4059c11",
+            "balance_nano": "999305394320505"
+          },
+          {
+            "address": "-1:42cd0dce736bdd782c28788b64b93f6456ac48a9a8fbba18b7bcd2c916170677",
+            "state": {
+              "owner": "-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21",
+              "running": false,
+              "target_tps": 3000,
+              "window_start": 1791209711,
+              "window_transactions": 1438,
+              "total_work_transactions": 10956,
+              "epoch": 7
+            },
+            "last_transaction_lt": 1267000009,
+            "last_transaction_hash": "237effabae795f13fc4fae3857868772a1c6bcdacf72eed489e5f4f585775a38",
+            "balance_nano": "999305463690505"
+          }
+        ]
+      },
+      "measurement_resource_samples": {
+        "count": 10,
+        "mean_cpu_cores": 0.75741,
+        "max_cpu_cores": 1.694,
+        "memory_usage_samples": [
+          "776.8MiB / 12GiB",
+          "788.6MiB / 12GiB",
+          "826.6MiB / 12GiB",
+          "806.6MiB / 12GiB",
+          "756.5MiB / 12GiB",
+          "814.8MiB / 12GiB",
+          "816.4MiB / 12GiB",
+          "804.7MiB / 12GiB",
+          "836.1MiB / 12GiB",
+          "863MiB / 12GiB"
+        ]
+      },
+      "raw_result": {
+        "path": "build/benchmarks/jetton-bomb-20261005/fixed/sixteen-contracts.json",
+        "sha256": "574b5ada7e8e8f1e4d695b52e26b6e6b1e97b8281e318460550557dd718d1ed5"
+      }
+    }
+  ],
+  "capacity_claim": false,
+  "validation": {
+    "test_cells": "41 passed",
+    "go": "go test ./... passed",
+    "tolk_fee_regressions": "StaticTpsMasterchain.spec.ts:2 passed",
+    "local_helpers": "Python compile and isolated-container checks passed"
+  },
+  "raw_artifact_manifest": [
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/smoke.json",
+      "sha256": "978684571e3abf6d212af4b86f6d0743f11149512849a76f0d6c75320d733316",
+      "size_bytes": 3857
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/basechain-preflight.json",
+      "sha256": "a57dee3ffd158c64add444ce79ac2bc1f8c11ff1d528ad723c9f4183b3dde723",
+      "size_bytes": 2561
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/masterchain-preflight.json",
+      "sha256": "cbb740c46416376199e49a1ca192d016dbfe491380b5a2a91454dde7abcf5faf",
+      "size_bytes": 2574
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/v16-validator.log",
+      "sha256": "7a86eeaf9f6ba0bc11c09f9a3232c7e4f07b0501d6478438174ebdbda512bace",
+      "size_bytes": 64679
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/test-cells-full.log",
+      "sha256": "b79e523d25ac57d748309db774858f55126b8325ca1b3129af698114e4353e91",
+      "size_bytes": 145646
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/go-tests.log",
+      "sha256": "bcdb41ecf1942c37a6138a73453ce006015ad634b4c26481e14be1199f178dfc",
+      "size_bytes": 1914
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/fixed/smoke.json",
+      "sha256": "f515ed3cac42d8591d2e734e3f53f08af6f7e920c7f565abbb5350ef21218ffa",
+      "size_bytes": 5943
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/fixed/adjusted-smoke.json",
+      "sha256": "5e57cf1fbc0f9a97d0514e2310689448d833c45ea8d7243db546092f00a558c5",
+      "size_bytes": 6769
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/fixed/validator-provenance.json",
+      "sha256": "838d976d953e1acbfb2b2e0b3e697c9f3dc0991bf496a04b528cbd29661e99bb",
+      "size_bytes": 1746
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/fixed/container.json",
+      "sha256": "ff4ba4b7418b26991c67bea2c44e4ed649b5d8c4b79f72b6bb1619e3bcf950dc",
+      "size_bytes": 4551
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/fixed/four-contracts.json",
+      "sha256": "caafaff5d03371eae914424db4ef7c99861c917fcb0d44bec087bceabacd6073",
+      "size_bytes": 12389
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/fixed/four-contracts.telemetry.json",
+      "sha256": "5000c764b44a9ff67b39f398bcaa764e6a7f29f3f8e1688d541d4fe74a5e02d4",
+      "size_bytes": 8211
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/fixed/sixteen-contracts.json",
+      "sha256": "574b5ada7e8e8f1e4d695b52e26b6e6b1e97b8281e318460550557dd718d1ed5",
+      "size_bytes": 34411
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/fixed/sixteen-contracts.telemetry.json",
+      "sha256": "2c80e9815edeb9498a4251d30220fc62ee365381900ea759c09b8484a04a76ec",
+      "size_bytes": 9113
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/fixed/validator.log",
+      "sha256": "13c98aeb9e7868a85a1eb3c37bd31c9a2a5561cd94df4e70d5a0c85e2ebf57e1",
+      "size_bytes": 71225
+    }
+  ],
+  "final_state": {
+    "benchmark_contracts": "all measured contracts stopped and drained before the validator stopped",
+    "validator_container": "sidechain-jetton-fixed",
+    "validator_state": "exited",
+    "failed_and_linkcheck_containers": "removed after local logs/provenance retained",
+    "images": "local benchmark image retained; no publication"
+  }
+}

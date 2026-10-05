@@ -1,7 +1,7 @@
 # jetton-bomb
 
-This sidechain copy includes an execution-mode check and bounded masterchain
-internal-message runner. Read [sidechain/README.md](sidechain/README.md) for
+This sidechain copy includes native payment spam, an execution-mode check, and a
+bounded masterchain internal-message runner. Read [sidechain/README.md](sidechain/README.md) for
 integration details and measured results. The optimized basechain does not
 support ordinary TVM/jetton internal messages at global version 14 or above.
 

@@ -8,6 +8,7 @@
 #   make deploy     # just the native pool deployer (devnet)
 #   make tpsmeter   # just the TPS + shard-count meter
 #   make internalspam # bounded StaticTps internal-message benchmark
+#   make nativespam # external native payment benchmark
 #   make sidechaincheck # read-only execution-mode compatibility check
 #   make genprogress # just the DAN-generation progress dashboard
 #   make cockpit     # read-only mainnet/testnet load cockpit
@@ -27,9 +28,9 @@ sidechaincheck:
 	cd $(GO_DIR) && mkdir -p build && $(GO) build -o build/sidechaincheck ./cmd/sidechaincheck
 	@echo "built $(GO_DIR)/build/sidechaincheck"
 
-.PHONY: all go bot spam deploy tpsmeter internalspam genprogress cockpit vet test clean
+.PHONY: all go bot spam deploy tpsmeter internalspam nativespam genprogress cockpit vet test clean
 
-all: bot spam deploy tpsmeter internalspam genprogress
+all: bot spam deploy tpsmeter internalspam nativespam genprogress
 
 go: all
 
@@ -53,6 +54,10 @@ internalspam:
 	cd $(GO_DIR) && mkdir -p build && $(GO) build -o build/internalspam ./cmd/internalspam
 	@echo "built $(GO_DIR)/build/internalspam"
 
+nativespam:
+	cd $(GO_DIR) && mkdir -p build && $(GO) build -o build/nativespam ./cmd/nativespam
+	@echo "built $(GO_DIR)/build/nativespam"
+
 genprogress:
 	cd $(GO_DIR) && mkdir -p build && $(GO) build -o build/genprogress ./cmd/genprogress
 	@echo "built $(GO_DIR)/build/genprogress"
@@ -68,4 +73,4 @@ test:
 	cd $(GO_DIR) && $(GO) test ./...
 
 clean:
-	rm -f $(GO_DIR)/build/bot $(GO_DIR)/build/spam $(GO_DIR)/build/deploy $(GO_DIR)/build/tpsmeter $(GO_DIR)/build/internalspam $(GO_DIR)/build/sidechaincheck $(GO_DIR)/build/genprogress $(GO_DIR)/build/cockpit
+	rm -f $(GO_DIR)/build/bot $(GO_DIR)/build/spam $(GO_DIR)/build/deploy $(GO_DIR)/build/tpsmeter $(GO_DIR)/build/internalspam $(GO_DIR)/build/nativespam $(GO_DIR)/build/sidechaincheck $(GO_DIR)/build/genprogress $(GO_DIR)/build/cockpit

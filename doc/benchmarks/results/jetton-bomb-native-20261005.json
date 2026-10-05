@@ -1,0 +1,1392 @@
+{
+  "schema": "jetton-bomb-native-evaluation-v1",
+  "date": "2026-10-05",
+  "utility_path": "tools/jetton-bomb",
+  "utility_base_revision": "ad36437eb0fa40752382a514abf39edd4f52877c",
+  "utility_has_uncommitted_native_extension": true,
+  "measurement_scope": "native signed NTRN parents and logical payments from exclusive funded pairs; TON internal message cells=0",
+  "parent_count_method": "canonical source nonce intervals divided by fixed outputs-per-parent, with account balance conservation; not direct canonical parent-hash batch enumeration",
+  "capacity_claim": false,
+  "runtime": {
+    "name": "sidechain-native-bomb",
+    "image_id": "sha256:97886aff443737c9422f752a6b831b2f0b85fc41a2f057f9e7e698138caa86de",
+    "source_labels": {
+      "com.docker.compose.project": "mylocalton-desktop",
+      "com.docker.compose.service": "genesis",
+      "com.docker.compose.version": "2.39.1",
+      "org.opencontainers.image.created": "2026-09-14T06:47:12Z",
+      "org.opencontainers.image.revision": "925ee0721c5b691debe3a2e37dba83d3daaae581",
+      "org.opencontainers.image.version": "22.04"
+    },
+    "environment": {
+      "GENESIS": "true",
+      "NAME": "genesis",
+      "GLOBAL_ID": "-217",
+      "VERSION_CAPABILITIES": "14",
+      "NATIVE_TRANSFER_RUNS_ENABLED": "1",
+      "NATIVE_PAYMENT_LANES_ENABLED": "1",
+      "NATIVE_PAYMENT_LANE_DEPTH": "2",
+      "ACTUAL_MIN_SPLIT": "2",
+      "MIN_SPLIT": "2",
+      "MAX_SPLIT": "2",
+      "NATIVE_LOAD_SOURCES": "1024",
+      "NATIVE_SPAM_GENESIS_SOURCES": "1024",
+      "NATIVE_SPAM_GENESIS_ACCOUNT_LIMIT": "2048",
+      "NATIVE_SPAM_GENESIS_DESTINATIONS": "1",
+      "NATIVE_SPAM_GENESIS_SOURCE_BALANCE": "1",
+      "NATIVE_SPAM_GENESIS_DEST_BALANCE": "0.000000001",
+      "NATIVE_SPAM_POST_GENESIS_TOPUPS": "0",
+      "NATIVE_PAYMENT_LANE_WALLET_PARALLELISM": "8",
+      "NATIVE_PAYMENT_LANE_WALLET_RETRIES": "256",
+      "BASECHAIN_CONTRACT_FAUCETS": "0",
+      "NATIVE_SPAM_RUN": "0",
+      "SPAM_RUN": "0",
+      "EMBEDDED_FILE_HTTP_SERVER": "false",
+      "TON_SIMPLEX_MAX_TPS": "1",
+      "TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS": "8000",
+      "TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS": "1000",
+      "SIMPLEX_TARGET_RATE_MS": "300",
+      "SIMPLEX_FIRST_BLOCK_TIMEOUT_MS": "500",
+      "SIMPLEX_MAX_LEADER_WINDOW_DESYNC": "700",
+      "BLOCK_SIZE_UNDERLOAD_KB": "4096",
+      "BLOCK_SIZE_SOFT_KB": "8704",
+      "BLOCK_SIZE_HARD_KB": "9216",
+      "BLOCK_GAS_LIMIT_UNDERLOAD": "2000000",
+      "BLOCK_GAS_LIMIT_SOFT": "10000000",
+      "BLOCK_GAS_LIMIT_HARD": "20000000",
+      "GENESIS_VERBOSITY": "1",
+      "VERBOSITY": "1",
+      "CUSTOM_PARAMETERS": "--threads 16",
+      "TON_NATIVE_ADMISSION_CONFIG_CACHE": "1",
+      "TON_NATIVE_CANDIDATE_METADATA_PROJECTION": "1",
+      "TON_OVERLAY_LOCAL_SIGNATURE_REUSE": "1",
+      "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "DEBIAN_FRONTEND": "noninteractive"
+    },
+    "resources": {
+      "NanoCpus": 16000000000,
+      "Memory": 12884901888,
+      "MemorySwap": 12884901888,
+      "CpusetCpus": ""
+    },
+    "mounts": [],
+    "port_bindings": {
+      "40004/tcp": [
+        {
+          "HostIp": "127.0.0.1",
+          "HostPort": "41007"
+        }
+      ]
+    },
+    "storage": "fresh isolated container writable overlay"
+  },
+  "validator_provenance": {
+    "base_image_id": "sha256:53ec44c24a5ebd638b676fed9d82844cbe838751d1aa991761bffcd5395352aa",
+    "validator_sha256": "62febcf35bccd0c9d4a062fea5ecd077c1d44b1fe70df3c7f52316921c959d43",
+    "runtime_libraries_sha256": {
+      "libjemalloc.so.2": "567efa52ecf445d5966025e1dcfd6b927a986472d272be3742f74a4a373baf12",
+      "libgsl.so.27": "99a902f1c0df5c709ba20cb64f014eda51b978305c2923d9397f0b1b902eda18",
+      "libblas.so.3": "e748efcae5753fe4a652877fccdb5895ac6f7605668a2db878b19c914e78e3a8",
+      "libstdc++.so.6": "1fd75fe70354a416d75aef22bcae68c47bd25d20e2d0568c30b1a9838cf62f11",
+      "libm.so.6": "fce00b6f25f459cf4ae0b7fae4257909a1a8a86f9149e7c029a5d617baf1ccd0",
+      "libgcc_s.so.1": "d93224d2b0dab4247598be683adca02f5cf00586f99c187579cd7e92058fb7cb",
+      "libc.so.6": "3a15d66867d83762c7f2f1e37359cb8f6c5743edb369c65285cb0b1c4f7498bf",
+      "ld-linux-x86-64.so.2": "c20a2dc8917c755f02b94049356320fe1f62ac7d9f8994731f807d9df39302da",
+      "libgslcblas.so.0": "cbaeb658d6d3fd2dc46695923083c0e8b5ceb5f9fb76b1f607a643e00cb2a1c5"
+    },
+    "source_revision": "9e252878c217f22f3e2e144440f386c0262c1aa3",
+    "source_diff": "diff --git a/crypto/block/block-parse.cpp b/crypto/block/block-parse.cpp\nindex 8971d3af..d081c25e 100644\n--- a/crypto/block/block-parse.cpp\n+++ b/crypto/block/block-parse.cpp\n@@ -1128,7 +1128,7 @@ const RefTo<Account> t_Ref_AccountE{true};\n bool ShardAccount::extract_account_state(Ref<vm::CellSlice> cs_ref, Ref<vm::Cell>& acc_state) {\n   if (cs_ref.is_null()) {\n     vm::CellBuilder cb;\n-    return cb.store_bool_bool(false) && cb.finalize_to(acc_state);\n+    return cb.store_long_bool(0, 2) && cb.finalize_to(acc_state);  // account_none$00 = Account\n   } else {\n     return cs_ref->prefetch_ref_to(acc_state);\n   }\n"
+  },
+  "actual_stopped_validator_executable": {
+    "container": "sidechain-native-bomb",
+    "path": "/usr/local/libexec/validator-engine",
+    "sha256": "62febcf35bccd0c9d4a062fea5ecd077c1d44b1fe70df3c7f52316921c959d43",
+    "size": 50020032,
+    "verification": "streamed exact executable from stopped container; matches patched validator used in TVM report"
+  },
+  "host_context": {
+    "captured_at": "2026-10-05T18:07:25Z",
+    "capture_scope": "during benchmarks, not a launch-time capture",
+    "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+    "cpu": "AMD Ryzen 9 3900X; 24 logical CPUs",
+    "docker_os": "Docker Desktop",
+    "docker_server_version": "28.3.2",
+    "docker_cpus": 24,
+    "docker_memory_bytes": 85918466048,
+    "background_containers": [
+      "sidechain-native-bomb 97886aff4437 Up 15 minutes",
+      "hyperliquid-jev-gateway-1 caddy:2.10.2-alpine Up 11 hours (healthy)",
+      "hyperliquid-jev-engine-1 hyperliquid-jev-app:local Up 11 hours (healthy)",
+      "hyperliquid-jev-web-1 hyperliquid-jev-app:local Up 11 hours (healthy)",
+      "hyperliquid-jev-db-1 postgres:17.11-bookworm Up 35 hours (healthy)"
+    ]
+  },
+  "fixture": {
+    "sources": 1024,
+    "first_index": 0,
+    "genesis_funded_sources": 1024,
+    "payment_lane_depth": 2,
+    "exported_files": [
+      "source-N.pk",
+      "source-N.pub",
+      "dest-N.pub"
+    ],
+    "manifest_sha256": "cd31d9e781dee0763b50975ae09efec567345b8f9d8e53111d07efbbde15e7fc"
+  },
+  "native_genesis_marker": {
+    "NATIVE_SPAM_REQUESTED_SOURCES": "1024",
+    "NATIVE_SPAM_SOURCES": "1024",
+    "NATIVE_SPAM_GENESIS_SOURCES": "1024",
+    "NATIVE_SPAM_GENESIS_SOURCE_BALANCE": "1",
+    "NATIVE_SPAM_GENESIS_DESTINATIONS": "1",
+    "NATIVE_SPAM_GENESIS_DEST_BALANCE": "0.000000001",
+    "NATIVE_SPAM_POST_GENESIS_TOPUPS": "0",
+    "NATIVE_SPAM_TOPUP_MODE": "genesis",
+    "NATIVE_SPAM_WALLET_DIR": "/var/ton-work/db/native-spam/wallets",
+    "NATIVE_TRANSFER_RUNS_ENABLED": "1",
+    "NATIVE_PAYMENT_LANES_ENABLED": "1",
+    "NATIVE_PAYMENT_LANE_DEPTH": "2",
+    "NATIVE_PAYMENT_LANE_COUNT": "4",
+    "NATIVE_PAYMENT_LANES_EFFECTIVE_VERSION": "16",
+    "NATIVE_PAYMENT_LANES_EFFECTIVE_CAPABILITIES": "3072",
+    "NATIVE_PAYMENT_LANE_ACTUAL_MIN_SPLIT": "2",
+    "NATIVE_PAYMENT_LANE_MIN_SPLIT": "2",
+    "NATIVE_PAYMENT_LANE_MAX_SPLIT": "2",
+    "NATIVE_PAYMENT_LANES_MANIFEST": "/var/ton-work/db/native-spam/wallets/native-payment-lanes.manifest"
+  },
+  "runs": [
+    {
+      "schema_version": 1,
+      "workload": "native_signed_payments_same_lane",
+      "proof_policy": "account_and_topology_merkle_proofs_against_local_liteserver_masterchain_root; consensus proof chain not independently verified",
+      "measured_committed_payments": 7786432,
+      "measured_completed_signed_parents": 486652,
+      "measurement_wall_seconds": 120.0016528,
+      "measurement_chain_seconds": 120,
+      "committed_payment_wall_tps": 64886.039636280744,
+      "completed_signed_parent_wall_tps": 4055.3774772675465,
+      "committed_payment_chain_tps": 64886.933333333334,
+      "ton_internal_message_cells": 0,
+      "total_committed_payments": 9053136,
+      "total_completed_signed_parents": 565821,
+      "drained": true,
+      "valid": true,
+      "capacity_claim": false,
+      "name": "native16-stable.json",
+      "options": {
+        "Config": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/jetton-bomb-native-20261005/materials/local-config.json",
+        "WalletDir": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/jetton-bomb-native-20261005/materials/native-wallets",
+        "Output": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/jetton-bomb-native-20261005/native16-stable.json",
+        "Sources": 1024,
+        "Outputs": 16,
+        "Workers": 8,
+        "BatchSize": 64,
+        "Window": 64,
+        "LaneDepth": 2,
+        "Amount": 1,
+        "Fee": 0,
+        "Rate": 0,
+        "Duration": 120000000000,
+        "Warmup": 10000000000,
+        "DrainTimeout": 240000000000
+      },
+      "protocol": {
+        "ls_config": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/jetton-bomb-native-20261005/materials/local-config.json",
+        "liteservers": 1,
+        "configured_zerostate": {
+          "workchain": -1,
+          "shard": "8000000000000000",
+          "seqno": 0,
+          "root_hash": "35445ec19b354ddac2c5e0e6337006684b01ebfb47a2f5736ad41fc867e048c7",
+          "file_hash": "15a8d70c3ac9309f87495b903d3df59d6574d0a15090db0686c912ff20f5333f"
+        },
+        "observed_zerostate": {
+          "workchain": -1,
+          "shard": "8000000000000000",
+          "seqno": 0,
+          "root_hash": "35445ec19b354ddac2c5e0e6337006684b01ebfb47a2f5736ad41fc867e048c7",
+          "file_hash": "15a8d70c3ac9309f87495b903d3df59d6574d0a15090db0686c912ff20f5333f"
+        },
+        "masterchain": {
+          "workchain": -1,
+          "shard": "8000000000000000",
+          "seqno": 1105,
+          "root_hash": "f043f5b94fe1213c92307604352e03d5c8c7ed0bc19569297901f87b97090a49",
+          "file_hash": "c7d091c3e3b0b9314e3f0c6a7238c6e8f65d4eda203f5084df97851e5591b9e0"
+        },
+        "shards": [
+          {
+            "workchain": 0,
+            "shard": "2000000000000000",
+            "seqno": 452,
+            "root_hash": "5461ef5c872ab7f6ad45b467bdbda4d1049a3bc6f3cee5795cccc313fa9d808b",
+            "file_hash": "3de9aea1257d18442749fd9ce14af884689df68c4924d8e2842a0a4ed13a4213"
+          },
+          {
+            "workchain": 0,
+            "shard": "6000000000000000",
+            "seqno": 451,
+            "root_hash": "eec6c60b39af97ab7ccc0ee4b5a53b88767fe20a80e0d2eb76db3708d92759e0",
+            "file_hash": "282cf8bcbdb6f52fadc114623766c08cb581c3de29545285050eb25ea82b2053"
+          },
+          {
+            "workchain": 0,
+            "shard": "A000000000000000",
+            "seqno": 469,
+            "root_hash": "0f5fb8f7ccedbef2f685c195a4b898fbf2ef8462eb577c5aef4327e256154465",
+            "file_hash": "332c4ca4479e33a008313a8226c7212d446d4d86d7ba32d784ce1c25f1f28dde"
+          },
+          {
+            "workchain": 0,
+            "shard": "E000000000000000",
+            "seqno": 475,
+            "root_hash": "6d443551e0895ba782a0430fee3c9e45994dc621f0f0406ab9f288c70ed9287a",
+            "file_hash": "d2241c556a04f4b1650fa0d6bfbc717a4f3d4c4b01d52282a4a264d6b9550f40"
+          }
+        ],
+        "basechain_shard_count": 4,
+        "basechain_shard_depths": [
+          2
+        ],
+        "global_version": 16,
+        "capabilities": "3310",
+        "capabilities_hex": "0x0000000000000CEE",
+        "basechain_native_fast_path": true,
+        "native_transfer_runs": true,
+        "native_payment_lanes": true,
+        "workchain": 0,
+        "ordinary_tvm_supported": false,
+        "reason": "This fork's basechain uses native balance/nonce execution at global version >= 14; ordinary TVM externals and internal message queues are disabled.",
+        "proof_check_policy": "unsafe_local_preflight"
+      },
+      "snapshots": {
+        "initial": {
+          "captured_at": "2026-10-05T18:04:46.104292198Z",
+          "masterchain": {
+            "workchain": -1,
+            "shard": "8000000000000000",
+            "seqno": 1105,
+            "root_hash": "f043f5b94fe1213c92307604352e03d5c8c7ed0bc19569297901f87b97090a49",
+            "file_hash": "c7d091c3e3b0b9314e3f0c6a7238c6e8f65d4eda203f5084df97851e5591b9e0"
+          },
+          "chain_time": 1791223485,
+          "shards": [
+            {
+              "workchain": 0,
+              "shard": "2000000000000000",
+              "seqno": 452,
+              "root_hash": "5461ef5c872ab7f6ad45b467bdbda4d1049a3bc6f3cee5795cccc313fa9d808b",
+              "file_hash": "3de9aea1257d18442749fd9ce14af884689df68c4924d8e2842a0a4ed13a4213"
+            },
+            {
+              "workchain": 0,
+              "shard": "6000000000000000",
+              "seqno": 451,
+              "root_hash": "eec6c60b39af97ab7ccc0ee4b5a53b88767fe20a80e0d2eb76db3708d92759e0",
+              "file_hash": "282cf8bcbdb6f52fadc114623766c08cb581c3de29545285050eb25ea82b2053"
+            },
+            {
+              "workchain": 0,
+              "shard": "A000000000000000",
+              "seqno": 469,
+              "root_hash": "0f5fb8f7ccedbef2f685c195a4b898fbf2ef8462eb577c5aef4327e256154465",
+              "file_hash": "332c4ca4479e33a008313a8226c7212d446d4d86d7ba32d784ce1c25f1f28dde"
+            },
+            {
+              "workchain": 0,
+              "shard": "E000000000000000",
+              "seqno": 475,
+              "root_hash": "6d443551e0895ba782a0430fee3c9e45994dc621f0f0406ab9f288c70ed9287a",
+              "file_hash": "d2241c556a04f4b1650fa0d6bfbc717a4f3d4c4b01d52282a4a264d6b9550f40"
+            }
+          ]
+        },
+        "start": {
+          "captured_at": "2026-10-05T18:04:56.423639564Z",
+          "masterchain": {
+            "workchain": -1,
+            "shard": "8000000000000000",
+            "seqno": 1117,
+            "root_hash": "5a5f10514ef160b359dfa5acbe9b30eb82a17361575766eba77f5d88db23167c",
+            "file_hash": "788a77bb7e80593a25b5ee63145aee5a7610b06b6bc5348749c0ab4c414b339b"
+          },
+          "chain_time": 1791223495,
+          "shards": [
+            {
+              "workchain": 0,
+              "shard": "2000000000000000",
+              "seqno": 461,
+              "root_hash": "b3d089e46fb641097060fdddc978082de400f4f4e81a15301668b3741c48d581",
+              "file_hash": "ae9dad184e726ca3c6ba495e9d3b0c3538a7f949715341d67a1bfd0427280a3b"
+            },
+            {
+              "workchain": 0,
+              "shard": "6000000000000000",
+              "seqno": 460,
+              "root_hash": "7affc64af13659262c53b3d74f7905b4c1e4136067e47fd50e65140073294b88",
+              "file_hash": "ff05195b6290e6951e722dba67655dc986e50277d088cdf47c996358f49a1748"
+            },
+            {
+              "workchain": 0,
+              "shard": "A000000000000000",
+              "seqno": 486,
+              "root_hash": "cfeddb85a984ce46e1d9c46e8fd744201c7ae144c274402a924a92d223f4f30d",
+              "file_hash": "e9c84410c3dcb848340e6b6d9d51bb4c76c0b52c06ecdc200d2740993122f10f"
+            },
+            {
+              "workchain": 0,
+              "shard": "E000000000000000",
+              "seqno": 488,
+              "root_hash": "f8c84db29f3a51d9c95664e6fa898212a89a269e03538597da46244cdf8b9ea9",
+              "file_hash": "9d5549cb42584e06bee9d38cfa8551d028686c93cad9787a5673f9be47bd2e2e"
+            }
+          ]
+        },
+        "end": {
+          "captured_at": "2026-10-05T18:06:56.425292364Z",
+          "masterchain": {
+            "workchain": -1,
+            "shard": "8000000000000000",
+            "seqno": 1256,
+            "root_hash": "bd308653d13b7212650da358ab8a3f5c4711a99ae9829c5db35b47fbd82e87ce",
+            "file_hash": "9af76d8e1eb574d6d2c3e551fced09b65f6de133e7cf87ad0804e30c01ee18e2"
+          },
+          "chain_time": 1791223615,
+          "shards": [
+            {
+              "workchain": 0,
+              "shard": "E000000000000000",
+              "seqno": 655,
+              "root_hash": "d750f621ad675bcf94bf9739a08b1cc785d8bac0a5c976a75dcb81bc83c41be7",
+              "file_hash": "8f4cefcb4ba8b1234bf470de40fca557fb40a9694c2f48f85fc12f6a7d5821db"
+            },
+            {
+              "workchain": 0,
+              "shard": "2000000000000000",
+              "seqno": 616,
+              "root_hash": "be638762d2655c6d0e941deac744e653333219f7b87e7a4736a7eb89308b6816",
+              "file_hash": "abd9a8e9aa344e7fedadd454cecd9d46aa75153a005125ab4e158eee92f16f67"
+            },
+            {
+              "workchain": 0,
+              "shard": "6000000000000000",
+              "seqno": 606,
+              "root_hash": "2a8aae017255e2ba1fec4114663d190c94d2c99b659142d74120b6ace23b1814",
+              "file_hash": "148a087aa97f99aaf6a75afb9da23ba23109f96d52718ab70ec3b3d4093a37ec"
+            },
+            {
+              "workchain": 0,
+              "shard": "A000000000000000",
+              "seqno": 673,
+              "root_hash": "c32852b0a30864dc19e6e41143da75ae8e6001e0690d8157b05d3722a122870f",
+              "file_hash": "9e1a2400418241eb13ada5d2f6b6381bf8d4bfad93809a1383567edafa5fd19f"
+            }
+          ]
+        },
+        "final": {
+          "captured_at": "2026-10-05T18:07:23.747743028Z",
+          "masterchain": {
+            "workchain": -1,
+            "shard": "8000000000000000",
+            "seqno": 1298,
+            "root_hash": "a90d7272e287bcc7e5b7b895f4c3abe644786cfc488d6406965e36f28fdcd6f8",
+            "file_hash": "51fe8f1caad334402c07187b5a6e86cafc2faac2de415944e9a7ecebd3a147df"
+          },
+          "chain_time": 1791223643,
+          "shards": [
+            {
+              "workchain": 0,
+              "shard": "2000000000000000",
+              "seqno": 633,
+              "root_hash": "2c462fc71470ba9471cbae8ca1f37db3700bc6c5cdc67387936df6ad47aefff4",
+              "file_hash": "e28200ab6487b2c620a7f00a6dd598a944e58e8f08ba2147712a3e7857e21b8c"
+            },
+            {
+              "workchain": 0,
+              "shard": "6000000000000000",
+              "seqno": 626,
+              "root_hash": "342a6bfa23e46e8e4e4aac86d2eeedecfe188c24c4e1df712a10320bf51f75af",
+              "file_hash": "b1660402ea0ded390fd7e3db265e849a0f3146a2efa28c97bebdcec4c01bec89"
+            },
+            {
+              "workchain": 0,
+              "shard": "A000000000000000",
+              "seqno": 689,
+              "root_hash": "97d2197524098cc20ae67740438da0efcaba38b1951314ff9dc536ec5ac0ceea",
+              "file_hash": "f25a65869db4186058e47fcf923a2a983b1376a9b23d60e5803c1abc00ecf3fa"
+            },
+            {
+              "workchain": 0,
+              "shard": "E000000000000000",
+              "seqno": 672,
+              "root_hash": "c74b426c9b9177344ead37c3192455baf19909d8dbca243f1d59150251e75f03",
+              "file_hash": "404b184a68ab1c33cbb485250759920a86928a3848218e8eab602712d340dea9"
+            }
+          ]
+        }
+      },
+      "submission_counts": {
+        "offered_signed_parents": 565821,
+        "offered_logical_payments": 9053136,
+        "attempted_parents_including_retries": 649553,
+        "admission_acceptances_including_retries": 608888,
+        "admission_rejections_including_retries": 40648,
+        "retried_parents": 83732,
+        "batch_rpc_attempts": 11271,
+        "transport_errors": 1
+      },
+      "per_lane_audit": [
+        {
+          "lane": 0,
+          "sources": 256,
+          "measured_committed_payments": 1773840,
+          "measured_completed_signed_parents": 110865,
+          "total_committed_payments": 2043824,
+          "total_completed_signed_parents": 127739,
+          "phase_account_totals": {
+            "initial": {
+              "source_nonces": 2662888,
+              "source_balance_nanograms": 255997337112,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 2663144
+            },
+            "start": {
+              "source_nonces": 2723304,
+              "source_balance_nanograms": 255997276696,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 2723560
+            },
+            "end": {
+              "source_nonces": 4497144,
+              "source_balance_nanograms": 255995502856,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4497400
+            },
+            "final": {
+              "source_nonces": 4706712,
+              "source_balance_nanograms": 255995293288,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4706968
+            }
+          }
+        },
+        {
+          "lane": 1,
+          "sources": 256,
+          "measured_committed_payments": 1701200,
+          "measured_completed_signed_parents": 106325,
+          "total_committed_payments": 2009664,
+          "total_completed_signed_parents": 125604,
+          "phase_account_totals": {
+            "initial": {
+              "source_nonces": 2473491,
+              "source_balance_nanograms": 255997526509,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 2473747
+            },
+            "start": {
+              "source_nonces": 2533907,
+              "source_balance_nanograms": 255997466093,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 2534163
+            },
+            "end": {
+              "source_nonces": 4235107,
+              "source_balance_nanograms": 255995764893,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4235363
+            },
+            "final": {
+              "source_nonces": 4483155,
+              "source_balance_nanograms": 255995516845,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4483411
+            }
+          }
+        },
+        {
+          "lane": 2,
+          "sources": 256,
+          "measured_committed_payments": 2206784,
+          "measured_completed_signed_parents": 137924,
+          "total_committed_payments": 2549008,
+          "total_completed_signed_parents": 159313,
+          "phase_account_totals": {
+            "initial": {
+              "source_nonces": 2517751,
+              "source_balance_nanograms": 255997482249,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 2518007
+            },
+            "start": {
+              "source_nonces": 2619127,
+              "source_balance_nanograms": 255997380873,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 2619383
+            },
+            "end": {
+              "source_nonces": 4825911,
+              "source_balance_nanograms": 255995174089,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4826167
+            },
+            "final": {
+              "source_nonces": 5066759,
+              "source_balance_nanograms": 255994933241,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 5067015
+            }
+          }
+        },
+        {
+          "lane": 3,
+          "sources": 256,
+          "measured_committed_payments": 2104608,
+          "measured_completed_signed_parents": 131538,
+          "total_committed_payments": 2450640,
+          "total_completed_signed_parents": 153165,
+          "phase_account_totals": {
+            "initial": {
+              "source_nonces": 2667726,
+              "source_balance_nanograms": 255997332274,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 2667982
+            },
+            "start": {
+              "source_nonces": 2752718,
+              "source_balance_nanograms": 255997247282,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 2752974
+            },
+            "end": {
+              "source_nonces": 4857326,
+              "source_balance_nanograms": 255995142674,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4857582
+            },
+            "final": {
+              "source_nonces": 5118366,
+              "source_balance_nanograms": 255994881634,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 5118622
+            }
+          }
+        }
+      ],
+      "audit_gates": {
+        "audited_source_recipient_pairs": 1024,
+        "balances_verified_initial_to_final": true,
+        "balances_verified_start_to_end": true,
+        "recipient_nonces_unchanged": true,
+        "source_and_recipient_flags_unchanged": true,
+        "fixed_parent_quantum_aligned": true,
+        "final_canonical_cohort_equals_offered": true,
+        "four_depth2_leaves_at_every_recorded_phase": true
+      },
+      "resources": {
+        "scope": "samples within canonical measurement snapshot capture times; no warmup/drain samples",
+        "measurement_samples": 11,
+        "whole_command_samples": 15,
+        "validator_cpu_sample_mean_cores": 5.831490909090909,
+        "validator_cpu_sample_min_cores": 2.6189999999999998,
+        "validator_cpu_sample_max_cores": 8.9793,
+        "validator_memory_sample_min_bytes": 3218004247,
+        "validator_memory_sample_max_bytes": 4036195516,
+        "external_client_cpu_sample_mean_cores": 0.7284769429683337,
+        "external_client_cpu_sample_interval_seconds": 112.028254,
+        "external_client_rss_sample_min_bytes": 62103552,
+        "external_client_rss_sample_max_bytes": 72007680
+      },
+      "client_binary_sha256": "8fff9eb382745e79b10fd1c545d97f776fd5b47adef9d2e20d0910b1bc1ad928",
+      "raw_result": {
+        "path": "build/benchmarks/jetton-bomb-native-20261005/native16-stable.json",
+        "sha256": "db6732dac130d5f6a220d34aa1457c0b9e82e712187ba67b5772b11276e9dad7",
+        "size_bytes": 5021557
+      }
+    },
+    {
+      "schema_version": 1,
+      "workload": "native_signed_payments_same_lane",
+      "proof_policy": "account_and_topology_merkle_proofs_against_local_liteserver_masterchain_root; consensus proof chain not independently verified",
+      "measured_committed_payments": 424344,
+      "measured_completed_signed_parents": 424344,
+      "measurement_wall_seconds": 120.002125979,
+      "measurement_chain_seconds": 121,
+      "committed_payment_wall_tps": 3536.13735205207,
+      "completed_signed_parent_wall_tps": 3536.13735205207,
+      "committed_payment_chain_tps": 3506.9752066115702,
+      "ton_internal_message_cells": 0,
+      "total_committed_payments": 675607,
+      "total_completed_signed_parents": 675607,
+      "drained": true,
+      "valid": true,
+      "capacity_claim": false,
+      "name": "native1-stable.json",
+      "options": {
+        "Config": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/jetton-bomb-native-20261005/materials/local-config.json",
+        "WalletDir": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/jetton-bomb-native-20261005/materials/native-wallets",
+        "Output": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/jetton-bomb-native-20261005/native1-stable.json",
+        "Sources": 1024,
+        "Outputs": 1,
+        "Workers": 8,
+        "BatchSize": 64,
+        "Window": 1024,
+        "LaneDepth": 2,
+        "Amount": 1,
+        "Fee": 0,
+        "Rate": 0,
+        "Duration": 120000000000,
+        "Warmup": 10000000000,
+        "DrainTimeout": 240000000000
+      },
+      "protocol": {
+        "ls_config": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/jetton-bomb-native-20261005/materials/local-config.json",
+        "liteservers": 1,
+        "configured_zerostate": {
+          "workchain": -1,
+          "shard": "8000000000000000",
+          "seqno": 0,
+          "root_hash": "35445ec19b354ddac2c5e0e6337006684b01ebfb47a2f5736ad41fc867e048c7",
+          "file_hash": "15a8d70c3ac9309f87495b903d3df59d6574d0a15090db0686c912ff20f5333f"
+        },
+        "observed_zerostate": {
+          "workchain": -1,
+          "shard": "8000000000000000",
+          "seqno": 0,
+          "root_hash": "35445ec19b354ddac2c5e0e6337006684b01ebfb47a2f5736ad41fc867e048c7",
+          "file_hash": "15a8d70c3ac9309f87495b903d3df59d6574d0a15090db0686c912ff20f5333f"
+        },
+        "masterchain": {
+          "workchain": -1,
+          "shard": "8000000000000000",
+          "seqno": 1319,
+          "root_hash": "cc21a85aabdfcadfc0aa729004c092f4009bdd35bb29de4ed92e632099665256",
+          "file_hash": "40b9b0530b8b79167aa8ac182349a82f0e886622f481a9570a09030cb2ecf9e7"
+        },
+        "shards": [
+          {
+            "workchain": 0,
+            "shard": "2000000000000000",
+            "seqno": 633,
+            "root_hash": "2c462fc71470ba9471cbae8ca1f37db3700bc6c5cdc67387936df6ad47aefff4",
+            "file_hash": "e28200ab6487b2c620a7f00a6dd598a944e58e8f08ba2147712a3e7857e21b8c"
+          },
+          {
+            "workchain": 0,
+            "shard": "6000000000000000",
+            "seqno": 626,
+            "root_hash": "342a6bfa23e46e8e4e4aac86d2eeedecfe188c24c4e1df712a10320bf51f75af",
+            "file_hash": "b1660402ea0ded390fd7e3db265e849a0f3146a2efa28c97bebdcec4c01bec89"
+          },
+          {
+            "workchain": 0,
+            "shard": "A000000000000000",
+            "seqno": 689,
+            "root_hash": "97d2197524098cc20ae67740438da0efcaba38b1951314ff9dc536ec5ac0ceea",
+            "file_hash": "f25a65869db4186058e47fcf923a2a983b1376a9b23d60e5803c1abc00ecf3fa"
+          },
+          {
+            "workchain": 0,
+            "shard": "E000000000000000",
+            "seqno": 672,
+            "root_hash": "c74b426c9b9177344ead37c3192455baf19909d8dbca243f1d59150251e75f03",
+            "file_hash": "404b184a68ab1c33cbb485250759920a86928a3848218e8eab602712d340dea9"
+          }
+        ],
+        "basechain_shard_count": 4,
+        "basechain_shard_depths": [
+          2
+        ],
+        "global_version": 16,
+        "capabilities": "3310",
+        "capabilities_hex": "0x0000000000000CEE",
+        "basechain_native_fast_path": true,
+        "native_transfer_runs": true,
+        "native_payment_lanes": true,
+        "workchain": 0,
+        "ordinary_tvm_supported": false,
+        "reason": "This fork's basechain uses native balance/nonce execution at global version >= 14; ordinary TVM externals and internal message queues are disabled.",
+        "proof_check_policy": "unsafe_local_preflight"
+      },
+      "snapshots": {
+        "initial": {
+          "captured_at": "2026-10-05T18:07:34.496992712Z",
+          "masterchain": {
+            "workchain": -1,
+            "shard": "8000000000000000",
+            "seqno": 1319,
+            "root_hash": "cc21a85aabdfcadfc0aa729004c092f4009bdd35bb29de4ed92e632099665256",
+            "file_hash": "40b9b0530b8b79167aa8ac182349a82f0e886622f481a9570a09030cb2ecf9e7"
+          },
+          "chain_time": 1791223654,
+          "shards": [
+            {
+              "workchain": 0,
+              "shard": "6000000000000000",
+              "seqno": 626,
+              "root_hash": "342a6bfa23e46e8e4e4aac86d2eeedecfe188c24c4e1df712a10320bf51f75af",
+              "file_hash": "b1660402ea0ded390fd7e3db265e849a0f3146a2efa28c97bebdcec4c01bec89"
+            },
+            {
+              "workchain": 0,
+              "shard": "A000000000000000",
+              "seqno": 689,
+              "root_hash": "97d2197524098cc20ae67740438da0efcaba38b1951314ff9dc536ec5ac0ceea",
+              "file_hash": "f25a65869db4186058e47fcf923a2a983b1376a9b23d60e5803c1abc00ecf3fa"
+            },
+            {
+              "workchain": 0,
+              "shard": "E000000000000000",
+              "seqno": 672,
+              "root_hash": "c74b426c9b9177344ead37c3192455baf19909d8dbca243f1d59150251e75f03",
+              "file_hash": "404b184a68ab1c33cbb485250759920a86928a3848218e8eab602712d340dea9"
+            },
+            {
+              "workchain": 0,
+              "shard": "2000000000000000",
+              "seqno": 633,
+              "root_hash": "2c462fc71470ba9471cbae8ca1f37db3700bc6c5cdc67387936df6ad47aefff4",
+              "file_hash": "e28200ab6487b2c620a7f00a6dd598a944e58e8f08ba2147712a3e7857e21b8c"
+            }
+          ]
+        },
+        "start": {
+          "captured_at": "2026-10-05T18:07:45.111202396Z",
+          "masterchain": {
+            "workchain": -1,
+            "shard": "8000000000000000",
+            "seqno": 1335,
+            "root_hash": "5b3d823cee7363d30ebf27c571abef233a7a376f401e9c095d9b7f354d6d2d04",
+            "file_hash": "b8d3a05c0371721d605f67d1c3d68f30daa7625a2a6ddcfdd5e0508189338bcd"
+          },
+          "chain_time": 1791223663,
+          "shards": [
+            {
+              "workchain": 0,
+              "shard": "6000000000000000",
+              "seqno": 642,
+              "root_hash": "3d9793a7901dd336c3b6095594c2b3aa93682e05b86458cd8f08fee7c62fa350",
+              "file_hash": "499e55a97460df7cdc00d4870e039c727536048be59aff04cfe88a1c83c0233a"
+            },
+            {
+              "workchain": 0,
+              "shard": "A000000000000000",
+              "seqno": 701,
+              "root_hash": "20d8e8292161684d911c03e9980832565db6184acd35065c9d3a6dfe9488673b",
+              "file_hash": "e746704ba7c9802cec5aa7e712e7e4bac0f980848caec381fa6cf896e7bf0948"
+            },
+            {
+              "workchain": 0,
+              "shard": "E000000000000000",
+              "seqno": 690,
+              "root_hash": "d38d83ca0661e4b3e58d78afa3bffd32af7a329928782553bb8a2c939832ac41",
+              "file_hash": "1e596710041587d392be7bca422036a088e2490314aefc7828f38192406d16ac"
+            },
+            {
+              "workchain": 0,
+              "shard": "2000000000000000",
+              "seqno": 649,
+              "root_hash": "16c3747e256d9a005a8582d616e5af349597c200430e2af3eaadad93f0e02e42",
+              "file_hash": "16c67100b3dbc1b31d8cbc0ed1ec4511658c97c55641dd5226004078741fad2b"
+            }
+          ]
+        },
+        "end": {
+          "captured_at": "2026-10-05T18:09:45.113328375Z",
+          "masterchain": {
+            "workchain": -1,
+            "shard": "8000000000000000",
+            "seqno": 1492,
+            "root_hash": "e784acdaa59ad75d886c1f27b6f270c99dfaefe164a4014eccb68b471ddb23c2",
+            "file_hash": "af6f3e0347572efa955a4c4aa3edc85ddd93679a7b0cdbb1c9f58daa79b12419"
+          },
+          "chain_time": 1791223784,
+          "shards": [
+            {
+              "workchain": 0,
+              "shard": "A000000000000000",
+              "seqno": 827,
+              "root_hash": "ec1663db7e64b7e25e94da3a9bc77633ce0afdd736dbb46a62347669f1b34132",
+              "file_hash": "16317ed9c6f7ba05adaac83e0c01f57da4fcc6f01226bf5cd9ab8d4e462e1df2"
+            },
+            {
+              "workchain": 0,
+              "shard": "E000000000000000",
+              "seqno": 831,
+              "root_hash": "f78c378a1c21900c0390f6046e697864cc3bbff8f8b55a14335778797c36cb6f",
+              "file_hash": "3f423d05ec573d8b29366d663fefb2b18cde4844325360bebed181e8555d97ed"
+            },
+            {
+              "workchain": 0,
+              "shard": "2000000000000000",
+              "seqno": 781,
+              "root_hash": "e61059624a67439b992a7d38794d471c82c1ff576d8feb19962e58064a7dc579",
+              "file_hash": "881b539d6003895307c7b0a82f7f6922dfa23521c24e170386fe116481df8c3b"
+            },
+            {
+              "workchain": 0,
+              "shard": "6000000000000000",
+              "seqno": 776,
+              "root_hash": "bcb902636c9277e9d934fc1775f696b3111ed9936d61c6955bb38a759a04e649",
+              "file_hash": "08db0bdd7c94b633aec1098cef01c562314ad9ad3fb227b3be94dbd605b85ea0"
+            }
+          ]
+        },
+        "final": {
+          "captured_at": "2026-10-05T18:11:15.265649889Z",
+          "masterchain": {
+            "workchain": -1,
+            "shard": "8000000000000000",
+            "seqno": 1665,
+            "root_hash": "38f09312a11d2d3f8f6c085a97f4cf0e80d6a64ce05b3a44497402502f572c17",
+            "file_hash": "bcf36a33ecd205ef5090175d5e03d7f97d8cb2c8ad3fef9f709834a544aa43f2"
+          },
+          "chain_time": 1791223874,
+          "shards": [
+            {
+              "workchain": 0,
+              "shard": "2000000000000000",
+              "seqno": 826,
+              "root_hash": "3f9ccf577f905a63911e240a56e6ffbc762af08d66a0f93d3aae80800c0ed347",
+              "file_hash": "1e4c81aa8bdb7f910204aebe7a1a2a92c9fe51581efdf9d1f5701a61e1d620a0"
+            },
+            {
+              "workchain": 0,
+              "shard": "6000000000000000",
+              "seqno": 833,
+              "root_hash": "d39ff5523be4d45366735cdf62be9943841a223abaf7a9e8537f21a5fe85de97",
+              "file_hash": "329bcf7bbe8e570b8164a22010ca6a969abc7d34c1e4933f60d9a728309a1b87"
+            },
+            {
+              "workchain": 0,
+              "shard": "A000000000000000",
+              "seqno": 879,
+              "root_hash": "b019df3341cc80acc6acd475cb7f0a11d2deec659882d5eee1601346b3fb6ed3",
+              "file_hash": "89ed833a0a17b79520705ea5a64808cffd14b039e411dc12323ac45174d1bf06"
+            },
+            {
+              "workchain": 0,
+              "shard": "E000000000000000",
+              "seqno": 888,
+              "root_hash": "db5a08a6f3689c640e86eecdb4151d60c5b327053c4f68ab26582860f97ef52b",
+              "file_hash": "108276efc034eea2d1988a289bc542ae47d1e19cce98fe1f34517fbe109646e8"
+            }
+          ]
+        }
+      },
+      "submission_counts": {
+        "offered_signed_parents": 675607,
+        "offered_logical_payments": 675607,
+        "attempted_parents_including_retries": 793216,
+        "admission_acceptances_including_retries": 714327,
+        "admission_rejections_including_retries": 78377,
+        "retried_parents": 117609,
+        "batch_rpc_attempts": 12550,
+        "transport_errors": 8
+      },
+      "per_lane_audit": [
+        {
+          "lane": 0,
+          "sources": 256,
+          "measured_committed_payments": 116543,
+          "measured_completed_signed_parents": 116543,
+          "total_committed_payments": 168530,
+          "total_completed_signed_parents": 168530,
+          "phase_account_totals": {
+            "initial": {
+              "source_nonces": 4706712,
+              "source_balance_nanograms": 255995293288,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4706968
+            },
+            "start": {
+              "source_nonces": 4713752,
+              "source_balance_nanograms": 255995286248,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4714008
+            },
+            "end": {
+              "source_nonces": 4830295,
+              "source_balance_nanograms": 255995169705,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4830551
+            },
+            "final": {
+              "source_nonces": 4875242,
+              "source_balance_nanograms": 255995124758,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4875498
+            }
+          }
+        },
+        {
+          "lane": 1,
+          "sources": 256,
+          "measured_committed_payments": 100197,
+          "measured_completed_signed_parents": 100197,
+          "total_committed_payments": 168827,
+          "total_completed_signed_parents": 168827,
+          "phase_account_totals": {
+            "initial": {
+              "source_nonces": 4483155,
+              "source_balance_nanograms": 255995516845,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4483411
+            },
+            "start": {
+              "source_nonces": 4491283,
+              "source_balance_nanograms": 255995508717,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4491539
+            },
+            "end": {
+              "source_nonces": 4591480,
+              "source_balance_nanograms": 255995408520,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4591736
+            },
+            "final": {
+              "source_nonces": 4651982,
+              "source_balance_nanograms": 255995348018,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 4652238
+            }
+          }
+        },
+        {
+          "lane": 2,
+          "sources": 256,
+          "measured_committed_payments": 103442,
+          "measured_completed_signed_parents": 103442,
+          "total_committed_payments": 170000,
+          "total_completed_signed_parents": 170000,
+          "phase_account_totals": {
+            "initial": {
+              "source_nonces": 5066759,
+              "source_balance_nanograms": 255994933241,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 5067015
+            },
+            "start": {
+              "source_nonces": 5073607,
+              "source_balance_nanograms": 255994926393,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 5073863
+            },
+            "end": {
+              "source_nonces": 5177049,
+              "source_balance_nanograms": 255994822951,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 5177305
+            },
+            "final": {
+              "source_nonces": 5236759,
+              "source_balance_nanograms": 255994763241,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 5237015
+            }
+          }
+        },
+        {
+          "lane": 3,
+          "sources": 256,
+          "measured_committed_payments": 104162,
+          "measured_completed_signed_parents": 104162,
+          "total_committed_payments": 168250,
+          "total_completed_signed_parents": 168250,
+          "phase_account_totals": {
+            "initial": {
+              "source_nonces": 5118366,
+              "source_balance_nanograms": 255994881634,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 5118622
+            },
+            "start": {
+              "source_nonces": 5125022,
+              "source_balance_nanograms": 255994874978,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 5125278
+            },
+            "end": {
+              "source_nonces": 5229184,
+              "source_balance_nanograms": 255994770816,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 5229440
+            },
+            "final": {
+              "source_nonces": 5286616,
+              "source_balance_nanograms": 255994713384,
+              "destination_nonces": 0,
+              "destination_balance_nanograms": 5286872
+            }
+          }
+        }
+      ],
+      "audit_gates": {
+        "audited_source_recipient_pairs": 1024,
+        "balances_verified_initial_to_final": true,
+        "balances_verified_start_to_end": true,
+        "recipient_nonces_unchanged": true,
+        "source_and_recipient_flags_unchanged": true,
+        "fixed_parent_quantum_aligned": true,
+        "final_canonical_cohort_equals_offered": true,
+        "four_depth2_leaves_at_every_recorded_phase": true
+      },
+      "resources": {
+        "scope": "samples within canonical measurement snapshot capture times; no warmup/drain samples",
+        "measurement_samples": 11,
+        "whole_command_samples": 20,
+        "validator_cpu_sample_mean_cores": 5.106781818181818,
+        "validator_cpu_sample_min_cores": 2.4975,
+        "validator_cpu_sample_max_cores": 10.0541,
+        "validator_memory_sample_min_bytes": 4017941905,
+        "validator_memory_sample_max_bytes": 4481798373,
+        "external_client_cpu_sample_mean_cores": 0.5942746164519911,
+        "external_client_cpu_sample_interval_seconds": 115.720911,
+        "external_client_rss_sample_min_bytes": 68988928,
+        "external_client_rss_sample_max_bytes": 157806592
+      },
+      "client_binary_sha256": "8fff9eb382745e79b10fd1c545d97f776fd5b47adef9d2e20d0910b1bc1ad928",
+      "raw_result": {
+        "path": "build/benchmarks/jetton-bomb-native-20261005/native1-stable.json",
+        "sha256": "d28871181be4f59a80734b0aa9071369f8caed210606e44d996e824b236ffccc",
+        "size_bytes": 5022147
+      }
+    }
+  ],
+  "exploratory_runs": [
+    {
+      "name": "smoke16.json",
+      "excluded_from_primary_comparison": true,
+      "reason": "bounded startup smoke; root-shard topology",
+      "valid": true,
+      "drained": true,
+      "measured_committed_payments": 3072,
+      "measurement_wall_seconds": 10.002147495,
+      "committed_payment_wall_tps": 307.13404311780744,
+      "completed_signed_parent_wall_tps": 19.195877694862965,
+      "phase_topology": {
+        "initial": [
+          "8000000000000000"
+        ],
+        "start": [
+          "8000000000000000"
+        ],
+        "end": [
+          "8000000000000000"
+        ],
+        "final": [
+          "8000000000000000"
+        ]
+      },
+      "client_binary_sha256": "66a8eeafc81f2b28b193b1b427636530c2c12adc4ce6eec8b635edd92870720e",
+      "raw_result": {
+        "path": "build/benchmarks/jetton-bomb-native-20261005/smoke16.json",
+        "sha256": "03c9e9e29f8c2ec163722fe766413059c746818dc8731afd94056008719c0615",
+        "size_bytes": 24683
+      }
+    },
+    {
+      "name": "native16.json",
+      "excluded_from_primary_comparison": true,
+      "reason": "exploratory topology transition from two depth1 leaves to four depth2 leaves",
+      "valid": true,
+      "drained": true,
+      "measured_committed_payments": 8519056,
+      "measurement_wall_seconds": 120.002892831,
+      "committed_payment_wall_tps": 70990.42197255512,
+      "completed_signed_parent_wall_tps": 4436.901373284695,
+      "phase_topology": {
+        "initial": [
+          "4000000000000000",
+          "C000000000000000"
+        ],
+        "start": [
+          "4000000000000000",
+          "C000000000000000"
+        ],
+        "end": [
+          "2000000000000000",
+          "6000000000000000",
+          "A000000000000000",
+          "E000000000000000"
+        ],
+        "final": [
+          "2000000000000000",
+          "6000000000000000",
+          "A000000000000000",
+          "E000000000000000"
+        ]
+      },
+      "client_binary_sha256": "3b3a57e8a9a32f93ffbeaafde389139270822bc27343267f2ea0c50da932ce0a",
+      "raw_result": {
+        "path": "build/benchmarks/jetton-bomb-native-20261005/native16.json",
+        "sha256": "aacd8609d5efce6adb298d49c584518c0caf1e8367e47d09cd0701b0e164e9c3",
+        "size_bytes": 4996774
+      }
+    },
+    {
+      "name": "native1.json",
+      "excluded_from_primary_comparison": true,
+      "reason": "exploratory predecessor binary before explicit fixed-depth validation",
+      "valid": true,
+      "drained": true,
+      "measured_committed_payments": 431750,
+      "measurement_wall_seconds": 120.001509369,
+      "committed_payment_wall_tps": 3597.8714123702016,
+      "completed_signed_parent_wall_tps": 3597.8714123702016,
+      "phase_topology": {
+        "initial": [
+          "2000000000000000",
+          "6000000000000000",
+          "A000000000000000",
+          "E000000000000000"
+        ],
+        "start": [
+          "2000000000000000",
+          "6000000000000000",
+          "A000000000000000",
+          "E000000000000000"
+        ],
+        "end": [
+          "2000000000000000",
+          "6000000000000000",
+          "A000000000000000",
+          "E000000000000000"
+        ],
+        "final": [
+          "2000000000000000",
+          "6000000000000000",
+          "A000000000000000",
+          "E000000000000000"
+        ]
+      },
+      "client_binary_sha256": "3b3a57e8a9a32f93ffbeaafde389139270822bc27343267f2ea0c50da932ce0a",
+      "raw_result": {
+        "path": "build/benchmarks/jetton-bomb-native-20261005/native1.json",
+        "sha256": "53345e2f49262a3946e3e84fce4f2d04eb6057ec0677ea67af970b7ae6c606b9",
+        "size_bytes": 5012431
+      }
+    }
+  ],
+  "validation": {
+    "go": "normal complete Go suite passed, including native signing, native account decoding, financial audit and topology regressions",
+    "go_vet": "passed for cmd/nativespam, pkg/nativepay and pkg/nativerpc",
+    "live_proofs": "both benchmark runs exercised native account Merkle inclusion verification",
+    "native_signing": "Go parity vectors matched independent C++ scalar/NTRN construction",
+    "race": "CLI/encoder passed -race; SDK unsafe TL serializer checkptr abort in RPC race run; all three native packages passed -race with -gcflags=all=-d=checkptr=0",
+    "local_helpers": "Python compile, bounded export/isolation and transitional-to-full topology checks passed"
+  },
+  "raw_artifact_manifest": [
+    {
+      "path": "build/benchmarks/jetton-bomb-20261005/fixed/validator-provenance.json",
+      "sha256": "838d976d953e1acbfb2b2e0b3e697c9f3dc0991bf496a04b528cbd29661e99bb",
+      "size_bytes": 1746
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/engine-provenance.json",
+      "sha256": "cd35fd45ac789ef263718b40510dde6234d693cf40477523c0dc503cb3bbb0cf",
+      "size_bytes": 308
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/host-profile.json",
+      "sha256": "b901f6f8ba0ccaffd712440761a851347512766d5f23185e9e4f087462b5c763",
+      "size_bytes": 28750
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/materials/container.json",
+      "sha256": "91b4416262656d8553b975aef0df4633c50e19f03eeb7593030684e9ed87a925",
+      "size_bytes": 5007
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/materials/local-config.json",
+      "sha256": "ca4ec4d50c87fd57d60dce4c617255405b059d59f278cd352356a9938cdd7466",
+      "size_bytes": 1611
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/materials/native-fixture.json",
+      "sha256": "25b62223f26c301703087b6a082eb198eb81faa118af55a1b453410c6cf38dd4",
+      "size_bytes": 182474
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/materials/native-genesis.env",
+      "sha256": "e974f5687087b42eed24dd69ce27af33282fb4f3f6ebca2564c382257abc31e8",
+      "size_bytes": 744
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native1-stable.json",
+      "sha256": "d28871181be4f59a80734b0aa9071369f8caed210606e44d996e824b236ffccc",
+      "size_bytes": 5022147
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native1-stable.log",
+      "sha256": "f533aacb922a86befa94f992c651c3783a1454f5c18906359f187c4ac25d5d27",
+      "size_bytes": 196
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native1-stable.provenance.json",
+      "sha256": "7db689ec7c6119fe50d08ad7a21411c4eae011f60778df226904fb823b4b6b9f",
+      "size_bytes": 190242
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native1-stable.telemetry.json",
+      "sha256": "50eb2e5bb18548fb7593bf962c16b349603eed5bc3626598f3d868a51d9fc84f",
+      "size_bytes": 12972
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native1.json",
+      "sha256": "53345e2f49262a3946e3e84fce4f2d04eb6057ec0677ea67af970b7ae6c606b9",
+      "size_bytes": 5012431
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native1.log",
+      "sha256": "0e45e3d3923d85e9f509b3cf7ad85c7db58244ec402624c2aa10eacf10b88713",
+      "size_bytes": 195
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native1.provenance.json",
+      "sha256": "eda45fb2bb6a6174a414be29c8af7229d8f388a3c6c5f258454893bf0969dc4f",
+      "size_bytes": 190206
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native1.telemetry.json",
+      "sha256": "69bdc5a175c8394ef2881cdf9fe8749c00898f4c1d6e3808ee60affb850310f0",
+      "size_bytes": 14130
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native16-stable.json",
+      "sha256": "db6732dac130d5f6a220d34aa1457c0b9e82e712187ba67b5772b11276e9dad7",
+      "size_bytes": 5021557
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native16-stable.log",
+      "sha256": "c4a0ea5aa86ca24b7fdffcf5f59b15c1e37a9a82c78202e4498b3f3678d6937a",
+      "size_bytes": 197
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native16-stable.provenance.json",
+      "sha256": "c6f5cc2ff462c2566293fed26cc60c22279a80247a74e502f7e767b96a43b5f6",
+      "size_bytes": 190242
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native16-stable.telemetry.json",
+      "sha256": "5e8abaa1795f6358270cb9f935e89758306ec89a1ab537e5eef2569d28f668e3",
+      "size_bytes": 9979
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native16.json",
+      "sha256": "aacd8609d5efce6adb298d49c584518c0caf1e8367e47d09cd0701b0e164e9c3",
+      "size_bytes": 4996774
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native16.log",
+      "sha256": "560d97ed169cca6d9d6822a483136ed4f4faa5fa9fa060d823c74750279b904b",
+      "size_bytes": 196
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native16.provenance.json",
+      "sha256": "772cafd128b8fb38039cd149593ec1fbbc6228d4e48212fdb5af89e2794457dc",
+      "size_bytes": 190206
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/native16.telemetry.json",
+      "sha256": "52b10576356887f505caef4b2d50a29dc079161f37bcdcda93e999be1152a7fd",
+      "size_bytes": 10513
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/smoke16.json",
+      "sha256": "03c9e9e29f8c2ec163722fe766413059c746818dc8731afd94056008719c0615",
+      "size_bytes": 24683
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/smoke16.log",
+      "sha256": "72a31897adb4e2a4008a31c517617a4999df404dec18aed464d8020f13f96023",
+      "size_bytes": 191
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/smoke16.provenance.json",
+      "sha256": "d91994b6427cb0c4673e9a85bd1ea776c01d34279f1132360c9f711df3e55d39",
+      "size_bytes": 190198
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/smoke16.telemetry.json",
+      "sha256": "5037f221086e12708498ce83f78735061d9a1fc4b73de3cc971d8816fdb4faca",
+      "size_bytes": 2146
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/stopped-container.json",
+      "sha256": "9e9a3cd34a2b1e8564183519676dd8bde1d0925abd2f1a1440b9ddb03ddb3bec",
+      "size_bytes": 9712
+    },
+    {
+      "path": "build/benchmarks/jetton-bomb-native-20261005/validator.log",
+      "sha256": "f6dd9e73c72a5946eba2e9db041e642bea72b309ea1790c43e36021b59d538b2",
+      "size_bytes": 540232
+    }
+  ],
+  "source_manifest": [
+    {
+      "path": "tools/jetton-bomb/go-spam/cmd/nativespam/main.go",
+      "sha256": "d5756203be372a7bde83ea0dc65d3e8bdc063cb0aa1259db32f8c291b0f0a08a",
+      "size_bytes": 21769
+    },
+    {
+      "path": "tools/jetton-bomb/go-spam/pkg/nativepay/message.go",
+      "sha256": "e50661f1e15573bcea17f2721ecc11d3e1bbe57c6ae6ee09dda42561fb34101b",
+      "size_bytes": 7822
+    },
+    {
+      "path": "tools/jetton-bomb/go-spam/pkg/nativerpc/client.go",
+      "sha256": "5b53ebe6b6e6d6ffd52dfb4326b97db34f2ab9f327e26964e4972b7a532d95b1",
+      "size_bytes": 11450
+    },
+    {
+      "path": "tools/jetton-bomb/go-spam/pkg/sidechain/sidechain.go",
+      "sha256": "cf3c690c376cee2853ce756ac8eecf36370fd00938ad5e778579cacd7f50c319",
+      "size_bytes": 8425
+    },
+    {
+      "path": "tools/jetton-bomb/go-spam/go.mod",
+      "sha256": "f789af9a4e85685e2dac75508b8c6f1d7ed749465d10896bbe1c5ce775f0a25f",
+      "size_bytes": 343
+    },
+    {
+      "path": "tools/jetton-bomb/go-spam/go.sum",
+      "sha256": "476562736a3f255d1b1b5c3ecabd97514532b1080cb5c094b39788192ca2cbaf",
+      "size_bytes": 1986
+    },
+    {
+      "path": "tools/jetton-bomb/sidechain/native-local.env",
+      "sha256": "24b0b8ed04f7daa9e43762a963a756e61090d61e2ff1a52cae2c776202068f92",
+      "size_bytes": 1317
+    },
+    {
+      "path": "tools/jetton-bomb/sidechain/start-local.py",
+      "sha256": "7472121766241a179f4d68fa6a206fb5e818439399d23190f85cdade4dc4d096",
+      "size_bytes": 12020
+    },
+    {
+      "path": "tools/jetton-bomb/sidechain/measure-native-local.py",
+      "sha256": "e9bc0a704e49afaf4127c517b8746cd5c746dcba82ed033bb005a725c3c43f57",
+      "size_bytes": 9844
+    }
+  ],
+  "final_state": {
+    "generator": "both primary runs stopped offers and reconciled all issued nonces before exit",
+    "validator": "isolated validator stopped after final drain; preserved container exited with SIGTERM status 143",
+    "container_name": "sidechain-native-bomb",
+    "container_state": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 143,
+      "Error": "",
+      "StartedAt": "2026-10-05T17:52:13.477726561Z",
+      "FinishedAt": "2026-10-05T18:12:49.510954462Z"
+    }
+  }
+}

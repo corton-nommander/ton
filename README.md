@@ -44,6 +44,11 @@ Main TON monorepo, which includes the code of the node/validator, lite-client, t
 
 ## Native sidechain desktop benchmark
 
+The copied [`jetton-bomb`](tools/jetton-bomb/sidechain/README.md) also includes
+an independent Go sender for native signed payments. It verifies committed
+nonce increments and recipient credits, and reports payments/s separately
+from signed requests/s. See the [native payment measurements](doc/jetton-bomb-native-2026-10-05.md).
+
 For ordinary TVM internal-message testing, the copied
 [`tools/jetton-bomb`](tools/jetton-bomb/sidechain/README.md) utility now includes
 an execution-mode check and bounded masterchain load runner. See the
